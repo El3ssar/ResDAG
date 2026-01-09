@@ -211,20 +211,25 @@ class ESNModel(ps.SymbolicModel):
         # Create sample input if not provided
         if input_data is None:
             # Get feature dimension from the model's input
-            # pytorch_symbolic stores the shape used during tracing
+            # pytorch_symbolic stores input_shape as:
+            #   - Single input: torch.Size([batch, seq, features])
+            #   - Multi-input: tuple of torch.Size objects
             try:
-                # Try to infer from input shape
                 if hasattr(self, "input_shape"):
-                    # Multi-input model
-                    if isinstance(self.input_shape, list):
-                        # Multiple inputs - create tuple of tensors
+                    input_shape = self.input_shape
+                    # Check for multi-input: tuple where first element is torch.Size
+                    if (
+                        isinstance(input_shape, tuple)
+                        and len(input_shape) > 0
+                        and isinstance(input_shape[0], torch.Size)
+                    ):
+                        # Multiple inputs - create tuple of tensors matching each input shape
                         input_data = tuple(
-                            torch.randn(batch_size, seq_len, shape[-1])
-                            for shape in self.input_shape
+                            torch.randn(batch_size, seq_len, shape[-1]) for shape in input_shape
                         )
-                    elif isinstance(self.input_shape, tuple) and len(self.input_shape) >= 2:
-                        # Single input - shape is (seq_len, features)
-                        features = self.input_shape[-1]
+                    elif isinstance(input_shape, torch.Size) and len(input_shape) >= 2:
+                        # Single input - shape is torch.Size([batch, seq_len, features])
+                        features = input_shape[-1]
                         input_data = torch.randn(batch_size, seq_len, features)
                     else:
                         # Fallback

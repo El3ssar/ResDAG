@@ -6,10 +6,22 @@ This module contains the core layer implementations:
 - ReadoutLayer: Per-timestep linear layer with custom fitting
 """
 
+from .custom import (
+    Concatenate,
+    FeaturePartitioner,
+    OutliersFilteredMean,
+    SelectiveDropout,
+    SelectiveExponentiation,
+)
 from .readouts import ReadoutLayer
 from .reservoir import ReservoirLayer
 
 __all__ = [
     "ReservoirLayer",
     "ReadoutLayer",
+    "Concatenate",
+    "FeaturePartitioner",
+    "OutliersFilteredMean",
+    "SelectiveDropout",
+    "SelectiveExponentiation",
 ]

@@ -113,15 +113,6 @@ class ReadoutLayer(nn.Linear):
         Raises:
             ValueError: If input has invalid number of dimensions
         """
-        # Use no_grad context when not trainable for better performance
-        if not self.trainable:
-            with torch.no_grad():
-                return self._forward_impl(input)
-        else:
-            return self._forward_impl(input)
-
-    def _forward_impl(self, input: torch.Tensor) -> torch.Tensor:
-        """Internal forward implementation."""
         if input.dim() == 2:
             # Standard 2D input: (B, F) -> (B, F_out)
             return super().forward(input)
@@ -151,7 +142,6 @@ class ReadoutLayer(nn.Linear):
         self,
         states: torch.Tensor,
         targets: torch.Tensor,
-        ridge: float = 1e-6,
     ) -> None:
         """Fit readout weights using ridge regression.
 

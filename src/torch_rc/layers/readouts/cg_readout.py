@@ -3,7 +3,6 @@
 from typing import Optional, Tuple
 
 import torch
-import torch.nn as nn
 
 from .base import ReadoutLayer
 
@@ -52,6 +51,7 @@ class CGReadoutLayer(ReadoutLayer):
         trainable: bool = False,
         max_iter: int = 100,
         tol: float = 1e-5,
+        alpha: float = 1e-6,
     ) -> None:
         """Initialize CGReadoutLayer.
 
@@ -63,10 +63,12 @@ class CGReadoutLayer(ReadoutLayer):
             trainable: Whether weights are trainable
             max_iter: Maximum iterations for CG solver
             tol: Convergence tolerance for CG solver
+            alpha: L2 regularization strength (must be non-negative)
         """
         super().__init__(in_features, out_features, bias, name, trainable)
         self.max_iter = max_iter
         self.tol = tol
+        self.alpha = alpha
 
     def _solve_ridge_cg(
         self,
@@ -167,9 +169,8 @@ class CGReadoutLayer(ReadoutLayer):
 
     def fit(
         self,
-        states: torch.Tensor,
+        inputs: torch.Tensor,
         targets: torch.Tensor,
-        ridge: float = 1e-6,
     ) -> None:
         """Fit readout weights using Conjugate Gradient ridge regression.
 
@@ -181,7 +182,7 @@ class CGReadoutLayer(ReadoutLayer):
         - Updates layer parameters in-place
 
         Args:
-            states: Input states of shape (batch, time, features) or (n_samples, features)
+            inputs: Input states of shape (batch, time, features) or (n_samples, features)
             targets: Target outputs of shape (batch, time, outputs) or (n_samples, outputs)
             ridge: Ridge regularization parameter (alpha). Must be non-negative.
 
@@ -189,18 +190,18 @@ class CGReadoutLayer(ReadoutLayer):
             ValueError: If input shapes don't match or ridge is negative
         """
         # Handle 3D inputs by reshaping to 2D
-        if states.dim() == 3:
-            batch_size, seq_len, features = states.shape
-            states = states.reshape(batch_size * seq_len, features)
+        if inputs.dim() == 3:
+            batch_size, seq_len, features = inputs.shape
+            inputs = inputs.reshape(batch_size * seq_len, features)
 
         if targets.dim() == 3:
             batch_size, seq_len, outputs = targets.shape
             targets = targets.reshape(batch_size * seq_len, outputs)
 
         # Validate shapes
-        if states.shape[0] != targets.shape[0]:
+        if inputs.shape[0] != targets.shape[0]:
             raise ValueError(
-                f"Number of samples must match: states has {states.shape[0]}, "
+                f"Number of samples must match: states has {inputs.shape[0]}, "
                 f"targets has {targets.shape[0]}"
             )
 
@@ -211,7 +212,7 @@ class CGReadoutLayer(ReadoutLayer):
             )
 
         # Solve ridge regression with CG
-        coefs, intercept = self._solve_ridge_cg(states, targets, ridge)
+        coefs, intercept = self._solve_ridge_cg(inputs, targets, self.alpha)
 
         # Convert back to original dtype and update parameters
         with torch.no_grad():

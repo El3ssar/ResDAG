@@ -29,8 +29,6 @@ import pytorch_symbolic as ps
 import torch
 
 from ..layers import ReservoirLayer
-from ..layers.readouts import ReadoutLayer
-from ..utils import functional_esn_forecast
 
 # Re-export for convenience
 Input = ps.Input
@@ -166,99 +164,187 @@ class ESNModel(ps.SymbolicModel):
     def plot_model(
         self,
         save_path: Optional[Union[str, Path]] = None,
-        input_data: Optional[torch.Tensor] = None,
-        batch_size: int = 1,
-        seq_len: int = 10,
-        show_non_gradient_nodes: bool = False,
-        collapse_modules_after_depth: int = 0,
+        format: str = "svg",
+        show_shapes: bool = True,
+        rankdir: str = "TB",
         **kwargs: Any,
     ) -> Any:
-        """Visualize model architecture using torchvista.
+        """Visualize model architecture using the symbolic graph.
+
+        This method uses the pytorch_symbolic graph structure directly,
+        providing accurate visualization of complex model topologies
+        including multi-input models and branching architectures.
 
         Args:
-            save_path: Path to save the visualization (optional)
-            input_data: Sample input for tracing (if None, creates dummy input)
-            batch_size: Batch size for dummy input (default: 1)
-            seq_len: Sequence length for dummy input (default: 10)
-            show_non_gradient_nodes: Show internal operations like __setitem__, __add__ (default: False)
-            collapse_modules_after_depth: Module expansion depth, 0=show only layers (default: 0)
-            **kwargs: Additional arguments passed to torchvista.trace_model
+            save_path: Path to save the visualization (e.g., "model.svg", "model.png").
+                       If None, displays inline in notebooks or prints DOT source.
+            format: Output format when saving ("svg", "png", "pdf"). Default: "svg".
+            show_shapes: Show tensor shapes on edges. Default: True.
+            rankdir: Graph direction ("TB"=top-bottom, "LR"=left-right). Default: "TB".
+            **kwargs: Additional arguments passed to graphviz.Digraph.
 
         Returns:
-            The visualization object (HTML for notebooks)
+            In Jupyter: SVG display object
+            Otherwise: DOT source string
 
         Example:
-            >>> model = classic_esn(100, 1, 1)
-            >>> model.plot_model()  # Clean view with only layers
-            >>> model.plot_model(show_non_gradient_nodes=True)  # Show all operations
-            >>> model.plot_model(collapse_modules_after_depth=1)  # Show module internals
-
-        Note:
-            torchvista is designed for Jupyter notebooks. For static image export,
-            you may need to use notebook tools or screenshot the displayed graph.
-
-            By default, only the main layers are shown (ReservoirLayer, ReadoutLayer, etc.)
-            without internal operations. Set show_non_gradient_nodes=True to see all operations.
+            >>> model.plot_model()  # Display in notebook
+            >>> model.plot_model(save_path="model.svg")  # Save to file
+            >>> model.plot_model(rankdir="LR")  # Left-to-right layout
         """
+        # Build graph from symbolic tensors
+        node_to_name = getattr(self, "_node_to_layer_name", {})
+
+        def get_node_label(node: Any) -> str:
+            """Get display label for a symbolic tensor node."""
+            if node in node_to_name:
+                return node_to_name[node]
+            # Check if it's an input
+            for i, inp in enumerate(self.inputs):
+                if node is inp:
+                    return f"Input_{i + 1}"
+            return f"node_{id(node)}"
+
+        def get_node_shape(node: Any) -> str:
+            """Get tensor shape string for a node."""
+            if hasattr(node, "shape"):
+                shape = node.shape
+                if isinstance(shape, torch.Size):
+                    return str(tuple(shape))
+            return ""
+
+        # Collect all nodes and edges
+        nodes = {}  # name -> (label, shape, is_input, is_output)
+        edges = []  # (from_name, to_name, shape_label)
+
+        # Add input nodes
+        for i, inp in enumerate(self.inputs):
+            name = f"Input_{i + 1}"
+            shape = get_node_shape(inp)
+            nodes[name] = (name, shape, True, False)
+
+        # Add layer nodes from the symbolic graph
+        for node, layer_name in node_to_name.items():
+            shape = get_node_shape(node)
+            nodes[layer_name] = (layer_name, shape, False, False)
+
+            # Add edges from parents
+            parents = getattr(node, "_parents", [])
+            for parent in parents:
+                parent_name = get_node_label(parent)
+                edge_shape = get_node_shape(parent) if show_shapes else ""
+                edges.append((parent_name, layer_name, edge_shape))
+
+        # Mark output nodes
+        for out in self.outputs:
+            out_name = get_node_label(out)
+            if out_name in nodes:
+                label, shape, is_input, _ = nodes[out_name]
+                nodes[out_name] = (label, shape, is_input, True)
+
+        # Generate DOT source
+        dot_lines = [
+            "digraph ESNModel {",
+            f"  rankdir={rankdir};",
+            "  node [shape=box, style=filled];",
+            "  edge [fontsize=10];",
+        ]
+
+        # Add nodes with styling
+        for name, (label, shape, is_input, is_output) in nodes.items():
+            if is_input:
+                style = 'fillcolor="#FFB6C1", shape=ellipse'  # Pink for inputs
+            elif is_output:
+                style = 'fillcolor="#90EE90", shape=ellipse'  # Green for outputs
+            else:
+                style = 'fillcolor="#87CEEB"'  # Light blue for layers
+
+            # Extract layer type for display
+            layer_type = label.rsplit("_", 1)[0] if "_" in label else label
+            display_label = f"{layer_type}\\n{shape}" if shape and show_shapes else layer_type
+
+            dot_lines.append(f'  "{name}" [label="{display_label}", {style}];')
+
+        # Add edges
+        for from_name, to_name, shape_label in edges:
+            if shape_label and show_shapes:
+                dot_lines.append(f'  "{from_name}" -> "{to_name}" [label="{shape_label}"];')
+            else:
+                dot_lines.append(f'  "{from_name}" -> "{to_name}";')
+
+        dot_lines.append("}")
+        dot_source = "\n".join(dot_lines)
+
+        # Try to render with graphviz
         try:
-            import torchvista as tv
-        except ImportError:
-            raise ImportError(
-                "torchvista is required for model visualization. "
-                "Install with: pip install torchvista"
-            )
+            import graphviz
 
-        # Create sample input if not provided
-        if input_data is None:
-            # Get feature dimension from the model's input
-            # pytorch_symbolic stores input_shape as:
-            #   - Single input: torch.Size([batch, seq, features])
-            #   - Multi-input: tuple of torch.Size objects
+            graph = graphviz.Source(dot_source)
+
+            if save_path is not None:
+                save_path = Path(save_path)
+                # graphviz adds extension automatically
+                graph.render(
+                    str(save_path.with_suffix("")),
+                    format=format,
+                    cleanup=True,
+                )
+                print(f"Saved to {save_path.with_suffix('.' + format)}")
+                return graph
+
+            # Try to display in notebook
             try:
-                if hasattr(self, "input_shape"):
-                    input_shape = self.input_shape
-                    # Check for multi-input: tuple where first element is torch.Size
-                    if (
-                        isinstance(input_shape, tuple)
-                        and len(input_shape) > 0
-                        and isinstance(input_shape[0], torch.Size)
-                    ):
-                        # Multiple inputs - create tuple of tensors matching each input shape
-                        input_data = tuple(
-                            torch.randn(batch_size, seq_len, shape[-1]) for shape in input_shape
-                        )
-                    elif isinstance(input_shape, torch.Size) and len(input_shape) >= 2:
-                        # Single input - shape is torch.Size([batch, seq_len, features])
-                        features = input_shape[-1]
-                        input_data = torch.randn(batch_size, seq_len, features)
-                    else:
-                        # Fallback
-                        input_data = torch.randn(batch_size, seq_len, 1)
-                else:
-                    # Default to 1 feature
-                    input_data = torch.randn(batch_size, seq_len, 1)
-            except Exception:
-                # Fallback to simple input
-                input_data = torch.randn(batch_size, seq_len, 1)
+                from IPython.display import SVG, display
 
-        # Trace and visualize with clean defaults
-        result = tv.trace_model(
-            self,
-            input_data,
-            show_non_gradient_nodes=show_non_gradient_nodes,
-            collapse_modules_after_depth=collapse_modules_after_depth,
-            **kwargs,
-        )
+                svg_data = graph.pipe(format="svg").decode("utf-8")
+                display(SVG(svg_data))
+                return svg_data
+            except ImportError:
+                # Not in notebook, return the graph object
+                return graph
 
-        # If save_path provided, note that manual export may be needed
-        if save_path is not None:
-            save_path = Path(save_path)
-            print(
-                f"Note: torchvista displays interactive graph. "
-                f"For export to {save_path}, use notebook export tools or screenshot."
-            )
+        except ImportError:
+            # graphviz not installed, return DOT source
+            print("Note: Install 'graphviz' package for visual rendering.")
+            print("      pip install graphviz")
+            print("      Also install graphviz system package (apt install graphviz)")
+            print("\nDOT source (can be rendered at https://dreampuf.github.io/GraphvizOnline/):")
+            print(dot_source)
+            return dot_source
 
-        return result
+    @torch.no_grad()
+    def warmup(
+        self,
+        *inputs: torch.Tensor,
+        return_outputs: bool = False,
+    ) -> Optional[torch.Tensor]:
+        """Teacher-forced warmup to synchronize reservoir states.
+
+        Runs the model with provided inputs, updating internal reservoir states
+        to achieve the Echo State Property (synchronization with input dynamics).
+
+        Convention: input0 is feedback, input1+ are driving inputs.
+
+        Args:
+            *inputs: Tensors of shape (B, T, features) for each model input.
+                    First input is feedback, remaining are drivers.
+            return_outputs: Whether to return model outputs during warmup.
+
+        Returns:
+            If return_outputs=True: Tensor of shape (B, T, output_dim)
+            Otherwise: None (only internal state is updated)
+
+        Example:
+            >>> model.warmup(feedback, driving_input)  # Just sync states
+            >>> outputs = model.warmup(feedback, driving_input, return_outputs=True)
+        """
+        if len(inputs) == 0:
+            raise ValueError("At least one input (feedback) is required")
+
+        # Simply run forward pass - ReservoirLayer handles the sequence internally
+        output = self(*inputs)
+
+        return output if return_outputs else None
 
     def forecast(
         self,

@@ -169,11 +169,11 @@ class TestCGReadoutFit:
         """Test fitting with 2D input."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=20, out_features=5)
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3)
         X = torch.randn(100, 20)
         y = torch.randn(100, 5)
 
-        readout.fit(X, y, ridge=1e-3)
+        readout.fit(X, y)
 
         assert readout.is_fitted
         assert readout.weight.shape == (5, 20)
@@ -183,11 +183,11 @@ class TestCGReadoutFit:
         """Test fitting with 3D input (batch, time, features)."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=20, out_features=5)
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3)
         X = torch.randn(4, 25, 20)  # (batch, time, features)
         y = torch.randn(4, 25, 5)
 
-        readout.fit(X, y, ridge=1e-3)
+        readout.fit(X, y)
 
         assert readout.is_fitted
         assert readout.weight.shape == (5, 20)
@@ -197,7 +197,7 @@ class TestCGReadoutFit:
         """Test that fit actually updates weights and bias."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=10, out_features=3)
+        readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-3)
 
         # Store initial weights
         initial_weight = readout.weight.data.clone()
@@ -206,7 +206,7 @@ class TestCGReadoutFit:
         # Fit
         X = torch.randn(50, 10)
         y = torch.randn(50, 3)
-        readout.fit(X, y, ridge=1e-3)
+        readout.fit(X, y)
 
         # Weights should have changed
         assert not torch.allclose(readout.weight.data, initial_weight)
@@ -216,7 +216,9 @@ class TestCGReadoutFit:
         """Test that fitted readout produces accurate predictions."""
         torch.manual_seed(42)
 
-        readout_cg = CGReadoutLayer(in_features=20, out_features=5, max_iter=1000, tol=1e-10)
+        readout_cg = CGReadoutLayer(
+            in_features=20, out_features=5, max_iter=1000, tol=1e-10, alpha=1e-6
+        )
 
         # Generate synthetic data with known relationship
         X = torch.randn(100, 20, dtype=torch.float32)
@@ -225,7 +227,7 @@ class TestCGReadoutFit:
         y = X @ true_weight + true_bias + torch.randn(100, 5) * 0.01  # Small noise
 
         # Fit with CG
-        readout_cg.fit(X, y, ridge=1e-6)
+        readout_cg.fit(X, y)
 
         # Fit with closed form for comparison
         X_64 = X.to(torch.float64)
@@ -246,7 +248,7 @@ class TestCGReadoutFit:
         y = torch.randn(50, 5)  # Different number of samples
 
         with pytest.raises(ValueError, match="Number of samples must match"):
-            readout.fit(X, y, ridge=1e-3)
+            readout.fit(X, y)
 
     def test_fit_with_wrong_output_dim_raises_error(self):
         """Test that wrong output dimension raises ValueError."""
@@ -256,7 +258,7 @@ class TestCGReadoutFit:
         y = torch.randn(100, 3)  # Should be 5, not 3
 
         with pytest.raises(ValueError, match="Target output dimension"):
-            readout.fit(X, y, ridge=1e-3)
+            readout.fit(X, y)
 
 
 class TestCGReadoutPredictions:
@@ -266,11 +268,11 @@ class TestCGReadoutPredictions:
         """Test forward pass after fitting."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=20, out_features=5)
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3)
         X_train = torch.randn(100, 20)
         y_train = torch.randn(100, 5)
 
-        readout.fit(X_train, y_train, ridge=1e-3)
+        readout.fit(X_train, y_train)
 
         # Forward pass on new data
         X_test = torch.randn(10, 20)
@@ -282,11 +284,11 @@ class TestCGReadoutPredictions:
         """Test 3D forward pass after fitting."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=20, out_features=5)
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3)
         X_train = torch.randn(4, 25, 20)
         y_train = torch.randn(4, 25, 5)
 
-        readout.fit(X_train, y_train, ridge=1e-3)
+        readout.fit(X_train, y_train)
 
         # Forward pass on 3D data
         X_test = torch.randn(2, 10, 20)
@@ -339,11 +341,11 @@ class TestCGReadoutGPU:
         """Test fitting on GPU."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=20, out_features=5).cuda()
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3).cuda()
         X = torch.randn(100, 20).cuda()
         y = torch.randn(100, 5).cuda()
 
-        readout.fit(X, y, ridge=1e-3)
+        readout.fit(X, y)
 
         assert readout.is_fitted
         assert readout.weight.is_cuda
@@ -353,11 +355,11 @@ class TestCGReadoutGPU:
         """Test predictions on GPU after fitting."""
         torch.manual_seed(42)
 
-        readout = CGReadoutLayer(in_features=20, out_features=5).cuda()
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3).cuda()
         X_train = torch.randn(100, 20).cuda()
         y_train = torch.randn(100, 5).cuda()
 
-        readout.fit(X_train, y_train, ridge=1e-3)
+        readout.fit(X_train, y_train)
 
         X_test = torch.randn(10, 20).cuda()
         y_pred = readout(X_test)

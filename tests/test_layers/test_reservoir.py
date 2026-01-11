@@ -16,7 +16,7 @@ class TestReservoirLayerInstantiation:
         assert reservoir.reservoir_size == 100
         assert reservoir.feedback_size == 10
         assert reservoir.input_size is None
-        assert reservoir.spectral_radius == 0.9  # default
+        assert reservoir.spectral_radius is None  # default is None
         assert reservoir._initialized is True
         assert reservoir.weight_feedback.shape == (100, 10)
         assert reservoir.weight_hh.shape == (100, 100)
@@ -33,22 +33,18 @@ class TestReservoirLayerInstantiation:
         assert reservoir.weight_hh.shape == (100, 100)
 
     def test_custom_parameters(self) -> None:
-        """Test custom spectral radius, scaling, etc."""
+        """Test custom spectral radius, activation, leak rate, etc."""
         reservoir = ReservoirLayer(
             reservoir_size=50,
             feedback_size=5,
             input_size=3,
             spectral_radius=0.8,
-            feedback_scaling=2.0,
-            input_scaling=0.5,
             bias=False,
             activation="relu",
             leak_rate=0.5,
         )
 
         assert reservoir.spectral_radius == 0.8
-        assert reservoir.feedback_scaling == 2.0
-        assert reservoir.input_scaling == 0.5
         assert reservoir.leak_rate == 0.5
         assert reservoir.bias_h is None
 

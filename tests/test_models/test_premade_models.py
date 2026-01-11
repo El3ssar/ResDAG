@@ -11,7 +11,7 @@ class TestClassicESN:
 
     def test_basic_instantiation(self):
         """Test creating classic ESN with minimal parameters."""
-        model = classic_esn(reservoir_size=50, input_size=2, output_size=3)
+        model = classic_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         assert model is not None
         # Check that model has expected layers
@@ -21,24 +21,22 @@ class TestClassicESN:
 
     def test_forward_pass(self):
         """Test forward pass through classic ESN."""
-        model = classic_esn(reservoir_size=50, input_size=2, output_size=3)
+        model = classic_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         x = torch.randn(4, 20, 2)  # (batch, time, features)
         output = model(x)  # Direct call, no dict!
 
         assert output.shape == (4, 20, 3)
 
-    def test_with_reservoir_config(self):
-        """Test classic ESN with custom reservoir config."""
+    def test_with_reservoir_params(self):
+        """Test classic ESN with custom reservoir parameters."""
         model = classic_esn(
             reservoir_size=50,
-            input_size=2,
+            feedback_size=2,
             output_size=3,
-            reservoir_config={
-                "topology": "erdos_renyi",
-                "spectral_radius": 0.9,
-                "leak_rate": 0.3,
-            },
+            topology="erdos_renyi",
+            spectral_radius=0.9,
+            leak_rate=0.3,
         )
 
         x = torch.randn(4, 20, 2)
@@ -46,16 +44,30 @@ class TestClassicESN:
 
         assert output.shape == (4, 20, 3)
 
-    def test_with_readout_config(self):
-        """Test classic ESN with custom readout config."""
+    def test_with_tuple_topology(self):
+        """Test classic ESN with tuple topology spec."""
         model = classic_esn(
             reservoir_size=50,
-            input_size=2,
+            feedback_size=2,
             output_size=3,
-            readout_config={
-                "max_iter": 200,
-                "tol": 1e-6,
-            },
+            topology=("watts_strogatz", {"k": 4, "p": 0.1}),
+            spectral_radius=0.9,
+        )
+
+        x = torch.randn(4, 20, 2)
+        output = model(x)
+
+        assert output.shape == (4, 20, 3)
+
+    def test_with_readout_params(self):
+        """Test classic ESN with custom readout parameters."""
+        model = classic_esn(
+            reservoir_size=50,
+            feedback_size=2,
+            output_size=3,
+            readout_alpha=1e-4,
+            readout_bias=False,
+            readout_name="predictions",
         )
 
         x = torch.randn(4, 20, 2)
@@ -65,7 +77,7 @@ class TestClassicESN:
 
     def test_concatenation_dimension(self):
         """Test that input is concatenated with reservoir output."""
-        model = classic_esn(reservoir_size=50, input_size=2, output_size=3)
+        model = classic_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         # Check for Concatenate layer
         has_concat = any("Concatenate" in str(type(m)) for m in model.modules())
@@ -77,7 +89,7 @@ class TestOttESN:
 
     def test_basic_instantiation(self):
         """Test creating Ott ESN with minimal parameters."""
-        model = ott_esn(reservoir_size=50, input_size=2, output_size=3)
+        model = ott_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
@@ -86,23 +98,22 @@ class TestOttESN:
 
     def test_forward_pass(self):
         """Test forward pass through Ott ESN."""
-        model = ott_esn(reservoir_size=50, input_size=2, output_size=3)
+        model = ott_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         x = torch.randn(4, 20, 2)
         output = model(x)
 
         assert output.shape == (4, 20, 3)
 
-    def test_with_custom_config(self):
-        """Test Ott ESN with custom configuration."""
+    def test_with_custom_params(self):
+        """Test Ott ESN with custom parameters."""
         model = ott_esn(
             reservoir_size=50,
-            input_size=2,
+            feedback_size=2,
             output_size=3,
-            reservoir_config={
-                "spectral_radius": 0.95,
-                "leak_rate": 0.3,
-            },
+            spectral_radius=0.95,
+            leak_rate=0.3,
+            feedback_initializer="pseudo_diagonal",
         )
 
         x = torch.randn(4, 20, 2)
@@ -112,7 +123,7 @@ class TestOttESN:
 
     def test_state_augmentation(self):
         """Test that Ott ESN includes state augmentation layer."""
-        model = ott_esn(reservoir_size=50, input_size=2, output_size=3)
+        model = ott_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         # Check for SelectiveExponentiation layer
         has_augmentation = any("SelectiveExponentiation" in str(type(m)) for m in model.modules())
@@ -124,7 +135,7 @@ class TestHeadlessESN:
 
     def test_basic_instantiation(self):
         """Test creating headless ESN."""
-        model = headless_esn(reservoir_size=50, input_size=2)
+        model = headless_esn(reservoir_size=50, feedback_size=2)
 
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
@@ -132,7 +143,7 @@ class TestHeadlessESN:
 
     def test_forward_pass(self):
         """Test forward pass returns reservoir states."""
-        model = headless_esn(reservoir_size=50, input_size=2)
+        model = headless_esn(reservoir_size=50, feedback_size=2)
 
         x = torch.randn(4, 20, 2)
         output = model(x)
@@ -142,7 +153,7 @@ class TestHeadlessESN:
 
     def test_no_readout_layer(self):
         """Test that headless ESN has no readout layer."""
-        model = headless_esn(reservoir_size=50, input_size=2)
+        model = headless_esn(reservoir_size=50, feedback_size=2)
 
         # Check that no readout layer exists
         from torch_rc.layers.readouts import ReadoutLayer
@@ -150,15 +161,14 @@ class TestHeadlessESN:
         has_readout = any(isinstance(m, ReadoutLayer) for m in model.modules())
         assert not has_readout, "Headless ESN should not have readout layer"
 
-    def test_with_custom_config(self):
-        """Test headless ESN with custom config."""
+    def test_with_custom_params(self):
+        """Test headless ESN with custom parameters."""
         model = headless_esn(
             reservoir_size=50,
-            input_size=2,
-            reservoir_config={
-                "spectral_radius": 0.8,
-                "leak_rate": 0.2,
-            },
+            feedback_size=2,
+            spectral_radius=0.8,
+            leak_rate=0.2,
+            topology=("ring_chord", {"L": 1}),
         )
 
         x = torch.randn(4, 20, 2)
@@ -172,7 +182,7 @@ class TestLinearESN:
 
     def test_basic_instantiation(self):
         """Test creating linear ESN."""
-        model = linear_esn(reservoir_size=50, input_size=2)
+        model = linear_esn(reservoir_size=50, feedback_size=2)
 
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
@@ -180,7 +190,7 @@ class TestLinearESN:
 
     def test_forward_pass(self):
         """Test forward pass returns reservoir states."""
-        model = linear_esn(reservoir_size=50, input_size=2)
+        model = linear_esn(reservoir_size=50, feedback_size=2)
 
         x = torch.randn(4, 20, 2)
         output = model(x)
@@ -189,7 +199,7 @@ class TestLinearESN:
 
     def test_linear_activation_forced(self):
         """Test that linear ESN forces identity activation."""
-        model = linear_esn(reservoir_size=50, input_size=2)
+        model = linear_esn(reservoir_size=50, feedback_size=2)
 
         # Find reservoir layer and check activation
         from torch_rc.layers import ReservoirLayer
@@ -203,18 +213,16 @@ class TestLinearESN:
         assert reservoir is not None
         # Test that activation behaves like identity
         test_input = torch.randn(1, 10)
-        activated = reservoir.activation(test_input)
+        activated = reservoir.activation_fn(test_input)
         assert torch.allclose(activated, test_input), "Linear ESN should use identity activation"
 
-    def test_with_custom_config(self):
-        """Test that activation is forced even with custom config."""
+    def test_activation_forced_even_with_kwargs(self):
+        """Test that activation is forced even with extra kwargs."""
+        # Even if user tries to pass activation in kwargs, linear_esn forces identity
         model = linear_esn(
             reservoir_size=50,
-            input_size=2,
-            reservoir_config={
-                "activation": "tanh",  # This should be overridden
-                "spectral_radius": 0.8,
-            },
+            feedback_size=2,
+            spectral_radius=0.8,
         )
 
         # Verify activation is still identity
@@ -227,7 +235,7 @@ class TestLinearESN:
                 break
 
         test_input = torch.randn(1, 10)
-        activated = reservoir.activation(test_input)
+        activated = reservoir.activation_fn(test_input)
         assert torch.allclose(activated, test_input)
 
 

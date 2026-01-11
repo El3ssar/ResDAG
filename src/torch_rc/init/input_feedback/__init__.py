@@ -52,8 +52,8 @@ from .random_binary import RandomBinaryInitializer
 from .random_input import RandomInputInitializer
 from .registry import (
     get_input_feedback,
-    list_input_feedback_initializers,
     register_input_feedback,
+    show_input_initializers,
 )
 from .ring_window import RingWindowInputInitializer
 
@@ -72,5 +72,5 @@ __all__ = [
     # Registry functions
     "register_input_feedback",
     "get_input_feedback",
-    "list_input_feedback_initializers",
+    "show_input_initializers",
 ]

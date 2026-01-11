@@ -4,7 +4,8 @@ This module provides a registry of initializers for rectangular weight matrices
 used in reservoir input and feedback connections.
 """
 
-from typing import Any, Callable, Dict, Type
+import inspect
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from .base import InputFeedbackInitializer
 
@@ -101,12 +102,76 @@ def get_input_feedback(
     return init_class(**kwargs)
 
 
-def list_input_feedback_initializers() -> list[str]:
-    """List all registered input/feedback initializer names.
+def show_input_initializers(name: Optional[str] = None) -> Union[List[str], Dict[str, Any]]:
+    """Show available input/feedback initializers or details for a specific one.
+
+    Parameters
+    ----------
+    name : str, optional
+        Name of initializer to inspect. If None, returns list of all initializers.
 
     Returns
     -------
-    list of str
-        Names of all registered initializers
+    list of str or dict
+        If name is None: sorted list of registered initializer names.
+        If name is provided: dict with 'name', 'defaults', and 'parameters' keys.
+
+    Raises
+    ------
+    ValueError
+        If the specified initializer name is not registered.
+
+    Examples
+    --------
+    >>> show_input_initializers()
+    ['binary_balanced', 'chebyshev', 'chessboard', ...]
+
+    >>> show_input_initializers("chebyshev")
+    {
+        'name': 'chebyshev',
+        'defaults': {'input_scaling': 1.0},
+        'parameters': {
+            'input_scaling': {'type': 'float', 'default': 1.0},
+            ...
+        }
+    }
     """
-    return sorted(_INPUT_FEEDBACK_REGISTRY.keys())
+    if name is None:
+        return sorted(_INPUT_FEEDBACK_REGISTRY.keys())
+
+    if name not in _INPUT_FEEDBACK_REGISTRY:
+        available = ", ".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
+        raise ValueError(f"Unknown initializer '{name}'. Available: {available}")
+
+    init_class, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
+
+    # Extract __init__ signature (skip 'self')
+    sig = inspect.signature(init_class.__init__)
+    parameters = {}
+    for param_name, param in sig.parameters.items():
+        if param_name == "self":
+            continue
+
+        param_info: Dict[str, Any] = {}
+
+        # Get type annotation if available
+        if param.annotation != inspect.Parameter.empty:
+            param_info["type"] = getattr(param.annotation, "__name__", str(param.annotation))
+        else:
+            param_info["type"] = "Any"
+
+        # Get default value
+        if param.default != inspect.Parameter.empty:
+            param_info["default"] = param.default
+        elif param_name in default_kwargs:
+            param_info["default"] = default_kwargs[param_name]
+        else:
+            param_info["default"] = "<required>"
+
+        parameters[param_name] = param_info
+
+    return {
+        "name": name,
+        "defaults": default_kwargs,
+        "parameters": parameters,
+    }

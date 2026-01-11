@@ -45,14 +45,14 @@ Or programmatically:
 from .base import GraphTopology, TopologyInitializer
 from .registry import (
     get_topology,
-    list_topologies,
     register_graph_topology,
+    show_topologies,
 )
 
 __all__ = [
     "GraphTopology",
     "TopologyInitializer",
     "get_topology",
-    "list_topologies",
     "register_graph_topology",
+    "show_topologies",
 ]

@@ -8,7 +8,8 @@ The registry supports two families of initializers:
 2. Input/feedback initializers (rectangular matrices) - for input/feedback weights
 """
 
-from typing import Any, Callable, Dict
+import inspect
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from .base import GraphTopology
 
@@ -102,12 +103,74 @@ def get_topology(
     return GraphTopology(graph_func, kwargs)
 
 
-def list_topologies() -> list[str]:
-    """List all registered topology names.
+def show_topologies(name: Optional[str] = None) -> Union[List[str], Dict[str, Any]]:
+    """Show available topologies or details for a specific topology.
+
+    Parameters
+    ----------
+    name : str, optional
+        Name of topology to inspect. If None, returns list of all topologies.
 
     Returns
     -------
-    list of str
-        Names of all registered topologies
+    list of str or dict
+        If name is None: sorted list of registered topology names.
+        If name is provided: dict with 'name', 'defaults', and 'parameters' keys.
+
+    Raises
+    ------
+    ValueError
+        If the specified topology name is not registered.
+
+    Examples
+    --------
+    >>> show_topologies()
+    ['barabasi_albert', 'chain_of_neurons', 'dendrocycle', ...]
+
+    >>> show_topologies("erdos_renyi")
+    {
+        'name': 'erdos_renyi',
+        'defaults': {'p': 0.1, 'directed': False, 'seed': None},
+        'parameters': {
+            'n': {'type': 'int', 'default': <required>},
+            'p': {'type': 'float', 'default': 0.1},
+            ...
+        }
+    }
     """
-    return sorted(_TOPOLOGY_REGISTRY.keys())
+    if name is None:
+        return sorted(_TOPOLOGY_REGISTRY.keys())
+
+    if name not in _TOPOLOGY_REGISTRY:
+        available = ", ".join(sorted(_TOPOLOGY_REGISTRY.keys()))
+        raise ValueError(f"Unknown topology '{name}'. Available: {available}")
+
+    graph_func, default_kwargs = _TOPOLOGY_REGISTRY[name]
+
+    # Extract function signature
+    sig = inspect.signature(graph_func)
+    parameters = {}
+    for param_name, param in sig.parameters.items():
+        param_info: Dict[str, Any] = {}
+
+        # Get type annotation if available
+        if param.annotation != inspect.Parameter.empty:
+            param_info["type"] = getattr(param.annotation, "__name__", str(param.annotation))
+        else:
+            param_info["type"] = "Any"
+
+        # Get default value
+        if param.default != inspect.Parameter.empty:
+            param_info["default"] = param.default
+        elif param_name in default_kwargs:
+            param_info["default"] = default_kwargs[param_name]
+        else:
+            param_info["default"] = "<required>"
+
+        parameters[param_name] = param_info
+
+    return {
+        "name": name,
+        "defaults": default_kwargs,
+        "parameters": parameters,
+    }

@@ -13,11 +13,12 @@ from .custom import (
     SelectiveDropout,
     SelectiveExponentiation,
 )
-from .readouts import CGReadoutLayer
+from .readouts import CGReadoutLayer, ReadoutLayer
 from .reservoir import ReservoirLayer
 
 __all__ = [
     "ReservoirLayer",
+    "ReadoutLayer",
     "CGReadoutLayer",
     "Concatenate",
     "FeaturePartitioner",

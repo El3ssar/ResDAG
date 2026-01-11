@@ -1,9 +1,8 @@
 """ESN Trainer for algebraic readout fitting.
 
 This module provides the ESNTrainer class that trains ESN models by fitting
-each ReadoutLayer algebraically in topological order.
+each ReadoutLayer algebraically in topological order using a single forward pass.
 """
-
 
 import torch
 
@@ -14,16 +13,12 @@ from ..layers.readouts.base import ReadoutLayer
 class ESNTrainer:
     """Trainer for ESN models with algebraic readout fitting.
 
-    Traverses the model DAG in topological order, captures activations
-    at each readout's parent layer, and calls readout.fit() with the
-    user-provided targets.
+    Traverses the model DAG in topological order and fits each ReadoutLayer
+    using pre-hooks during a single forward pass. This is efficient for models
+    with multiple stacked readouts.
 
     Each ReadoutLayer handles its own fitting hyperparameters (e.g., alpha
     for ridge regression is set during layer construction).
-
-    For stacked architectures (readout1 -> reservoir2 -> readout2), training
-    requires a fresh warmup + forward pass per readout to ensure each layer
-    sees correct activations from previously-fitted layers.
 
     Example:
         >>> from torch_rc.training import ESNTrainer
@@ -49,14 +44,11 @@ class ESNTrainer:
         train_inputs: tuple[torch.Tensor, ...],
         targets: dict[str, torch.Tensor],
     ) -> None:
-        """Train all readout layers in topological order.
+        """Train all readout layers in a single forward pass.
 
-        For each readout:
-        1. Reset reservoir states
-        2. Run warmup to synchronize reservoir states
-        3. Run forward on training data
-        4. Capture parent layer output
-        5. Call readout.fit(captured_input, target)
+        Uses pre-hooks to fit each readout layer just before its forward
+        method executes. This ensures downstream layers receive outputs
+        from already-fitted readouts.
 
         Args:
             warmup_inputs: Warmup sequences (feedback, driver1, ...).
@@ -90,54 +82,41 @@ class ESNTrainer:
         # Get readouts in topological order
         readouts = self._get_readouts_in_order()
 
-        for name, readout, node in readouts:
-            # Reset states for clean slate
-            self.model.reset_reservoirs()
-
-            # Warmup to sync reservoir states
-            self.model.warmup(*warmup_inputs)
-
-            # Find parent layer to capture its output
-            parent_name = self._get_parent_layer_name(node)
-
-            if parent_name is None:
+        # Validate target shapes
+        for name, _, _ in readouts:
+            target = targets[name]
+            if target.shape[1] != train_steps:
                 raise ValueError(
-                    f"Could not find parent layer for readout '{name}'. "
-                    f"Readout must have a parent layer."
+                    f"Target for '{name}' has {target.shape[1]} timesteps, "
+                    f"but train_inputs has {train_steps} timesteps. Must match."
                 )
 
-            # Capture parent output during forward pass
-            captured: dict[str, torch.Tensor] = {}
+        # Single warmup to sync reservoir states
+        self.model.reset_reservoirs()
+        self.model.warmup(*warmup_inputs)
 
-            def make_hook(storage: dict[str, torch.Tensor]):
-                def hook(module, input, output):
-                    storage["output"] = output
+        # Register pre-hooks that fit each readout before its forward
+        hooks = []
+        for name, readout, _ in readouts:
+            target = targets[name]
+
+            def make_fit_hook(layer: ReadoutLayer, tgt: torch.Tensor):
+                def hook(module, args):
+                    layer.fit(args[0], tgt)
 
                 return hook
 
-            parent_layer = getattr(self.model, parent_name)
-            handle = parent_layer.register_forward_hook(make_hook(captured))
+            handle = readout.register_forward_pre_hook(make_fit_hook(readout, target))
+            hooks.append(handle)
 
-            try:
-                # Forward pass (no grad needed for reservoir computation)
-                with torch.no_grad():
-                    self.model(*train_inputs)
-
-                # Get target for this readout
-                target = targets[name]
-
-                # Validate target shape
-                if target.shape[1] != train_steps:
-                    raise ValueError(
-                        f"Target for '{name}' has {target.shape[1]} timesteps, "
-                        f"but train_inputs has {train_steps} timesteps. Must match."
-                    )
-
-                # Fit this readout
-                readout.fit(captured["output"], target)
-
-            finally:
-                handle.remove()
+        try:
+            # Single forward pass - hooks fit each readout in topological order
+            with torch.no_grad():
+                self.model(*train_inputs)
+        finally:
+            # Always remove hooks
+            for h in hooks:
+                h.remove()
 
     def _get_readouts_in_order(self) -> list[tuple[str, ReadoutLayer, object]]:
         """Return [(resolved_name, layer, node), ...] in topological order.
@@ -159,21 +138,6 @@ class ESNTrainer:
                 resolved_name = layer.name if layer.name else module_name
                 readouts.append((resolved_name, layer, node))
         return readouts
-
-    def _get_parent_layer_name(self, node) -> str | None:
-        """Get module name of parent node.
-
-        Args:
-            node: SymbolicTensor node
-
-        Returns:
-            Module name of parent, or None if parent is an Input
-        """
-        if not node.parents:
-            return None
-
-        parent_node = node.parents[0]  # Readout typically has single parent
-        return self.model._node_to_layer_name.get(parent_node)
 
     def _validate_targets(self, targets: dict[str, torch.Tensor]) -> None:
         """Raise error if any readout is missing a target.

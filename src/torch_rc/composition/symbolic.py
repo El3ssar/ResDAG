@@ -460,6 +460,7 @@ class ESNModel(ps.SymbolicModel):
                 current_feedback = warmup_outputs[:, -1:, :]
 
         # Pre-allocate forecast output storage based on model.output_shape
+        # Note: horizon outputs = warmup's last prediction + (horizon-1) autoregressive steps
         if multi_output:
             forecast_outputs = tuple(
                 torch.empty(batch_size, horizon, shape[-1], dtype=dtype, device=device)
@@ -470,8 +471,15 @@ class ESNModel(ps.SymbolicModel):
                 batch_size, horizon, output_shape[-1], dtype=dtype, device=device
             )
 
-        # Phase 2: Autoregressive forecast
-        for t in range(horizon):
+        # Store warmup's last output as first forecast step (prediction for val[0])
+        if multi_output:
+            for i, out in enumerate(warmup_outputs):
+                forecast_outputs[i][:, 0, :] = out[:, -1, :]
+        else:
+            forecast_outputs[:, 0, :] = warmup_outputs[:, -1, :]
+
+        # Phase 2: Autoregressive forecast for remaining (horizon - 1) steps
+        for t in range(1, horizon):
             if has_drivers:
                 driver_inputs_t = tuple(driver[:, t : t + 1, :] for driver in forecast_drivers)
                 step_inputs = (current_feedback,) + driver_inputs_t

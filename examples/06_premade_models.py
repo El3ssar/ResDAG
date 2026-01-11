@@ -21,7 +21,7 @@ def example_classic_esn():
     print("=" * 60)
 
     # Simple usage with defaults
-    model = classic_esn(reservoir_size=100, input_size=1, output_size=1)
+    model = classic_esn(reservoir_size=100, feedback_size=1, output_size=1)
 
     # Generate some dummy data
     x = torch.randn(4, 50, 1)  # (batch, time, features)
@@ -31,18 +31,19 @@ def example_classic_esn():
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {output.shape}")
 
-    # With custom configuration
+    # With custom configuration using flat params
     model_custom = classic_esn(
         reservoir_size=100,
-        input_size=1,
+        feedback_size=1,
         output_size=1,
-        reservoir_config={
-            "topology": "erdos_renyi",
-            "spectral_radius": 0.9,
-            "leak_rate": 0.3,
-            "input_scaling": 0.5,
-        },
-        readout_config={"max_iter": 200, "tol": 1e-6},
+        # Topology as tuple: (name, params)
+        topology=("erdos_renyi", {"p": 0.15}),
+        spectral_radius=0.9,
+        leak_rate=0.3,
+        # Initializer as string (uses defaults)
+        feedback_initializer="pseudo_diagonal",
+        # Readout params
+        readout_alpha=1e-5,
     )
 
     output_custom = model_custom(x)
@@ -60,7 +61,7 @@ def example_ott_esn():
     print("=" * 60)
 
     # Ott's ESN squares even-indexed reservoir units
-    model = ott_esn(reservoir_size=200, input_size=2, output_size=3)
+    model = ott_esn(reservoir_size=200, feedback_size=2, output_size=3)
 
     x = torch.randn(4, 50, 2)
     output = model(x)
@@ -82,7 +83,7 @@ def example_headless_esn():
     print("=" * 60)
 
     # No readout layer - useful for analyzing reservoir dynamics
-    model = headless_esn(reservoir_size=100, input_size=2)
+    model = headless_esn(reservoir_size=100, feedback_size=2)
 
     x = torch.randn(4, 50, 2)
     states = model(x)  # Returns reservoir states directly
@@ -105,8 +106,8 @@ def example_linear_esn():
     print("=" * 60)
 
     # Linear activation for comparison with nonlinear reservoirs
-    model_linear = linear_esn(reservoir_size=100, input_size=1)
-    model_nonlinear = headless_esn(reservoir_size=100, input_size=1)
+    model_linear = linear_esn(reservoir_size=100, feedback_size=1)
+    model_nonlinear = headless_esn(reservoir_size=100, feedback_size=1)
 
     x = torch.randn(4, 50, 1)
 
@@ -165,20 +166,51 @@ def example_model_comparison():
     print(f"  Ott ESN: {ott_params:,}")
 
 
+def example_flexible_specs():
+    """Example: Showing the three ways to specify topology/initializers."""
+    print("\n" + "=" * 60)
+    print("Example 6: Flexible Spec Formats")
+    print("=" * 60)
+
+    # Method 1: String (uses registry defaults)
+    model1 = classic_esn(100, 1, 1, topology="erdos_renyi")
+    print("1. String spec: topology='erdos_renyi'")
+
+    # Method 2: Tuple (name + custom params)
+    model2 = classic_esn(100, 1, 1, topology=("watts_strogatz", {"k": 6, "p": 0.1}))
+    print("2. Tuple spec: topology=('watts_strogatz', {'k': 6, 'p': 0.1})")
+
+    # Method 3: Pre-configured object
+    from torch_rc.init.topology import get_topology
+
+    topo = get_topology("ring_chord", L=2, w=0.5)
+    model3 = classic_esn(100, 1, 1, topology=topo)
+    print("3. Object spec: topology=get_topology('ring_chord', L=2, w=0.5)")
+
+    # Same for initializers
+    from torch_rc.init.input_feedback import get_input_feedback
+
+    model4 = classic_esn(100, 1, 1, feedback_initializer="pseudo_diagonal")
+    model5 = classic_esn(100, 1, 1, feedback_initializer=("chebyshev", {"p": 0.5}))
+    model6 = classic_esn(100, 1, 1, feedback_initializer=get_input_feedback("random_binary"))
+
+    print("\nAll models created successfully!")
+
+
 def example_gpu_usage():
     """Example: Using premade models on GPU."""
     if not torch.cuda.is_available():
         print("\n" + "=" * 60)
-        print("Example 6: GPU Usage (CUDA not available)")
+        print("Example 7: GPU Usage (CUDA not available)")
         print("=" * 60)
         return
 
     print("\n" + "=" * 60)
-    print("Example 6: GPU Usage")
+    print("Example 7: GPU Usage")
     print("=" * 60)
 
     # Create model and move to GPU
-    model = classic_esn(reservoir_size=100, input_size=1, output_size=1).cuda()
+    model = classic_esn(reservoir_size=100, feedback_size=1, output_size=1).cuda()
 
     # Create GPU tensors
     x = torch.randn(4, 50, 1).cuda()
@@ -201,6 +233,7 @@ if __name__ == "__main__":
     example_headless_esn()
     example_linear_esn()
     example_model_comparison()
+    example_flexible_specs()
     example_gpu_usage()
 
     print("\n" + "=" * 60)

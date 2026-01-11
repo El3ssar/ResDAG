@@ -21,7 +21,7 @@ def example_basic_save_load():
     print("=" * 60)
 
     # Create model
-    model = classic_esn(reservoir_size=100, input_size=1, output_size=1)
+    model = classic_esn(reservoir_size=100, feedback_size=1, output_size=1)
 
     print(f"Created model with {sum(p.numel() for p in model.parameters())} parameters")
 
@@ -33,7 +33,7 @@ def example_basic_save_load():
         print(f"Model saved to: {save_path}")
 
         # Create new model and load
-        new_model = classic_esn(reservoir_size=100, input_size=1, output_size=1)
+        new_model = classic_esn(reservoir_size=100, feedback_size=1, output_size=1)
         new_model.load(save_path)
         print("Model loaded successfully!")
 
@@ -54,10 +54,9 @@ def example_training_workflow():
     # Create model with trainable readout
     model = classic_esn(
         reservoir_size=100,
-        input_size=1,
+        feedback_size=1,
         output_size=1,
-        reservoir_config={"trainable": False},  # Frozen reservoir
-        readout_config={"trainable": True},  # Trainable readout
+        trainable=False,  # Frozen reservoir
     )
 
     # Generate synthetic training data
@@ -90,10 +89,9 @@ def example_training_workflow():
         # Load for inference
         inference_model = classic_esn(
             reservoir_size=100,
-            input_size=1,
+            feedback_size=1,
             output_size=1,
-            reservoir_config={"trainable": False},
-            readout_config={"trainable": True},
+            trainable=False,
         )
         inference_model.load(save_path)
         inference_model.eval()
@@ -113,7 +111,7 @@ def example_save_with_reservoir_states():
     print("Example 3: Saving Reservoir States")
     print("=" * 60)
 
-    model = headless_esn(reservoir_size=100, input_size=2)
+    model = headless_esn(reservoir_size=100, feedback_size=2)
 
     # Run forward to initialize states
     x = torch.randn(4, 50, 2)
@@ -186,9 +184,7 @@ def example_checkpoint_system():
     print("Example 5: Checkpoint System")
     print("=" * 60)
 
-    model = classic_esn(
-        100, 1, 1, reservoir_config={"trainable": False}, readout_config={"trainable": True}
-    )
+    model = classic_esn(100, 1, 1, trainable=False)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         checkpoint_dir = Path(tmpdir) / "checkpoints"

@@ -114,7 +114,7 @@ print("✓ Visualization generated (complex branching model)")
 print("\n\n5. Premade Models (Classic ESN)")
 print("-" * 70)
 
-model = classic_esn(reservoir_size=100, input_size=1, output_size=1)
+model = classic_esn(reservoir_size=100, feedback_size=1, output_size=1)
 
 print("\nText Summary:")
 model.summary()
@@ -129,7 +129,7 @@ print("✓ Visualization generated")
 print("\n\n6. Visualization Options")
 print("-" * 70)
 
-model = ott_esn(reservoir_size=100, input_size=1, output_size=1)
+model = ott_esn(reservoir_size=100, feedback_size=1, output_size=1)
 
 print("\nOption 1: Default view (top-to-bottom)")
 model.plot_model()

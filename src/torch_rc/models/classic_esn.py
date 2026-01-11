@@ -1,10 +1,11 @@
 """Classic ESN architecture with input concatenation."""
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pytorch_symbolic as ps
 
 from ..composition import ESNModel
+from ..init.utils import InitializerSpec, TopologySpec, resolve_initializer, resolve_topology
 from ..layers import ReservoirLayer
 from ..layers.custom import Concatenate
 from ..layers.readouts import CGReadoutLayer
@@ -12,11 +13,22 @@ from ..layers.readouts import CGReadoutLayer
 
 def classic_esn(
     reservoir_size: int,
-    input_size: int,
+    feedback_size: int,
     output_size: int,
-    reservoir_config: Optional[Dict[str, Any]] = None,
-    readout_config: Optional[Dict[str, Any]] = None,
-    name: str = "classic_esn",
+    # Reservoir params
+    topology: TopologySpec = None,
+    spectral_radius: float = 0.9,
+    leak_rate: float = 1.0,
+    feedback_initializer: InitializerSpec = None,
+    activation: str = "tanh",
+    bias: bool = True,
+    trainable: bool = False,
+    # Readout params
+    readout_alpha: float = 1e-6,
+    readout_bias: bool = True,
+    readout_name: str = "output",
+    # Extra reservoir kwargs
+    **reservoir_kwargs: Any,
 ) -> ESNModel:
     """Build a classic Echo State Network (ESN) model.
 
@@ -29,67 +41,100 @@ def classic_esn(
     The readout sees both the raw input and the reservoir's nonlinear
     transformation, which can improve performance on many tasks.
 
-    Args:
-        reservoir_size: Number of units in the reservoir
-        input_size: Number of input features
-        output_size: Number of output features
-        reservoir_config: Optional dict with ReservoirLayer parameters.
-            Can include: topology, spectral_radius, leak_rate, input_scaling,
-            feedback_scaling, bias, trainable, etc.
-            Note: feedback_size and input_size are set automatically.
-        readout_config: Optional dict with CGReadoutLayer parameters.
-            Can include: max_iter, tol, bias, trainable, etc.
-            Note: in_features is set automatically to reservoir_size + input_size.
-        name: Name for the model (currently unused with pytorch_symbolic)
+    Parameters
+    ----------
+    reservoir_size : int
+        Number of units in the reservoir.
+    input_size : int
+        Number of input features.
+    output_size : int
+        Number of output features.
+    topology : TopologySpec, optional
+        Topology for recurrent weights. Accepts:
+        - str: Registry name (e.g., "erdos_renyi")
+        - tuple: (name, params) like ("watts_strogatz", {"k": 6, "p": 0.1})
+        - GraphTopology: Pre-configured object
+    spectral_radius : float, default=0.9
+        Desired spectral radius for recurrent weights.
+    leak_rate : float, default=1.0
+        Leaky integration rate (1.0 = no leak).
+    feedback_initializer : InitializerSpec, optional
+        Initializer for feedback weights. Accepts:
+        - str: Registry name (e.g., "pseudo_diagonal")
+        - tuple: (name, params) like ("chebyshev", {"p": 0.5})
+        - InputFeedbackInitializer: Pre-configured object
+    activation : str, default="tanh"
+        Activation function ("tanh", "relu", "sigmoid", "identity").
+    bias : bool, default=True
+        Whether to use bias in the reservoir.
+    trainable : bool, default=False
+        Whether reservoir weights are trainable.
+    readout_alpha : float, default=1e-6
+        Ridge regression regularization for readout.
+    readout_bias : bool, default=True
+        Whether to use bias in the readout.
+    readout_name : str, default="output"
+        Name for the readout layer (used in training targets).
+    **reservoir_kwargs
+        Additional keyword arguments passed to ReservoirLayer.
 
-    Returns:
-        ESNModel ready for training and inference
+    Returns
+    -------
+    ESNModel
+        Configured ESN model ready for training and inference.
 
-    Example:
-        >>> from torch_rc.models import classic_esn
-        >>> import torch
-        >>>
-        >>> # Simple usage with defaults
-        >>> model = classic_esn(100, 1, 1)
-        >>>
-        >>> # With custom configuration
-        >>> model = classic_esn(
-        ...     reservoir_size=100,
-        ...     input_size=1,
-        ...     output_size=1,
-        ...     reservoir_config={
-        ...         'topology': 'erdos_renyi',
-        ...         'spectral_radius': 0.9,
-        ...         'leak_rate': 0.1,
-        ...         'input_scaling': 0.5,
-        ...     },
-        ...     readout_config={
-        ...         'max_iter': 200,
-        ...         'tol': 1e-6,
-        ...     }
-        ... )
-        >>>
-        >>> # Forward pass (much simpler now!)
-        >>> x = torch.randn(4, 50, 1)  # (batch, time, features)
-        >>> y = model(x)  # Direct call, no dict needed!
+    Examples
+    --------
+    >>> from torch_rc.models import classic_esn
+    >>> import torch
+    >>>
+    >>> # Simple usage with defaults
+    >>> model = classic_esn(100, 1, 1)
+    >>>
+    >>> # With custom topology and initializer
+    >>> model = classic_esn(
+    ...     reservoir_size=400,
+    ...     input_size=1,
+    ...     output_size=1,
+    ...     topology=("watts_strogatz", {"k": 6, "p": 0.1}),
+    ...     feedback_initializer="pseudo_diagonal",
+    ...     spectral_radius=0.9,
+    ...     leak_rate=0.5,
+    ... )
+    >>>
+    >>> # Forward pass
+    >>> x = torch.randn(4, 50, 1)  # (batch, time, features)
+    >>> y = model(x)
     """
-    # Prepare configs with defaults
-    res_config = reservoir_config or {}
-    read_config = readout_config or {}
+    # Resolve topology and initializer specs
+    resolved_topology = resolve_topology(topology)
+    resolved_feedback_init = resolve_initializer(feedback_initializer)
 
-    # Architecture-specific requirements
-    res_config["feedback_size"] = input_size
-    res_config["input_size"] = 0  # No driving input in classic ESN
-    res_config["reservoir_size"] = res_config.get("reservoir_size", reservoir_size)
+    # Build model with pytorch_symbolic
+    inp = ps.Input((100, feedback_size))  # Use typical seq_len for tracing
 
-    # Readout sees concatenated input + reservoir
-    read_config["in_features"] = reservoir_size + input_size
-    read_config["out_features"] = output_size
+    reservoir = ReservoirLayer(
+        reservoir_size=reservoir_size,
+        feedback_size=feedback_size,
+        input_size=0,  # No driving input in classic ESN
+        topology=resolved_topology,
+        spectral_radius=spectral_radius,
+        leak_rate=leak_rate,
+        feedback_initializer=resolved_feedback_init,
+        activation=activation,
+        bias=bias,
+        trainable=trainable,
+        **reservoir_kwargs,
+    )(inp)
 
-    # Build model with pytorch_symbolic (much simpler!)
-    inp = ps.Input((100, input_size))  # Use typical seq_len for tracing
-    reservoir = ReservoirLayer(**res_config)(inp)
     concat = Concatenate()(inp, reservoir)
-    readout = CGReadoutLayer(**read_config)(concat)
+
+    readout = CGReadoutLayer(
+        in_features=reservoir_size + feedback_size,
+        out_features=output_size,
+        bias=readout_bias,
+        alpha=readout_alpha,
+        name=readout_name,
+    )(concat)
 
     return ESNModel(inp, readout)

@@ -1,4 +1,4 @@
-from typing import Iterable, Optional, Union
+from typing import Iterable
 
 import numpy as np
 from networkx import DiGraph
@@ -26,10 +26,10 @@ def dendrocycle_with_chords_graph(
     core_weight: float = 1.0,
     dendritic_weight: float = 1.0,
     quiescent_weight: float = 1.0,
-    L: Optional[Union[int, Iterable[int]]] = None,
+    L: int | Iterable[int] | None = None,
     w: float = 0.5,
     alpha: float = 1.0,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> DiGraph:
     """
     Dendrocycle + optional small-world chords on the core ring.

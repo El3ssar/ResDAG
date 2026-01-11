@@ -1,5 +1,3 @@
-from typing import Optional, Union
-
 import numpy as np
 from networkx import DiGraph, Graph
 
@@ -23,8 +21,8 @@ def kleinberg_small_world_graph(
     directed: bool = False,
     weighted: bool = False,
     beta: float = 2,
-    seed: Optional[Union[int, np.random.Generator]] = None,
-) -> Union[DiGraph, Graph]:
+    seed: int | np.random.Generator | None = None,
+) -> DiGraph | Graph:
     """
     Generates a 2D Kleinberg small-world graph on an ``n x n`` toroidal grid.
 

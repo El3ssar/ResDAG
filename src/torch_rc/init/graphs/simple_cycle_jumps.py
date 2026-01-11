@@ -1,5 +1,3 @@
-from typing import Optional
-
 from networkx import DiGraph
 
 from torch_rc.init.topology.registry import register_graph_topology
@@ -16,7 +14,7 @@ def simple_cycle_jumps_graph(
     jump_length: int,
     r_c: float = 1.0,
     r_l: float = 0.5,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> DiGraph:
     """
     Generate a directed cycle with bidirectional jumps.

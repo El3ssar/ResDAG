@@ -1,5 +1,3 @@
-from typing import Optional, Union
-
 import numpy as np
 from networkx import DiGraph, Graph
 
@@ -22,8 +20,8 @@ def connected_erdos_renyi_graph(
     p: float,
     directed: bool = True,
     self_loops: bool = True,
-    seed: Optional[Union[int, np.random.Generator]] = None,
-) -> Union[DiGraph, Graph]:
+    seed: int | np.random.Generator | None = None,
+) -> DiGraph | Graph:
     """
     Generates a **connected** Erdos-Renyi graph.
 

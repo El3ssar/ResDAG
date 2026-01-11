@@ -1,5 +1,3 @@
-from typing import Optional, Union
-
 import numpy as np
 from networkx import DiGraph, Graph
 
@@ -17,8 +15,8 @@ def complete_graph(
     n: int,
     self_loops: bool = False,
     random_weights: bool = True,
-    seed: Optional[Union[int, np.random.Generator]] = None,
-) -> Union[DiGraph, Graph]:
+    seed: int | np.random.Generator | None = None,
+) -> DiGraph | Graph:
     """
     Generates a complete (undirected) graph of n nodes.
 

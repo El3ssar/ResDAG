@@ -1,5 +1,3 @@
-from typing import Optional, Union
-
 import numpy as np
 from networkx import DiGraph, Graph
 
@@ -21,8 +19,8 @@ def newman_watts_strogatz_graph(
     p: float,
     directed: bool = False,
     self_loops: bool = False,
-    seed: Optional[Union[int, np.random.Generator]] = None,
-) -> Union[DiGraph, Graph]:
+    seed: int | np.random.Generator | None = None,
+) -> DiGraph | Graph:
     """
     Generates a Newman-Watts-Strogatz small-world graph.
 

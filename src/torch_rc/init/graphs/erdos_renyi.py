@@ -1,7 +1,3 @@
-from __future__ import annotations
-
-from typing import Optional, Union
-
 import numpy as np
 from networkx import DiGraph, Graph
 
@@ -21,8 +17,8 @@ def erdos_renyi_graph(
     p: float,
     directed: bool = True,
     self_loops: bool = True,
-    seed: Optional[Union[int, np.random.Generator]] = None,
-) -> Union[DiGraph, Graph]:
+    seed: int | np.random.Generator | None = None,
+) -> DiGraph | Graph:
     """
     Generates an Erdos-Renyi (G(n, p)) graph.
 

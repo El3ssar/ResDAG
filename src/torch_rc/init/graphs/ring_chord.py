@@ -1,4 +1,4 @@
-from typing import Iterable, Union
+from typing import Iterable
 
 from networkx import DiGraph
 
@@ -13,7 +13,7 @@ from torch_rc.init.topology.registry import register_graph_topology
 )
 def ring_chord_graph(
     n: int,
-    L: Union[int, Iterable[int]] = 1,
+    L: int | Iterable[int] = 1,
     w: float = 0.5,
     alpha: float = 1.0,
 ) -> DiGraph:

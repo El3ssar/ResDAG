@@ -7,15 +7,13 @@ All load functions return tensors with shape (B, T, D) where:
 - D = feature dimension
 """
 
-import os
 from pathlib import Path
-from typing import List, Union
 
 import numpy as np
 import torch
 
 # Type alias for path-like objects
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
@@ -186,8 +184,7 @@ def load_file(path: PathLike, **kwargs) -> torch.Tensor:
 
     if suffix not in loaders:
         raise ValueError(
-            f"Unsupported file extension '{suffix}' for '{path}'. "
-            f"Supported: {list(loaders.keys())}"
+            f"Unsupported file extension '{suffix}' for '{path}'. Supported: {list(loaders.keys())}"
         )
 
     loader = loaders[suffix]
@@ -280,7 +277,7 @@ def save_nc(data: torch.Tensor, path: PathLike) -> None:
     xr.DataArray(arr).to_netcdf(path)
 
 
-def list_files(directory: PathLike, extensions: List[str] | None = None) -> List[Path]:
+def list_files(directory: PathLike, extensions: list[str] | None = None) -> list[Path]:
     """List files in a directory, optionally filtering by extension.
 
     Parameters
@@ -293,7 +290,7 @@ def list_files(directory: PathLike, extensions: List[str] | None = None) -> List
 
     Returns
     -------
-    list of Path
+    list[Path]
         List of file paths (excluding directories).
     """
     directory = Path(directory)

@@ -7,21 +7,25 @@ Provides functions for splitting time series data into:
 - Validation data
 """
 
-from typing import Dict, List, Literal, Tuple, Union
+from typing import Literal
 
 import torch
 
 # Type aliases
 NormMethod = Literal["minmax", "standard", "noncentered", "meanpreserving"]
-ESNDataSplits = Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+ESNDataSplits = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 def normalize_data(
     data: torch.Tensor,
     method: NormMethod = "minmax",
-    stats: Dict[str, torch.Tensor] | None = None,
-) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    """Normalize time series data.
+    stats: dict[str, torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Normalize time series data globally.
+
+    Computes statistics across all batches and timesteps, applying the same
+    normalization to the entire dataset. This is the correct approach when
+    batches contain trajectories from the same dynamical system.
 
     Parameters
     ----------
@@ -35,7 +39,7 @@ def normalize_data(
         - "meanpreserving": Scale deviations to [-1, 1], then restore mean
     stats : dict, optional
         Pre-computed statistics for normalization. If provided, these are used
-        instead of computing from data. Keys depend on method.
+        instead of computing from data.
 
     Returns
     -------
@@ -54,64 +58,57 @@ def normalize_data(
     if stats is None:
         stats = _compute_stats(data, method)
 
-    if method == "minmax":
-        # Scale to [-1, 1]
-        data_min, data_range = stats["min"], stats["range"]
-        normalized = 2 * (data - data_min) / data_range - 1
-
-    elif method == "standard":
-        # Zero mean, unit variance
-        mean, std = stats["mean"], stats["std"]
-        normalized = (data - mean) / std
-
-    elif method == "noncentered":
-        # Scale by max absolute value
-        scale = stats["scale"]
-        normalized = data / scale
-
-    elif method == "meanpreserving":
-        # Scale deviations to [-1, 1], restore mean
-        mean, maxdev = stats["mean"], stats["maxdev"]
-        normalized = (data - mean) / maxdev + mean
-
-    else:
-        raise ValueError(
-            f"Unknown normalization method: '{method}'. "
-            "Supported: 'minmax', 'standard', 'noncentered', 'meanpreserving'"
-        )
-
+    normalized = _apply_norm(data, method, stats)
     return normalized, stats
 
 
-def _compute_stats(data: torch.Tensor, method: NormMethod) -> Dict[str, torch.Tensor]:
-    """Compute normalization statistics from data."""
-    # Compute along time axis, keep batch and feature dims
+def _compute_stats(data: torch.Tensor, method: NormMethod) -> dict[str, torch.Tensor]:
+    """Compute global normalization statistics from data."""
     if method == "minmax":
-        data_min = data.min(dim=1, keepdim=True).values
-        data_max = data.max(dim=1, keepdim=True).values
+        data_min = data.min()
+        data_max = data.max()
         data_range = data_max - data_min
-        # Prevent division by zero
-        data_range = torch.where(data_range == 0, torch.ones_like(data_range), data_range)
+        if data_range == 0:
+            data_range = torch.ones_like(data_range)
         return {"min": data_min, "range": data_range}
 
     elif method == "standard":
-        mean = data.mean(dim=1, keepdim=True)
-        std = data.std(dim=1, keepdim=True)
-        std = torch.where(std == 0, torch.ones_like(std), std)
+        mean = data.mean()
+        std = data.std()
+        if std == 0:
+            std = torch.ones_like(std)
         return {"mean": mean, "std": std}
 
     elif method == "noncentered":
-        scale = data.abs().max(dim=1, keepdim=True).values
-        scale = torch.where(scale == 0, torch.ones_like(scale), scale)
+        scale = data.abs().max()
+        if scale == 0:
+            scale = torch.ones_like(scale)
         return {"scale": scale}
 
     elif method == "meanpreserving":
-        mean = data.mean(dim=1, keepdim=True)
+        mean = data.mean()
         centered = data - mean
-        maxdev = centered.abs().max(dim=1, keepdim=True).values
-        maxdev = torch.where(maxdev == 0, torch.ones_like(maxdev), maxdev)
+        maxdev = centered.abs().max()
+        if maxdev == 0:
+            maxdev = torch.ones_like(maxdev)
         return {"mean": mean, "maxdev": maxdev}
 
+    else:
+        raise ValueError(f"Unknown normalization method: '{method}'")
+
+
+def _apply_norm(
+    data: torch.Tensor, method: NormMethod, stats: dict[str, torch.Tensor]
+) -> torch.Tensor:
+    """Apply normalization statistics to data."""
+    if method == "minmax":
+        return 2 * (data - stats["min"]) / stats["range"] - 1
+    elif method == "standard":
+        return (data - stats["mean"]) / stats["std"]
+    elif method == "noncentered":
+        return data / stats["scale"]
+    elif method == "meanpreserving":
+        return (data - stats["mean"]) / stats["maxdev"] + stats["mean"]
     else:
         raise ValueError(f"Unknown normalization method: '{method}'")
 
@@ -154,7 +151,7 @@ def prepare_esn_data(
         Number of initial steps to discard (e.g., initial transients).
     normalize : bool, default=False
         Whether to normalize data. If True, statistics are computed from
-        training data and applied to all splits.
+        training data and applied to all splits globally.
     norm_method : str, default="minmax"
         Normalization method if normalize=True.
 
@@ -192,7 +189,9 @@ def prepare_esn_data(
 
     # Validate discard_steps
     if discard_steps >= timesteps:
-        raise ValueError(f"discard_steps ({discard_steps}) must be less than data length ({timesteps})")
+        raise ValueError(
+            f"discard_steps ({discard_steps}) must be less than data length ({timesteps})"
+        )
 
     # Trim initial steps
     data = data[:, discard_steps:, :]
@@ -228,18 +227,18 @@ def prepare_esn_data(
 
     # Optional normalization (compute stats from training data only)
     if normalize:
-        _, stats = normalize_data(train, method=norm_method)
-        warmup, _ = normalize_data(warmup, method=norm_method, stats=stats)
-        train, _ = normalize_data(train, method=norm_method, stats=stats)
-        target, _ = normalize_data(target, method=norm_method, stats=stats)
-        forecast_warmup, _ = normalize_data(forecast_warmup, method=norm_method, stats=stats)
-        val, _ = normalize_data(val, method=norm_method, stats=stats)
+        stats = _compute_stats(train, norm_method)
+        warmup = _apply_norm(warmup, norm_method, stats)
+        train = _apply_norm(train, norm_method, stats)
+        target = _apply_norm(target, norm_method, stats)
+        forecast_warmup = _apply_norm(forecast_warmup, norm_method, stats)
+        val = _apply_norm(val, norm_method, stats)
 
     return warmup, train, target, forecast_warmup, val
 
 
 def load_and_prepare(
-    paths: Union[str, List[str]],
+    paths: str | list[str],
     warmup_steps: int,
     train_steps: int,
     val_steps: int | None = None,

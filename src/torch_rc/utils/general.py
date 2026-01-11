@@ -1,11 +1,8 @@
 """General utility functions for torch_rc."""
-
-from typing import Optional, Union
-
 import numpy as np
 
 
-def create_rng(seed: Optional[Union[int, np.random.Generator]] = None) -> np.random.Generator:
+def create_rng(seed: int | np.random.Generator | None = None) -> np.random.Generator:
     """Create a NumPy random number generator.
 
     Parameters

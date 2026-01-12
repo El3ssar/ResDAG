@@ -1,22 +1,45 @@
-"""Hyperparameter Optimization for Echo State Networks.
+"""
+Hyperparameter Optimization
+===========================
 
 This module provides Optuna-based hyperparameter optimization for ESN models.
 It supports multiple loss functions specialized for time series forecasting
 and chaotic systems.
 
-Note
-----
-This module requires the optional ``optuna`` dependency. Install it with:
+Installation
+------------
+This module requires the optional ``optuna`` dependency::
 
     pip install torch_rc[hpo]
 
-or:
+or::
 
     pip install optuna
 
-Quick Start
------------
->>> from torch_rc.hpo import run_hpo, LOSSES, get_study_summary
+Functions
+---------
+run_hpo
+    Run hyperparameter optimization study.
+get_loss
+    Get a loss function by name.
+get_study_summary
+    Generate summary of completed study.
+
+Loss Functions
+--------------
+The following loss functions are available:
+
+- ``"efh"``: Expected Forecast Horizon (default, recommended for chaotic systems)
+- ``"horizon"``: Forecast Horizon Loss (contiguous valid steps)
+- ``"lyap"``: Lyapunov-weighted Loss (exponential decay)
+- ``"standard"``: Standard Loss (mean geometric mean error)
+- ``"discounted"``: Discounted RMSE (half-life weighted)
+
+Examples
+--------
+Basic HPO workflow:
+
+>>> from torch_rc.hpo import run_hpo, get_study_summary
 >>> from torch_rc.models import ott_esn
 >>>
 >>> def model_creator(reservoir_size, spectral_radius):
@@ -34,7 +57,10 @@ Quick Start
 ...     }
 >>>
 >>> def data_loader(trial):
-...     return {"warmup": w, "train": t, "target": tgt, "f_warmup": fw, "val": v}
+...     return {
+...         "warmup": warmup, "train": train, "target": target,
+...         "f_warmup": f_warmup, "val": val,
+...     }
 >>>
 >>> study = run_hpo(
 ...     model_creator=model_creator,
@@ -44,18 +70,10 @@ Quick Start
 ... )
 >>> print(get_study_summary(study))
 
-Available Loss Functions
-------------------------
-- ``"efh"``: Expected Forecast Horizon (default, recommended for chaotic systems)
-- ``"horizon"``: Forecast Horizon Loss (contiguous valid steps)
-- ``"lyap"``: Lyapunov-weighted Loss (exponential decay)
-- ``"standard"``: Standard Loss (mean geometric mean error)
-- ``"discounted"``: Discounted RMSE (half-life weighted)
-
 See Also
 --------
-torch_rc.training.ESNTrainer : Training interface
-torch_rc.utils.data.load_and_prepare : Data loading utilities
+torch_rc.training.ESNTrainer : Training interface.
+torch_rc.utils.data : Data loading utilities.
 """
 
 from typing import TYPE_CHECKING, Any

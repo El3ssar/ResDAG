@@ -1,7 +1,14 @@
-"""Base ReadoutLayer implementation for torch_rc.
+"""
+Base Readout Layer
+==================
 
-This module provides ReadoutLayer, a per-timestep linear layer with support
-for classical ESN training (ridge regression fitting).
+This module provides :class:`ReadoutLayer`, a per-timestep linear layer
+with support for classical ESN training via ridge regression.
+
+See Also
+--------
+torch_rc.layers.readouts.CGReadoutLayer : Conjugate gradient readout implementation.
+torch_rc.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 import torch
@@ -9,37 +16,72 @@ import torch.nn as nn
 
 
 class ReadoutLayer(nn.Linear):
-    """Per-timestep linear layer with custom fitting for ESN training.
+    """
+    Per-timestep linear layer with custom fitting for ESN training.
 
-    This layer extends nn.Linear with:
-    - Per-timestep application to sequence tensors (B, T, F)
+    This layer extends :class:`torch.nn.Linear` with:
+
+    - Per-timestep application to sequence tensors ``(B, T, F)``
     - Named identification for multi-readout architectures
-    - Custom fit() method for classical ESN training (Phase 4)
+    - Custom ``fit()`` interface for classical ESN training
 
     The layer applies the same linear transformation independently to each
     timestep in a sequence:
-        Input: (B, T, F_in) -> Reshape to (B*T, F_in)
-        Apply: linear(x) = x @ W.T + b
+
+    .. code-block:: text
+
+        Input:  (B, T, F_in)  -> Reshape to (B*T, F_in)
+        Apply:  linear(x) = x @ W.T + b
         Output: (B*T, F_out) -> Reshape to (B, T, F_out)
 
     This matches classical ESN semantics where readouts are fitted across
     the entire sequence at once using ridge regression.
 
-    Args:
-        in_features: Size of input features
-        out_features: Size of output features
-        bias: Whether to use bias (default: True)
-        name: Optional name for this readout (used in multi-readout training)
+    Parameters
+    ----------
+    in_features : int
+        Size of input features.
+    out_features : int
+        Size of output features.
+    bias : bool, default=True
+        Whether to include a bias term.
+    name : str, optional
+        Name for this readout layer. Used for identification in
+        multi-readout architectures and by :class:`ESNTrainer`.
+    trainable : bool, default=False
+        If True, weights are trainable via backpropagation.
+        If False, weights are frozen (standard ESN behavior).
 
-    Example:
-        # Single readout
-        readout = ReadoutLayer(in_features=100, out_features=10)
-        x = torch.randn(2, 20, 100)  # (batch, seq_len, features)
-        y = readout(x)  # (2, 20, 10)
+    Attributes
+    ----------
+    weight : torch.nn.Parameter
+        Weight matrix of shape ``(out_features, in_features)``.
+    bias : torch.nn.Parameter or None
+        Bias vector of shape ``(out_features,)``, or None if ``bias=False``.
+    name : str or None
+        Name of this readout layer.
+    is_fitted : bool
+        True if ``fit()`` has been called successfully.
 
-        # Named readout (for multi-readout architectures)
-        readout1 = ReadoutLayer(100, 10, name="output1")
-        readout2 = ReadoutLayer(100, 5, name="output2")
+    Examples
+    --------
+    Basic usage:
+
+    >>> readout = ReadoutLayer(in_features=100, out_features=10)
+    >>> x = torch.randn(2, 20, 100)  # (batch, seq_len, features)
+    >>> y = readout(x)
+    >>> print(y.shape)
+    torch.Size([2, 20, 10])
+
+    Named readout for multi-output architectures:
+
+    >>> readout1 = ReadoutLayer(100, 10, name="position")
+    >>> readout2 = ReadoutLayer(100, 3, name="velocity")
+
+    See Also
+    --------
+    CGReadoutLayer : Readout with Conjugate Gradient solver.
+    torch_rc.training.ESNTrainer : Trainer for fitting readouts.
     """
 
     def __init__(
@@ -50,25 +92,12 @@ class ReadoutLayer(nn.Linear):
         name: str | None = None,
         trainable: bool = False,
     ) -> None:
-        """Initialize the ReadoutLayer.
-
-        Args:
-            in_features: Size of input features
-            out_features: Size of output features
-            bias: Whether to use bias
-            name: Optional name for multi-readout identification
-            trainable: Whether weights should be trainable (default: False)
-        """
         super().__init__(in_features, out_features, bias)
 
-        # Store name for trainer identification
         self._name = name
         self.trainable = trainable
-
-        # Flag to track if this readout has been fitted (Phase 4)
         self._is_fitted = False
 
-        # Freeze weights if not trainable
         if not self.trainable:
             self._freeze_weights()
 
@@ -79,55 +108,57 @@ class ReadoutLayer(nn.Linear):
 
     @property
     def name(self) -> str | None:
-        """Get the readout name.
-
-        Returns:
-            Name of this readout, or None if unnamed
+        """
+        str or None : Name of this readout layer.
         """
         return self._name
 
     @property
     def is_fitted(self) -> bool:
-        """Check if this readout has been fitted.
-
-        Returns:
-            True if fit() has been called, False otherwise
+        """
+        bool : True if ``fit()`` has been called successfully.
         """
         return self._is_fitted
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Forward pass with per-timestep application.
+        """
+        Apply linear transformation to input.
 
-        Handles both 2D (batch, features) and 3D (batch, seq_len, features) inputs.
-        For 3D inputs, applies the linear transformation independently to each timestep.
+        Handles both 2D ``(batch, features)`` and 3D ``(batch, seq_len, features)``
+        inputs. For 3D inputs, applies the linear transformation independently
+        to each timestep.
 
-        Args:
-            input: Input tensor of shape (B, F) or (B, T, F)
-                   where B = batch size, T = sequence length, F = features
+        Parameters
+        ----------
+        input : torch.Tensor
+            Input tensor of shape ``(B, F)`` or ``(B, T, F)``.
 
-        Returns:
-            Output tensor of shape (B, F_out) or (B, T, F_out)
+        Returns
+        -------
+        torch.Tensor
+            Output tensor of shape ``(B, F_out)`` or ``(B, T, F_out)``.
 
-        Raises:
-            ValueError: If input has invalid number of dimensions
+        Raises
+        ------
+        ValueError
+            If input has neither 2 nor 3 dimensions.
+
+        Examples
+        --------
+        >>> readout = ReadoutLayer(100, 10)
+        >>> x_2d = torch.randn(4, 100)
+        >>> y_2d = readout(x_2d)  # (4, 10)
+        >>> x_3d = torch.randn(4, 50, 100)
+        >>> y_3d = readout(x_3d)  # (4, 50, 10)
         """
         if input.dim() == 2:
-            # Standard 2D input: (B, F) -> (B, F_out)
             return super().forward(input)
 
         elif input.dim() == 3:
-            # 3D sequence input: (B, T, F) -> (B, T, F_out)
             batch_size, seq_len, features = input.shape
-
-            # Reshape to (B*T, F) for per-timestep processing
             input_reshaped = input.reshape(batch_size * seq_len, features)
-
-            # Apply linear transformation
-            output_reshaped = super().forward(input_reshaped)  # (B*T, F_out)
-
-            # Reshape back to (B, T, F_out)
+            output_reshaped = super().forward(input_reshaped)
             output = output_reshaped.reshape(batch_size, seq_len, self.out_features)
-
             return output
 
         else:
@@ -141,34 +172,35 @@ class ReadoutLayer(nn.Linear):
         states: torch.Tensor,
         targets: torch.Tensor,
     ) -> None:
-        """Fit readout weights using ridge regression.
+        """
+        Fit readout weights using ridge regression.
 
-        This method is a stub for Phase 1. Full implementation will be added
-        in Phase 4 when the conjugate gradient solver is implemented.
+        This is an abstract method that should be overridden by subclasses.
+        See :class:`CGReadoutLayer` for a concrete implementation.
 
-        Solves: states @ W = targets
-        Using ridge regression: (states.T @ states + ridge*I)^-1 @ states.T @ targets
+        Parameters
+        ----------
+        states : torch.Tensor
+            Input states of shape ``(B, T, F_in)`` or ``(N, F_in)``.
+        targets : torch.Tensor
+            Target outputs of shape ``(B, T, F_out)`` or ``(N, F_out)``.
 
-        Args:
-            states: Input states of shape (B, T, F_in) or (B*T, F_in)
-            targets: Target outputs of shape (B, T, F_out) or (B*T, F_out)
-            ridge: Ridge regularization parameter (default: 1e-6)
+        Raises
+        ------
+        NotImplementedError
+            This base class does not implement fitting.
 
-        Raises:
-            NotImplementedError: This is a Phase 4 feature
+        See Also
+        --------
+        CGReadoutLayer.fit : Concrete implementation using Conjugate Gradient.
         """
         raise NotImplementedError(
-            "ReadoutLayer.fit() will be implemented in Phase 4 "
-            "when the conjugate gradient solver is added. "
-            "For now, use standard PyTorch training (loss.backward() + optimizer.step())"
+            "ReadoutLayer.fit() is not implemented in the base class. "
+            "Use CGReadoutLayer for ridge regression fitting."
         )
 
     def __repr__(self) -> str:
-        """String representation.
-
-        Returns:
-            String showing layer configuration
-        """
+        """Return string representation."""
         name_str = f", name='{self._name}'" if self._name is not None else ""
         return (
             f"{self.__class__.__name__}("

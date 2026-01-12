@@ -1,9 +1,42 @@
-"""Layer implementations for torch_rc.
+"""
+Neural Network Layers
+=====================
 
-This module contains the core layer implementations:
-- TorchRCModule: Base class for all torch_rc modules
-- ReservoirLayer: Stateful RNN with graph-based weight initialization
-- ReadoutLayer: Per-timestep linear layer with custom fitting
+This module provides the core neural network layers for building
+Echo State Networks and reservoir computing models.
+
+Classes
+-------
+ReservoirLayer
+    Stateful RNN reservoir with graph-based weight initialization.
+ReadoutLayer
+    Per-timestep linear layer with custom fitting interface.
+CGReadoutLayer
+    ReadoutLayer with Conjugate Gradient ridge regression solver.
+Concatenate
+    Layer for concatenating multiple inputs along feature dimension.
+FeaturePartitioner
+    Layer for partitioning features into groups.
+OutliersFilteredMean
+    Layer for computing mean with outlier filtering.
+SelectiveDropout
+    Dropout with per-feature selectivity.
+SelectiveExponentiation
+    Per-feature exponentiation layer.
+
+Examples
+--------
+>>> from torch_rc.layers import ReservoirLayer, CGReadoutLayer
+>>> import pytorch_symbolic as ps
+>>>
+>>> inp = ps.Input((100, 3))
+>>> reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+>>> readout = CGReadoutLayer(200, 3)(reservoir)
+
+See Also
+--------
+torch_rc.composition.ESNModel : Model composition using these layers.
+torch_rc.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 from .custom import (

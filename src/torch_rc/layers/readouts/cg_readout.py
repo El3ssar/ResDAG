@@ -1,4 +1,16 @@
-"""Conjugate Gradient ReadoutLayer for ridge regression fitting."""
+"""
+Conjugate Gradient Readout Layer
+================================
+
+This module provides :class:`CGReadoutLayer`, which extends
+:class:`ReadoutLayer` with an efficient Conjugate Gradient solver
+for ridge regression fitting.
+
+See Also
+--------
+torch_rc.layers.readouts.ReadoutLayer : Base readout layer.
+torch_rc.training.ESNTrainer : Trainer for fitting readout layers.
+"""
 
 import torch
 
@@ -6,38 +18,82 @@ from .base import ReadoutLayer
 
 
 class CGReadoutLayer(ReadoutLayer):
-    """ReadoutLayer with Conjugate Gradient solver for ridge regression.
+    """
+    Readout layer with Conjugate Gradient ridge regression solver.
 
-    This layer extends ReadoutLayer with an efficient Conjugate Gradient (CG)
-    solver for fitting weights via ridge regression. The CG solver is:
-    - Memory efficient (doesn't form normal equations explicitly)
+    This layer extends :class:`ReadoutLayer` with an efficient Conjugate
+    Gradient (CG) solver for fitting weights via ridge regression. The CG
+    solver is:
+
+    - Memory efficient (doesn't form full normal equations matrix)
     - GPU accelerated
-    - Supports multiple outputs simultaneously
+    - Numerically stable (uses float64 internally)
+    - Supports batched time-series data
 
-    Solves the regularized least squares problem:
-        (X.T @ X + alpha * I) @ W = X.T @ Y
+    The solver finds weights W that minimize:
 
-    The solver:
-    - Centers the data automatically
-    - Uses float64 precision for numerical stability
-    - Computes bias term from centered data
-    - Works with batched time-series data
+    .. math::
 
-    Args:
-        in_features: Size of input features
-        out_features: Size of output features
-        bias: Whether to use bias (default: True)
-        name: Optional name for this readout
-        trainable: Whether weights should be trainable (default: False)
-        max_iter: Maximum CG iterations (default: 100)
-        tol: Convergence tolerance (default: 1e-5)
+        ||XW - Y||^2 + \\alpha ||W||^2
 
-    Example:
-        >>> readout = CGReadoutLayer(in_features=100, out_features=10)
-        >>> states = torch.randn(32, 50, 100)  # (batch, time, features)
-        >>> targets = torch.randn(32, 50, 10)
-        >>> readout.fit(states, targets, ridge=1e-6)
-        >>> output = readout(states)
+    where :math:`\\alpha` is the regularization strength.
+
+    Parameters
+    ----------
+    in_features : int
+        Size of input features (reservoir state dimension).
+    out_features : int
+        Size of output features (prediction dimension).
+    bias : bool, default=True
+        Whether to include a bias term.
+    name : str, optional
+        Name for this readout layer. Used for identification in
+        multi-readout architectures and by :class:`ESNTrainer`.
+    trainable : bool, default=False
+        If True, weights are trainable via backpropagation.
+    alpha : float, default=1e-6
+        L2 regularization strength. Must be non-negative. Larger values
+        provide more regularization (smoother outputs, less overfitting).
+    max_iter : int, default=100
+        Maximum number of CG iterations.
+    tol : float, default=1e-5
+        Convergence tolerance for CG solver. Iterations stop when
+        residual norm squared is below ``tol**2``.
+
+    Attributes
+    ----------
+    weight : torch.nn.Parameter
+        Weight matrix of shape ``(out_features, in_features)``.
+    bias : torch.nn.Parameter or None
+        Bias vector of shape ``(out_features,)``, or None if ``bias=False``.
+    alpha : float
+        L2 regularization strength.
+    max_iter : int
+        Maximum CG iterations.
+    tol : float
+        Convergence tolerance.
+
+    Examples
+    --------
+    Basic usage:
+
+    >>> readout = CGReadoutLayer(in_features=100, out_features=10, alpha=1e-6)
+    >>> states = torch.randn(32, 50, 100)  # (batch, time, features)
+    >>> targets = torch.randn(32, 50, 10)
+    >>> readout.fit(states, targets)
+    >>> output = readout(states)
+    >>> print(output.shape)
+    torch.Size([32, 50, 10])
+
+    With custom regularization:
+
+    >>> readout = CGReadoutLayer(100, 10, alpha=1e-4)  # Stronger regularization
+    >>> readout.fit(states, targets)
+
+    See Also
+    --------
+    ReadoutLayer : Base readout layer class.
+    torch_rc.training.ESNTrainer : Trainer that uses this for fitting.
     """
 
     def __init__(
@@ -51,18 +107,6 @@ class CGReadoutLayer(ReadoutLayer):
         tol: float = 1e-5,
         alpha: float = 1e-6,
     ) -> None:
-        """Initialize CGReadoutLayer.
-
-        Args:
-            in_features: Size of input features
-            out_features: Size of output features
-            bias: Whether to use bias
-            name: Optional name for identification
-            trainable: Whether weights are trainable
-            max_iter: Maximum iterations for CG solver
-            tol: Convergence tolerance for CG solver
-            alpha: L2 regularization strength (must be non-negative)
-        """
         super().__init__(in_features, out_features, bias, name, trainable)
         self.max_iter = max_iter
         self.tol = tol
@@ -74,29 +118,7 @@ class CGReadoutLayer(ReadoutLayer):
         y: torch.Tensor,
         alpha: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Solve Ridge Regression using Conjugate Gradient for multiple outputs.
-
-        This method solves the regularized least squares problem:
-            (X.T @ X + alpha * I) @ W = X.T @ Y
-
-        Each output dimension is solved independently using a vectorized
-        implementation of the Conjugate Gradient (CG) method. Scalar updates
-        (alpha_cg, beta) are computed per output column using broadcasting.
-
-        The data is centered automatically, and the corresponding bias term is returned.
-
-        Args:
-            X: Input tensor of shape (n_samples, n_features)
-            y: Target tensor of shape (n_samples, n_outputs)
-            alpha: L2 regularization strength (must be non-negative)
-
-        Returns:
-            coefs: Weight matrix of shape (n_features, n_outputs)
-            intercept: Bias vector of shape (n_outputs,)
-
-        Raises:
-            ValueError: If alpha is negative
-        """
+        """Solve ridge regression using Conjugate Gradient method."""
         if alpha < 0:
             raise ValueError(f"Alpha must be non-negative, got {alpha}")
 
@@ -105,15 +127,15 @@ class CGReadoutLayer(ReadoutLayer):
         y = y.to(torch.float64)
 
         # Center the data
-        X_mean = X.mean(dim=0, keepdim=True)  # (1, n_features)
-        y_mean = y.mean(dim=0, keepdim=True)  # (1, n_outputs)
+        X_mean = X.mean(dim=0, keepdim=True)
+        y_mean = y.mean(dim=0, keepdim=True)
         n = float(X.shape[0])
 
-        # Gram matrix of centered X: (X - μ_X)^T (X - μ_X) = X^T X - n * μ_X^T μ_X
+        # Gram matrix of centered X
         XtX = X.T @ X - n * (X_mean.T @ X_mean)
 
         def matvec(w: torch.Tensor) -> torch.Tensor:
-            """Matrix-vector product: (X^T X + alpha * I) @ w"""
+            """Matrix-vector product: (X^T X + alpha * I) @ w."""
             return XtX @ w + alpha * w
 
         def conjugate_gradient(
@@ -122,46 +144,35 @@ class CGReadoutLayer(ReadoutLayer):
             max_iter: int,
             tol: float,
         ) -> torch.Tensor:
-            """Solve A @ X = B using Conjugate Gradient.
-
-            Args:
-                A_func: Function computing A @ x
-                B: Right-hand side tensor of shape (n_features, n_outputs)
-                max_iter: Maximum iterations
-                tol: Convergence tolerance
-
-            Returns:
-                X: Solution tensor of shape (n_features, n_outputs)
-            """
+            """Solve A @ X = B using Conjugate Gradient."""
             X = torch.zeros_like(B)
             R = B - A_func(X)
             P = R.clone()
-            Rs_old = (R * R).sum(dim=0)  # (n_outputs,)
+            Rs_old = (R * R).sum(dim=0)
 
-            for i in range(max_iter):
-                # Check convergence
+            for _ in range(max_iter):
                 if torch.all(Rs_old < tol**2):
                     break
 
                 AP = A_func(P)
-                alpha_cg = Rs_old / (P * AP).sum(dim=0)  # (n_outputs,)
+                alpha_cg = Rs_old / (P * AP).sum(dim=0)
                 X = X + P * alpha_cg
                 R = R - AP * alpha_cg
-                Rs_new = (R * R).sum(dim=0)  # (n_outputs,)
+                Rs_new = (R * R).sum(dim=0)
                 beta = Rs_new / Rs_old
                 P = R + P * beta
                 Rs_old = Rs_new
 
             return X
 
-        # Right-hand side: X^T @ y - n * μ_X^T @ μ_y
+        # Right-hand side
         rhs = X.T @ y - n * (X_mean.T @ y_mean)
 
         # Solve using CG
         coefs = conjugate_gradient(matvec, rhs, self.max_iter, self.tol)
 
         # Compute intercept
-        intercept = (y_mean - X_mean @ coefs).squeeze(0)  # (n_outputs,)
+        intercept = (y_mean - X_mean @ coefs).squeeze(0)
 
         return coefs, intercept
 
@@ -170,22 +181,57 @@ class CGReadoutLayer(ReadoutLayer):
         inputs: torch.Tensor,
         targets: torch.Tensor,
     ) -> None:
-        """Fit readout weights using Conjugate Gradient ridge regression.
+        """
+        Fit readout weights using Conjugate Gradient ridge regression.
 
-        This method fits the readout layer to map states to targets using
-        ridge regression solved via Conjugate Gradient. The method:
-        - Handles both 2D (n_samples, features) and 3D (batch, time, features) inputs
-        - Centers data automatically
+        Fits the readout layer to map input states to target outputs using
+        L2-regularized least squares (ridge regression), solved via the
+        Conjugate Gradient method.
+
+        The method automatically:
+
+        - Handles both 2D and 3D input tensors
+        - Centers data for numerical stability
         - Computes optimal weights and bias
         - Updates layer parameters in-place
 
-        Args:
-            inputs: Input states of shape (batch, time, features) or (n_samples, features)
-            targets: Target outputs of shape (batch, time, outputs) or (n_samples, outputs)
-            ridge: Ridge regularization parameter (alpha). Must be non-negative.
+        Parameters
+        ----------
+        inputs : torch.Tensor
+            Input states of shape ``(batch, time, features)`` or
+            ``(n_samples, features)``. For 3D inputs, data is flattened
+            to ``(batch * time, features)``.
+        targets : torch.Tensor
+            Target outputs of shape ``(batch, time, outputs)`` or
+            ``(n_samples, outputs)``. Must have same number of samples
+            as inputs after flattening.
 
-        Raises:
-            ValueError: If input shapes don't match or ridge is negative
+        Raises
+        ------
+        ValueError
+            If number of samples doesn't match between inputs and targets,
+            or if target output dimension doesn't match ``out_features``.
+
+        Notes
+        -----
+        After calling ``fit()``, the ``is_fitted`` property returns True.
+
+        Examples
+        --------
+        Fit on batched time-series data:
+
+        >>> readout = CGReadoutLayer(100, 10)
+        >>> states = torch.randn(4, 200, 100)  # (batch, time, features)
+        >>> targets = torch.randn(4, 200, 10)
+        >>> readout.fit(states, targets)
+        >>> print(readout.is_fitted)
+        True
+
+        Fit on flattened data:
+
+        >>> states_flat = torch.randn(800, 100)  # (n_samples, features)
+        >>> targets_flat = torch.randn(800, 10)
+        >>> readout.fit(states_flat, targets_flat)
         """
         # Handle 3D inputs by reshaping to 2D
         if inputs.dim() == 3:
@@ -212,18 +258,16 @@ class CGReadoutLayer(ReadoutLayer):
         # Solve ridge regression with CG
         coefs, intercept = self._solve_ridge_cg(inputs, targets, self.alpha)
 
-        # Convert back to original dtype and update parameters
+        # Update parameters
         with torch.no_grad():
-            # coefs is (in_features, out_features), but nn.Linear expects (out_features, in_features)
             self.weight.copy_(coefs.T.to(self.weight.dtype))
             if self.bias is not None:
                 self.bias.copy_(intercept.to(self.bias.dtype))
 
-        # Mark as fitted
         self._is_fitted = True
 
     def __repr__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         name_str = f", name='{self._name}'" if self._name is not None else ""
         return (
             f"{self.__class__.__name__}("
@@ -231,6 +275,7 @@ class CGReadoutLayer(ReadoutLayer):
             f"out_features={self.out_features}, "
             f"bias={self.bias is not None}"
             f"{name_str}, "
+            f"alpha={self.alpha}, "
             f"max_iter={self.max_iter}, "
             f"tol={self.tol}"
             f")"

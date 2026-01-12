@@ -1,10 +1,18 @@
-"""ReservoirLayer implementation for torch_rc.
-
-This module provides ReservoirLayer, a stateful recurrent neural network layer
-with graph-based weight initialization for Echo State Networks (ESN).
 """
+Reservoir Layer
+===============
 
-from typing import Optional
+This module provides :class:`ReservoirLayer`, a stateful recurrent neural network
+layer with graph-based weight initialization for Echo State Networks (ESN).
+
+The reservoir layer is the core computational component of ESNs, implementing
+recurrent dynamics with the Echo State Property.
+
+See Also
+--------
+torch_rc.init.topology : Topology initialization for reservoir weights.
+torch_rc.init.input_feedback : Input/feedback weight initialization.
+"""
 
 import torch
 import torch.nn as nn
@@ -15,56 +23,117 @@ from ..init.topology import TopologyInitializer, get_topology
 
 
 class ReservoirLayer(nn.Module):
-    """Stateful RNN reservoir layer with graph-based weight initialization.
+    """
+    Stateful RNN reservoir layer with graph-based weight initialization.
 
-    This is a custom RNN implementation (not using nn.RNNBase) designed for
-    Echo State Networks. Key features:
-
-    - Stateful: Internal state persists across forward passes
-    - Separate feedback and driving inputs with independent weight matrices
-    - Graph topology: Recurrent weights initialized from graph adjacency matrices
-    - Per-timestep processing: Input/output shape (B, T, F)
+    A custom RNN implementation designed for Echo State Networks, featuring
+    stateful processing, separate feedback and driving inputs, and
+    graph-based topology initialization.
 
     The reservoir state evolves according to:
-        h_t = activation(W_fb @ fb_t + W_in @ x_t + W_rec @ h_{t-1} + b)
 
-    Where:
-        - W_fb: Feedback weight matrix (reservoir_size, feedback_size)
-        - W_in: Driving input weight matrix (reservoir_size, input_size) - optional
-        - W_rec: Recurrent weight matrix (reservoir_size, reservoir_size)
-        - h_t: Hidden state at timestep t
-        - fb_t: Feedback signal (autoregressive during generation)
-        - x_t: Driving inputs (external signals)
+    .. math::
 
-    Args:
-        reservoir_size: Number of reservoir units
-        feedback_size: Size of feedback signal (required)
-        input_size: Size of driving inputs (optional, for external signals)
-        topology: Graph topology for recurrent weights (Phase 2 feature). Can be:
-                  - None: Random initialization (default)
-                  - str: Name of topology ("erdos_renyi", "small_world", etc.) - Phase 2
-                  - callable: Function returning adjacency matrix - Phase 2
-        spectral_radius: Desired spectral radius for W_rec (default: 0.9)
-        feedback_scaling: Scale factor for feedback weights (default: 1.0)
-        input_scaling: Scale factor for driving input weights (default: 1.0)
-        bias: Whether to use bias (default: True)
-        activation: Activation function name ("tanh", "relu", "identity")
-        leak_rate: Leaky integration rate (1.0 = no leak, default: 1.0)
+        h_t = f((1 - \\alpha) h_{t-1} + \\alpha \\cdot g(W_{fb} x_{fb,t} + W_{in} x_{in,t} + W_{rec} h_{t-1} + b))
 
-    Example:
-        # Feedback only
-        reservoir = ReservoirLayer(reservoir_size=500, feedback_size=10)
-        output = reservoir(feedback)  # feedback: (B, T, 10) -> output: (B, T, 500)
+    where :math:`f` is the activation function, :math:`\\alpha` is the leak rate,
+    :math:`W_{fb}` is the feedback weight matrix, :math:`W_{in}` is the input
+    weight matrix, and :math:`W_{rec}` is the recurrent weight matrix.
 
-        # Feedback + driving inputs
-        reservoir = ReservoirLayer(reservoir_size=500, feedback_size=10, input_size=5)
-        output = reservoir(feedback, driving)  # (B, T, 10), (B, T, 5) -> (B, T, 500)
+    Parameters
+    ----------
+    reservoir_size : int
+        Number of reservoir units (hidden state dimension).
+    feedback_size : int
+        Dimension of feedback signal. Required for all reservoirs.
+    input_size : int, optional
+        Dimension of driving inputs. If None, no driving input is expected.
+    topology : str or TopologyInitializer, optional
+        Graph topology for recurrent weights. Can be:
 
-        # Stateful processing
-        out1 = reservoir(feedback1)  # State initialized
-        out2 = reservoir(feedback2)  # State carries over from out1
-        reservoir.reset_state()  # Manual reset
-        out3 = reservoir(feedback3)  # Fresh state
+        - None: Random uniform initialization (default)
+        - str: Registered topology name (e.g., ``"erdos_renyi"``, ``"watts_strogatz"``)
+        - TopologyInitializer: Custom topology instance
+
+    spectral_radius : float, optional
+        Target spectral radius for recurrent weights. Controls the
+        "memory" and stability of the reservoir. Typical values are
+        0.9-1.0. If None, no spectral radius scaling is applied.
+    bias : bool, default=True
+        Whether to include a bias term.
+    activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
+        Activation function for reservoir dynamics.
+    leak_rate : float, default=1.0
+        Leaky integration rate in [0, 1]. Value of 1.0 means no leaking
+        (standard RNN update). Smaller values create slower dynamics.
+    trainable : bool, default=False
+        If True, reservoir weights are trainable via backpropagation.
+        Standard ESNs use frozen (non-trainable) weights.
+    feedback_initializer : str or InputFeedbackInitializer, optional
+        Initializer for feedback weight matrix. If None, uses uniform
+        random initialization.
+    input_initializer : str or InputFeedbackInitializer, optional
+        Initializer for input weight matrix. If None, uses uniform
+        random initialization. Only used if ``input_size`` is provided.
+
+    Attributes
+    ----------
+    state : torch.Tensor or None
+        Current reservoir state of shape ``(batch, reservoir_size)``.
+        None if not yet initialized.
+    weight_feedback : torch.nn.Parameter
+        Feedback weight matrix of shape ``(reservoir_size, feedback_size)``.
+    weight_input : torch.nn.Parameter or None
+        Input weight matrix of shape ``(reservoir_size, input_size)``,
+        or None if no input_size was specified.
+    weight_hh : torch.nn.Parameter
+        Recurrent weight matrix of shape ``(reservoir_size, reservoir_size)``.
+    bias_h : torch.nn.Parameter or None
+        Bias vector of shape ``(reservoir_size,)``, or None if ``bias=False``.
+
+    Examples
+    --------
+    Basic feedback-only reservoir:
+
+    >>> reservoir = ReservoirLayer(reservoir_size=500, feedback_size=10)
+    >>> feedback = torch.randn(4, 50, 10)  # (batch, time, features)
+    >>> output = reservoir(feedback)
+    >>> print(output.shape)
+    torch.Size([4, 50, 500])
+
+    Reservoir with driving input:
+
+    >>> reservoir = ReservoirLayer(
+    ...     reservoir_size=500,
+    ...     feedback_size=10,
+    ...     input_size=5,
+    ...     spectral_radius=0.95
+    ... )
+    >>> feedback = torch.randn(4, 50, 10)
+    >>> driving = torch.randn(4, 50, 5)
+    >>> output = reservoir(feedback, driving)
+
+    Using graph topology:
+
+    >>> reservoir = ReservoirLayer(
+    ...     reservoir_size=500,
+    ...     feedback_size=10,
+    ...     topology="erdos_renyi",
+    ...     spectral_radius=0.9
+    ... )
+
+    Stateful processing across batches:
+
+    >>> out1 = reservoir(data1)  # State initialized
+    >>> out2 = reservoir(data2)  # State carries over
+    >>> reservoir.reset_state()   # Manual reset
+    >>> out3 = reservoir(data3)  # Fresh state
+
+    See Also
+    --------
+    torch_rc.init.topology.TopologyInitializer : Base class for topology initialization.
+    torch_rc.init.input_feedback.InputFeedbackInitializer : Base class for input initialization.
+    torch_rc.composition.ESNModel : Model composition using reservoir layers.
     """
 
     def __init__(
@@ -81,7 +150,6 @@ class ReservoirLayer(nn.Module):
         input_initializer: InputFeedbackInitializer | str | None = None,
         topology: str | TopologyInitializer | None = None,
     ) -> None:
-        """Initialize the ReservoirLayer."""
         super().__init__()
 
         # Store configuration
@@ -96,7 +164,7 @@ class ReservoirLayer(nn.Module):
         self.trainable = trainable
 
         # Activation function
-        self._activation_name = activation  # Store name for functional forecast
+        self._activation_name = activation
         self.activation_fn = self._get_activation(activation)
 
         # Internal state (initialized on first forward pass)
@@ -115,17 +183,7 @@ class ReservoirLayer(nn.Module):
         self._initialized = True
 
     def _get_activation(self, activation: str) -> callable:
-        """Get activation function by name.
-
-        Args:
-            activation: Name of activation function
-
-        Returns:
-            Activation function callable
-
-        Raises:
-            ValueError: If activation name is not recognized
-        """
+        """Get activation function by name."""
         activations = {
             "tanh": torch.tanh,
             "relu": F.relu,
@@ -146,14 +204,7 @@ class ReservoirLayer(nn.Module):
             param.requires_grad_(False)
 
     def _initialize_weights(self) -> None:
-        """Initialize all weight matrices.
-
-        Initializes three separate weight matrices:
-        - W_fb (feedback weights): Random uniform with feedback_scaling
-        - W_in (input weights): Random uniform with input_scaling (optional)
-        - W_rec (recurrent weights): From topology or random with spectral radius scaling
-        - bias: Zero initialization
-        """
+        """Initialize all weight matrices."""
         # Feedback weights: (reservoir_size, feedback_size) - always present
         self._initialize_feedback_weights()
 
@@ -173,17 +224,13 @@ class ReservoirLayer(nn.Module):
             self.register_parameter("bias_h", None)
 
     def _initialize_feedback_weights(self) -> None:
-        """Initialize feedback weight matrix.
-
-        Creates W_fb with either custom initializer or default uniform random.
-        """
+        """Initialize feedback weight matrix."""
         self.weight_feedback = nn.Parameter(torch.empty(self.reservoir_size, self.feedback_size))
 
         if self.feedback_initializer is not None:
             if isinstance(self.feedback_initializer, str):
                 self.feedback_initializer = get_input_feedback(self.feedback_initializer)
             elif isinstance(self.feedback_initializer, InputFeedbackInitializer):
-                # Use custom initializer
                 self.feedback_initializer.initialize(self.weight_feedback)
             else:
                 raise TypeError(
@@ -191,15 +238,10 @@ class ReservoirLayer(nn.Module):
                     f"got {type(self.feedback_initializer).__name__}"
                 )
         else:
-            # Default: uniform random scaled by feedback_scaling
             nn.init.uniform_(self.weight_feedback, -1, 1)
 
     def _initialize_input_weights(self) -> None:
-        """Initialize driving input weight matrix.
-
-        Creates W_in with either custom initializer or default uniform random.
-        Only called if input_size is provided.
-        """
+        """Initialize driving input weight matrix."""
         assert self.input_size is not None
         self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
 
@@ -207,7 +249,6 @@ class ReservoirLayer(nn.Module):
             if isinstance(self.input_initializer, str):
                 self.input_initializer = get_input_feedback(self.input_initializer)
             elif isinstance(self.input_initializer, InputFeedbackInitializer):
-                # Use custom initializer
                 self.input_initializer.initialize(self.weight_input)
             else:
                 raise TypeError(
@@ -215,27 +256,16 @@ class ReservoirLayer(nn.Module):
                     f"got {type(self.input_initializer).__name__}"
                 )
         else:
-            # Default: uniform random
             nn.init.uniform_(self.weight_input, -1, 1)
 
     def _initialize_recurrent_weights(self) -> None:
-        """Initialize recurrent weight matrix.
-
-        Creates W_rec (reservoir_size, reservoir_size) with:
-        - Topology-based initialization if topology is provided (Phase 2)
-        - Random uniform initialization in [-1, 1] otherwise
-        - Spectral radius scaling to achieve desired dynamics
-        """
-        # Create recurrent weight matrix parameter
+        """Initialize recurrent weight matrix from topology or random."""
         self.weight_hh = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
 
         if self.topology is not None:
-            # Phase 2: Use graph topology
             if isinstance(self.topology, str):
-                # String topology name - look up in registry
                 topology_initializer = get_topology(self.topology)
             elif isinstance(self.topology, TopologyInitializer):
-                # Direct topology initializer
                 topology_initializer = self.topology
             else:
                 raise TypeError(
@@ -243,27 +273,18 @@ class ReservoirLayer(nn.Module):
                     f"got {type(self.topology).__name__}"
                 )
 
-            # Initialize using topology (with spectral radius scaling)
             topology_initializer.initialize(self.weight_hh, spectral_radius=self.spectral_radius)
         else:
-            # Random initialization
             nn.init.uniform_(self.weight_hh, -1.0, 1.0)
-            # Scale to desired spectral radius (if specified)
             if self.spectral_radius is not None:
                 self._scale_spectral_radius()
 
     def _scale_spectral_radius(self) -> None:
-        """Scale recurrent weight matrix to desired spectral radius.
-
-        Computes the largest eigenvalue and scales the matrix so that
-        the spectral radius matches the target value.
-        """
+        """Scale recurrent weights to target spectral radius."""
         with torch.no_grad():
-            # Compute spectral radius (largest absolute eigenvalue)
             eigenvalues = torch.linalg.eigvals(self.weight_hh.data)
             current_spectral_radius = torch.max(torch.abs(eigenvalues)).item()
 
-            # Scale to target spectral radius
             if current_spectral_radius > 0:
                 scale = self.spectral_radius / current_spectral_radius
                 self.weight_hh.data *= scale
@@ -273,22 +294,45 @@ class ReservoirLayer(nn.Module):
         feedback: torch.Tensor,
         *driving_inputs: torch.Tensor,
     ) -> torch.Tensor:
-        """Forward pass through the reservoir.
+        """
+        Process input sequence through the reservoir.
 
-        Processes feedback signal and optional driving inputs through the reservoir.
-        Feedback and inputs are processed with separate weight matrices.
+        Computes reservoir states for each timestep using feedback signal
+        and optional driving inputs.
 
-        Args:
-            feedback: Feedback signal of shape (B, T, feedback_size)
-                     Required - provides autoregressive signal
-            *driving_inputs: Optional driving input tensors, each of shape (B, T, F_i)
-                            Concatenated if multiple provided
+        Parameters
+        ----------
+        feedback : torch.Tensor
+            Feedback signal of shape ``(batch, timesteps, feedback_size)``.
+            This is the primary input that drives the reservoir dynamics.
+        *driving_inputs : torch.Tensor
+            Optional driving input tensor of shape ``(batch, timesteps, input_size)``.
+            Only one driving input tensor is supported.
 
-        Returns:
-            Reservoir states for all timesteps: (B, T, reservoir_size)
+        Returns
+        -------
+        torch.Tensor
+            Reservoir states for all timesteps, shape
+            ``(batch, timesteps, reservoir_size)``.
 
-        Raises:
-            ValueError: If feedback shape is invalid or inputs have inconsistent shapes
+        Raises
+        ------
+        ValueError
+            If feedback shape is invalid, if driving input is provided but
+            ``input_size`` was not set, or if tensor dimensions don't match.
+
+        Notes
+        -----
+        The reservoir maintains internal state across forward calls. Use
+        :meth:`reset_state` to clear state between independent sequences.
+
+        Examples
+        --------
+        >>> reservoir = ReservoirLayer(100, feedback_size=10)
+        >>> feedback = torch.randn(4, 50, 10)
+        >>> states = reservoir(feedback)
+        >>> print(states.shape)
+        torch.Size([4, 50, 100])
         """
         # Validate feedback
         if feedback.dim() != 3:
@@ -309,14 +353,12 @@ class ReservoirLayer(nn.Module):
 
             driving_input = driving_inputs[0]
 
-            # Validate shape
             if driving_input.shape[0] != batch_size or driving_input.shape[1] != seq_len:
                 raise ValueError(
                     f"Driving input must match feedback dimensions. "
                     f"Feedback: {feedback.shape}, Driving: {driving_input.shape}"
                 )
 
-            # Check input size matches
             if self.input_size is None:
                 raise ValueError(
                     "Reservoir was initialized without input_size, "
@@ -328,7 +370,7 @@ class ReservoirLayer(nn.Module):
                     f"got {driving_input.shape[-1]}"
                 )
 
-        # Initialize state if needed (or if device changed)
+        # Initialize state if needed
         if (
             self.state is None
             or self.state.shape[0] != batch_size
@@ -343,28 +385,23 @@ class ReservoirLayer(nn.Module):
             batch_size, seq_len, self.reservoir_size, device=feedback.device, dtype=feedback.dtype
         )
         for t in range(seq_len):
-            fb_t = feedback[:, t, :]  # (B, feedback_size)
+            fb_t = feedback[:, t, :]
 
-            # Compute contributions: h_t = activation(W_fb @ fb_t + W_in @ x_t + W_rec @ h_{t-1} + b)
-            feedback_contrib = F.linear(fb_t, self.weight_feedback)  # (B, H)
-            recurrent_contrib = F.linear(self.state, self.weight_hh)  # (B, H)
+            feedback_contrib = F.linear(fb_t, self.weight_feedback)
+            recurrent_contrib = F.linear(self.state, self.weight_hh)
 
             pre_activation = feedback_contrib + recurrent_contrib
 
-            # Add driving input contribution if present
             if driving_input is not None:
-                x_t = driving_input[:, t, :]  # (B, input_size)
-                input_contrib = F.linear(x_t, self.weight_input)  # (B, H)
+                x_t = driving_input[:, t, :]
+                input_contrib = F.linear(x_t, self.weight_input)
                 pre_activation = pre_activation + input_contrib
 
-            # Add bias
             if self.bias_h is not None:
                 pre_activation = pre_activation + self.bias_h
 
-            # Apply activation
             new_state = self.activation_fn(pre_activation)
 
-            # Leaky integration
             if self.leak_rate < 1.0:
                 self.state = (1 - self.leak_rate) * self.state + self.leak_rate * new_state
             else:
@@ -375,11 +412,20 @@ class ReservoirLayer(nn.Module):
         return outputs
 
     def reset_state(self, batch_size: int | None = None) -> None:
-        """Reset internal state to zero.
+        """
+        Reset internal state to zero.
 
-        Args:
-            batch_size: If provided, initialize state with this batch size.
-                       If None, state is set to None and will be lazily initialized.
+        Parameters
+        ----------
+        batch_size : int, optional
+            If provided, initialize state with this batch size on the
+            current device. If None, state is set to None and will be
+            lazily initialized on next forward pass.
+
+        Examples
+        --------
+        >>> reservoir.reset_state()  # Lazy initialization
+        >>> reservoir.reset_state(batch_size=4)  # Explicit initialization
         """
         if batch_size is not None:
             device = self.weight_hh.device if self._initialized else torch.device("cpu")
@@ -389,13 +435,24 @@ class ReservoirLayer(nn.Module):
             self.state = None
 
     def set_state(self, state: torch.Tensor) -> None:
-        """Set internal state to a specific value.
+        """
+        Set internal state to a specific value.
 
-        Args:
-            state: New state tensor of shape (B, reservoir_size)
+        Parameters
+        ----------
+        state : torch.Tensor
+            New state tensor of shape ``(batch, reservoir_size)``.
 
-        Raises:
-            ValueError: If state shape is invalid
+        Raises
+        ------
+        ValueError
+            If state has incorrect reservoir_size dimension.
+
+        Examples
+        --------
+        >>> saved_state = reservoir.get_state()
+        >>> # ... process some data ...
+        >>> reservoir.set_state(saved_state)  # Restore
         """
         if state.shape[-1] != self.reservoir_size:
             raise ValueError(
@@ -404,20 +461,32 @@ class ReservoirLayer(nn.Module):
         self.state = state.clone()
 
     def get_state(self) -> torch.Tensor | None:
-        """Get current internal state.
+        """
+        Get current internal state.
 
-        Returns:
-            Current state tensor of shape (B, reservoir_size), or None if not initialized
+        Returns
+        -------
+        torch.Tensor or None
+            Clone of current state tensor of shape ``(batch, reservoir_size)``,
+            or None if state has not been initialized.
+
+        Examples
+        --------
+        >>> state = reservoir.get_state()
+        >>> if state is not None:
+        ...     print(f"State shape: {state.shape}")
         """
         return self.state.clone() if self.state is not None else None
 
     @property
     def activation(self) -> str:
-        """Get activation function."""
+        """
+        str : Name of the activation function.
+        """
         return self._activation_name
 
     def __repr__(self) -> str:
-        """String representation."""
+        """Return string representation."""
         input_str = f", input_size={self.input_size}" if self.input_size is not None else ""
         return (
             f"{self.__class__.__name__}("

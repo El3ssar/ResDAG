@@ -1,25 +1,42 @@
-"""Simplified model composition using pytorch_symbolic.
+"""
+Model Composition with pytorch_symbolic
+========================================
 
-This module provides a cleaner, more Pythonic API for building ESN models
-by leveraging the pytorch_symbolic library. It replaces our custom DAG and
-ModelBuilder implementations with a battle-tested library.
+This module provides the main model class for building ESN architectures
+using the ``pytorch_symbolic`` library for symbolic tensor computation.
 
-Example:
-    >>> import pytorch_symbolic as ps
-    >>> from torch_rc.layers import ReservoirLayer
-    >>> from torch_rc.layers.readouts import CGReadoutLayer
-    >>>
-    >>> # Simple ESN
-    >>> inp = ps.Input((100, 1))  # seq_len, features
-    >>> reservoir = ReservoirLayer(50, 1, 0)(inp)
-    >>> readout = CGReadoutLayer(50, 1)(reservoir)
-    >>> model = ESNModel(inp, readout)
-    >>>
-    >>> # Get summary
-    >>> model.summary()
-    >>>
-    >>> # Forecast
-    >>> predictions = model.forecast(warmup_data, forecast_steps=100)
+The :class:`ESNModel` class extends ``pytorch_symbolic.SymbolicModel`` with
+ESN-specific functionality including forecasting, reservoir state management,
+and model persistence.
+
+Examples
+--------
+Simple ESN model:
+
+>>> import pytorch_symbolic as ps
+>>> from torch_rc.layers import ReservoirLayer
+>>> from torch_rc.layers.readouts import CGReadoutLayer
+>>> from torch_rc.composition import ESNModel
+>>>
+>>> inp = ps.Input((100, 1))
+>>> reservoir = ReservoirLayer(50, feedback_size=1)(inp)
+>>> readout = CGReadoutLayer(50, 1)(reservoir)
+>>> model = ESNModel(inp, readout)
+>>> model.summary()
+
+Multi-input model with driving signal:
+
+>>> feedback = ps.Input((100, 3))
+>>> driver = ps.Input((100, 5))
+>>> reservoir = ReservoirLayer(100, feedback_size=3, input_size=5)(feedback, driver)
+>>> readout = CGReadoutLayer(100, 3)(reservoir)
+>>> model = ESNModel([feedback, driver], readout)
+
+See Also
+--------
+torch_rc.layers.ReservoirLayer : Reservoir layer with recurrent dynamics.
+torch_rc.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
+torch_rc.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 from __future__ import annotations
@@ -37,31 +54,101 @@ Input = ps.Input
 
 
 class ESNModel(ps.SymbolicModel):
-    """Extended SymbolicModel with ESN-specific methods.
+    """
+    Echo State Network model with forecasting and state management.
 
-    This class wraps pytorch_symbolic.SymbolicModel and adds:
-    - forecast() method for time series prediction
+    This class extends ``pytorch_symbolic.SymbolicModel`` with ESN-specific
+    functionality including:
+
+    - Time series forecasting with warmup and autoregressive generation
     - Reservoir state management (reset, get, set)
-    - Model save/load functionality
-    - Visualization using torchvista
+    - Model persistence (save/load)
+    - Architecture visualization
 
-    The model automatically inherits:
-    - summary() - Keras-style model summary
-    - All standard nn.Module functionality
-    - Automatic parameter tracking
+    The model inherits all standard ``torch.nn.Module`` functionality and
+    the ``summary()`` method from pytorch_symbolic.
+
+    Parameters
+    ----------
+    inputs : Input or list of Input
+        Model input(s) created with ``pytorch_symbolic.Input()``.
+    outputs : SymbolicTensor or list of SymbolicTensor
+        Model output(s) from the computational graph.
+
+    Attributes
+    ----------
+    inputs : list
+        List of model input tensors.
+    outputs : list
+        List of model output tensors.
+    output_shape : torch.Size or tuple of torch.Size
+        Shape(s) of model outputs.
+
+    Examples
+    --------
+    Create and use a simple ESN:
+
+    >>> import pytorch_symbolic as ps
+    >>> from torch_rc.composition import ESNModel
+    >>> from torch_rc.layers import ReservoirLayer
+    >>> from torch_rc.layers.readouts import CGReadoutLayer
+    >>>
+    >>> inp = ps.Input((100, 3))
+    >>> reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+    >>> readout = CGReadoutLayer(200, 3)(reservoir)
+    >>> model = ESNModel(inp, readout)
+    >>>
+    >>> # Forward pass
+    >>> x = torch.randn(4, 100, 3)
+    >>> y = model(x)
+    >>> print(y.shape)
+    torch.Size([4, 100, 3])
+
+    Forecasting with warmup:
+
+    >>> warmup_data = torch.randn(1, 50, 3)
+    >>> predictions = model.forecast(warmup_data, horizon=100)
+    >>> print(predictions.shape)
+    torch.Size([1, 100, 3])
+
+    See Also
+    --------
+    pytorch_symbolic.SymbolicModel : Parent class.
+    ReservoirLayer : Reservoir layer component.
+    ESNTrainer : Trainer for fitting readout layers.
     """
 
     def reset_reservoirs(self) -> None:
-        """Reset all reservoir states to zero."""
+        """
+        Reset all reservoir layer states to zero.
+
+        This clears the internal hidden states of all :class:`ReservoirLayer`
+        modules in the model, preparing it for a new sequence.
+
+        Examples
+        --------
+        >>> model.reset_reservoirs()
+        >>> output = model(new_sequence)
+        """
         for module in self.modules():
             if isinstance(module, ReservoirLayer):
                 module.reset_state()
 
     def get_reservoir_states(self) -> dict[str, torch.Tensor]:
-        """Get current states of all reservoir layers.
+        """
+        Get current states of all reservoir layers.
 
-        Returns:
-            Dictionary mapping layer names to state tensors.
+        Returns
+        -------
+        dict of str to torch.Tensor
+            Dictionary mapping layer names to their state tensors.
+            Only includes reservoirs with non-None states.
+
+        Examples
+        --------
+        >>> states = model.get_reservoir_states()
+        >>> for name, state in states.items():
+        ...     print(f"{name}: {state.shape}")
         """
         states = {}
         for name, module in self.named_modules():
@@ -70,10 +157,20 @@ class ESNModel(ps.SymbolicModel):
         return states
 
     def set_reservoir_states(self, states: dict[str, torch.Tensor]) -> None:
-        """Set states of reservoir layers.
+        """
+        Set states of reservoir layers.
 
-        Args:
-            states: Dictionary mapping layer names to state tensors.
+        Parameters
+        ----------
+        states : dict of str to torch.Tensor
+            Dictionary mapping layer names to state tensors.
+            Names should match those returned by :meth:`get_reservoir_states`.
+
+        Examples
+        --------
+        >>> states = model.get_reservoir_states()
+        >>> # ... do something ...
+        >>> model.set_reservoir_states(states)  # Restore states
         """
         for name, module in self.named_modules():
             if isinstance(module, ReservoirLayer) and name in states:
@@ -85,12 +182,37 @@ class ESNModel(ps.SymbolicModel):
         include_states: bool = False,
         **metadata: Any,
     ) -> None:
-        """Save model to file.
+        """
+        Save model weights and optionally reservoir states.
 
-        Args:
-            path: Path to save the model
-            include_states: Whether to save reservoir states
-            **metadata: Additional metadata to save with the model
+        Parameters
+        ----------
+        path : str or Path
+            File path to save the model. Parent directories are created
+            if they don't exist.
+        include_states : bool, default=False
+            If True, also save current reservoir states.
+        **metadata
+            Additional metadata to store with the model (e.g., training info).
+
+        Examples
+        --------
+        Save model weights only:
+
+        >>> model.save("model.pt")
+
+        Save with states and metadata:
+
+        >>> model.save(
+        ...     "checkpoint.pt",
+        ...     include_states=True,
+        ...     epoch=10,
+        ...     loss=0.05
+        ... )
+
+        See Also
+        --------
+        load : Load model from file.
         """
         path = Path(path)
 
@@ -113,12 +235,32 @@ class ESNModel(ps.SymbolicModel):
         strict: bool = True,
         load_states: bool = False,
     ) -> None:
-        """Load model from file.
+        """
+        Load model weights from file.
 
-        Args:
-            path: Path to load the model from
-            strict: Whether to strictly enforce state_dict keys match
-            load_states: Whether to load reservoir states
+        Parameters
+        ----------
+        path : str or Path
+            File path to load from.
+        strict : bool, default=True
+            If True, strictly enforce that state_dict keys match.
+        load_states : bool, default=False
+            If True, also load reservoir states if available.
+
+        Warns
+        -----
+        UserWarning
+            If ``load_states=True`` but no states are found in checkpoint.
+
+        Examples
+        --------
+        >>> model.load("model.pt")
+        >>> model.load("checkpoint.pt", load_states=True)
+
+        See Also
+        --------
+        save : Save model to file.
+        load_from_file : Class method for loading.
         """
         import warnings
 
@@ -143,19 +285,37 @@ class ESNModel(ps.SymbolicModel):
         strict: bool = True,
         load_states: bool = False,
     ) -> "ESNModel":
-        """Load state dict into an existing model instance.
+        """
+        Load weights into an existing model instance.
 
-        Args:
-            path: Path to load from
-            model: Model instance to load into (required)
-            strict: Whether to strictly enforce key matching
-            load_states: Whether to load reservoir states
+        This is a convenience class method that loads state dict into
+        a pre-constructed model.
 
-        Returns:
-            The model instance (for convenience)
+        Parameters
+        ----------
+        path : str or Path
+            File path to load from.
+        model : ESNModel
+            Model instance to load weights into. Required.
+        strict : bool, default=True
+            If True, strictly enforce state_dict key matching.
+        load_states : bool, default=False
+            If True, also load reservoir states.
 
-        Raises:
-            ValueError: If model is None
+        Returns
+        -------
+        ESNModel
+            The model instance with loaded weights.
+
+        Raises
+        ------
+        ValueError
+            If ``model`` is None.
+
+        Examples
+        --------
+        >>> model = create_my_model()  # Create architecture
+        >>> model = ESNModel.load_from_file("weights.pt", model=model)
         """
         if model is None:
             raise ValueError("model argument is required")
@@ -171,43 +331,69 @@ class ESNModel(ps.SymbolicModel):
         rankdir: str = "TB",
         **kwargs: Any,
     ) -> Any:
-        """Visualize model architecture using the symbolic graph.
+        """
+        Visualize model architecture as a graph.
 
-        This method uses the pytorch_symbolic graph structure directly,
-        providing accurate visualization of complex model topologies
-        including multi-input models and branching architectures.
+        Uses the pytorch_symbolic graph structure to generate an accurate
+        visualization of the model topology, including multi-input models
+        and branching architectures.
 
-        Args:
-            save_path: Path to save the visualization (e.g., "model.svg", "model.png").
-                       If None, displays inline in notebooks or prints DOT source.
-            format: Output format when saving ("svg", "png", "pdf"). Default: "svg".
-            show_shapes: Show tensor shapes on edges. Default: True.
-            rankdir: Graph direction ("TB"=top-bottom, "LR"=left-right). Default: "TB".
-            **kwargs: Additional arguments passed to graphviz.Digraph.
+        Parameters
+        ----------
+        save_path : str or Path, optional
+            Path to save the visualization. If None, displays inline
+            in notebooks or prints DOT source.
+        format : {'svg', 'png', 'pdf'}, default='svg'
+            Output format when saving.
+        show_shapes : bool, default=True
+            If True, show tensor shapes on graph edges.
+        rankdir : {'TB', 'LR', 'BT', 'RL'}, default='TB'
+            Graph layout direction:
+            - 'TB': top to bottom
+            - 'LR': left to right
+            - 'BT': bottom to top
+            - 'RL': right to left
+        **kwargs
+            Additional arguments passed to ``graphviz.Digraph``.
 
-        Returns:
-            In Jupyter: SVG display object
-            Otherwise: DOT source string
+        Returns
+        -------
+        str or graphviz.Source
+            In Jupyter: displays SVG and returns SVG string.
+            Otherwise: returns graphviz.Source or DOT source string.
 
-        Example:
-            >>> model.plot_model()  # Display in notebook
-            >>> model.plot_model(save_path="model.svg")  # Save to file
-            >>> model.plot_model(rankdir="LR")  # Left-to-right layout
+        Notes
+        -----
+        Requires the ``graphviz`` Python package and system installation.
+        Install with: ``pip install graphviz`` and ``apt install graphviz``.
+
+        Examples
+        --------
+        Display in notebook:
+
+        >>> model.plot_model()
+
+        Save to file:
+
+        >>> model.plot_model(save_path="model.svg")
+
+        Left-to-right layout:
+
+        >>> model.plot_model(rankdir="LR")
         """
         # Build graph from symbolic tensors
         node_to_name = getattr(self, "_node_to_layer_name", {})
 
-        def get_node_label(node: Any) -> str:
+        def _get_node_label(node: Any) -> str:
             """Get display label for a symbolic tensor node."""
             if node in node_to_name:
                 return node_to_name[node]
-            # Check if it's an input
             for i, inp in enumerate(self.inputs):
                 if node is inp:
                     return f"Input_{i + 1}"
             return f"node_{id(node)}"
 
-        def get_node_shape(node: Any) -> str:
+        def _get_node_shape(node: Any) -> str:
             """Get tensor shape string for a node."""
             if hasattr(node, "shape"):
                 shape = node.shape
@@ -222,24 +408,24 @@ class ESNModel(ps.SymbolicModel):
         # Add input nodes
         for i, inp in enumerate(self.inputs):
             name = f"Input_{i + 1}"
-            shape = get_node_shape(inp)
+            shape = _get_node_shape(inp)
             nodes[name] = (name, shape, True, False)
 
         # Add layer nodes from the symbolic graph
         for node, layer_name in node_to_name.items():
-            shape = get_node_shape(node)
+            shape = _get_node_shape(node)
             nodes[layer_name] = (layer_name, shape, False, False)
 
             # Add edges from parents
             parents = getattr(node, "_parents", [])
             for parent in parents:
-                parent_name = get_node_label(parent)
-                edge_shape = get_node_shape(parent) if show_shapes else ""
+                parent_name = _get_node_label(parent)
+                edge_shape = _get_node_shape(parent) if show_shapes else ""
                 edges.append((parent_name, layer_name, edge_shape))
 
         # Mark output nodes
         for out in self.outputs:
-            out_name = get_node_label(out)
+            out_name = _get_node_label(out)
             if out_name in nodes:
                 label, shape, is_input, _ = nodes[out_name]
                 nodes[out_name] = (label, shape, is_input, True)
@@ -285,7 +471,6 @@ class ESNModel(ps.SymbolicModel):
 
             if save_path is not None:
                 save_path = Path(save_path)
-                # graphviz adds extension automatically
                 graph.render(
                     str(save_path.with_suffix("")),
                     format=format,
@@ -302,11 +487,9 @@ class ESNModel(ps.SymbolicModel):
                 display(SVG(svg_data))
                 return svg_data
             except ImportError:
-                # Not in notebook, return the graph object
                 return graph
 
         except ImportError:
-            # graphviz not installed, return DOT source
             print("Note: Install 'graphviz' package for visual rendering.")
             print("      pip install graphviz")
             print("      Also install graphviz system package (apt install graphviz)")
@@ -320,30 +503,55 @@ class ESNModel(ps.SymbolicModel):
         *inputs: torch.Tensor,
         return_outputs: bool = False,
     ) -> torch.Tensor | None:
-        """Teacher-forced warmup to synchronize reservoir states.
+        """
+        Teacher-forced warmup to synchronize reservoir states.
 
-        Runs the model with provided inputs, updating internal reservoir states
-        to achieve the Echo State Property (synchronization with input dynamics).
+        Runs the model forward with provided inputs, updating internal
+        reservoir states to achieve the Echo State Property (synchronization
+        with input dynamics).
 
-        Convention: input0 is feedback, input1+ are driving inputs.
+        Parameters
+        ----------
+        *inputs : torch.Tensor
+            Input tensors of shape ``(batch, timesteps, features)``.
+            Convention: first input is feedback, remaining are drivers.
+        return_outputs : bool, default=False
+            If True, return model outputs during warmup.
 
-        Args:
-            *inputs: Tensors of shape (B, T, features) for each model input.
-                    First input is feedback, remaining are drivers.
-            return_outputs: Whether to return model outputs during warmup.
+        Returns
+        -------
+        torch.Tensor or None
+            If ``return_outputs=True``: output tensor(s) of shape
+            ``(batch, timesteps, output_dim)``.
+            Otherwise: None (only internal state is updated).
 
-        Returns:
-            If return_outputs=True: Tensor of shape (B, T, output_dim)
-            Otherwise: None (only internal state is updated)
+        Raises
+        ------
+        ValueError
+            If no inputs are provided.
 
-        Example:
-            >>> model.warmup(feedback, driving_input)  # Just sync states
-            >>> outputs = model.warmup(feedback, driving_input, return_outputs=True)
+        Examples
+        --------
+        Synchronize states without capturing output:
+
+        >>> model.warmup(feedback_data)
+
+        Synchronize and capture output:
+
+        >>> outputs = model.warmup(feedback_data, return_outputs=True)
+
+        With driving input:
+
+        >>> model.warmup(feedback, driving_signal)
+
+        See Also
+        --------
+        forecast : Two-phase forecasting with warmup and generation.
+        reset_reservoirs : Reset all reservoir states.
         """
         if len(inputs) == 0:
             raise ValueError("At least one input (feedback) is required")
 
-        # Simply run forward pass - ReservoirLayer handles the sequence internally
         output = self(*inputs)
 
         return output if return_outputs else None
@@ -357,51 +565,86 @@ class ESNModel(ps.SymbolicModel):
         initial_feedback: torch.Tensor | None = None,
         return_warmup: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
-        """Two-phase forecast: teacher-forced warmup + autoregressive generation.
+        """
+        Two-phase forecast: teacher-forced warmup + autoregressive generation.
 
-        Phase 1 (Warmup): Run model with provided inputs to synchronize
-        reservoir states with the input dynamics (Echo State Property).
+        Phase 1 (Warmup): Runs model with provided inputs to synchronize
+        reservoir states with input dynamics (Echo State Property).
 
-        Phase 2 (Forecast): Run autoregressive generation where the feedback
-        input comes from the model's own output, while driving inputs (if any)
-        are provided via forecast_drivers.
+        Phase 2 (Forecast): Autoregressive generation where feedback comes
+        from the model's own output while driving inputs (if any) are
+        provided via ``forecast_drivers``.
 
-        Convention: First input (warmup_inputs[0]) is always feedback.
-        Remaining inputs are driving inputs for the reservoirs.
+        Parameters
+        ----------
+        *warmup_inputs : torch.Tensor
+            Warmup tensors of shape ``(batch, warmup_steps, features)``.
+            Convention: first input is feedback, remaining are drivers.
+        horizon : int
+            Number of autoregressive steps to generate.
+        forecast_drivers : tuple of torch.Tensor, optional
+            Driving inputs for forecast phase. Each tensor should have
+            shape ``(batch, horizon, features)``. Required if model has
+            driving inputs.
+        initial_feedback : torch.Tensor, optional
+            Custom initial feedback of shape ``(batch, 1, feedback_dim)``.
+            If None, uses last warmup output.
+        return_warmup : bool, default=False
+            If True, prepend warmup outputs to the result.
 
-        For multi-output models, the first output tensor is used as feedback.
-        All outputs are stored and returned.
+        Returns
+        -------
+        torch.Tensor or tuple of torch.Tensor
+            For single-output models: tensor of shape
+            ``(batch, horizon, output_dim)`` or
+            ``(batch, warmup_steps + horizon, output_dim)`` if ``return_warmup``.
 
-        Args:
-            *warmup_inputs: Warmup tensors (feedback, driver1, driver2, ...)
-                            Each of shape (B, warmup_steps, features).
-            horizon: Number of autoregressive steps to generate.
-            forecast_drivers: Optional tuple of driving inputs for forecast phase.
-                              Each tensor should be (B, horizon, features).
-                              Required if model has driving inputs.
-            initial_feedback: Optional custom initial feedback (B, 1, feedback_dim).
-                              If None, uses last warmup output.
-            return_warmup: If True, prepend warmup outputs to result.
+            For multi-output models: tuple of tensors with same structure.
 
-        Returns:
-            Single-output model: Tensor (B, horizon, output_dim) or
-                                 (B, warmup_steps + horizon, output_dim) if return_warmup
-            Multi-output model: Tuple of tensors with same structure
+        Raises
+        ------
+        ValueError
+            If no warmup inputs provided, if forecast_drivers is required
+            but not provided, or if dimensions don't match.
 
-        Example:
-            >>> # Simple feedback-only model
-            >>> predictions = model.forecast(warmup_data, horizon=100)
-            >>>
-            >>> # Input-driven model
-            >>> predictions = model.forecast(
-            ...     warmup_feedback, warmup_driver,
-            ...     horizon=100,
-            ...     forecast_drivers=(future_driver,),
-            ... )
+        Notes
+        -----
+        - Convention: first input is always feedback (used for autoregression).
+        - For multi-output models, first output is used as feedback.
+        - Feedback output dimension must match feedback input dimension.
 
-        Raises:
-            ValueError: If forecast_drivers is required but not provided,
-                        or if dimensions don't match.
+        Examples
+        --------
+        Simple feedback-only model:
+
+        >>> warmup_data = torch.randn(1, 50, 3)
+        >>> predictions = model.forecast(warmup_data, horizon=100)
+        >>> print(predictions.shape)
+        torch.Size([1, 100, 3])
+
+        Input-driven model:
+
+        >>> predictions = model.forecast(
+        ...     warmup_feedback,
+        ...     warmup_driver,
+        ...     horizon=100,
+        ...     forecast_drivers=(future_driver,),
+        ... )
+
+        Include warmup in output:
+
+        >>> full_output = model.forecast(
+        ...     warmup_data,
+        ...     horizon=100,
+        ...     return_warmup=True
+        ... )
+        >>> print(full_output.shape)  # warmup_steps + horizon
+        torch.Size([1, 150, 3])
+
+        See Also
+        --------
+        warmup : Teacher-forced warmup only.
+        reset_reservoirs : Reset reservoir states before forecasting.
         """
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input (feedback) is required")
@@ -432,14 +675,14 @@ class ESNModel(ps.SymbolicModel):
         device = warmup_inputs[0].device
         dtype = warmup_inputs[0].dtype
 
-        # Phase 1: Warmup - get all outputs to sync state AND get initial feedback
+        # Phase 1: Warmup
         warmup_outputs = self.warmup(*warmup_inputs, return_outputs=True)
 
-        # Determine output structure from model.output_shape
+        # Determine output structure
         output_shape = self.output_shape
         multi_output = isinstance(output_shape, tuple) and isinstance(output_shape[0], torch.Size)
 
-        # Validate feedback dimension matches output dimension
+        # Validate feedback dimension
         if multi_output:
             feedback_output_dim = output_shape[0][-1]
         else:
@@ -452,7 +695,7 @@ class ESNModel(ps.SymbolicModel):
                 f"For forecasting, the first output must match the feedback input dimension."
             )
 
-        # Get initial feedback from last warmup output
+        # Get initial feedback
         if initial_feedback is not None:
             current_feedback = initial_feedback
         else:
@@ -461,8 +704,7 @@ class ESNModel(ps.SymbolicModel):
             else:
                 current_feedback = warmup_outputs[:, -1:, :]
 
-        # Pre-allocate forecast output storage based on model.output_shape
-        # Note: horizon outputs = warmup's last prediction + (horizon-1) autoregressive steps
+        # Pre-allocate forecast output storage
         if multi_output:
             forecast_outputs = tuple(
                 torch.empty(batch_size, horizon, shape[-1], dtype=dtype, device=device)
@@ -473,14 +715,14 @@ class ESNModel(ps.SymbolicModel):
                 batch_size, horizon, output_shape[-1], dtype=dtype, device=device
             )
 
-        # Store warmup's last output as first forecast step (prediction for val[0])
+        # Store warmup's last output as first forecast step
         if multi_output:
             for i, out in enumerate(warmup_outputs):
                 forecast_outputs[i][:, 0, :] = out[:, -1, :]
         else:
             forecast_outputs[:, 0, :] = warmup_outputs[:, -1, :]
 
-        # Phase 2: Autoregressive forecast for remaining (horizon - 1) steps
+        # Phase 2: Autoregressive forecast
         for t in range(1, horizon):
             if has_drivers:
                 driver_inputs_t = tuple(driver[:, t : t + 1, :] for driver in forecast_drivers)

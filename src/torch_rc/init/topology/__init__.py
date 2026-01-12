@@ -1,11 +1,28 @@
-"""Topology system for weight initialization.
+"""
+Topology Initialization System
+==============================
 
 This module provides the interface between graph implementations and
-PyTorch tensor initialization. It wraps graph functions to create
-weight initializers compatible with ReservoirLayer.
+PyTorch tensor initialization for reservoir recurrent weights.
 
-Basic Usage
------------
+Classes
+-------
+TopologyInitializer
+    Abstract base class for topology initializers.
+GraphTopology
+    Concrete implementation using NetworkX graphs.
+
+Functions
+---------
+get_topology
+    Get a pre-configured topology by name.
+show_topologies
+    List available topologies or get details.
+register_graph_topology
+    Decorator to register new topologies.
+
+Examples
+--------
 Using pre-registered topologies:
 
 >>> from torch_rc.init.topology import get_topology
@@ -23,7 +40,7 @@ Creating custom topologies:
 ... )
 >>> topology.initialize(weight, spectral_radius=0.95)
 
-Registering custom topologies with decorator:
+Registering custom topologies:
 
 >>> from torch_rc.init.topology import register_graph_topology
 >>> @register_graph_topology("custom", param=1.0)
@@ -31,17 +48,13 @@ Registering custom topologies with decorator:
 ...     G = nx.DiGraph()
 ...     # ... graph generation logic
 ...     return G
->>> topology = get_topology("custom")
 
-Or programmatically:
-
->>> from torch_rc.init.topology import register_topology
->>> from my_graphs import my_custom_graph
->>> register_topology("custom", my_custom_graph, {"param": 1.0})
->>> topology = get_topology("custom")
+See Also
+--------
+torch_rc.init.graphs : Graph generation functions.
+torch_rc.layers.ReservoirLayer : Uses topologies for weight initialization.
 """
 
-# Register all built-in graph topologies (import after registry to use decorator)
 from .base import GraphTopology, TopologyInitializer
 from .registry import (
     get_topology,

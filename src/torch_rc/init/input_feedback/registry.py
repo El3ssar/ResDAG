@@ -179,7 +179,9 @@ def show_input_initializers(name: str | None = None) -> list[str] | None:
 
     return _format_init(info)
 
+
 def _format_init(info: dict) -> str:
+    """Format and print initializer information dictionary."""
     lines = [f"\nInitializer: {info['name']}", "", "Parameters:"]
     for name, meta in info["parameters"].items():
         lines.append(f"  - {name}: type={meta['type']}, default={meta['default']}")

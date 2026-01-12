@@ -1,11 +1,34 @@
-"""Registry for common graph topologies.
+"""
+Topology Registry
+=================
 
-This module provides a convenient registry of pre-configured graph topologies
-that can be referenced by name in ReservoirLayer.
+This module provides a registry of pre-configured graph topologies that can
+be referenced by name when creating :class:`~torch_rc.layers.ReservoirLayer`.
 
-The registry supports two families of initializers:
-1. Graph topologies (square matrices) - for recurrent weights
-2. Input/feedback initializers (rectangular matrices) - for input/feedback weights
+The registry allows convenient access to common topologies without needing
+to import graph functions directly.
+
+Functions
+---------
+register_graph_topology
+    Decorator to register new topologies.
+get_topology
+    Get a topology initializer by name.
+show_topologies
+    List available topologies or get details.
+
+Examples
+--------
+>>> from torch_rc.init.topology import get_topology, show_topologies
+>>>
+>>> # List all available topologies
+>>> show_topologies()
+>>>
+>>> # Get details for a specific topology
+>>> show_topologies("erdos_renyi")
+>>>
+>>> # Create a topology initializer
+>>> topology = get_topology("erdos_renyi", p=0.15)
 """
 
 import inspect
@@ -21,22 +44,29 @@ def register_graph_topology(
     name: str,
     **default_kwargs: Any,
 ) -> Callable[[Callable], Callable]:
-    """Decorator to register a graph function as a topology.
+    """
+    Decorator to register a graph function as a topology.
 
-    This decorator registers a graph generation function in the topology registry
-    at definition time, making it available for use with ReservoirLayer.
+    Registers a graph generation function in the topology registry at
+    definition time, making it available for use with
+    :class:`~torch_rc.layers.ReservoirLayer`.
 
     Parameters
     ----------
     name : str
-        Name for the topology (must be unique)
+        Unique name for the topology.
     **default_kwargs
-        Default keyword arguments for the graph function
+        Default keyword arguments for the graph function.
 
     Returns
     -------
     callable
-        Decorator function
+        Decorator function that registers and returns the graph function.
+
+    Raises
+    ------
+    ValueError
+        If a topology with the same name is already registered.
 
     Examples
     --------
@@ -48,9 +78,9 @@ def register_graph_topology(
 
     Notes
     -----
-    - Graph functions must accept `n` (number of nodes) as first parameter
-    - Graph functions must return nx.Graph or nx.DiGraph with weighted edges
-    - Registered topologies can be accessed via get_topology(name)
+    - Graph functions must accept ``n`` (number of nodes) as first parameter.
+    - Graph functions must return ``nx.Graph`` or ``nx.DiGraph`` with weighted edges.
+    - Registered topologies can be accessed via :func:`get_topology`.
     """
 
     def decorator(graph_func: Callable) -> Callable:
@@ -66,30 +96,48 @@ def get_topology(
     name: str,
     **override_kwargs: Any,
 ) -> GraphTopology:
-    """Get a pre-configured topology initializer by name.
+    """
+    Get a pre-configured topology initializer by name.
 
     Parameters
     ----------
     name : str
-        Name of the topology (e.g., "erdos_renyi", "watts_strogatz")
+        Name of the topology (e.g., ``"erdos_renyi"``, ``"watts_strogatz"``).
     **override_kwargs
-        Keyword arguments to override default graph parameters
+        Keyword arguments to override default graph parameters.
 
     Returns
     -------
     GraphTopology
-        Topology initializer
+        Configured topology initializer.
 
     Raises
     ------
     ValueError
-        If topology name is not registered
+        If topology name is not registered.
 
     Examples
     --------
+    Basic usage:
+
     >>> topology = get_topology("erdos_renyi", p=0.15, seed=42)
     >>> weight = torch.empty(100, 100)
     >>> topology.initialize(weight, spectral_radius=0.9)
+
+    With ReservoirLayer:
+
+    >>> from torch_rc.layers import ReservoirLayer
+    >>> reservoir = ReservoirLayer(
+    ...     reservoir_size=500,
+    ...     feedback_size=10,
+    ...     topology=get_topology("watts_strogatz", k=4, p=0.3),
+    ...     spectral_radius=0.95,
+    ... )
+
+    See Also
+    --------
+    show_topologies : List available topologies.
+    register_graph_topology : Register new topologies.
     """
     if name not in _TOPOLOGY_REGISTRY:
         available = ", ".join(_TOPOLOGY_REGISTRY.keys())
@@ -103,19 +151,21 @@ def get_topology(
     return GraphTopology(graph_func, kwargs)
 
 
-def show_topologies(name: str | None = None) -> list[str] | None:
-    """Show available topologies or details for a specific topology.
+def show_topologies(name: str | None = None) -> list[str] | dict[str, Any] | None:
+    """
+    Show available topologies or details for a specific topology.
 
     Parameters
     ----------
     name : str, optional
-        Name of topology to inspect. If None, returns list of all topologies.
+        Name of topology to inspect. If None, returns list of all
+        registered topology names.
 
     Returns
     -------
-    list[str] | None
-        If name is None: sorted list of registered topology names.
-        If name is provided: dict with 'name', 'defaults', and 'parameters' keys.
+    list of str or dict or None
+        If ``name`` is None: sorted list of registered topology names.
+        If ``name`` is provided: prints details and returns None.
 
     Raises
     ------
@@ -124,19 +174,20 @@ def show_topologies(name: str | None = None) -> list[str] | None:
 
     Examples
     --------
+    List all topologies:
+
     >>> show_topologies()
     ['barabasi_albert', 'chain_of_neurons', 'dendrocycle', ...]
 
+    Get details for a specific topology:
+
     >>> show_topologies("erdos_renyi")
-    {
-        'name': 'erdos_renyi',
-        'defaults': {'p': 0.1, 'directed': False, 'seed': None},
-        'parameters': {
-            'n': {'type': 'int', 'default': <required>},
-            'p': {'type': 'float', 'default': 0.1},
-            ...
-        }
-    }
+    Topology: erdos_renyi
+
+    Parameters:
+      - directed: type=bool, default=True
+      - p: type=float, default=0.1
+      - seed: type=int | NoneType, default=None
     """
     if name is None:
         return sorted(_TOPOLOGY_REGISTRY.keys())
@@ -151,7 +202,6 @@ def show_topologies(name: str | None = None) -> list[str] | None:
     sig = inspect.signature(graph_func)
     types = {}
     for param_name, param in sig.parameters.items():
-
         if param_name == "n":
             continue
 
@@ -178,7 +228,9 @@ def show_topologies(name: str | None = None) -> list[str] | None:
     }
     return _format_topology(info)
 
-def _format_topology(info: dict) -> str:
+
+def _format_topology(info: dict) -> None:
+    """Print formatted topology information."""
     lines = [f"\nTopology: {info['name']}", "", "Parameters:"]
     for name, meta in info["parameters"].items():
         lines.append(f"  - {name}: type={meta['type']}, default={meta['default']}")

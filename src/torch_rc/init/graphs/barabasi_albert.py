@@ -1,4 +1,3 @@
-
 import numpy as np
 from networkx import DiGraph, Graph
 

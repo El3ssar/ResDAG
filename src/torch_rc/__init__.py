@@ -28,7 +28,7 @@ Basic Usage:
 >>> y = readout(h)
 """
 
-from . import composition, init, layers, models, training, utils
+from . import composition, hpo, init, layers, models, training, utils
 
 # Convenience imports for common use cases
 from .composition import ESNModel
@@ -45,6 +45,7 @@ __version__ = "0.1.0"
 __all__ = [
     # Modules
     "composition",
+    "hpo",
     "init",
     "layers",
     "models",
@@ -68,3 +69,20 @@ __all__ = [
     "headless_esn",
     "linear_esn",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import for optional HPO functions."""
+    if name == "run_hpo":
+        from .hpo import run_hpo
+
+        return run_hpo
+    if name == "LOSSES":
+        from .hpo import LOSSES
+
+        return LOSSES
+    if name == "get_study_summary":
+        from .hpo import get_study_summary
+
+        return get_study_summary
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

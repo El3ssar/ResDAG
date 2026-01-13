@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from torch_rc.models import classic_esn, headless_esn
+from resdag.models import classic_esn, headless_esn
 
 
 def example_basic_save_load():

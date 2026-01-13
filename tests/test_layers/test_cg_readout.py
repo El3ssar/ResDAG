@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torch_rc.layers.readouts import CGReadoutLayer
+from resdag.layers.readouts import CGReadoutLayer
 
 
 def solve_ridge_closed_form(X: torch.Tensor, y: torch.Tensor, alpha: float):
@@ -61,7 +61,7 @@ class TestCGReadoutLayerInstantiation:
 
     def test_inherits_from_readout_layer(self):
         """Test that CGReadoutLayer inherits from ReadoutLayer."""
-        from torch_rc.layers.readouts import ReadoutLayer
+        from resdag.layers.readouts import ReadoutLayer
 
         readout = CGReadoutLayer(in_features=100, out_features=10)
         assert isinstance(readout, ReadoutLayer)

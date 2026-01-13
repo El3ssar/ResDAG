@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "torch_rc"
+name = "resdag"
 version = "0.1.0"
 description = "PyTorch-native reservoir computing library with GPU acceleration"
 readme = "README.md"
@@ -48,7 +48,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/torch_rc"]
+packages = ["src/resdag"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -58,7 +58,7 @@ python_functions = ["test_*"]
 addopts = [
     "-v",
     "--tb=short",
-    "--cov=torch_rc",
+    "--cov=resdag",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]

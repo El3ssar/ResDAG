@@ -5,8 +5,8 @@ import sys
 import pytest
 import torch
 
-from torch_rc.init.input_feedback import ChebyshevInitializer, RandomInputInitializer
-from torch_rc.layers import ReadoutLayer, ReservoirLayer
+from resdag.init.input_feedback import ChebyshevInitializer, RandomInputInitializer
+from resdag.layers import ReadoutLayer, ReservoirLayer
 
 # torch.compile is not supported on Python 3.14+
 COMPILE_SUPPORTED = torch.__version__ >= "2.0.0" and sys.version_info < (3, 14)

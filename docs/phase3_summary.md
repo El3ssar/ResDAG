@@ -6,21 +6,21 @@ Phase 3 implements a powerful DAG-based model composition system that allows bui
 
 ## What Was Delivered
 
-### 1. DAG System (`src/torch_rc/composition/dag.py`)
+### 1. DAG System (`src/resdag/composition/dag.py`)
 
 - **Node class**: Represents computation nodes with module, inputs, and metadata
 - **DAG class**: Manages directed acyclic graph structure
 - **Topological sorting**: Kahn's algorithm for execution order
 - **Validation**: Ensures graph integrity (no cycles, proper inputs/outputs)
 
-### 2. ModelBuilder API (`src/torch_rc/composition/builder.py`)
+### 2. ModelBuilder API (`src/resdag/composition/builder.py`)
 
 - **Fluent interface**: Chain `.input()`, `.add()`, `.build()` calls
 - **Automatic naming**: Generates unique names for unnamed nodes
 - **Module name support**: Uses `ReadoutLayer.name` attribute automatically
 - **Multi-input/output**: Supports complex connectivity patterns
 
-### 3. ESNModel (`src/torch_rc/composition/model.py`)
+### 3. ESNModel (`src/resdag/composition/model.py`)
 
 - **DAG execution**: Runs computation in topological order
 - **Activation management**: Stores intermediate results efficiently

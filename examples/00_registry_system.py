@@ -11,13 +11,13 @@ This example demonstrates:
 import networkx as nx
 import torch
 
-from torch_rc.init.input_feedback import (
+from resdag.init.input_feedback import (
     InputFeedbackInitializer,
     get_input_feedback,
     register_input_feedback,
     show_input_initializers,
 )
-from torch_rc.init.topology import (
+from resdag.init.topology import (
     get_topology,
     register_graph_topology,
     show_topologies,

@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from torch_rc.init.graphs import erdos_renyi_graph
-from torch_rc.init.topology import GraphTopology, get_topology
-from torch_rc.layers import ReservoirLayer
+from resdag.init.graphs import erdos_renyi_graph
+from resdag.init.topology import GraphTopology, get_topology
+from resdag.layers import ReservoirLayer
 
 
 class TestReservoirLayerTopology:

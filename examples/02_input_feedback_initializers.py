@@ -6,7 +6,7 @@ for customizing how inputs connect to reservoir neurons.
 
 import torch
 
-from torch_rc.init.input_feedback import (
+from resdag.init.input_feedback import (
     BinaryBalancedInitializer,
     ChebyshevInitializer,
     ChessboardInitializer,
@@ -14,7 +14,7 @@ from torch_rc.init.input_feedback import (
     RandomBinaryInitializer,
     RandomInputInitializer,
 )
-from torch_rc.layers import ReservoirLayer
+from resdag.layers import ReservoirLayer
 
 print("=" * 70)
 print("Example 1: Random Uniform Initializer (Baseline)")

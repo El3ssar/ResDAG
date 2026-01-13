@@ -1,6 +1,6 @@
-# torch_rc Examples
+# resdag Examples
 
-This directory contains examples demonstrating the various features of the `torch_rc` library.
+This directory contains examples demonstrating the various features of the `resdag` library.
 
 ## Migration to pytorch_symbolic
 
@@ -9,7 +9,7 @@ This directory contains examples demonstrating the various features of the `torc
 ### Old API (deprecated):
 
 ```python
-from torch_rc.composition import ModelBuilder
+from resdag.composition import ModelBuilder
 
 builder = ModelBuilder()
 inp = builder.input("input")
@@ -25,7 +25,7 @@ output = model({"input": x})
 
 ```python
 import pytorch_symbolic as ps
-from torch_rc.composition import ESNModel
+from resdag.composition import ESNModel
 
 inp = ps.Input((100, 1))  # seq_len, features
 reservoir = ReservoirLayer(100, 1, 0)(inp)

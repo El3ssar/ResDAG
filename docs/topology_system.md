@@ -2,7 +2,7 @@
 
 ## Overview
 
-The topology system in `torch_rc` provides a powerful way to initialize reservoir recurrent weight matrices using graph structures. Instead of random initialization, you can use well-studied graph topologies from network science to control the connectivity patterns and dynamics of your reservoirs.
+The topology system in `resdag` provides a powerful way to initialize reservoir recurrent weight matrices using graph structures. Instead of random initialization, you can use well-studied graph topologies from network science to control the connectivity patterns and dynamics of your reservoirs.
 
 ## Key Concepts
 
@@ -20,8 +20,8 @@ Different graph structures lead to different reservoir dynamics:
 
 The topology system has three layers:
 
-1. **Graph Functions** (`torch_rc.graphs`): Pure NetworkX graph generators
-2. **Topology Interface** (`torch_rc.topology`): Converts graphs → PyTorch tensors
+1. **Graph Functions** (`resdag.graphs`): Pure NetworkX graph generators
+2. **Topology Interface** (`resdag.topology`): Converts graphs → PyTorch tensors
 3. **Reservoir Integration**: Automatic initialization in `ReservoirLayer`
 
 ## Usage
@@ -29,7 +29,7 @@ The topology system has three layers:
 ### Basic Usage with Named Topologies
 
 ```python
-from torch_rc.layers import ReservoirLayer
+from resdag.layers import ReservoirLayer
 
 # Use a pre-registered topology by name
 reservoir = ReservoirLayer(
@@ -43,7 +43,7 @@ reservoir = ReservoirLayer(
 ### Available Named Topologies
 
 ```python
-from torch_rc.init.topology import show_topologies
+from resdag.init.topology import show_topologies
 
 # List all available topologies
 print(show_topologies())
@@ -59,7 +59,7 @@ print(show_topologies("erdos_renyi"))
 ### Custom Topology Parameters
 
 ```python
-from torch_rc.topology import get_topology
+from resdag.topology import get_topology
 
 # Customize parameters for a named topology
 topology = get_topology(
@@ -81,8 +81,8 @@ reservoir = ReservoirLayer(
 ### Creating Custom Topologies
 
 ```python
-from torch_rc.topology import GraphTopology
-from torch_rc.graphs import erdos_renyi_graph
+from resdag.topology import GraphTopology
+from resdag.graphs import erdos_renyi_graph
 
 # Direct control over graph generation
 custom_topology = GraphTopology(
@@ -105,7 +105,7 @@ reservoir = ReservoirLayer(
 ### Registering New Topologies
 
 ```python
-from torch_rc.topology import register_topology
+from resdag.topology import register_topology
 from my_custom_graphs import my_special_graph
 
 # Register your own topology
@@ -299,7 +299,7 @@ def my_graph(n: int, *args, **kwargs) -> nx.Graph | nx.DiGraph:
 Then wrap it in `GraphTopology`:
 
 ```python
-from torch_rc.topology import GraphTopology
+from resdag.topology import GraphTopology
 
 topology = GraphTopology(my_graph, {"param1": value1})
 ```

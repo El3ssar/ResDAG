@@ -102,7 +102,7 @@ loss.backward()  # Gradients flow through reservoir
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch_rc.layers import ReservoirLayer, ReadoutLayer
+from resdag.layers import ReservoirLayer, ReadoutLayer
 
 # Create trainable model
 reservoir = ReservoirLayer(100, feedback_size=10, trainable=True)
@@ -135,7 +135,7 @@ for epoch in range(100):
 ### Example 2: ModelBuilder
 
 ```python
-from torch_rc.composition import ModelBuilder
+from resdag.composition import ModelBuilder
 
 # Build trainable model
 builder = ModelBuilder()

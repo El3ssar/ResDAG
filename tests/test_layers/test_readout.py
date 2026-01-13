@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from torch_rc.layers import ReadoutLayer
+from resdag.layers import ReadoutLayer
 
 
 class TestReadoutLayerInstantiation:

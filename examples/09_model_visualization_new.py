@@ -6,7 +6,7 @@ pytorch_symbolic-based API with torchvista integration.
 
 import torch
 
-from torch_rc.models import classic_esn, headless_esn, ott_esn
+from resdag.models import classic_esn, headless_esn, ott_esn
 
 print("=" * 70)
 print("MODEL VISUALIZATION WITH PYTORCH_SYMBOLIC")

@@ -114,8 +114,8 @@ brew install graphviz
 ### Basic Plot
 
 ```python
-from torch_rc.composition import ModelBuilder
-from torch_rc.layers import ReservoirLayer, ReadoutLayer
+from resdag.composition import ModelBuilder
+from resdag.layers import ReservoirLayer, ReadoutLayer
 
 builder = ModelBuilder()
 feedback = builder.input("feedback")

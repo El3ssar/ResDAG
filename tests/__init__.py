@@ -1,1 +1,1 @@
-"""Test suite for torch_rc."""
+"""Test suite for resdag."""

@@ -1,14 +1,14 @@
 # Hyperparameter Optimization
 
-torch_rc provides an Optuna-based hyperparameter optimization (HPO) system designed specifically for Echo State Networks. It supports specialized loss functions for chaotic time series forecasting and integrates seamlessly with the library's training infrastructure.
+resdag provides an Optuna-based hyperparameter optimization (HPO) system designed specifically for Echo State Networks. It supports specialized loss functions for chaotic time series forecasting and integrates seamlessly with the library's training infrastructure.
 
 ## Installation
 
 The HPO module requires `optuna` as an optional dependency. Install it with:
 
 ```bash
-# Install torch_rc with HPO support
-pip install torch_rc[hpo]
+# Install resdag with HPO support
+pip install resdag[hpo]
 
 # Or install optuna separately
 pip install optuna
@@ -19,8 +19,8 @@ Note: The loss functions (`LOSSES`, `get_loss`, etc.) are always available witho
 ## Quick Start
 
 ```python
-from torch_rc.hpo import run_hpo, get_study_summary
-from torch_rc.models import ott_esn
+from resdag.hpo import run_hpo, get_study_summary
+from resdag.models import ott_esn
 
 # 1. Define how to create a model
 def model_creator(reservoir_size, spectral_radius):
@@ -138,7 +138,7 @@ Required keys:
 
 ## Loss Functions
 
-torch_rc provides specialized loss functions for evaluating multi-step forecasts:
+resdag provides specialized loss functions for evaluating multi-step forecasts:
 
 ### Expected Forecast Horizon (EFH) - Default
 

@@ -7,7 +7,7 @@ which provides a more concise syntax compared to ModelBuilder.
 import torch
 from pytorch_symbolic import Input, SymbolicModel
 
-from torch_rc.layers import ReadoutLayer, ReservoirLayer
+from resdag.layers import ReadoutLayer, ReservoirLayer
 
 print("=" * 80)
 print("Functional API Examples")

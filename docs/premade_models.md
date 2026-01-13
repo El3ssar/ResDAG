@@ -1,6 +1,6 @@
 # Premade Model Architectures
 
-`torch_rc` provides four premade ESN architectures that can be used directly or customized for specific tasks. These architectures follow best practices from reservoir computing literature while providing a simple, config-based API for customization.
+`resdag` provides four premade ESN architectures that can be used directly or customized for specific tasks. These architectures follow best practices from reservoir computing literature while providing a simple, config-based API for customization.
 
 ## Available Architectures
 
@@ -17,7 +17,7 @@ Input -> Reservoir -> Concatenate(Input, Reservoir) -> Readout
 **Usage:**
 
 ```python
-from torch_rc.models import classic_esn
+from resdag.models import classic_esn
 
 # Simple usage
 model = classic_esn(
@@ -63,7 +63,7 @@ Input -> Reservoir -> SelectiveExponentiation -> Concatenate(Input, Augmented) -
 **Usage:**
 
 ```python
-from torch_rc.models import ott_esn
+from resdag.models import ott_esn
 
 model = ott_esn(
     reservoir_size=200,
@@ -97,7 +97,7 @@ Input -> Reservoir
 **Usage:**
 
 ```python
-from torch_rc.models import headless_esn
+from resdag.models import headless_esn
 
 model = headless_esn(
     reservoir_size=100,
@@ -137,7 +137,7 @@ Input -> Reservoir (identity activation)
 **Usage:**
 
 ```python
-from torch_rc.models import linear_esn
+from resdag.models import linear_esn
 
 model = linear_esn(
     reservoir_size=100,
@@ -239,7 +239,7 @@ output = model({"input": x})
 
 ```python
 import torch
-from torch_rc.models import classic_esn, ott_esn, headless_esn, linear_esn
+from resdag.models import classic_esn, ott_esn, headless_esn, linear_esn
 
 # Same input for all models
 x = torch.randn(4, 50, 2)

@@ -7,11 +7,11 @@ This example shows how to visualize ESN models using:
 
 import pytorch_symbolic as ps
 
-from torch_rc.composition import ESNModel
-from torch_rc.layers import ReservoirLayer
-from torch_rc.layers.readouts import CGReadoutLayer
-from torch_rc.layers.custom import Concatenate
-from torch_rc.models import classic_esn, ott_esn
+from resdag.composition import ESNModel
+from resdag.layers import ReservoirLayer
+from resdag.layers.readouts import CGReadoutLayer
+from resdag.layers.custom import Concatenate
+from resdag.models import classic_esn, ott_esn
 
 print("=" * 70)
 print("MODEL VISUALIZATION EXAMPLES")

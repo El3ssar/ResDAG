@@ -7,10 +7,10 @@ import pytest
 import pytorch_symbolic as ps
 import torch
 
-from torch_rc.composition import ESNModel
-from torch_rc.layers import ReservoirLayer
-from torch_rc.layers.readouts import CGReadoutLayer
-from torch_rc.models import classic_esn, headless_esn
+from resdag.composition import ESNModel
+from resdag.layers import ReservoirLayer
+from resdag.layers.readouts import CGReadoutLayer
+from resdag.models import classic_esn, headless_esn
 
 
 class TestBasicSaveLoad:
@@ -213,7 +213,7 @@ class TestModelArchitecture:
 
     def test_different_premade_models(self):
         """Test save/load with different premade architectures."""
-        from torch_rc.models import ott_esn
+        from resdag.models import ott_esn
 
         models = [
             classic_esn(50, 1, 1),

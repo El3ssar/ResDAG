@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torch_rc.models import classic_esn, headless_esn, linear_esn, ott_esn
+from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn
 
 
 class TestClassicESN:
@@ -156,7 +156,7 @@ class TestHeadlessESN:
         model = headless_esn(reservoir_size=50, feedback_size=2)
 
         # Check that no readout layer exists
-        from torch_rc.layers.readouts import ReadoutLayer
+        from resdag.layers.readouts import ReadoutLayer
 
         has_readout = any(isinstance(m, ReadoutLayer) for m in model.modules())
         assert not has_readout, "Headless ESN should not have readout layer"
@@ -202,7 +202,7 @@ class TestLinearESN:
         model = linear_esn(reservoir_size=50, feedback_size=2)
 
         # Find reservoir layer and check activation
-        from torch_rc.layers import ReservoirLayer
+        from resdag.layers import ReservoirLayer
 
         reservoir = None
         for module in model.modules():
@@ -226,7 +226,7 @@ class TestLinearESN:
         )
 
         # Verify activation is still identity
-        from torch_rc.layers import ReservoirLayer
+        from resdag.layers import ReservoirLayer
 
         reservoir = None
         for module in model.modules():

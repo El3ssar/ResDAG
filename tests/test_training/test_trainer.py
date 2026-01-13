@@ -3,10 +3,10 @@
 import pytest
 import torch
 
-import torch_rc as trc
-from torch_rc.composition import ESNModel, Input
-from torch_rc.layers.readouts import CGReadoutLayer
-from torch_rc.training import ESNTrainer
+import resdag as trc
+from resdag.composition import ESNModel, Input
+from resdag.layers.readouts import CGReadoutLayer
+from resdag.training import ESNTrainer
 
 
 class TestESNTrainerBasic:
@@ -150,7 +150,7 @@ class TestESNTrainerMultiReadout:
         readout2 = CGReadoutLayer(50, 3, name="branch2")(reservoir)
 
         # Concatenate and output
-        from torch_rc.layers.custom import Concatenate
+        from resdag.layers.custom import Concatenate
 
         concat = Concatenate()(readout1, readout2)
 

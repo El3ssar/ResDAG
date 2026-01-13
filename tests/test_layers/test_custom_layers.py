@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from torch_rc.layers.custom import (
+from resdag.layers.custom import (
     FeaturePartitioner,
     OutliersFilteredMean,
     SelectiveDropout,

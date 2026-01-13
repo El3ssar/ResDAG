@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from torch_rc.init.graphs import dendrocycle_graph, erdos_renyi_graph, ring_chord_graph
-from torch_rc.init.topology import GraphTopology, get_topology, show_topologies
+from resdag.init.graphs import dendrocycle_graph, erdos_renyi_graph, ring_chord_graph
+from resdag.init.topology import GraphTopology, get_topology, show_topologies
 
 
 class TestGraphTopology:

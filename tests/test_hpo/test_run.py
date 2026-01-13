@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch
 
-from torch_rc.hpo import get_study_summary, run_hpo
-from torch_rc.models import ott_esn
+from resdag.hpo import get_study_summary, run_hpo
+from resdag.models import ott_esn
 
 
 def simple_model_creator(reservoir_size: int = 50, spectral_radius: float = 0.9):

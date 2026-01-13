@@ -11,7 +11,7 @@ All models now use pytorch_symbolic for cleaner, more Pythonic API.
 
 import torch
 
-from torch_rc.models import classic_esn, headless_esn, linear_esn, ott_esn
+from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn
 
 
 def example_classic_esn():
@@ -181,14 +181,14 @@ def example_flexible_specs():
     print("2. Tuple spec: topology=('watts_strogatz', {'k': 6, 'p': 0.1})")
 
     # Method 3: Pre-configured object
-    from torch_rc.init.topology import get_topology
+    from resdag.init.topology import get_topology
 
     topo = get_topology("ring_chord", L=2, w=0.5)
     model3 = classic_esn(100, 1, 1, topology=topo)
     print("3. Object spec: topology=get_topology('ring_chord', L=2, w=0.5)")
 
     # Same for initializers
-    from torch_rc.init.input_feedback import get_input_feedback
+    from resdag.init.input_feedback import get_input_feedback
 
     model4 = classic_esn(100, 1, 1, feedback_initializer="pseudo_diagonal")
     model5 = classic_esn(100, 1, 1, feedback_initializer=("chebyshev", {"p": 0.5}))

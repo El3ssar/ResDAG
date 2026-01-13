@@ -11,10 +11,10 @@ Key concepts:
 
 import torch
 
-import torch_rc as trc
-from torch_rc.composition import ESNModel, Input
-from torch_rc.layers.readouts import CGReadoutLayer
-from torch_rc.training import ESNTrainer
+import resdag as trc
+from resdag.composition import ESNModel, Input
+from resdag.layers.readouts import CGReadoutLayer
+from resdag.training import ESNTrainer
 
 
 def generate_sine_data(n_samples: int = 500, freq: float = 0.1, noise: float = 0.1):

@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torch_rc.layers.reservoir import ReservoirLayer
+from resdag.layers.reservoir import ReservoirLayer
 
 
 class TestReservoirLayerInstantiation:

@@ -6,9 +6,9 @@ to initialize the recurrent weight matrix of a ReservoirLayer.
 
 import torch
 
-from torch_rc.init.graphs import erdos_renyi_graph
-from torch_rc.init.topology import GraphTopology, get_topology, show_topologies
-from torch_rc.layers import ReservoirLayer
+from resdag.init.graphs import erdos_renyi_graph
+from resdag.init.topology import GraphTopology, get_topology, show_topologies
+from resdag.layers import ReservoirLayer
 
 # Example 1: Using a pre-registered topology by name
 print("=" * 60)

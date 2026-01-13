@@ -9,9 +9,9 @@ Convention: First input is always feedback, remaining inputs are drivers.
 
 import torch
 
-import torch_rc as trc
-from torch_rc.composition import ESNModel, Input
-from torch_rc.models import classic_esn
+import resdag as trc
+from resdag.composition import ESNModel, Input
+from resdag.models import classic_esn
 
 
 def generate_sine_data(n_samples=200, freq=0.1):

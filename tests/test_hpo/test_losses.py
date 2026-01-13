@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from torch_rc.hpo.losses import (
+from resdag.hpo.losses import (
     LOSSES,
     discounted_rmse,
     expected_forecast_horizon,

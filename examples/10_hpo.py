@@ -19,8 +19,8 @@ Key Features:
 import numpy as np
 import torch
 
-from torch_rc.hpo import LOSSES, get_study_summary, run_hpo
-from torch_rc.models import ott_esn
+from resdag.hpo import LOSSES, get_study_summary, run_hpo
+from resdag.models import ott_esn
 
 # =============================================================================
 # Example 1: Basic HPO with Synthetic Data
@@ -402,7 +402,7 @@ def example_advanced_search():
 def example_real_data():
     """HPO with real chaotic time series data.
 
-    Uses torch_rc's data loading utilities to load and prepare
+    Uses resdag's data loading utilities to load and prepare
     real trajectory data for optimization.
     """
     print("\n" + "=" * 60)
@@ -418,7 +418,7 @@ def example_real_data():
         print("To run: place .npy files in the expected path.")
         return
 
-    from torch_rc.utils.data import load_and_prepare
+    from resdag.utils.data import load_and_prepare
 
     def model_creator(reservoir_size, spectral_radius, alpha):
         return ott_esn(
@@ -559,11 +559,11 @@ def example_input_driven():
 
     import pytorch_symbolic as ps
 
-    from torch_rc.composition import ESNModel
-    from torch_rc.init.topology import get_topology
-    from torch_rc.layers import ReservoirLayer
-    from torch_rc.layers.custom import Concatenate
-    from torch_rc.layers.readouts import CGReadoutLayer
+    from resdag.composition import ESNModel
+    from resdag.init.topology import get_topology
+    from resdag.layers import ReservoirLayer
+    from resdag.layers.custom import Concatenate
+    from resdag.layers.readouts import CGReadoutLayer
 
     # Dimensions
     FEEDBACK_DIM = 3
@@ -701,7 +701,7 @@ def example_input_driven():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("torch_rc Hyperparameter Optimization Examples")
+    print("resdag Hyperparameter Optimization Examples")
     print("=" * 60)
 
     # Run all examples

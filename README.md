@@ -1,4 +1,4 @@
-# torch_rc
+# resdag
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
@@ -6,7 +6,7 @@
 
 **A modern, GPU-accelerated reservoir computing library for PyTorch.**
 
-`torch_rc` brings the power of Echo State Networks (ESNs) and reservoir computing to PyTorch with a clean, modular API. Built for researchers and practitioners who need fast, flexible, and production-ready reservoir computing models.
+`resdag` brings the power of Echo State Networks (ESNs) and reservoir computing to PyTorch with a clean, modular API. Built for researchers and practitioners who need fast, flexible, and production-ready reservoir computing models.
 
 ---
 
@@ -28,17 +28,17 @@
 ### From pip (recommended)
 
 ```bash
-pip install torch_rc
+pip install resdag
 
 # With hyperparameter optimization support
-pip install torch_rc[hpo]
+pip install resdag[hpo]
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/torch_rc.git
-cd torch_rc
+git clone https://github.com/yourusername/resdag.git
+cd resdag
 pip install -e .
 
 # Or using uv (faster)
@@ -54,7 +54,7 @@ uv sync
 ```python
 import torch
 import pytorch_symbolic as ps
-from torch_rc import ESNModel, ReservoirLayer, CGReadoutLayer, ESNTrainer
+from resdag import ESNModel, ReservoirLayer, CGReadoutLayer, ESNTrainer
 
 # 1. Define the model architecture
 inp = ps.Input((100, 3))  # (seq_len, features)
@@ -82,7 +82,7 @@ predictions = model.forecast(forecast_warmup, horizon=1000)
 ### Using Premade Models
 
 ```python
-from torch_rc.models import ott_esn
+from resdag.models import ott_esn
 
 # Ott's ESN for chaotic systems (with state augmentation)
 model = ott_esn(
@@ -104,8 +104,8 @@ model = ott_esn(
 The heart of ESNs - stateful RNN layers with randomly initialized, fixed recurrent weights:
 
 ```python
-from torch_rc.layers import ReservoirLayer
-from torch_rc.init.topology import get_topology
+from resdag.layers import ReservoirLayer
+from resdag.init.topology import get_topology
 
 reservoir = ReservoirLayer(
     reservoir_size=500,        # Number of neurons
@@ -127,7 +127,7 @@ states = reservoir(feedback, driving_input)     # With driving input
 Linear layers trained via ridge regression (not gradient descent):
 
 ```python
-from torch_rc.layers.readouts import CGReadoutLayer
+from resdag.layers.readouts import CGReadoutLayer
 
 readout = CGReadoutLayer(
     in_features=500,           # Reservoir size
@@ -147,9 +147,9 @@ Build models using `pytorch_symbolic` for clean, functional composition:
 
 ```python
 import pytorch_symbolic as ps
-from torch_rc import ESNModel
-from torch_rc.layers import ReservoirLayer, Concatenate
-from torch_rc.layers.readouts import CGReadoutLayer
+from resdag import ESNModel
+from resdag.layers import ReservoirLayer, Concatenate
+from resdag.layers.readouts import CGReadoutLayer
 
 # Multi-input model with driving signal
 feedback = ps.Input((100, 3))
@@ -166,7 +166,7 @@ model = ESNModel([feedback, driver], readout)
 Efficient algebraic training via `ESNTrainer`:
 
 ```python
-from torch_rc.training import ESNTrainer
+from resdag.training import ESNTrainer
 
 trainer = ESNTrainer(model)
 
@@ -208,10 +208,10 @@ full_output = model.forecast(
 
 ### Graph Topologies
 
-`torch_rc` supports 15+ graph topologies for reservoir initialization:
+`resdag` supports 15+ graph topologies for reservoir initialization:
 
 ```python
-from torch_rc.init.topology import get_topology, show_topologies
+from resdag.init.topology import get_topology, show_topologies
 
 # List all available topologies
 show_topologies()
@@ -246,10 +246,10 @@ reservoir = ReservoirLayer(
 Custom initialization strategies for input/feedback weights:
 
 ```python
-from torch_rc.init.input_feedback import get_input_feedback
+from resdag.init.input_feedback import get_input_feedback
 
 # List available initializers
-from torch_rc.init.input_feedback import show_input_initializers
+from resdag.init.input_feedback import show_input_initializers
 show_input_initializers()
 
 # Use custom initializer
@@ -290,7 +290,7 @@ trainer.fit(
 Built-in utilities for data loading and preparation:
 
 ```python
-from torch_rc.utils.data import load_file, prepare_esn_data
+from resdag.utils.data import load_file, prepare_esn_data
 
 # Load time series
 data = load_file("lorenz.csv")  # Auto-detects format
@@ -310,8 +310,8 @@ warmup, train, target, f_warmup, val = prepare_esn_data(
 Built-in Optuna integration for HPO:
 
 ```python
-from torch_rc.hpo import run_hpo
-from torch_rc.models import ott_esn
+from resdag.hpo import run_hpo
+from resdag.models import ott_esn
 
 def model_creator(reservoir_size, spectral_radius):
     return ott_esn(
@@ -385,8 +385,8 @@ python examples/08_forecasting.py
 ### Chaotic System Prediction
 
 ```python
-from torch_rc.models import ott_esn
-from torch_rc.training import ESNTrainer
+from resdag.models import ott_esn
+from resdag.training import ESNTrainer
 
 # Lorenz attractor prediction
 model = ott_esn(reservoir_size=500, feedback_size=3, output_size=3)
@@ -450,7 +450,7 @@ Generate API documentation using Sphinx:
 
 ```bash
 cd docs/
-sphinx-apidoc -o api/ ../src/torch_rc
+sphinx-apidoc -o api/ ../src/resdag
 make html
 ```
 
@@ -465,7 +465,7 @@ Run the test suite:
 pytest
 
 # Run with coverage
-pytest --cov=torch_rc --cov-report=html
+pytest --cov=resdag --cov-report=html
 
 # Run specific test module
 pytest tests/test_layers/test_reservoir.py
@@ -481,8 +481,8 @@ Current test coverage: **57%** (240 tests passing)
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/torch_rc.git
-cd torch_rc
+git clone https://github.com/yourusername/resdag.git
+cd resdag
 
 # Install with development dependencies
 uv sync --dev
@@ -509,8 +509,8 @@ mypy src/
 ### Project Structure
 
 ```
-torch_rc/
-├── src/torch_rc/
+resdag/
+├── src/resdag/
 │   ├── composition/       # Model composition (pytorch_symbolic)
 │   ├── layers/            # Reservoir, Readout, custom layers
 │   ├── init/              # Weight initialization
@@ -545,14 +545,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## 📄 Citation
 
-If you use `torch_rc` in your research, please cite:
+If you use `resdag` in your research, please cite:
 
 ```bibtex
-@software{torch_rc2024,
+@software{resdag2024,
   author = {Daniel Estevez-Moya},
-  title = {torch_rc: A PyTorch Library for Reservoir Computing},
+  title = {resdag: A PyTorch Library for Reservoir Computing},
   year = {2024},
-  url = {https://github.com/yourusername/torch_rc}
+  url = {https://github.com/yourusername/resdag}
 }
 ```
 
@@ -576,7 +576,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Author**: Daniel Estevez-Moya
 - **Email**: kemossabee@gmail.com
-- **Issues**: [GitHub Issues](https://github.com/yourusername/torch_rc/issues)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/resdag/issues)
 
 ---
 

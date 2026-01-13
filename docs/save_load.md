@@ -1,11 +1,11 @@
 # Model Save and Load
 
-`torch_rc` provides PyTorch-native save and load functionality for ESN models, allowing you to persist trained models to disk and load them for inference or continued training.
+`resdag` provides PyTorch-native save and load functionality for ESN models, allowing you to persist trained models to disk and load them for inference or continued training.
 
 ## Quick Start
 
 ```python
-from torch_rc.models import classic_esn
+from resdag.models import classic_esn
 
 # Create and train model
 model = classic_esn(100, 1, 1)
@@ -121,7 +121,7 @@ model.load('trained_model.pt')
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch_rc.models import classic_esn
+from resdag.models import classic_esn
 
 # Training
 model = classic_esn(
@@ -205,7 +205,7 @@ model = model.cuda()
 ### 4. Reservoir State Management
 
 ```python
-from torch_rc.models import headless_esn
+from resdag.models import headless_esn
 
 model = headless_esn(100, 2)
 

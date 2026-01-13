@@ -24,7 +24,7 @@ This is the transpose of Keras/TensorFlow convention, and all initializers have 
 **Most common baseline** - Uniform random values in [-1, 1]
 
 ```python
-from torch_rc.init.input_feedback import RandomInputInitializer
+from resdag.init.input_feedback import RandomInputInitializer
 
 init = RandomInputInitializer(input_scaling=1.0, seed=42)
 ```
@@ -183,8 +183,8 @@ init = RingWindowInputInitializer(
 ### Basic Usage
 
 ```python
-from torch_rc.layers import ReservoirLayer
-from torch_rc.init.input_feedback import RandomInputInitializer, ChebyshevInitializer
+from resdag.layers import ReservoirLayer
+from resdag.init.input_feedback import RandomInputInitializer, ChebyshevInitializer
 
 # Initialize feedback weights with RandomInput
 feedback_init = RandomInputInitializer(input_scaling=0.5, seed=42)
@@ -208,7 +208,7 @@ reservoir = ReservoirLayer(
 
 ```python
 import torch
-from torch_rc.init.input_feedback import BinaryBalancedInitializer
+from resdag.init.input_feedback import BinaryBalancedInitializer
 
 # Create weight tensor
 weight = torch.empty(100, 10)  # (reservoir_size, input_dim)

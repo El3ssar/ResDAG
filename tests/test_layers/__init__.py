@@ -1,1 +1,1 @@
-"""Tests for torch_rc.layers module."""
+"""Tests for resdag.layers module."""

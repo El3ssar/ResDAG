@@ -6,6 +6,7 @@
 
 **A modern, GPU-accelerated reservoir computing library for PyTorch.**
 
+
 `resdag` brings the power of Echo State Networks (ESNs) and reservoir computing to PyTorch with a clean, modular API. Built for researchers and practitioners who need fast, flexible, and production-ready reservoir computing models.
 
 ---

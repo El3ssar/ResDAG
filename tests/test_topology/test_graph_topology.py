@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torch_rc.init.graphs import erdos_renyi_graph, ring_chord_graph
+from torch_rc.init.graphs import dendrocycle_graph, erdos_renyi_graph, ring_chord_graph
 from torch_rc.init.topology import GraphTopology, get_topology, show_topologies
 
 
@@ -134,3 +134,61 @@ class TestGraphTopologyEdgeCases:
             result = topology.initialize(weight)
 
             assert result.dtype == dtype
+
+
+class TestDendrocycleRounding:
+    """Tests for dendrocycle graph with rounding edge cases."""
+
+    def test_dendrocycle_rounding_edge_case(self):
+        """Test that dendrocycle handles rounding correctly when c+d≈1."""
+        # Cases where rounding could cause C + D to exceed n
+        # e.g., c=0.503, d=0.497 → C=201, D=199 → C+D=400 ✓
+        # but c=0.5025, d=0.4975 could round differently
+        topology = GraphTopology(dendrocycle_graph, {"c": 0.5025, "d": 0.4975, "seed": 42})
+        weight = torch.empty(400, 400)
+
+        # Should not raise ValueError about graph size mismatch
+        result = topology.initialize(weight, spectral_radius=0.9)
+
+        assert result.shape == (400, 400)
+
+    def test_dendrocycle_various_parameter_combinations(self):
+        """Test dendrocycle with various c,d combinations that could cause rounding issues."""
+        n = 400
+        test_cases = [
+            (0.499, 0.499),  # Close to equal split
+            (0.503, 0.495),  # Slightly uneven
+            (0.5025, 0.4975),  # Very close to 1.0
+            (0.501, 0.498),  # Another close case
+            (0.333, 0.332),  # Thirds (rounding issues)
+            (0.666, 0.333),  # Two thirds
+        ]
+
+        for c, d in test_cases:
+            if c + d > 1.0:
+                continue  # Skip invalid combinations
+            
+            topology = GraphTopology(dendrocycle_graph, {"c": c, "d": d, "seed": 42})
+            weight = torch.empty(n, n)
+
+            # Should create exactly n nodes
+            result = topology.initialize(weight, spectral_radius=0.9)
+            assert result.shape == (n, n), f"Failed for c={c}, d={d}"
+
+    def test_dendrocycle_systematic_scan(self):
+        """Systematically test dendrocycle across parameter space."""
+        n = 400
+        c_values = [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        d_values = [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+
+        for c in c_values:
+            for d in d_values:
+                if c + d > 1.0 or c + d < 0.0:
+                    continue  # Skip invalid combinations
+
+                topology = GraphTopology(dendrocycle_graph, {"c": c, "d": d, "seed": 42})
+                weight = torch.empty(n, n)
+
+                # Should create exactly n nodes regardless of rounding
+                result = topology.initialize(weight, spectral_radius=0.9)
+                assert result.shape == (n, n), f"Failed for c={c}, d={d}"

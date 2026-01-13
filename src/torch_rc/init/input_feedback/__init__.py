@@ -77,8 +77,8 @@ from .chessboard import ChessboardInitializer
 from .dendrocycle_input import DendrocycleInputInitializer
 from .opposite_anchors import OppositeAnchorsInitializer
 from .pseudo_diagonal import PseudoDiagonalInitializer
+from .random import RandomInputInitializer
 from .random_binary import RandomBinaryInitializer
-from .random_input import RandomInputInitializer
 from .registry import (
     get_input_feedback,
     register_input_feedback,

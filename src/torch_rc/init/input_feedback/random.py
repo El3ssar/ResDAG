@@ -7,7 +7,7 @@ from .base import InputFeedbackInitializer, _resolve_shape
 from .registry import register_input_feedback
 
 
-@register_input_feedback("random_input", input_scaling=None, seed=None)
+@register_input_feedback("random", input_scaling=None, seed=None)
 class RandomInputInitializer(InputFeedbackInitializer):
     """Random initializer for feedback/input weight matrices.
 

@@ -84,7 +84,7 @@ from .layers.readouts import CGReadoutLayer
 from .models import classic_esn, headless_esn, linear_esn, ott_esn
 from .training import ESNTrainer
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     # Modules

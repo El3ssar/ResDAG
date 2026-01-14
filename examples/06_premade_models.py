@@ -181,11 +181,9 @@ def example_flexible_specs():
     print("2. Tuple spec: topology=('watts_strogatz', {'k': 6, 'p': 0.1})")
 
     # Method 3: Pre-configured object
-    from resdag.init.topology import get_topology
 
-    topo = get_topology("ring_chord", L=2, w=0.5)
-    model3 = classic_esn(100, 1, 1, topology=topo)
-    print("3. Object spec: topology=get_topology('ring_chord', L=2, w=0.5)")
+    model3 = classic_esn(100, 1, 1, topology=("ring_chord", {"L": 2, "w": 0.5}))
+    print("3. Object spec: topology=('ring_chord', {'L': 2, 'w': 0.5})")
 
     # Same for initializers
     from resdag.init.input_feedback import get_input_feedback

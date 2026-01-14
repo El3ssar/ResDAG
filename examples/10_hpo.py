@@ -560,7 +560,6 @@ def example_input_driven():
     import pytorch_symbolic as ps
 
     from resdag.composition import ESNModel
-    from resdag.init.topology import get_topology
     from resdag.layers import ReservoirLayer
     from resdag.layers.custom import Concatenate
     from resdag.layers.readouts import CGReadoutLayer
@@ -590,8 +589,6 @@ def example_input_driven():
         driver0 = ps.Input((100, DRIVER0_DIM))
         driver1 = ps.Input((100, DRIVER1_DIM))
 
-        # Create topology initializer
-        topology = get_topology("random", density=0.1)
 
         # Reservoir0: receives feedback + driver0
         reservoir0 = ReservoirLayer(
@@ -600,7 +597,7 @@ def example_input_driven():
             input_size=DRIVER0_DIM,  # Driver input
             spectral_radius=spectral_radius,
             leak_rate=leak_rate,
-            topology=topology,
+            topology=("random", {"density":0.1}),
         )(feedback, driver0)  # Two inputs: (feedback, driver)
 
         # Reservoir1: receives feedback + driver1
@@ -610,7 +607,7 @@ def example_input_driven():
             input_size=DRIVER1_DIM,  # Different driver
             spectral_radius=spectral_radius,
             leak_rate=leak_rate,
-            topology=topology,
+            topology=("random", {"density": 0.1}),
         )(feedback, driver1)  # Two inputs: (feedback, driver)
 
         # Readout: combines feedback + both reservoir outputs

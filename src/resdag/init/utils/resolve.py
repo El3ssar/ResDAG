@@ -6,8 +6,8 @@ This module provides helper functions to resolve flexible specification formats
 
 from typing import Any
 
-from ..input_feedback import InputFeedbackInitializer, get_input_feedback
-from ..topology import GraphTopology, get_topology
+from resdag.init.input_feedback import InputFeedbackInitializer, get_input_feedback
+from resdag.init.topology import GraphTopology, get_topology
 
 # Type aliases for specification formats
 TopologySpec = None | str | tuple[str, dict[str, Any]] | GraphTopology

@@ -23,11 +23,9 @@ from typing import Any
 
 import pytorch_symbolic as ps
 
-from ..composition import ESNModel
-from ..init.utils import InitializerSpec, TopologySpec
-from ..layers import ReservoirLayer
-from ..layers.custom import Concatenate, SelectiveExponentiation
-from ..layers.readouts import CGReadoutLayer
+from resdag import ESNModel
+from resdag.init.utils import InitializerSpec, TopologySpec
+from resdag.layers import CGReadoutLayer, Concatenate, ReservoirLayer, SelectiveExponentiation
 
 
 def ott_esn(

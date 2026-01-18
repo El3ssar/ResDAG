@@ -18,7 +18,7 @@ resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
 
 import torch
 
-from resdag import ESNModel
+from resdag.composition import ESNModel
 from resdag.layers import ReadoutLayer
 
 

@@ -23,7 +23,7 @@ from typing import Any
 
 import pytorch_symbolic as ps
 
-from resdag import ESNModel
+from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ReservoirLayer, SelectiveExponentiation
 

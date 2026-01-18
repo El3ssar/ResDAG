@@ -79,8 +79,13 @@ from .composition import ESNModel
 
 # Convenience submodule imports
 from .init import graphs, input_feedback, topology
-from .layers import ReservoirLayer
-from .layers.readouts import CGReadoutLayer
+from .layers import (
+    CGReadoutLayer,
+    Concatenate,
+    OutliersFilteredMean,
+    ReservoirLayer,
+    SelectiveExponentiation,
+)
 from .models import classic_esn, headless_esn, linear_esn, ott_esn
 from .training import ESNTrainer
 
@@ -101,8 +106,11 @@ __all__ = [
     "topology",
     "input_feedback",
     # Core layers
-    "ReservoirLayer",
     "CGReadoutLayer",
+    "Concatenate",
+    "OutliersFilteredMean",
+    "ReservoirLayer",
+    "SelectiveExponentiation",
     # Model composition
     "ESNModel",
     # Training

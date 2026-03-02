@@ -73,7 +73,7 @@ class TestRunHPOBasic:
 
     def test_custom_loss_string(self):
         """Custom loss by string works."""
-        for loss_name in ["efh", "horizon", "lyap", "standard", "discounted"]:
+        for loss_name in ["efh", "forecast_horizon", "lyapunov", "standard", "soft_horizon"]:
             study = run_hpo(
                 model_creator=simple_model_creator,
                 search_space=simple_search_space,
@@ -230,14 +230,14 @@ class TestRunHPOLossParams:
         assert study.best_value is not None
 
     def test_loss_params_lyapunov(self):
-        """Lyapunov loss with custom LLE."""
+        """Lyapunov loss with custom lyapunov_t."""
         study = run_hpo(
             model_creator=simple_model_creator,
             search_space=simple_search_space,
             data_loader=simple_data_loader,
             n_trials=1,
-            loss="lyap",
-            loss_params={"lle": 0.5, "dt": 0.02},
+            loss="lyapunov",
+            loss_params={"lyapunov_t": 10},
             verbosity=0,
         )
         assert study.best_value is not None

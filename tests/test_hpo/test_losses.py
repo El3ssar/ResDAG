@@ -5,11 +5,11 @@ import pytest
 
 from resdag.hpo.losses import (
     LOSSES,
-    discounted_rmse,
     expected_forecast_horizon,
     forecast_horizon,
     get_loss,
     lyapunov_weighted,
+    soft_valid_horizon,
     standard_loss,
 )
 
@@ -37,7 +37,7 @@ class TestLossFunctionsBasic:
         assert loss_perfect < loss_noisy  # Perfect is better (more negative)
 
     def test_forecast_horizon_returns_negative(self):
-        """Forecast horizon returns negative log."""
+        """Forecast horizon returns negative value."""
         loss = forecast_horizon(self.y_true, self.y_pred)
         assert isinstance(loss, float)
 
@@ -53,11 +53,17 @@ class TestLossFunctionsBasic:
         assert isinstance(loss, float)
         assert loss > 0
 
-    def test_discounted_rmse_returns_positive(self):
-        """Discounted RMSE returns positive values."""
-        loss = discounted_rmse(self.y_true, self.y_pred)
+    def test_soft_valid_horizon_returns_negative(self):
+        """Soft valid horizon returns negative values."""
+        loss = soft_valid_horizon(self.y_true, self.y_pred)
         assert isinstance(loss, float)
-        assert loss > 0
+        assert loss < 0  # Negative horizon
+
+    def test_soft_valid_horizon_perfect_pred(self):
+        """Perfect predictions give very negative soft horizon (good)."""
+        loss_noisy = soft_valid_horizon(self.y_true, self.y_pred)
+        loss_perfect = soft_valid_horizon(self.y_true, self.y_true)
+        assert loss_perfect < loss_noisy
 
     def test_all_losses_lower_for_better_predictions(self):
         """All losses should be lower for better predictions."""
@@ -123,19 +129,48 @@ class TestLossFunctionsParameters:
             loss = expected_forecast_horizon(self.y_true, self.y_pred, metric=metric)
             assert isinstance(loss, float)
 
-    def test_lyapunov_lle(self):
-        """Lyapunov with different LLE values."""
-        loss_low = lyapunov_weighted(self.y_true, self.y_pred, lle=0.1)
-        loss_high = lyapunov_weighted(self.y_true, self.y_pred, lle=2.0)
-        # Different LLE should give different results
-        assert loss_low != loss_high
-
-    def test_discounted_half_life(self):
-        """Discounted RMSE with different half-lives."""
-        loss_short = discounted_rmse(self.y_true, self.y_pred, half_life=10)
-        loss_long = discounted_rmse(self.y_true, self.y_pred, half_life=100)
-        # Different half-lives should give different results
+    def test_lyapunov_lyapunov_t(self):
+        """Lyapunov with different lyapunov_t values."""
+        loss_short = lyapunov_weighted(self.y_true, self.y_pred, lyapunov_t=10)
+        loss_long = lyapunov_weighted(self.y_true, self.y_pred, lyapunov_t=100)
+        # Different lyapunov_t should give different results
         assert loss_short != loss_long
+
+    def test_soft_horizon_threshold(self):
+        """Soft horizon with different thresholds."""
+        loss_tight = soft_valid_horizon(self.y_true, self.y_pred, threshold=0.1)
+        loss_loose = soft_valid_horizon(self.y_true, self.y_pred, threshold=0.5)
+        # Looser threshold should give better (more negative) score
+        assert loss_loose < loss_tight
+
+    def test_soft_horizon_sharpness(self):
+        """Soft horizon with different n values."""
+        loss_soft = soft_valid_horizon(self.y_true, self.y_pred, n=2)
+        loss_sharp = soft_valid_horizon(self.y_true, self.y_pred, n=20)
+        # Different n should give different results
+        assert loss_soft != loss_sharp
+
+
+class TestSoftValidHorizonNumerical:
+    """Test soft_valid_horizon numerical stability."""
+
+    def test_diverged_predictions_no_nan(self):
+        """Diverged predictions should not produce NaN."""
+        np.random.seed(42)
+        y_true = np.random.randn(4, 100, 3)
+        # Huge errors — should not overflow
+        y_pred = y_true + np.random.randn(4, 100, 3) * 1e10
+
+        loss = soft_valid_horizon(y_true, y_pred)
+        assert isinstance(loss, float)
+        assert np.isfinite(loss)
+
+    def test_perfect_predictions_give_max_horizon(self):
+        """Perfect predictions should give horizon close to T."""
+        y_true = np.random.randn(4, 100, 3)
+        loss = soft_valid_horizon(y_true, y_true)
+        # Perfect predictions: all good_t ≈ 1, H ≈ T = 100
+        assert loss < -90  # Should be close to -100
 
 
 class TestGetLoss:
@@ -173,7 +208,7 @@ class TestLossesRegistry:
 
     def test_registry_has_all_losses(self):
         """Registry contains all expected losses."""
-        expected = {"efh", "horizon", "lyap", "standard", "discounted"}
+        expected = {"efh", "forecast_horizon", "lyapunov", "standard", "soft_horizon"}
         assert set(LOSSES.keys()) == expected
 
     def test_registry_values_are_callable(self):

@@ -47,9 +47,9 @@ def register_input_feedback(
 
     Notes
     -----
-    - Initializer classes must inherit from InputFeedbackInitializer
-    - Initializer classes must implement initialize(weight, **kwargs) method
-    - Registered initializers can be accessed via get_input_feedback(name)
+    - Initializer classes must inherit from ``InputFeedbackInitializer``
+    - Initializer classes must implement ``initialize(weight, **kwargs)`` method
+    - Registered initializers can be accessed via ``get_input_feedback(name)``
     """
 
     def decorator(init_class: Type[InputFeedbackInitializer]) -> Type[InputFeedbackInitializer]:
@@ -140,8 +140,8 @@ def show_input_initializers(name: str | None = None) -> list[str] | None:
         return sorted(_INPUT_FEEDBACK_REGISTRY.keys())
 
     if name not in _INPUT_FEEDBACK_REGISTRY:
-        available = ", ".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
-        raise ValueError(f"Unknown initializer '{name}'. Available: {available}")
+        available = ", \n".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
+        raise ValueError(f"Unknown initializer '{name}'.\n Available: \n{available}")
 
     init_class, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
 

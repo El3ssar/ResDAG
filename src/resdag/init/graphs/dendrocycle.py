@@ -172,7 +172,7 @@ def dendrocycle_graph(
         rng.shuffle(topo)
         for i in range(len(topo)):
             for j in range(i + 1, len(topo)):
-                if rng.random() < 0.1:
+                if rng.random() < 0.5:
                     G.add_edge(topo[i], topo[j], weight=quiescent_weight)
 
     # ======================================================

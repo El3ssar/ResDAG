@@ -17,6 +17,7 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
     especially when input dimensions have semantic meaning.
 
     The connectivity pattern ensures:
+
     - Each reservoir neuron receives input from exactly one input dimension
     - Each input dimension connects to approximately N/D reservoir neurons
       (where N=reservoir size, D=input dimension)

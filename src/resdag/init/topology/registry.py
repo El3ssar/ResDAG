@@ -193,8 +193,8 @@ def show_topologies(name: str | None = None) -> list[str] | dict[str, Any] | Non
         return sorted(_TOPOLOGY_REGISTRY.keys())
 
     if name not in _TOPOLOGY_REGISTRY:
-        available = ", ".join(sorted(_TOPOLOGY_REGISTRY.keys()))
-        raise ValueError(f"Unknown topology '{name}'. Available: {available}")
+        available = ", \n".join(sorted(_TOPOLOGY_REGISTRY.keys()))
+        raise ValueError(f"Unknown topology '{name}'.\n Available: \n{available}")
 
     graph_func, default_kwargs = _TOPOLOGY_REGISTRY[name]
 

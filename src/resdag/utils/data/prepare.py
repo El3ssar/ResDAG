@@ -63,34 +63,32 @@ def normalize_data(
 
 
 def _compute_stats(data: torch.Tensor, method: NormMethod) -> dict[str, torch.Tensor]:
-    """Compute global normalization statistics from data."""
+    """Compute feature-wise normalization statistics from data."""
+    reduce_dims = (0, 1)  # batch and time
+
     if method == "minmax":
-        data_min = data.min()
-        data_max = data.max()
+        data_min = data.amin(dim=reduce_dims, keepdim=True)
+        data_max = data.amax(dim=reduce_dims, keepdim=True)
         data_range = data_max - data_min
-        if data_range == 0:
-            data_range = torch.ones_like(data_range)
+        data_range[data_range == 0] = 1.0
         return {"min": data_min, "range": data_range}
 
     elif method == "standard":
-        mean = data.mean()
-        std = data.std()
-        if std == 0:
-            std = torch.ones_like(std)
+        mean = data.mean(dim=reduce_dims, keepdim=True)
+        std = data.std(dim=reduce_dims, keepdim=True)
+        std[std == 0] = 1.0
         return {"mean": mean, "std": std}
 
     elif method == "noncentered":
-        scale = data.abs().max()
-        if scale == 0:
-            scale = torch.ones_like(scale)
+        scale = data.abs().amax(dim=reduce_dims, keepdim=True)
+        scale[scale == 0] = 1.0
         return {"scale": scale}
 
     elif method == "meanpreserving":
-        mean = data.mean()
+        mean = data.mean(dim=reduce_dims, keepdim=True)
         centered = data - mean
-        maxdev = centered.abs().max()
-        if maxdev == 0:
-            maxdev = torch.ones_like(maxdev)
+        maxdev = centered.abs().amax(dim=reduce_dims, keepdim=True)
+        maxdev[maxdev == 0] = 1.0
         return {"mean": mean, "maxdev": maxdev}
 
     else:
@@ -131,11 +129,11 @@ def prepare_esn_data(
     4. Forecast warmup: Last warmup_steps of training for forecast initialization
     5. Validation: Held-out data for testing
 
-    Data layout:
-    ```
-    [discard][warmup][--------train-------][---val---]
-                     ^target starts here+1
-    ```
+    Data layout::
+
+        [discard][warmup][--------train-------][---val---]
+                        ^target starts here+1
+
 
     Parameters
     ----------
@@ -245,6 +243,7 @@ def load_and_prepare(
     discard_steps: int = 0,
     normalize: bool = False,
     norm_method: NormMethod = "minmax",
+    dtype: torch.dtype | None = None,
     **load_kwargs,
 ) -> ESNDataSplits:
     """Load data from file(s) and prepare for ESN training.
@@ -268,6 +267,8 @@ def load_and_prepare(
         Whether to normalize data.
     norm_method : str, default="minmax"
         Normalization method.
+    dtype : torch.dtype, optional
+        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
     **load_kwargs
         Additional arguments passed to load_file (e.g., key for .npz).
 
@@ -297,7 +298,7 @@ def load_and_prepare(
         raise ValueError("At least one data path must be provided")
 
     # Load and concatenate along batch dimension
-    tensors = [load_file(p, **load_kwargs) for p in paths]
+    tensors = [load_file(p, dtype=dtype, **load_kwargs) for p in paths]
     data = torch.cat(tensors, dim=0) if len(tensors) > 1 else tensors[0]
 
     return prepare_esn_data(

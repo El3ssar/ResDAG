@@ -15,6 +15,22 @@ import torch
 # Type alias for path-like objects
 PathLike = str | Path
 
+# Mapping from torch dtypes to numpy dtypes
+_TORCH_TO_NUMPY = {
+    torch.float16: np.float16,
+    torch.float32: np.float32,
+    torch.float64: np.float64,
+}
+
+
+def _torch_to_numpy_dtype(dtype: torch.dtype) -> np.dtype:
+    """Convert a torch dtype to the corresponding numpy dtype."""
+    if dtype not in _TORCH_TO_NUMPY:
+        raise ValueError(
+            f"Unsupported dtype {dtype}. Supported: {list(_TORCH_TO_NUMPY.keys())}"
+        )
+    return _TORCH_TO_NUMPY[dtype]
+
 
 def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
     """Ensure data has shape (B, T, D).
@@ -51,7 +67,9 @@ def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
         )
 
 
-def load_csv(path: PathLike, delimiter: str = ",") -> torch.Tensor:
+def load_csv(
+    path: PathLike, delimiter: str = ",", dtype: torch.dtype | None = None
+) -> torch.Tensor:
     """Load time series data from a CSV file.
 
     Parameters
@@ -60,6 +78,8 @@ def load_csv(path: PathLike, delimiter: str = ",") -> torch.Tensor:
         Path to the CSV file.
     delimiter : str, default=","
         Field delimiter.
+    dtype : torch.dtype, optional
+        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
 
     Returns
     -------
@@ -70,30 +90,38 @@ def load_csv(path: PathLike, delimiter: str = ",") -> torch.Tensor:
     -----
     Expects headerless CSV with numeric values only.
     """
-    data = np.loadtxt(path, delimiter=delimiter, dtype=np.float32)
+    dtype = dtype or torch.get_default_dtype()
+    np_dtype = _torch_to_numpy_dtype(dtype)
+    data = np.loadtxt(path, delimiter=delimiter, dtype=np_dtype)
     data = _ensure_3d(data, f"CSV file '{path}'")
     return torch.from_numpy(data)
 
 
-def load_npy(path: PathLike) -> torch.Tensor:
+def load_npy(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     """Load time series data from a NumPy .npy file.
 
     Parameters
     ----------
     path : str or Path
         Path to the .npy file.
+    dtype : torch.dtype, optional
+        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
 
     Returns
     -------
     torch.Tensor
         Data tensor with shape (B, T, D).
     """
-    data = np.load(path).astype(np.float32)
+    dtype = dtype or torch.get_default_dtype()
+    np_dtype = _torch_to_numpy_dtype(dtype)
+    data = np.load(path).astype(np_dtype)
     data = _ensure_3d(data, f"NPY file '{path}'")
     return torch.from_numpy(data)
 
 
-def load_npz(path: PathLike, key: str = "data") -> torch.Tensor:
+def load_npz(
+    path: PathLike, key: str = "data", dtype: torch.dtype | None = None
+) -> torch.Tensor:
     """Load time series data from a NumPy .npz file.
 
     Parameters
@@ -102,6 +130,8 @@ def load_npz(path: PathLike, key: str = "data") -> torch.Tensor:
         Path to the .npz file.
     key : str, default="data"
         Key to access the data array in the .npz file.
+    dtype : torch.dtype, optional
+        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
 
     Returns
     -------
@@ -113,23 +143,27 @@ def load_npz(path: PathLike, key: str = "data") -> torch.Tensor:
     KeyError
         If the specified key is not found in the file.
     """
+    dtype = dtype or torch.get_default_dtype()
+    np_dtype = _torch_to_numpy_dtype(dtype)
     data_dict = np.load(path)
     if key not in data_dict:
         available = list(data_dict.keys())
         raise KeyError(f"Key '{key}' not found in '{path}'. Available keys: {available}")
 
-    data = data_dict[key].astype(np.float32)
+    data = data_dict[key].astype(np_dtype)
     data = _ensure_3d(data, f"NPZ file '{path}'")
     return torch.from_numpy(data)
 
 
-def load_nc(path: PathLike) -> torch.Tensor:
+def load_nc(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     """Load time series data from a NetCDF (.nc) file.
 
     Parameters
     ----------
     path : str or Path
         Path to the .nc file.
+    dtype : torch.dtype, optional
+        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
 
     Returns
     -------
@@ -147,18 +181,24 @@ def load_nc(path: PathLike) -> torch.Tensor:
             "xarray is required to load NetCDF files. Install with: pip install xarray netcdf4"
         ) from e
 
-    data = xr.open_dataarray(path).to_numpy().astype(np.float32)
+    dtype = dtype or torch.get_default_dtype()
+    np_dtype = _torch_to_numpy_dtype(dtype)
+    data = xr.open_dataarray(path).to_numpy().astype(np_dtype)
     data = _ensure_3d(data, f"NetCDF file '{path}'")
     return torch.from_numpy(data)
 
 
-def load_file(path: PathLike, **kwargs) -> torch.Tensor:
+def load_file(
+    path: PathLike, dtype: torch.dtype | None = None, **kwargs
+) -> torch.Tensor:
     """Load time series data from a file, detecting format from extension.
 
     Parameters
     ----------
     path : str or Path
         Path to the data file. Supported extensions: .csv, .npy, .npz, .nc
+    dtype : torch.dtype, optional
+        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
     **kwargs
         Additional arguments passed to the specific loader (e.g., key for .npz).
 
@@ -187,12 +227,7 @@ def load_file(path: PathLike, **kwargs) -> torch.Tensor:
             f"Unsupported file extension '{suffix}' for '{path}'. Supported: {list(loaders.keys())}"
         )
 
-    loader = loaders[suffix]
-
-    # Only pass kwargs if the loader accepts them
-    if suffix == ".npz":
-        return loader(path, **kwargs)
-    return loader(path)
+    return loaders[suffix](path, dtype=dtype, **kwargs)
 
 
 def save_csv(data: torch.Tensor, path: PathLike, delimiter: str = ",") -> None:

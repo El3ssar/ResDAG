@@ -32,6 +32,7 @@ Examples
 from .concatenate import Concatenate
 from .feature_partitioner import FeaturePartitioner
 from .outliers_filtered_mean import OutliersFilteredMean
+from .power import Power
 from .selective_dropout import SelectiveDropout
 from .selective_exponentiation import SelectiveExponentiation
 
@@ -39,6 +40,7 @@ __all__ = [
     "Concatenate",
     "FeaturePartitioner",
     "OutliersFilteredMean",
+    "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",
 ]

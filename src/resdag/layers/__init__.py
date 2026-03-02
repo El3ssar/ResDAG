@@ -43,6 +43,7 @@ from .custom import (
     Concatenate,
     FeaturePartitioner,
     OutliersFilteredMean,
+    Power,
     SelectiveDropout,
     SelectiveExponentiation,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "Concatenate",
     "FeaturePartitioner",
     "OutliersFilteredMean",
+    "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",
 ]

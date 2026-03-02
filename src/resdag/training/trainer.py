@@ -138,15 +138,11 @@ class ESNTrainer:
             If any readout is missing from targets.
             If target sequence length doesn't match training inputs.
 
-        Warns
-        -----
-        UserWarning
-            If targets dict contains names not matching any readout.
-
         Notes
         -----
-        After calling ``fit()``, all readouts will have ``is_fitted=True``
-        and the model is ready for inference or forecasting.
+        After calling ``fit()``, all readouts will have ``is_fitted=True`` and the model is ready for inference or forecasting.
+
+        Emits a ``UserWarning`` if targets dict contains names not matching any readout.
 
         Examples
         --------

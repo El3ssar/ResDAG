@@ -3,6 +3,7 @@
 from typing import Any
 
 import pytorch_symbolic as ps
+import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
@@ -67,7 +68,7 @@ def linear_esn(
     >>> linear_states = model(input_data)
     """
     # Build model - just input and reservoir with linear activation
-    inp = ps.Input((100, feedback_size))
+    inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
 
     reservoir = ReservoirLayer(
         reservoir_size=reservoir_size,

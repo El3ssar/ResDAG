@@ -11,6 +11,8 @@ classic_esn
     Traditional ESN with input concatenation.
 ott_esn
     Ott's ESN with state augmentation (squared even units).
+power_augmented
+    Power Augmented ESN with state augmentation (exponentiated reservoir states).
 headless_esn
     Reservoir only (no readout) for analysis.
 linear_esn
@@ -51,10 +53,12 @@ from .classic_esn import classic_esn
 from .headless_esn import headless_esn
 from .linear_esn import linear_esn
 from .ott_esn import ott_esn
+from .power_augmented import power_augmented
 
 __all__ = [
     "classic_esn",
-    "ott_esn",
     "headless_esn",
     "linear_esn",
+    "ott_esn",
+    "power_augmented",
 ]

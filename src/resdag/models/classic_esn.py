@@ -14,6 +14,7 @@ See Also
 from typing import Any
 
 import pytorch_symbolic as ps
+import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
@@ -127,7 +128,7 @@ def classic_esn(
     :class:`resdag.training.ESNTrainer` : Trainer for fitting readouts
     """
     # Build model with pytorch_symbolic
-    inp = ps.Input((100, feedback_size))  # Use typical seq_len for tracing
+    inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
 
     reservoir = ReservoirLayer(
         reservoir_size=reservoir_size,

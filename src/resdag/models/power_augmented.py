@@ -26,13 +26,14 @@ import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, ReservoirLayer, SelectiveExponentiation
+from resdag.layers import CGReadoutLayer, Concatenate, Power, ReservoirLayer
 
 
-def ott_esn(
+def power_augmented(
     reservoir_size: int,
     feedback_size: int,
     output_size: int,
+    exponent: float = 2.0,
     # Reservoir params
     topology: TopologySpec | None = None,
     spectral_radius: float = 0.9,
@@ -49,15 +50,14 @@ def ott_esn(
     **reservoir_kwargs: Any,
 ) -> ESNModel:
     """
-    Build Ott's ESN model with state augmentation.
+    Build Power Augmented ESN model.
 
-    This model follows the architecture proposed by Edward Ott, which augments
-    reservoir states by squaring even-indexed units and concatenating with input.
+    This model augments reservoir states by exponentiating to a power and concatenating with input.
     This augmentation helps capture higher-order dynamics in chaotic systems.
 
     Architecture::
 
-        Input -> Reservoir -> SelectiveExponentiation -> Concatenate(Input, Augmented) -> Readout
+        Input -> Reservoir -> Power -> Concatenate(Input, Augmented) -> Readout
 
     Parameters
     ----------
@@ -67,6 +67,8 @@ def ott_esn(
         Dimension of feedback signal (input features).
     output_size : int
         Dimension of output signal.
+    exponent : float, default=2.0
+        Exponent to apply to reservoir states.
     topology : str, tuple, or TopologyInitializer, optional
         Topology for recurrent weights. Accepts:
 
@@ -98,29 +100,31 @@ def ott_esn(
     Returns
     -------
     ESNModel
-        Configured Ott ESN model ready for training and inference.
+        Configured Power Augmented ESN model ready for training and inference.
 
     Examples
     --------
     Basic usage:
 
-    >>> from resdag.models import ott_esn
-    >>> model = ott_esn(
+    >>> from resdag.models import power_augmented
+    >>> model = power_augmented(
     ...     reservoir_size=500,
     ...     feedback_size=3,
     ...     output_size=3,
+    ...     exponent=2.0,
     ... )
     >>> model.summary()
 
     With custom topology:
 
     >>> from resdag.init.topology import get_topology
-    >>> model = ott_esn(
+    >>> model = power_augmented(
     ...     reservoir_size=500,
     ...     feedback_size=3,
     ...     output_size=3,
     ...     topology=get_topology("watts_strogatz", k=4, p=0.3),
     ...     spectral_radius=0.95,
+    ...     exponent=2.0,
     ... )
 
     Training and forecasting:
@@ -158,7 +162,7 @@ def ott_esn(
     )(inp)
 
     # Augment reservoir states (square even-indexed units)
-    augmented = SelectiveExponentiation(index=0, exponent=2.0)(reservoir)
+    augmented = Power(exponent=exponent)(reservoir)
 
     # Concatenate input with augmented reservoir
     concat = Concatenate()(inp, augmented)

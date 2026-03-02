@@ -442,28 +442,73 @@ class ESNModel(ps.SymbolicModel):
                 label, shape, is_input, _ = nodes[out_name]
                 nodes[out_name] = (label, shape, is_input, True)
 
+        # ── Color palette (dark theme) ────────────────────────────────────────
+        _BG = "#0d1117"          # graph background
+        _INP_FILL = "#0c2a4a"    # input node fill   (dark navy)
+        _INP_BORDER = "#2f81f7"  # input node border (bright blue)
+        _OUT_FILL = "#0a2a1a"    # output node fill  (dark forest)
+        _OUT_BORDER = "#3fb950"  # output node border (bright green)
+        _LYR_FILL = "#180f30"    # hidden layer fill  (dark violet)
+        _LYR_BORDER = "#8957e5"  # hidden layer border (purple)
+        _FONT = "#e6edf3"        # node text (near-white)
+        _EDGE = "#484f58"        # edge line
+        _DIM = "#8b949e"         # dim text (shapes, edge labels)
+        _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
+
+        def _html_label(layer_type: str, shape: str) -> str:
+            """HTML table label: bold type on top, dimmed shape below."""
+            rows = [
+                '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">',
+                f'<TR><TD ALIGN="CENTER"><B>{layer_type}</B></TD></TR>',
+            ]
+            if shape and show_shapes:
+                rows.append(
+                    f'<TR><TD ALIGN="CENTER">'
+                    f'<FONT POINT-SIZE="9" COLOR="{_DIM}">{shape}</FONT>'
+                    f"</TD></TR>"
+                )
+            rows.append("</TABLE>>")
+            return "".join(rows)
+
         # Generate DOT source
         dot_lines = [
             "digraph ESNModel {",
+            f'  bgcolor="{_BG}";',
             f"  rankdir={rankdir};",
-            "  node [shape=box, style=filled];",
-            "  edge [fontsize=10];",
+            "  splines=true;",
+            "  nodesep=0.7;",
+            "  ranksep=0.9;",
+            "  pad=0.5;",
+            f'  graph [fontname="{_FONTS}"];',
+            f'  node [fontname="{_FONTS}", fontcolor="{_FONT}", penwidth=2.0];',
+            (
+                f'  edge [color="{_EDGE}", penwidth=1.5, arrowsize=0.75, arrowhead=vee,'
+                f' fontname="{_FONTS}", fontcolor="{_DIM}", fontsize=9];'
+            ),
         ]
 
         # Add nodes with styling
         for name, (label, shape, is_input, is_output) in nodes.items():
-            if is_input:
-                style = 'fillcolor="#FFB6C1", shape=ellipse'  # Pink for inputs
-            elif is_output:
-                style = 'fillcolor="#90EE90", shape=ellipse'  # Green for outputs
-            else:
-                style = 'fillcolor="#87CEEB"'  # Light blue for layers
-
-            # Extract layer type for display
             layer_type = label.rsplit("_", 1)[0] if "_" in label else label
-            display_label = f"{layer_type}\\n{shape}" if shape and show_shapes else layer_type
+            html = _html_label(layer_type, shape)
 
-            dot_lines.append(f'  "{name}" [label="{display_label}", {style}];')
+            if is_input:
+                attrs = (
+                    f'shape=ellipse, style="filled",'
+                    f' fillcolor="{_INP_FILL}", color="{_INP_BORDER}"'
+                )
+            elif is_output:
+                attrs = (
+                    f'shape=ellipse, style="filled",'
+                    f' fillcolor="{_OUT_FILL}", color="{_OUT_BORDER}"'
+                )
+            else:
+                attrs = (
+                    f'shape=box, style="filled,rounded",'
+                    f' fillcolor="{_LYR_FILL}", color="{_LYR_BORDER}"'
+                )
+
+            dot_lines.append(f'  "{name}" [label={html}, {attrs}];')
 
         # Add edges
         for from_name, to_name, shape_label in edges:

@@ -338,7 +338,6 @@ class ESNModel(ps.SymbolicModel):
     def plot_model(
         self,
         show_shapes: bool = True,
-        show_params: bool = False,
         show_trainable: bool = False,
         rankdir: str = "TB",
         save_path: str | Path | None = None,
@@ -348,24 +347,17 @@ class ESNModel(ps.SymbolicModel):
         """
         Visualize model architecture as a graph.
 
-        Uses the pytorch_symbolic graph structure to generate an accurate
-        visualization of the model topology, including multi-input models
-        and branching architectures.
+        Each layer type gets a distinct color; identical types always share
+        the same color. A legend is appended automatically.
 
-        Each layer type gets a distinct color; identical types share the
-        same color. A legend is appended to the diagram automatically.
-
-        In a Jupyter environment, an interactive widget is displayed with
-        toggle checkboxes for ``show_shapes``, ``show_params``, and
-        ``show_trainable``. Outside Jupyter the diagram is opened with the
-        system viewer; pass ``save_path`` to write a file instead.
+        In Jupyter an interactive widget is shown with toggle checkboxes for
+        ``show_shapes`` and ``show_trainable``. Outside Jupyter the diagram
+        is opened with the system viewer; pass ``save_path`` to write a file.
 
         Parameters
         ----------
         show_shapes : bool, default=True
             Show tensor shapes on edges.
-        show_params : bool, default=False
-            Show key hyperparameters inside each layer node.
         show_trainable : bool, default=False
             Show a padlock indicator (🔒 frozen / 🔓 trainable) on nodes
             that have learnable parameters.
@@ -395,26 +387,18 @@ class ESNModel(ps.SymbolicModel):
 
         Examples
         --------
-        Display in notebook with all details:
-
-        >>> model.plot_model(show_params=True, show_trainable=True)
-
-        Save to file:
-
+        >>> model.plot_model()
+        >>> model.plot_model(show_trainable=True)
         >>> model.plot_model(save_path="model.png", format="png")
-
-        Left-to-right layout:
-
         >>> model.plot_model(rankdir="LR")
         """
-        # ── Color palette (light theme) ───────────────────────────────────────
+        # ── Palette (light theme) ─────────────────────────────────────────────
         _BG = "white"
-        _FONT = "#1E293B"   # dark slate — primary label text
-        _DIM = "#64748B"    # slate gray — secondary text (shapes, params)
-        _EDGE = "#94A3B8"   # edge lines
+        _FONT = "#1E293B"
+        _DIM = "#64748B"
+        _EDGE = "#94A3B8"
         _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
 
-        # Known layer types → (fill, border)
         _KNOWN_COLORS: dict[str, tuple[str, str]] = {
             "Input":                   ("#EFF6FF", "#3B82F6"),
             "ReservoirLayer":          ("#FFFBEB", "#D97706"),
@@ -451,122 +435,51 @@ class ESNModel(ps.SymbolicModel):
                     return f"Input_{i + 1}"
             return f"node_{id(node)}"
 
-        def _get_node_shape_str(node: Any) -> str:
+        def _get_shape_str(node: Any) -> str:
             if hasattr(node, "shape") and isinstance(node.shape, torch.Size):
                 return str(tuple(node.shape))
             return ""
 
-        def _get_type_color(cls_name: str) -> tuple[str, str]:
+        def _get_color(cls_name: str) -> tuple[str, str]:
             if cls_name in _KNOWN_COLORS:
                 return _KNOWN_COLORS[cls_name]
             return _FALLBACK_PALETTE[hash(cls_name) % len(_FALLBACK_PALETTE)]
 
-        def _get_trainable_status(module: Any) -> bool | None:
-            """True = trainable, False = frozen, None = no parameters."""
+        def _trainable_status(module: Any) -> bool | None:
             if hasattr(module, "trainable"):
                 return bool(module.trainable)
             params = list(module.parameters())
-            if not params:
-                return None
-            return any(p.requires_grad for p in params)
+            return None if not params else any(p.requires_grad for p in params)
 
-        def _get_layer_params(module: Any) -> list[str]:
-            cls = type(module).__name__
-            if cls == "ReservoirLayer":
-                return [
-                    f"N={module.reservoir_size} | sr={module.spectral_radius}",
-                    f"leak={module.leak_rate} | act={module.activation}",
-                ]
-            if cls == "CGReadoutLayer":
-                return [
-                    f"in={module.in_features} | out={module.out_features}",
-                    f"\u03b1={module.alpha}",
-                ]
-            if cls == "ReadoutLayer":
-                return [f"in={module.in_features} | out={module.out_features}"]
-            if cls == "SelectiveExponentiation":
-                parity = "even" if module.index % 2 == 0 else "odd"
-                return [f"exp={module.exponent} | {parity} idx"]
-            if cls == "Power":
-                return [f"exp={module.exponent}"]
-            if cls == "FeaturePartitioner":
-                return [f"parts={module.partitions} | overlap={module.overlap}"]
-            return []
-
-        def _html_label(
-            cls_name: str,
-            shape_str: str,
-            module: Any,
-            show_s: bool,
-            show_p: bool,
-            show_t: bool,
-        ) -> str:
-            """Build an HTML-like graphviz label for a node."""
-            # Padlock indicator
-            lock_str = ""
+        def _node_label(cls_name: str, shape_str: str, module: Any, show_s: bool, show_t: bool) -> str:
+            lock = ""
             if show_t and module is not None:
-                status = _get_trainable_status(module)
+                status = _trainable_status(module)
                 if status is not None:
-                    lock_str = " \U0001f513" if status else " \U0001f512"
+                    lock = " \U0001f513" if status else " \U0001f512"
 
-            rows = [
-                '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1" CELLPADDING="4">',
-                f'<TR><TD ALIGN="CENTER"><B><FONT COLOR="{_FONT}">'
-                f"{cls_name}{lock_str}</FONT></B></TD></TR>",
-            ]
-
-            has_details = (show_s and shape_str) or (
-                show_p and module is not None and bool(_get_layer_params(module))
-            )
-            if has_details:
-                rows.append("<TR><TD><HR/></TD></TR>")
-
+            label = f'"{cls_name}{lock}"'
             if show_s and shape_str:
-                rows.append(
-                    f'<TR><TD ALIGN="CENTER">'
-                    f'<FONT POINT-SIZE="9" COLOR="{_DIM}">{shape_str}</FONT>'
-                    f"</TD></TR>"
-                )
+                label = f'"{cls_name}{lock}\\n{shape_str}"'
+            return label
 
-            if show_p and module is not None:
-                for line in _get_layer_params(module):
-                    rows.append(
-                        f'<TR><TD ALIGN="CENTER">'
-                        f'<FONT POINT-SIZE="9" COLOR="{_DIM}">{line}</FONT>'
-                        f"</TD></TR>"
-                    )
-
-            rows.append("</TABLE>>")
-            return "".join(rows)
-
-        def _build_dot(show_s: bool, show_p: bool, show_t: bool) -> str:
-            """Generate DOT source for the current flag combination."""
-            # Collect nodes: name -> (cls_name, shape_str, module, is_input, is_output)
+        def _build_dot(show_s: bool, show_t: bool) -> str:
             nodes: dict[str, tuple[str, str, Any, bool, bool]] = {}
             edges: list[tuple[str, str, str]] = []
 
             for i, inp in enumerate(self.inputs):
-                name = f"Input_{i + 1}"
-                nodes[name] = ("Input", _get_node_shape_str(inp), None, True, False)
+                nodes[f"Input_{i + 1}"] = ("Input", _get_shape_str(inp), None, True, False)
 
             for node, layer_name in node_to_name.items():
                 module = getattr(node, "layer", None)
                 cls_name = (
-                    type(module).__name__
-                    if module is not None
+                    type(module).__name__ if module is not None
                     else layer_name.rsplit("_", 1)[0]
                 )
-                nodes[layer_name] = (
-                    cls_name,
-                    _get_node_shape_str(node),
-                    module,
-                    False,
-                    False,
-                )
+                nodes[layer_name] = (cls_name, _get_shape_str(node), module, False, False)
                 for parent in getattr(node, "_parents", []):
-                    parent_name = _get_node_label(parent)
-                    edge_shape = _get_node_shape_str(parent) if show_s else ""
-                    edges.append((parent_name, layer_name, edge_shape))
+                    edge_label = _get_shape_str(parent) if show_s else ""
+                    edges.append((_get_node_label(parent), layer_name, edge_label))
 
             for out in self.outputs:
                 out_name = _get_node_label(out)
@@ -574,11 +487,10 @@ class ESNModel(ps.SymbolicModel):
                     cls_name, shape_str, module, is_input, _ = nodes[out_name]
                     nodes[out_name] = (cls_name, shape_str, module, is_input, True)
 
-            # Gather class types seen (for legend)
-            seen_classes: dict[str, tuple[str, str]] = {}
-            for cls_name, _, _, _, _ in nodes.values():
-                if cls_name not in seen_classes:
-                    seen_classes[cls_name] = _get_type_color(cls_name)
+            seen: dict[str, tuple[str, str]] = {}
+            for cls_name, *_ in nodes.values():
+                if cls_name not in seen:
+                    seen[cls_name] = _get_color(cls_name)
 
             lines = [
                 "digraph ESNModel {",
@@ -590,50 +502,46 @@ class ESNModel(ps.SymbolicModel):
                 "  pad=0.5;",
                 f'  graph [fontname="{_FONTS}"];',
                 f'  node [fontname="{_FONTS}", penwidth=1.5];',
-                f'  edge [color="{_EDGE}", penwidth=1.5, arrowsize=0.75,'
-                f' arrowhead=vee, fontname="{_FONTS}",'
-                f' fontcolor="{_DIM}", fontsize=9];',
+                f'  edge [color="{_EDGE}", penwidth=1.5, arrowsize=0.75, arrowhead=vee,'
+                f' fontname="{_FONTS}", fontcolor="{_DIM}", fontsize=9];',
             ]
 
             for name, (cls_name, shape_str, module, is_input, is_output) in nodes.items():
-                html = _html_label(cls_name, shape_str, module, show_s, show_p, show_t)
-                fill, border = _get_type_color(cls_name)
+                label = _node_label(cls_name, shape_str, module, show_s, show_t)
+                fill, border = _get_color(cls_name)
                 node_shape = "ellipse" if is_input else "box"
                 style = "filled" if is_input else (
                     "filled,rounded,bold" if is_output else "filled,rounded"
                 )
                 lines.append(
-                    f'  "{name}" [label={html}, shape={node_shape},'
-                    f' style="{style}", fillcolor="{fill}", color="{border}"];'
+                    f'  "{name}" [label={label}, shape={node_shape},'
+                    f' style="{style}", fillcolor="{fill}", color="{border}",'
+                    f' fontcolor="{_FONT}"];'
                 )
 
-            for from_name, to_name, shape_label in edges:
-                if shape_label:
-                    lines.append(
-                        f'  "{from_name}" -> "{to_name}" [label="{shape_label}"];'
-                    )
+            for from_name, to_name, edge_label in edges:
+                if edge_label:
+                    lines.append(f'  "{from_name}" -> "{to_name}" [label="{edge_label}"];')
                 else:
                     lines.append(f'  "{from_name}" -> "{to_name}";')
 
-            # Legend subgraph
-            legend_items = list(seen_classes.items())  # [(cls_name, (fill, border))]
+            legend_items = list(seen.items())
             if legend_items:
                 lnames = [f"__legend_{i}__" for i in range(len(legend_items))]
                 lines.append("  subgraph cluster_legend {")
-                lines.append('    label = "Legend";')
-                lines.append('    style = "filled";')
-                lines.append('    fillcolor = "#F8FAFC";')
-                lines.append('    color = "#CBD5E1";')
-                lines.append(f'    fontname = "{_FONTS}";')
-                lines.append("    fontsize = 10;")
+                lines.append('    label="Legend";')
+                lines.append('    style="filled";')
+                lines.append('    fillcolor="#F8FAFC";')
+                lines.append('    color="#CBD5E1";')
+                lines.append(f'    fontname="{_FONTS}";')
+                lines.append("    fontsize=10;")
                 for lname, (cls_name, (fill, border)) in zip(lnames, legend_items):
                     lines.append(
                         f'    "{lname}" [label="{cls_name}", shape=box,'
-                        f' style="filled,rounded", fillcolor="{fill}",'
-                        f' color="{border}", fontsize=9, fontname="{_FONTS}"];'
+                        f' style="filled,rounded", fillcolor="{fill}", color="{border}",'
+                        f' fontsize=9, fontcolor="{_FONT}", fontname="{_FONTS}"];'
                     )
-                rank_nodes = "; ".join(f'"{n}"' for n in lnames)
-                lines.append(f"    {{rank=same; {rank_nodes};}}")
+                lines.append(f'    {{rank=same; {"; ".join(f"{chr(34)}{n}{chr(34)}" for n in lnames)};}}')
                 lines.append("  }")
 
             lines.append("}")
@@ -645,7 +553,7 @@ class ESNModel(ps.SymbolicModel):
 
             if save_path is not None:
                 save_path = Path(save_path)
-                dot_src = _build_dot(show_shapes, show_params, show_trainable)
+                dot_src = _build_dot(show_shapes, show_trainable)
                 graphviz.Source(dot_src).render(
                     str(save_path.with_suffix("")), format=format, cleanup=True
                 )
@@ -662,11 +570,6 @@ class ESNModel(ps.SymbolicModel):
                         description="Show shapes",
                         layout=widgets.Layout(width="150px"),
                     )
-                    cb_params = widgets.Checkbox(
-                        value=show_params,
-                        description="Show params",
-                        layout=widgets.Layout(width="150px"),
-                    )
                     cb_trainable = widgets.Checkbox(
                         value=show_trainable,
                         description="Show trainable",
@@ -675,34 +578,30 @@ class ESNModel(ps.SymbolicModel):
                     out = widgets.Output()
 
                     def _render(*_: Any) -> None:
-                        dot_src = _build_dot(cb_shapes.value, cb_params.value, cb_trainable.value)
+                        dot_src = _build_dot(cb_shapes.value, cb_trainable.value)
                         svg_data = graphviz.Source(dot_src).pipe(format="svg").decode("utf-8")
                         out.clear_output(wait=True)
                         with out:
                             ipy_display(SVG(svg_data))
 
                     cb_shapes.observe(_render, names="value")
-                    cb_params.observe(_render, names="value")
                     cb_trainable.observe(_render, names="value")
                     _render()
 
-                    widget = widgets.VBox(
-                        [widgets.HBox([cb_shapes, cb_params, cb_trainable]), out]
-                    )
+                    widget = widgets.VBox([widgets.HBox([cb_shapes, cb_trainable]), out])
                     ipy_display(widget)
                     return widget
 
                 except ImportError:
-                    # ipywidgets not available — static display
                     from IPython.display import SVG, display as ipy_display
 
-                    dot_src = _build_dot(show_shapes, show_params, show_trainable)
+                    dot_src = _build_dot(show_shapes, show_trainable)
                     svg_data = graphviz.Source(dot_src).pipe(format="svg").decode("utf-8")
                     ipy_display(SVG(svg_data))
                     return svg_data
 
             # Non-Jupyter: open system viewer
-            dot_src = _build_dot(show_shapes, show_params, show_trainable)
+            dot_src = _build_dot(show_shapes, show_trainable)
             graph = graphviz.Source(dot_src)
             try:
                 graph.view(cleanup=True)
@@ -715,7 +614,7 @@ class ESNModel(ps.SymbolicModel):
             print("      pip install graphviz")
             print("      Also install graphviz system package (apt install graphviz)")
             print("\nDOT source (can be rendered at https://dreampuf.github.io/GraphvizOnline/):")
-            dot_src = _build_dot(show_shapes, show_params, show_trainable)
+            dot_src = _build_dot(show_shapes, show_trainable)
             print(dot_src)
             return dot_src
 

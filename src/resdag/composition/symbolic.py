@@ -582,7 +582,7 @@ class ESNModel(ps.SymbolicModel):
 
             lines = [
                 "digraph ESNModel {",
-                f"  bgcolor={_BG!r};",
+                f'  bgcolor="{_BG}";',
                 f"  rankdir={rankdir};",
                 "  splines=true;",
                 "  nodesep=0.7;",

@@ -82,11 +82,11 @@ from typing import TYPE_CHECKING, Any
 from .losses import (
     LOSSES,
     LossProtocol,
-    discounted_rmse,
     expected_forecast_horizon,
     forecast_horizon,
     get_loss,
     lyapunov_weighted,
+    soft_valid_horizon,
     standard_loss,
 )
 
@@ -112,6 +112,7 @@ def _require_optuna() -> None:
 # Lazy imports for optuna-dependent functions
 if TYPE_CHECKING:
     from .run import run_hpo as run_hpo
+    from .utils import get_best_params as get_best_params
     from .utils import get_study_summary as get_study_summary
     from .utils import make_study_name as make_study_name
 
@@ -136,6 +137,12 @@ def __getattr__(name: str) -> Any:
 
         return make_study_name
 
+    if name == "get_best_params":
+        _require_optuna()
+        from .utils import get_best_params
+
+        return get_best_params
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -149,9 +156,10 @@ __all__ = [
     "expected_forecast_horizon",
     "forecast_horizon",
     "lyapunov_weighted",
+    "soft_valid_horizon",
     "standard_loss",
-    "discounted_rmse",
     # Utilities (require optuna)
+    "get_best_params",
     "get_study_summary",
     "make_study_name",
 ]

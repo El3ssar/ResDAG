@@ -1,6 +1,10 @@
 """Utility functions for hyperparameter optimization.
 
 Provides helpers for study management, naming, and result summarization.
+
+See Also
+--------
+resdag.hpo.run : High-level HPO orchestrator that uses these utilities.
 """
 
 import inspect

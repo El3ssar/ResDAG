@@ -1,14 +1,20 @@
 """Objective function builder for Optuna optimization.
 
 This module provides the core machinery for creating Optuna objective functions
-from user-defined callbacks. It handles model creation, training, forecasting,
-and evaluation.
+from user-defined callbacks.  It handles the full per-trial lifecycle: model
+creation, training, forecasting, evaluation, and optional monitor-loss logging.
+
+See Also
+--------
+resdag.hpo.run : High-level orchestrator that calls :func:`build_objective`.
+resdag.hpo.losses : Loss functions available for evaluation.
 """
 
 import gc
 import logging
 from typing import Any, Callable
 
+import numpy as np
 import optuna
 import torch
 
@@ -23,7 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 def _cleanup() -> None:
-    """Clean up memory between trials."""
+    """Reclaim memory between trials.
+
+    Forces Python garbage collection and, when CUDA is available, empties
+    the GPU memory cache to avoid out-of-memory errors across long studies.
+    """
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -41,6 +51,10 @@ def build_objective(
     penalty_value: float = 1e10,
     monitor_losses: list[LossProtocol] | None = None,
     monitor_params: dict[str, dict[str, Any]] | None = None,
+    device: torch.device | None = None,
+    seed: int | None = None,
+    clip_value: float | None = None,
+    prune_on_clip: bool = False,
 ) -> Callable[[optuna.Trial], float]:
     """Build an Optuna objective function from user-defined callbacks.
 
@@ -78,6 +92,24 @@ def build_objective(
     monitor_params : dict[str, dict[str, Any]], optional
         Keyword arguments for each monitor loss. Keys are loss function names,
         values are dicts of kwargs. E.g., ``{"efh": {"threshold": 0.3}}``.
+    device : torch.device, optional
+        Device to place model and data on (e.g., ``torch.device("cuda")``).
+        If None, uses default device from model/data.
+    seed : int, optional
+        Base seed for per-trial reproducibility. Each trial uses
+        ``seed + trial.number`` to seed PyTorch and numpy.
+    clip_value : float, optional
+        Upper bound for the objective value.  When set and the raw loss
+        exceeds this threshold, the value returned to Optuna is clamped to
+        *clip_value* (or the trial is pruned, see *prune_on_clip*).  The
+        unclipped value is always stored as the ``"raw_loss"`` user attribute.
+        When ``None`` (default), no clipping is applied and
+        ``raw_loss == loss``.
+    prune_on_clip : bool, default=False
+        If ``True`` **and** *clip_value* is set, trials whose raw loss exceeds
+        *clip_value* are pruned (via ``optuna.TrialPruned``) instead of
+        returning the clipped value.  Pruned trials do not count towards the
+        study's completed trials.
 
     Returns
     -------
@@ -100,6 +132,12 @@ def build_objective(
 
     def objective(trial: optuna.Trial) -> float:
         try:
+            # 0. Per-trial reproducible seeding
+            if seed is not None:
+                trial_seed = seed + trial.number
+                torch.manual_seed(trial_seed)
+                np.random.seed(trial_seed % (2**32))
+
             # 1. Get hyperparameters from search space
             params = search_space(trial)
 
@@ -107,8 +145,17 @@ def build_objective(
             data = data_loader(trial)
             _validate_data_keys(data)
 
+            # Move data to device
+            if device is not None:
+                data = {
+                    k: v.to(device) if isinstance(v, torch.Tensor) else v
+                    for k, v in data.items()
+                }
+
             # 3. Create fresh model
             model = model_creator(**params)
+            if device is not None:
+                model = model.to(device)
 
             # 4. Prepare inputs
             warmup_inputs = (data["warmup"],)
@@ -164,15 +211,23 @@ def build_objective(
 
             # Convert to numpy for loss function
             preds_np = preds[:, :timesteps, :].detach().cpu().numpy()
-            val_np = (
-                val[:, :timesteps, :].detach().cpu().numpy()
-                if val.is_cuda
-                else val[:, :timesteps, :].numpy()
-            )
+            val_np = val[:, :timesteps, :].detach().cpu().numpy()
 
-            loss = float(loss_fn(val_np, preds_np))
+            raw_loss = float(loss_fn(val_np, preds_np))
 
-            # Log main loss to trial
+            # Always store the unclipped value
+            trial.set_user_attr("raw_loss", raw_loss)
+
+            # Apply clipping
+            if clip_value is not None and raw_loss > clip_value:
+                if prune_on_clip:
+                    raise optuna.TrialPruned(
+                        f"raw_loss {raw_loss:.6f} exceeds clip_value {clip_value}"
+                    )
+                loss = clip_value
+            else:
+                loss = raw_loss
+
             trial.set_user_attr("loss", loss)
 
             # Compute and log monitor losses
@@ -206,7 +261,19 @@ def build_objective(
 
 
 def _validate_data_keys(data: dict[str, Any]) -> None:
-    """Validate that required data keys are present."""
+    """Validate that the data dictionary contains all required keys.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        Dictionary returned by the user-provided ``data_loader`` callback.
+
+    Raises
+    ------
+    KeyError
+        If one or more of the required keys (``"warmup"``, ``"train"``,
+        ``"target"``, ``"f_warmup"``, ``"val"``) are missing.
+    """
     required = ["warmup", "train", "target", "f_warmup", "val"]
     missing = [k for k in required if k not in data]
     if missing:

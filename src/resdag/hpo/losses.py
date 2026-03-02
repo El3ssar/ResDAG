@@ -1,9 +1,9 @@
 """Loss functions for hyperparameter optimization.
 
 This module provides specialized loss functions for evaluating multi-step
-forecasts in reservoir computing applications. All functions operate on
-batched predictions with shape (B, T, D) where B is batch size, T is time
-steps, and D is dimensions.
+forecasts in reservoir computing applications.  All functions operate on
+batched predictions with shape ``(B, T, D)`` where *B* is batch size, *T* is
+time steps, and *D* is the number of dimensions.
 
 Available Losses
 ----------------
@@ -18,6 +18,11 @@ Example
 >>> from resdag.hpo import LOSSES, get_loss
 >>> loss_fn = get_loss("efh")
 >>> loss = loss_fn(y_true, y_pred, threshold=0.2)
+
+See Also
+--------
+resdag.hpo.objective : Objective builder that wraps these losses for Optuna.
+resdag.hpo.run : High-level HPO orchestrator.
 """
 
 from typing import Literal, Protocol, runtime_checkable
@@ -35,7 +40,6 @@ __all__ = [
     "forecast_horizon",
     "lyapunov_weighted",
     "standard_loss",
-    "discounted_rmse",
 ]
 
 MetricType = Literal["rmse", "mse", "mae", "nrmse"]
@@ -45,8 +49,16 @@ MetricType = Literal["rmse", "mse", "mae", "nrmse"]
 class LossProtocol(Protocol):
     """Protocol for HPO loss functions.
 
-    All loss functions must accept y_true and y_pred arrays of shape (B, T, D)
-    and return a single float value to minimize.
+    All loss functions must accept *y_true* and *y_pred* arrays of shape
+    ``(B, T, D)`` as positional-only arguments and return a single ``float``
+    value to minimize.
+
+    Examples
+    --------
+    Implementing a custom loss:
+
+    >>> def my_loss(y_true, y_pred, /, **kwargs):
+    ...     return float(np.mean((y_true - y_pred) ** 2))
     """
 
     def __call__(
@@ -105,7 +117,7 @@ def expected_forecast_horizon(
     /,
     metric: MetricType = "nrmse",
     threshold: float = 0.2,
-    softness: float = 0.02,
+    softness: float = 0.04,
 ) -> float:
     """Differentiable proxy for forecast horizon length.
 
@@ -140,8 +152,8 @@ def expected_forecast_horizon(
     good_t = expit((threshold - e_t) / softness)  # ∈ (0, 1)
 
     # Survival probability: product of all good indicators up to t
-    log_g = np.log(np.clip(good_t, 1e-12, 1.0))
-    surv_t = np.exp(np.cumsum(log_g))
+    # log_g = np.log(np.clip(good_t, 1e-12, 1.0))
+    surv_t = np.cumprod(good_t)
 
     # Expected horizon length
     expected_horizon = np.sum(surv_t)
@@ -156,7 +168,7 @@ def forecast_horizon(
     metric: MetricType = "rmse",
     threshold: float = 0.2,
 ) -> float:
-    """Negative log of the contiguous valid forecast horizon.
+    """Contiguous valid forecast horizon length.
 
     Counts the number of consecutive time steps where the error stays below
     the threshold, starting from the beginning of the forecast.
@@ -186,49 +198,7 @@ def forecast_horizon(
     else:
         valid_len = int(np.argmax(~below)) if (~below).any() else int(below.size)
 
-    return -float(np.log(valid_len + 1e-9))
-
-
-def lyapunov_weighted(
-    y_true: NDArray[np.floating],
-    y_pred: NDArray[np.floating],
-    /,
-    metric: MetricType = "rmse",
-    dt: float = 1.0,
-    lle: float = 1.0,
-) -> float:
-    """Lyapunov-weighted multi-step geometric mean error.
-
-    Applies exponential weighting based on the Lyapunov exponent, emphasizing
-    short-term accuracy while accounting for exponential error growth in
-    chaotic systems. Errors are weighted by exp(-lle * dt * t).
-
-    Parameters
-    ----------
-    y_true : ndarray
-        True values of shape (B, T, D).
-    y_pred : ndarray
-        Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="rmse"
-        Error metric to compute.
-    dt : float, default=1.0
-        Time step size.
-    lle : float, default=1.0
-        Largest Lyapunov exponent of the system.
-
-    Returns
-    -------
-    float
-        Weighted geometric mean error. Lower is better.
-    """
-    errors = _compute_errors(y_true, y_pred, metric)
-    geom_mean = gmean(errors, axis=0)
-
-    timesteps = np.arange(geom_mean.shape[0], dtype=float)
-    weights = np.exp(-lle * dt * timesteps)
-    weights /= np.sum(weights) + 1e-12
-
-    return float(np.sum(weights * geom_mean))
+    return -float(valid_len)
 
 
 def standard_loss(
@@ -260,17 +230,21 @@ def standard_loss(
     return float(np.mean(geom_mean))
 
 
-def discounted_rmse(
+def lyapunov_weighted(
     y_true: NDArray[np.floating],
     y_pred: NDArray[np.floating],
     /,
     metric: MetricType = "rmse",
-    half_life: int = 64,
+    lyapunov_t: int = 64,
 ) -> float:
-    """Time-discounted error with exponential half-life.
+    """Lyapunov-compensated time-weighted error.
 
-    Applies exponential discounting to errors, giving more weight to early
-    time steps. The discount factor decays to 0.5 after half_life steps.
+    Computes a time-weighted error where weights decay exponentially with
+    characteristic time equal to the Lyapunov time. This compensates for
+    expected exponential error growth in chaotic systems by applying a
+    weight of exp(-t / lyapunov_t) at time step t.
+
+    At t = lyapunov_t, the weight equals exp(-1).
 
     Parameters
     ----------
@@ -279,31 +253,106 @@ def discounted_rmse(
     y_pred : ndarray
         Predicted values of shape (B, T, D).
     metric : {"rmse", "mse", "mae", "nrmse"}, default="rmse"
-        Error metric to compute.
-    half_life : int, default=64
-        Half-life in time steps.
+        Error metric to compute per time step.
+    lyapunov_t : int, default=64
+        Characteristic Lyapunov time (in time steps) controlling the
+        exponential decay rate of the weights.
 
     Returns
     -------
     float
-        Weighted average error. Lower is better.
+        Exponentially time-weighted average error. Lower is better.
     """
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
-    e_t = np.mean(errors, axis=0)  # (T,)
+    e_t = gmean(errors, axis=0)  # (T,)
 
-    gamma = 0.5 ** (1.0 / max(half_life, 1))
-    weights = gamma ** np.arange(1, e_t.shape[0] + 1)
+    t = np.arange(e_t.shape[0])
+    weights = np.exp(-t / lyapunov_t)
 
     return float(np.sum(weights * e_t) / np.sum(weights))
 
 
-# Loss function registry
+def soft_valid_horizon(
+    y_true: NDArray[np.floating],
+    y_pred: NDArray[np.floating],
+    /,
+    metric: MetricType = "rmse",
+    threshold: float = 0.3,
+    n: int = 6,
+) -> float:
+    """Soft forecast horizon via cumulative survival probability.
+
+    At each timestep a soft indicator measures how "good" the prediction is
+    using a Hill-function gate:
+
+    .. math::
+
+        g_t = \\frac{1}{1 + (e_t / \\theta)^n}
+
+    where :math:`e_t` is the median error at step *t*, :math:`\\theta` is the
+    threshold, and *n* controls the sharpness.  A cumulative product of these
+    indicators gives a survival probability that drops to zero once any step
+    fails, mimicking a contiguous forecast horizon:
+
+    .. math::
+
+        H = \\sum_t \\prod_{i \\leq t} g_i
+
+    The function is numerically safe: error ratios are clipped before
+    exponentiation to prevent overflow.
+
+    Parameters
+    ----------
+    y_true : ndarray
+        True values of shape (B, T, D).
+    y_pred : ndarray
+        Predicted values of shape (B, T, D).
+    metric : {"rmse", "mse", "mae", "nrmse"}, default="rmse"
+        Error metric to compute per timestep.
+    threshold : float, default=0.3
+        Error threshold below which predictions are considered "good".
+    n : int, default=6
+        Hill exponent controlling gate sharpness.  Lower values (4-8) give
+        smoother landscapes suitable for TPE optimisation; higher values
+        (>12) approach a hard step function with poor gradient signal.
+
+    Returns
+    -------
+    float
+        Negative expected horizon.  Lower (more negative) is better.
+
+    Notes
+    -----
+    Compared to :func:`expected_forecast_horizon` (which uses a sigmoid gate
+    and batch-median), this loss uses a Hill-function gate and batch-median.
+    The Hill gate has a sharper but still tunable transition and is symmetric
+    around the threshold on a log-error scale.
+
+    See Also
+    --------
+    expected_forecast_horizon : Sigmoid-gated variant with ``cumprod`` survival.
+    """
+    errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
+    e_t = np.median(errors, axis=0)  # (T,) — robust across batch
+
+    # Numerically safe Hill gate: clip the ratio to avoid overflow in x**n
+    ratio = np.clip(e_t / threshold, 0.0, 1e4)
+    good_t = 1.0 / (1.0 + ratio ** n)
+
+    # Survival (cumulative product) — once one step fails, all later are ~0
+    surv_t = np.cumprod(good_t)
+
+    horizon = np.sum(surv_t)
+    return -float(horizon)
+
+
+# Registry mapping loss names to loss functions.
 LOSSES: dict[str, LossProtocol] = {
     "efh": expected_forecast_horizon,
-    "horizon": forecast_horizon,
-    "lyap": lyapunov_weighted,
+    "forecast_horizon": forecast_horizon,
+    "lyapunov": lyapunov_weighted,
     "standard": standard_loss,
-    "discounted": discounted_rmse,
+    "soft_horizon": soft_valid_horizon,
 }
 
 

@@ -41,6 +41,7 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 
 from __future__ import annotations
 
+import colorsys
 from pathlib import Path
 from typing import Any
 
@@ -337,67 +338,57 @@ class ESNModel(ps.SymbolicModel):
 
     def plot_model(
         self,
+        show_shapes: bool = False,
+        show_trainable: bool = False,
+        rankdir: str = "TB",
         save_path: str | Path | None = None,
         format: str = "svg",
-        show_shapes: bool = True,
-        rankdir: str = "TB",
         **kwargs: Any,
     ) -> Any:
         """
         Visualize model architecture as a graph.
 
-        Uses the pytorch_symbolic graph structure to generate an accurate
-        visualization of the model topology, including multi-input models
-        and branching architectures.
-
         Parameters
         ----------
-        save_path : str or Path, optional
-            Path to save the visualization. If None, displays inline
-            in notebooks or prints DOT source.
-        format : {'svg', 'png', 'pdf'}, default='svg'
-            Output format when saving.
         show_shapes : bool, default=True
-            If True, show tensor shapes on graph edges.
+            Show tensor shapes on edges.
+        show_trainable : bool, default=False
+            Show a padlock indicator (🔒 frozen / 🔓 trainable) on nodes
+            that have learnable parameters.
         rankdir : {'TB', 'LR', 'BT', 'RL'}, default='TB'
-            Graph layout direction:
-            - 'TB': top to bottom
-            - 'LR': left to right
-            - 'BT': bottom to top
-            - 'RL': right to left
-        **kwargs
-            Additional arguments passed to ``graphviz.Digraph``.
+            Graph layout direction.
+        save_path : str or Path, optional
+            Render and save to this path instead of displaying.
+        format : {'svg', 'png', 'pdf'}, default='svg'
+            Output format when ``save_path`` is given.
 
         Returns
         -------
-        str or graphviz.Source
-            In Jupyter: displays SVG and returns SVG string.
-            Otherwise: returns graphviz.Source or DOT source string.
+        graphviz.Source or None
+            ``None`` in Jupyter (diagram already displayed). ``graphviz.Source``
+            in script/REPL (system viewer opened). DOT string if graphviz is
+            not installed.
 
         Notes
         -----
-        Requires the ``graphviz`` Python package and system installation.
-        Install with: ``pip install graphviz`` and ``apt install graphviz``.
-
-        Examples
-        --------
-        Display in notebook:
-
-        >>> model.plot_model()
-
-        Save to file:
-
-        >>> model.plot_model(save_path="model.svg")
-
-        Left-to-right layout:
-
-        >>> model.plot_model(rankdir="LR")
+        Requires the ``graphviz`` Python package and system binary.
+        ``pip install graphviz`` and ``apt install graphviz``.
         """
-        # Build graph from symbolic tensors
+        # ── Palette ───────────────────────────────────────────────────────────
+        _FONT = "#1A2332"
+        _EDGE = "#8B9CB6"
+        _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
+
+        # ── Helpers ───────────────────────────────────────────────────────────
         node_to_name = getattr(self, "_node_to_layer_name", {})
 
+        def _is_jupyter() -> bool:
+            try:
+                return get_ipython().__class__.__name__ == "ZMQInteractiveShell"  # type: ignore[name-defined]
+            except NameError:
+                return False
+
         def _get_node_label(node: Any) -> str:
-            """Get display label for a symbolic tensor node."""
             if node in node_to_name:
                 return node_to_name[node]
             for i, inp in enumerate(self.inputs):
@@ -405,109 +396,131 @@ class ESNModel(ps.SymbolicModel):
                     return f"Input_{i + 1}"
             return f"node_{id(node)}"
 
-        def _get_node_shape(node: Any) -> str:
-            """Get tensor shape string for a node."""
-            if hasattr(node, "shape"):
-                shape = node.shape
-                if isinstance(shape, torch.Size):
-                    return str(tuple(shape))
+        def _get_shape_str(node: Any) -> str:
+            if hasattr(node, "shape") and isinstance(node.shape, torch.Size):
+                return str(tuple(node.shape))
             return ""
 
-        # Collect all nodes and edges
-        nodes = {}  # name -> (label, shape, is_input, is_output)
-        edges = []  # (from_name, to_name, shape_label)
+        def _trainable_status(module: Any) -> bool | None:
+            if hasattr(module, "trainable"):
+                return bool(module.trainable)
+            params = list(module.parameters())
+            return None if not params else any(p.requires_grad for p in params)
 
-        # Add input nodes
-        for i, inp in enumerate(self.inputs):
-            name = f"Input_{i + 1}"
-            shape = _get_node_shape(inp)
-            nodes[name] = (name, shape, True, False)
+        def _build_dot() -> str:
+            nodes: dict[str, tuple[str, str, Any, bool, bool]] = {}
+            edges: list[tuple[str, str, str]] = []
 
-        # Add layer nodes from the symbolic graph
-        for node, layer_name in node_to_name.items():
-            shape = _get_node_shape(node)
-            nodes[layer_name] = (layer_name, shape, False, False)
+            for i, inp in enumerate(self.inputs):
+                nodes[f"Input_{i + 1}"] = ("Input", _get_shape_str(inp), None, True, False)
 
-            # Add edges from parents
-            parents = getattr(node, "_parents", [])
-            for parent in parents:
-                parent_name = _get_node_label(parent)
-                edge_shape = _get_node_shape(parent) if show_shapes else ""
-                edges.append((parent_name, layer_name, edge_shape))
+            for node, layer_name in node_to_name.items():
+                module = getattr(node, "layer", None)
+                cls_name = (
+                    type(module).__name__ if module is not None
+                    else layer_name.rsplit("_", 1)[0]
+                )
+                nodes[layer_name] = (cls_name, _get_shape_str(node), module, False, False)
+                for parent in getattr(node, "_parents", []):
+                    edge_label = _get_shape_str(parent) if show_shapes else ""
+                    edges.append((_get_node_label(parent), layer_name, edge_label))
 
-        # Mark output nodes
-        for out in self.outputs:
-            out_name = _get_node_label(out)
-            if out_name in nodes:
-                label, shape, is_input, _ = nodes[out_name]
-                nodes[out_name] = (label, shape, is_input, True)
+            for out in self.outputs:
+                out_name = _get_node_label(out)
+                if out_name in nodes:
+                    cls_name, shape_str, module, is_input, _ = nodes[out_name]
+                    nodes[out_name] = (cls_name, shape_str, module, is_input, True)
 
-        # Generate DOT source
-        dot_lines = [
-            "digraph ESNModel {",
-            f"  rankdir={rankdir};",
-            "  node [shape=box, style=filled];",
-            "  edge [fontsize=10];",
-        ]
+            # Assign hues via golden ratio over sorted unique class names.
+            # Golden ratio on sequential *indices* guarantees maximal perceptual
+            # separation — the only correct way to avoid adjacent colors.
+            # Sorting makes assignment deterministic regardless of graph order.
+            sorted_classes = sorted({cls for cls, *_ in nodes.values()})
+            _hues = {cls: (i * 0.618033988749895) % 1.0 for i, cls in enumerate(sorted_classes)}
 
-        # Add nodes with styling
-        for name, (label, shape, is_input, is_output) in nodes.items():
-            if is_input:
-                style = 'fillcolor="#FFB6C1", shape=ellipse'  # Pink for inputs
-            elif is_output:
-                style = 'fillcolor="#90EE90", shape=ellipse'  # Green for outputs
-            else:
-                style = 'fillcolor="#87CEEB"'  # Light blue for layers
+            def _hex(r: float, g: float, b: float) -> str:
+                return f"#{int(r * 255):02X}{int(g * 255):02X}{int(b * 255):02X}"
 
-            # Extract layer type for display
-            layer_type = label.rsplit("_", 1)[0] if "_" in label else label
-            display_label = f"{layer_type}\\n{shape}" if shape and show_shapes else layer_type
+            def _color_for(cls_name: str) -> tuple[str, str]:
+                hue = _hues.get(cls_name, 0.0)
+                fill = _hex(*colorsys.hsv_to_rgb(hue, 0.20, 0.97))
+                border = _hex(*colorsys.hsv_to_rgb(hue, 0.82, 0.52))
+                return fill, border
 
-            dot_lines.append(f'  "{name}" [label="{display_label}", {style}];')
+            lines = [
+                "digraph ESNModel {",
+                "  bgcolor=white;",
+                f"  rankdir={rankdir};",
+                "  splines=true;",
+                "  nodesep=0.6;",
+                "  ranksep=0.8;",
+                "  pad=0.4;",
+                f'  graph [fontname="{_FONTS}"];',
+                f'  node [fontname="{_FONTS}", penwidth=1.5];',
+                f'  edge [color="{_EDGE}", penwidth=1.2, arrowsize=0.7, arrowhead=vee,'
+                f' fontname="{_FONTS}", fontcolor="{_EDGE}", fontsize=9];',
+            ]
 
-        # Add edges
-        for from_name, to_name, shape_label in edges:
-            if shape_label and show_shapes:
-                dot_lines.append(f'  "{from_name}" -> "{to_name}" [label="{shape_label}"];')
-            else:
-                dot_lines.append(f'  "{from_name}" -> "{to_name}";')
+            for name, (cls_name, shape_str, module, is_input, is_output) in nodes.items():
+                lock = ""
+                if show_trainable and module is not None:
+                    status = _trainable_status(module)
+                    if status is not None:
+                        lock = " \U0001f513" if status else " \U0001f512"
+                label = f'"{cls_name}{lock}"'
+                if show_shapes and shape_str:
+                    label = f'"{cls_name}{lock}\\n{shape_str}"'
 
-        dot_lines.append("}")
-        dot_source = "\n".join(dot_lines)
+                fill, border = _color_for(cls_name)
+                node_shape = "ellipse" if is_input else "box"
+                style = "filled" if is_input else (
+                    "filled,rounded,bold" if is_output else "filled,rounded"
+                )
+                lines.append(
+                    f'  "{name}" [label={label}, shape={node_shape},'
+                    f' style="{style}", fillcolor="{fill}", color="{border}",'
+                    f' fontcolor="{_FONT}"];'
+                )
 
-        # Try to render with graphviz
+            for from_name, to_name, edge_label in edges:
+                if edge_label:
+                    lines.append(f'  "{from_name}" -> "{to_name}" [label="{edge_label}"];')
+                else:
+                    lines.append(f'  "{from_name}" -> "{to_name}";')
+
+            lines.append("}")
+            return "\n".join(lines)
+
+        # ── Rendering ─────────────────────────────────────────────────────────
         try:
             import graphviz
 
-            graph = graphviz.Source(dot_source)
+            dot_src = _build_dot()
+            src = graphviz.Source(dot_src)
 
             if save_path is not None:
                 save_path = Path(save_path)
-                graph.render(
-                    str(save_path.with_suffix("")),
-                    format=format,
-                    cleanup=True,
-                )
+                src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
                 print(f"Saved to {save_path.with_suffix('.' + format)}")
-                return graph
+                return src
 
-            # Try to display in notebook
+            if _is_jupyter():
+                from IPython.display import SVG, display as ipy_display
+                ipy_display(SVG(src.pipe(format="svg").decode("utf-8")))
+                return None  # prevent double-display from cell output
+
             try:
-                from IPython.display import SVG, display
-
-                svg_data = graph.pipe(format="svg").decode("utf-8")
-                display(SVG(svg_data))
-                return svg_data
-            except ImportError:
-                return graph
+                src.view(cleanup=True)
+            except Exception:
+                pass
+            return src
 
         except ImportError:
-            print("Note: Install 'graphviz' package for visual rendering.")
-            print("      pip install graphviz")
-            print("      Also install graphviz system package (apt install graphviz)")
-            print("\nDOT source (can be rendered at https://dreampuf.github.io/GraphvizOnline/):")
-            print(dot_source)
-            return dot_source
+            print("graphviz not installed: pip install graphviz && apt install graphviz")
+            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
+            dot_src = _build_dot()
+            print(dot_src)
+            return dot_src
 
     @torch.no_grad()
     def warmup(

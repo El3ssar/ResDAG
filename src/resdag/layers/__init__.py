@@ -7,8 +7,16 @@ Echo State Networks and reservoir computing models.
 
 Classes
 -------
+ESNLayer
+    Stateful RNN reservoir layer for Echo State Networks (public-facing).
+ESNCell
+    Single-timestep ESN state update cell.
+BaseReservoirLayer
+    Abstract sequence-loop base with state management.
+ReservoirCell
+    Abstract single-timestep cell interface.
 ReservoirLayer
-    Stateful RNN reservoir with graph-based weight initialization.
+    Backwards-compatible alias for ESNLayer.
 ReadoutLayer
     Per-timestep linear layer with custom fitting interface.
 CGReadoutLayer
@@ -26,11 +34,11 @@ SelectiveExponentiation
 
 Examples
 --------
->>> from resdag.layers import ReservoirLayer, CGReadoutLayer
+>>> from resdag.layers import ESNLayer, CGReadoutLayer
 >>> import pytorch_symbolic as ps
 >>>
 >>> inp = ps.Input((100, 3))
->>> reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+>>> reservoir = ESNLayer(200, feedback_size=3)(inp)
 >>> readout = CGReadoutLayer(200, 3)(reservoir)
 
 See Also
@@ -39,6 +47,7 @@ resdag.composition.ESNModel : Model composition using these layers.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
+from .base import BaseReservoirLayer, ReservoirCell
 from .custom import (
     Concatenate,
     FeaturePartitioner,
@@ -47,13 +56,24 @@ from .custom import (
     SelectiveDropout,
     SelectiveExponentiation,
 )
+from .esn import ESNCell, ESNLayer
 from .readouts import CGReadoutLayer, ReadoutLayer
-from .reservoir import ReservoirLayer
+
+# Backwards-compatible alias — existing code using ReservoirLayer continues to work.
+ReservoirLayer = ESNLayer
 
 __all__ = [
+    # New hierarchy
+    "ReservoirCell",
+    "BaseReservoirLayer",
+    "ESNCell",
+    "ESNLayer",
+    # Legacy alias
     "ReservoirLayer",
+    # Readouts
     "ReadoutLayer",
     "CGReadoutLayer",
+    # Custom layers
     "Concatenate",
     "FeaturePartitioner",
     "OutliersFilteredMean",

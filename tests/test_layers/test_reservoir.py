@@ -358,7 +358,7 @@ class TestReservoirLayerRepr:
 
         repr_str = repr(reservoir)
 
-        assert "ReservoirLayer" in repr_str
+        assert "ESNCell" in repr_str
         assert "reservoir_size=100" in repr_str
         assert "feedback_size=20" in repr_str
         assert "spectral_radius=0.95" in repr_str

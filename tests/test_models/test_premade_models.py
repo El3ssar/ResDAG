@@ -16,7 +16,7 @@ class TestClassicESN:
         assert model is not None
         # Check that model has expected layers
         layer_names = [name for name, _ in model.named_modules()]
-        assert any("ReservoirLayer" in name for name in layer_names)
+        assert any("ESNLayer" in name for name in layer_names)
         assert any("CGReadoutLayer" in name for name in layer_names)
 
     def test_forward_pass(self):
@@ -93,7 +93,7 @@ class TestOttESN:
 
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
-        assert any("ReservoirLayer" in name for name in layer_names)
+        assert any("ESNLayer" in name for name in layer_names)
         assert any("SelectiveExponentiation" in name for name in layer_names)
 
     def test_forward_pass(self):
@@ -139,7 +139,7 @@ class TestHeadlessESN:
 
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
-        assert any("ReservoirLayer" in name for name in layer_names)
+        assert any("ESNLayer" in name for name in layer_names)
 
     def test_forward_pass(self):
         """Test forward pass returns reservoir states."""
@@ -186,7 +186,7 @@ class TestLinearESN:
 
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
-        assert any("ReservoirLayer" in name for name in layer_names)
+        assert any("ESNLayer" in name for name in layer_names)
 
     def test_forward_pass(self):
         """Test forward pass returns reservoir states."""

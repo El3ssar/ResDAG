@@ -41,6 +41,7 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 
 from __future__ import annotations
 
+import colorsys
 from pathlib import Path
 from typing import Any
 
@@ -374,29 +375,9 @@ class ESNModel(ps.SymbolicModel):
         ``pip install graphviz`` and ``apt install graphviz``.
         """
         # ── Palette ───────────────────────────────────────────────────────────
-        _FONT = "#1C2430"
+        _FONT = "#1A2332"
         _EDGE = "#8B9CB6"
         _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
-
-        # (fill, border) — muted, cohesive tones
-        _KNOWN_COLORS: dict[str, tuple[str, str]] = {
-            "Input":                   ("#DDE8F5", "#3A6EA5"),
-            "ReservoirLayer":          ("#F0E8D8", "#8A5C2E"),
-            "CGReadoutLayer":          ("#D8EDE3", "#2E7D52"),
-            "ReadoutLayer":            ("#D8EDE3", "#2E7D52"),
-            "Concatenate":             ("#E4DCF0", "#5B3D8A"),
-            "SelectiveExponentiation": ("#F0D8DF", "#8A2D45"),
-            "Power":                   ("#F0E4D8", "#8A5230"),
-            "FeaturePartitioner":      ("#D8EDE9", "#2E6E6A"),
-        }
-        _FALLBACK_PALETTE = [
-            ("#E0D8F0", "#4A3A8A"),
-            ("#D8E8F0", "#2A5A7A"),
-            ("#F0E8D8", "#7A5A2A"),
-            ("#D8F0E4", "#2A6A4A"),
-            ("#F0D8E8", "#7A2A5A"),
-            ("#E8F0D8", "#4A6A2A"),
-        ]
 
         # ── Helpers ───────────────────────────────────────────────────────────
         node_to_name = getattr(self, "_node_to_layer_name", {})
@@ -419,11 +400,6 @@ class ESNModel(ps.SymbolicModel):
             if hasattr(node, "shape") and isinstance(node.shape, torch.Size):
                 return str(tuple(node.shape))
             return ""
-
-        def _get_color(cls_name: str) -> tuple[str, str]:
-            if cls_name in _KNOWN_COLORS:
-                return _KNOWN_COLORS[cls_name]
-            return _FALLBACK_PALETTE[hash(cls_name) % len(_FALLBACK_PALETTE)]
 
         def _trainable_status(module: Any) -> bool | None:
             if hasattr(module, "trainable"):
@@ -455,6 +431,22 @@ class ESNModel(ps.SymbolicModel):
                     cls_name, shape_str, module, is_input, _ = nodes[out_name]
                     nodes[out_name] = (cls_name, shape_str, module, is_input, True)
 
+            # Assign hues via golden ratio over sorted unique class names.
+            # Golden ratio on sequential *indices* guarantees maximal perceptual
+            # separation — the only correct way to avoid adjacent colors.
+            # Sorting makes assignment deterministic regardless of graph order.
+            sorted_classes = sorted({cls for cls, *_ in nodes.values()})
+            _hues = {cls: (i * 0.618033988749895) % 1.0 for i, cls in enumerate(sorted_classes)}
+
+            def _hex(r: float, g: float, b: float) -> str:
+                return f"#{int(r * 255):02X}{int(g * 255):02X}{int(b * 255):02X}"
+
+            def _color_for(cls_name: str) -> tuple[str, str]:
+                hue = _hues.get(cls_name, 0.0)
+                fill = _hex(*colorsys.hsv_to_rgb(hue, 0.20, 0.97))
+                border = _hex(*colorsys.hsv_to_rgb(hue, 0.82, 0.52))
+                return fill, border
+
             lines = [
                 "digraph ESNModel {",
                 "  bgcolor=white;",
@@ -479,7 +471,7 @@ class ESNModel(ps.SymbolicModel):
                 if show_shapes and shape_str:
                     label = f'"{cls_name}{lock}\\n{shape_str}"'
 
-                fill, border = _get_color(cls_name)
+                fill, border = _color_for(cls_name)
                 node_shape = "ellipse" if is_input else "box"
                 style = "filled" if is_input else (
                     "filled,rounded,bold" if is_output else "filled,rounded"

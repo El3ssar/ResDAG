@@ -347,13 +347,6 @@ class ESNModel(ps.SymbolicModel):
         """
         Visualize model architecture as a graph.
 
-        Each layer type gets a distinct color; identical types always share
-        the same color. A legend is appended automatically.
-
-        In Jupyter an interactive widget is shown with toggle checkboxes for
-        ``show_shapes`` and ``show_trainable``. Outside Jupyter the diagram
-        is opened with the system viewer; pass ``save_path`` to write a file.
-
         Parameters
         ----------
         show_shapes : bool, default=True
@@ -362,60 +355,47 @@ class ESNModel(ps.SymbolicModel):
             Show a padlock indicator (🔒 frozen / 🔓 trainable) on nodes
             that have learnable parameters.
         rankdir : {'TB', 'LR', 'BT', 'RL'}, default='TB'
-            Graph layout direction (top-to-bottom, left-to-right, …).
+            Graph layout direction.
         save_path : str or Path, optional
-            If provided, render and save to this path instead of displaying.
+            Render and save to this path instead of displaying.
         format : {'svg', 'png', 'pdf'}, default='svg'
-            Output format used when ``save_path`` is given.
-        **kwargs
-            Ignored (kept for backward compatibility).
+            Output format when ``save_path`` is given.
 
         Returns
         -------
-        widget, str, or graphviz.Source
-            - Jupyter: ``ipywidgets.VBox`` widget (or SVG string if
-              ``ipywidgets`` is not installed).
-            - Script / REPL: ``graphviz.Source`` (viewer opened
-              automatically, or file saved when ``save_path`` is set).
-            - No graphviz installed: DOT source string.
+        graphviz.Source or None
+            ``None`` in Jupyter (diagram already displayed). ``graphviz.Source``
+            in script/REPL (system viewer opened). DOT string if graphviz is
+            not installed.
 
         Notes
         -----
         Requires the ``graphviz`` Python package and system binary.
-        Install with ``pip install graphviz`` and ``apt install graphviz``.
-        Interactive toggles require ``pip install ipywidgets``.
-
-        Examples
-        --------
-        >>> model.plot_model()
-        >>> model.plot_model(show_trainable=True)
-        >>> model.plot_model(save_path="model.png", format="png")
-        >>> model.plot_model(rankdir="LR")
+        ``pip install graphviz`` and ``apt install graphviz``.
         """
-        # ── Palette (light theme) ─────────────────────────────────────────────
-        _BG = "white"
-        _FONT = "#1E293B"
-        _DIM = "#64748B"
-        _EDGE = "#94A3B8"
+        # ── Palette ───────────────────────────────────────────────────────────
+        _FONT = "#1C2430"
+        _EDGE = "#8B9CB6"
         _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
 
+        # (fill, border) — muted, cohesive tones
         _KNOWN_COLORS: dict[str, tuple[str, str]] = {
-            "Input":                   ("#EFF6FF", "#3B82F6"),
-            "ReservoirLayer":          ("#FFFBEB", "#D97706"),
-            "CGReadoutLayer":          ("#F0FDF4", "#16A34A"),
-            "ReadoutLayer":            ("#F0FDF4", "#16A34A"),
-            "Concatenate":             ("#F5F3FF", "#7C3AED"),
-            "SelectiveExponentiation": ("#FFF1F2", "#E11D48"),
-            "Power":                   ("#FFF7ED", "#EA580C"),
-            "FeaturePartitioner":      ("#F0FDFA", "#0D9488"),
+            "Input":                   ("#DDE8F5", "#3A6EA5"),
+            "ReservoirLayer":          ("#F0E8D8", "#8A5C2E"),
+            "CGReadoutLayer":          ("#D8EDE3", "#2E7D52"),
+            "ReadoutLayer":            ("#D8EDE3", "#2E7D52"),
+            "Concatenate":             ("#E4DCF0", "#5B3D8A"),
+            "SelectiveExponentiation": ("#F0D8DF", "#8A2D45"),
+            "Power":                   ("#F0E4D8", "#8A5230"),
+            "FeaturePartitioner":      ("#D8EDE9", "#2E6E6A"),
         }
         _FALLBACK_PALETTE = [
-            ("#F8F0FF", "#9333EA"),
-            ("#F0F8FF", "#0369A1"),
-            ("#FFF8F0", "#B45309"),
-            ("#F0FFF8", "#047857"),
-            ("#FFF0F8", "#BE185D"),
-            ("#F8FFF0", "#4D7C0F"),
+            ("#E0D8F0", "#4A3A8A"),
+            ("#D8E8F0", "#2A5A7A"),
+            ("#F0E8D8", "#7A5A2A"),
+            ("#D8F0E4", "#2A6A4A"),
+            ("#F0D8E8", "#7A2A5A"),
+            ("#E8F0D8", "#4A6A2A"),
         ]
 
         # ── Helpers ───────────────────────────────────────────────────────────
@@ -451,19 +431,7 @@ class ESNModel(ps.SymbolicModel):
             params = list(module.parameters())
             return None if not params else any(p.requires_grad for p in params)
 
-        def _node_label(cls_name: str, shape_str: str, module: Any, show_s: bool, show_t: bool) -> str:
-            lock = ""
-            if show_t and module is not None:
-                status = _trainable_status(module)
-                if status is not None:
-                    lock = " \U0001f513" if status else " \U0001f512"
-
-            label = f'"{cls_name}{lock}"'
-            if show_s and shape_str:
-                label = f'"{cls_name}{lock}\\n{shape_str}"'
-            return label
-
-        def _build_dot(show_s: bool, show_t: bool) -> str:
+        def _build_dot() -> str:
             nodes: dict[str, tuple[str, str, Any, bool, bool]] = {}
             edges: list[tuple[str, str, str]] = []
 
@@ -478,7 +446,7 @@ class ESNModel(ps.SymbolicModel):
                 )
                 nodes[layer_name] = (cls_name, _get_shape_str(node), module, False, False)
                 for parent in getattr(node, "_parents", []):
-                    edge_label = _get_shape_str(parent) if show_s else ""
+                    edge_label = _get_shape_str(parent) if show_shapes else ""
                     edges.append((_get_node_label(parent), layer_name, edge_label))
 
             for out in self.outputs:
@@ -487,27 +455,30 @@ class ESNModel(ps.SymbolicModel):
                     cls_name, shape_str, module, is_input, _ = nodes[out_name]
                     nodes[out_name] = (cls_name, shape_str, module, is_input, True)
 
-            seen: dict[str, tuple[str, str]] = {}
-            for cls_name, *_ in nodes.values():
-                if cls_name not in seen:
-                    seen[cls_name] = _get_color(cls_name)
-
             lines = [
                 "digraph ESNModel {",
-                f'  bgcolor="{_BG}";',
+                "  bgcolor=white;",
                 f"  rankdir={rankdir};",
                 "  splines=true;",
-                "  nodesep=0.7;",
-                "  ranksep=0.9;",
-                "  pad=0.5;",
+                "  nodesep=0.6;",
+                "  ranksep=0.8;",
+                "  pad=0.4;",
                 f'  graph [fontname="{_FONTS}"];',
                 f'  node [fontname="{_FONTS}", penwidth=1.5];',
-                f'  edge [color="{_EDGE}", penwidth=1.5, arrowsize=0.75, arrowhead=vee,'
-                f' fontname="{_FONTS}", fontcolor="{_DIM}", fontsize=9];',
+                f'  edge [color="{_EDGE}", penwidth=1.2, arrowsize=0.7, arrowhead=vee,'
+                f' fontname="{_FONTS}", fontcolor="{_EDGE}", fontsize=9];',
             ]
 
             for name, (cls_name, shape_str, module, is_input, is_output) in nodes.items():
-                label = _node_label(cls_name, shape_str, module, show_s, show_t)
+                lock = ""
+                if show_trainable and module is not None:
+                    status = _trainable_status(module)
+                    if status is not None:
+                        lock = " \U0001f513" if status else " \U0001f512"
+                label = f'"{cls_name}{lock}"'
+                if show_shapes and shape_str:
+                    label = f'"{cls_name}{lock}\\n{shape_str}"'
+
                 fill, border = _get_color(cls_name)
                 node_shape = "ellipse" if is_input else "box"
                 style = "filled" if is_input else (
@@ -525,25 +496,6 @@ class ESNModel(ps.SymbolicModel):
                 else:
                     lines.append(f'  "{from_name}" -> "{to_name}";')
 
-            legend_items = list(seen.items())
-            if legend_items:
-                lnames = [f"__legend_{i}__" for i in range(len(legend_items))]
-                lines.append("  subgraph cluster_legend {")
-                lines.append('    label="Legend";')
-                lines.append('    style="filled";')
-                lines.append('    fillcolor="#F8FAFC";')
-                lines.append('    color="#CBD5E1";')
-                lines.append(f'    fontname="{_FONTS}";')
-                lines.append("    fontsize=10;")
-                for lname, (cls_name, (fill, border)) in zip(lnames, legend_items):
-                    lines.append(
-                        f'    "{lname}" [label="{cls_name}", shape=box,'
-                        f' style="filled,rounded", fillcolor="{fill}", color="{border}",'
-                        f' fontsize=9, fontcolor="{_FONT}", fontname="{_FONTS}"];'
-                    )
-                lines.append(f'    {{rank=same; {"; ".join(f"{chr(34)}{n}{chr(34)}" for n in lnames)};}}')
-                lines.append("  }")
-
             lines.append("}")
             return "\n".join(lines)
 
@@ -551,70 +503,30 @@ class ESNModel(ps.SymbolicModel):
         try:
             import graphviz
 
+            dot_src = _build_dot()
+            src = graphviz.Source(dot_src)
+
             if save_path is not None:
                 save_path = Path(save_path)
-                dot_src = _build_dot(show_shapes, show_trainable)
-                graphviz.Source(dot_src).render(
-                    str(save_path.with_suffix("")), format=format, cleanup=True
-                )
+                src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
                 print(f"Saved to {save_path.with_suffix('.' + format)}")
-                return graphviz.Source(dot_src)
+                return src
 
             if _is_jupyter():
-                try:
-                    import ipywidgets as widgets
-                    from IPython.display import SVG, display as ipy_display
+                from IPython.display import SVG, display as ipy_display
+                ipy_display(SVG(src.pipe(format="svg").decode("utf-8")))
+                return None  # prevent double-display from cell output
 
-                    cb_shapes = widgets.Checkbox(
-                        value=show_shapes,
-                        description="Show shapes",
-                        layout=widgets.Layout(width="150px"),
-                    )
-                    cb_trainable = widgets.Checkbox(
-                        value=show_trainable,
-                        description="Show trainable",
-                        layout=widgets.Layout(width="160px"),
-                    )
-                    out = widgets.Output()
-
-                    def _render(*_: Any) -> None:
-                        dot_src = _build_dot(cb_shapes.value, cb_trainable.value)
-                        svg_data = graphviz.Source(dot_src).pipe(format="svg").decode("utf-8")
-                        out.clear_output(wait=True)
-                        with out:
-                            ipy_display(SVG(svg_data))
-
-                    cb_shapes.observe(_render, names="value")
-                    cb_trainable.observe(_render, names="value")
-                    _render()
-
-                    widget = widgets.VBox([widgets.HBox([cb_shapes, cb_trainable]), out])
-                    ipy_display(widget)
-                    return widget
-
-                except ImportError:
-                    from IPython.display import SVG, display as ipy_display
-
-                    dot_src = _build_dot(show_shapes, show_trainable)
-                    svg_data = graphviz.Source(dot_src).pipe(format="svg").decode("utf-8")
-                    ipy_display(SVG(svg_data))
-                    return svg_data
-
-            # Non-Jupyter: open system viewer
-            dot_src = _build_dot(show_shapes, show_trainable)
-            graph = graphviz.Source(dot_src)
             try:
-                graph.view(cleanup=True)
+                src.view(cleanup=True)
             except Exception:
                 pass
-            return graph
+            return src
 
         except ImportError:
-            print("Note: Install 'graphviz' package for visual rendering.")
-            print("      pip install graphviz")
-            print("      Also install graphviz system package (apt install graphviz)")
-            print("\nDOT source (can be rendered at https://dreampuf.github.io/GraphvizOnline/):")
-            dot_src = _build_dot(show_shapes, show_trainable)
+            print("graphviz not installed: pip install graphviz && apt install graphviz")
+            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
+            dot_src = _build_dot()
             print(dot_src)
             return dot_src
 

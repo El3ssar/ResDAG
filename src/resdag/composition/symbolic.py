@@ -338,7 +338,7 @@ class ESNModel(ps.SymbolicModel):
 
     def plot_model(
         self,
-        show_shapes: bool = True,
+        show_shapes: bool = False,
         show_trainable: bool = False,
         rankdir: str = "TB",
         save_path: str | Path | None = None,

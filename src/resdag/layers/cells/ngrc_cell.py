@@ -26,8 +26,10 @@ import warnings
 import torch
 import torch.nn as nn
 
+from .base_cell import ReservoirCell
 
-class NGCell(nn.Module):
+
+class NGCell(ReservoirCell):
     """
     Single-timestep NG-RC feature construction cell.
 
@@ -173,6 +175,11 @@ class NGCell(nn.Module):
         return self._feature_dim
 
     @property
+    def output_size(self) -> int:
+        """Dimensionality of the per-step output (equals feature_dim)."""
+        return self._feature_dim
+
+    @property
     def state_size(self) -> int:
         """Number of rows in the delay buffer: ``(k-1)*s``."""
         return (self.k - 1) * self.s
@@ -209,7 +216,7 @@ class NGCell(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,
+        inputs: list[torch.Tensor],
         state: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -217,8 +224,10 @@ class NGCell(nn.Module):
 
         Parameters
         ----------
-        x : torch.Tensor
-            Current input of shape ``(batch, input_dim)``.
+        inputs : list[torch.Tensor]
+            Per-timestep input slices.  ``inputs[0]`` is the current input
+            of shape ``(batch, input_dim)``.  Additional elements are ignored
+            (NG-RC has no driving inputs).
         state : torch.Tensor
             Delay buffer of shape ``(batch, state_size, input_dim)``.
 
@@ -230,6 +239,7 @@ class NGCell(nn.Module):
         new_state : torch.Tensor
             Updated delay buffer of shape ``(batch, state_size, input_dim)``.
         """
+        x = inputs[0]
         batch = x.shape[0]
 
         # ------------------------------------------------------------------

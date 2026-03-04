@@ -14,12 +14,13 @@ resdag.layers.reservoirs.base_reservoir : Abstract base (BaseReservoirLayer).
 """
 
 import torch
-import torch.nn as nn
 
 from resdag.layers.cells.ngrc_cell import NGCell
 
+from .base_reservoir import BaseReservoirLayer
 
-class NGReservoir(nn.Module):
+
+class NGReservoir(BaseReservoirLayer):
     """
     Stateful sequence layer for Next Generation Reservoir Computing.
 
@@ -61,9 +62,9 @@ class NGReservoir(nn.Module):
     unfilled buffer slots.  The layer returns all steps; the caller can discard
     the first ``warmup_length`` outputs if desired.
 
-    State management mirrors :class:`BaseReservoirLayer`:
-    :meth:`reset_state`, :meth:`get_state`, :meth:`set_state`,
-    :meth:`set_random_state`.
+    State management is inherited from :class:`BaseReservoirLayer` with the
+    exception of :meth:`set_state`, which is overridden to validate the 3-D
+    buffer shape ``(batch, state_size, input_dim)``.
 
     Examples
     --------
@@ -89,7 +90,7 @@ class NGReservoir(nn.Module):
     See Also
     --------
     resdag.layers.cells.ngrc_cell.NGCell : The wrapped single-step cell.
-    resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer : ESN analogue.
+    resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer : Base class.
     resdag.layers.readouts.cg_readout.CGReadoutLayer : Algebraic readout.
     """
 
@@ -102,8 +103,7 @@ class NGReservoir(nn.Module):
         include_constant: bool = True,
         include_linear: bool = True,
     ) -> None:
-        super().__init__()
-        self.cell = NGCell(
+        cell = NGCell(
             input_dim=input_dim,
             k=k,
             s=s,
@@ -111,10 +111,10 @@ class NGReservoir(nn.Module):
             include_constant=include_constant,
             include_linear=include_linear,
         )
-        self.state: torch.Tensor | None = None
+        super().__init__(cell)
 
     # ------------------------------------------------------------------
-    # Properties (delegated to inner cell)
+    # Properties (delegated to inner cell for convenience)
     # ------------------------------------------------------------------
 
     @property
@@ -128,11 +128,6 @@ class NGReservoir(nn.Module):
         return self.cell.feature_dim
 
     @property
-    def state_size(self) -> int:
-        """Number of rows in the delay buffer: ``(k-1)*s``."""
-        return self.cell.state_size
-
-    @property
     def warmup_length(self) -> int:
         """
         Number of timesteps required to fill the delay buffer.
@@ -144,122 +139,8 @@ class NGReservoir(nn.Module):
         return self.cell.state_size  # == (k-1)*s
 
     # ------------------------------------------------------------------
-    # Forward pass
+    # set_state override — 3-D buffer shape validation
     # ------------------------------------------------------------------
-
-    def forward(
-        self,
-        feedback: torch.Tensor,
-        *driving_inputs: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Process an input sequence through the NG-RC feature map.
-
-        Parameters
-        ----------
-        feedback : torch.Tensor
-            Input sequence of shape ``(batch, seq_len, input_dim)``.
-            Driving inputs are not used by NG-RC; this parameter is named
-            ``feedback`` for API consistency with :class:`ESNLayer`.
-        *driving_inputs : torch.Tensor
-            Ignored.  Present for interface consistency only.
-
-        Returns
-        -------
-        torch.Tensor
-            Feature matrix of shape ``(batch, seq_len, feature_dim)``.
-
-        Raises
-        ------
-        ValueError
-            If ``feedback`` is not a 3-D tensor.
-
-        Notes
-        -----
-        The layer maintains internal state across forward calls.  Call
-        :meth:`reset_state` between independent sequences.
-        """
-        if feedback.dim() != 3:
-            raise ValueError(f"Input must be 3-D (batch, seq_len, input_dim), got {feedback.shape}")
-
-        batch_size, seq_len, _ = feedback.shape
-
-        self._maybe_init_state(batch_size, feedback.device, feedback.dtype)
-
-        outputs = torch.empty(
-            batch_size,
-            seq_len,
-            self.cell.feature_dim,
-            device=feedback.device,
-            dtype=feedback.dtype,
-        )
-
-        for t in range(seq_len):
-            features_t, self.state = self.cell(feedback[:, t, :], self.state)
-            outputs[:, t, :] = features_t
-
-        return outputs
-
-    # ------------------------------------------------------------------
-    # State management (mirrors BaseReservoirLayer API)
-    # ------------------------------------------------------------------
-
-    def _maybe_init_state(
-        self,
-        batch_size: int,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> None:
-        """Initialize state to zeros if not present or if context changed."""
-        if (
-            self.state is None
-            or self.state.shape[0] != batch_size
-            or self.state.device != device
-            or self.state.dtype != dtype
-        ):
-            self.state = self.cell.init_state(batch_size, device, dtype)
-
-    def reset_state(self, batch_size: int | None = None) -> None:
-        """
-        Reset the internal delay buffer.
-
-        Parameters
-        ----------
-        batch_size : int, optional
-            If provided, initialize the buffer to zeros with this batch size,
-            reusing the device and dtype of the current state (defaults to
-            CPU float32 if state is not yet initialized).  If ``None``, set
-            state to ``None`` for lazy re-initialization on the next forward
-            pass.
-
-        Examples
-        --------
-        >>> layer.reset_state()            # Lazy reset
-        >>> layer.reset_state(batch_size=4)  # Explicit zero buffer
-        """
-        if batch_size is not None:
-            if self.state is not None:
-                device = self.state.device
-                dtype = self.state.dtype
-            else:
-                device = torch.device("cpu")
-                dtype = torch.float32
-            self.state = self.cell.init_state(batch_size, device, dtype)
-        else:
-            self.state = None
-
-    def get_state(self) -> torch.Tensor | None:
-        """
-        Return a copy of the current delay buffer.
-
-        Returns
-        -------
-        torch.Tensor or None
-            Clone of the current buffer of shape
-            ``(batch, state_size, input_dim)``, or ``None`` if not yet
-            initialized.
-        """
-        return self.state.clone() if self.state is not None else None
 
     def set_state(self, state: torch.Tensor) -> None:
         """
@@ -284,21 +165,9 @@ class NGReservoir(nn.Module):
             )
         self.state = state.clone()
 
-    def set_random_state(self) -> None:
-        """
-        Set the delay buffer to standard-normal random values.
-
-        Raises
-        ------
-        RuntimeError
-            If the buffer has not been initialized yet.
-        """
-        if self.state is None:
-            raise RuntimeError(
-                "NGReservoir state is not initialized. "
-                "Call reset_state(batch_size=N) or run a forward pass first."
-            )
-        self.state = torch.randn_like(self.state)
+    # ------------------------------------------------------------------
+    # Convenience delegation
+    # ------------------------------------------------------------------
 
     def __getattr__(self, name: str) -> object:
         """Delegate unknown attribute lookups to the wrapped cell."""

@@ -20,11 +20,9 @@ resdag.layers.cells.esn_cell : Concrete ESN cell (ESNCell).
 """
 
 import itertools
-import math
 import warnings
 
 import torch
-import torch.nn as nn
 
 from .base_cell import ReservoirCell
 

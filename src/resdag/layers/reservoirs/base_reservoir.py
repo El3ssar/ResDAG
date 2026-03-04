@@ -163,7 +163,11 @@ class BaseReservoirLayer(nn.Module, ABC):
             if self.state is not None:
                 device, dtype = self.state.device, self.state.dtype
             else:
-                ref = next(chain(self.cell.parameters(), self.cell.buffers()), None)
+                ref = next(
+                    (t for t in chain(self.cell.parameters(), self.cell.buffers())
+                     if t.is_floating_point()),
+                    None,
+                )
                 device = ref.device if ref is not None else torch.device("cpu")
                 dtype = ref.dtype if ref is not None else torch.float32
             self.state = self.cell.init_state(batch_size, device, dtype)

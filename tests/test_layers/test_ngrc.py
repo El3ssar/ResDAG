@@ -184,7 +184,7 @@ class TestNGCellForwardShape:
         cell = NGCell(input_dim=3, k=2, p=2)
         x = torch.randn(4, 3)
         state = cell.init_state(4, "cpu", torch.float32)
-        features, new_state = cell(x, state)
+        features, new_state = cell([x], state)
         assert features.shape == (4, cell.feature_dim)
         assert new_state.shape == (4, cell.state_size, 3)
 
@@ -192,7 +192,7 @@ class TestNGCellForwardShape:
         cell = NGCell(input_dim=5, k=1, p=2)
         x = torch.randn(2, 5)
         state = cell.init_state(2, "cpu", torch.float32)
-        features, new_state = cell(x, state)
+        features, new_state = cell([x], state)
         assert features.shape == (2, cell.feature_dim)
         assert new_state.shape == (2, 0, 5)
 
@@ -200,7 +200,7 @@ class TestNGCellForwardShape:
         cell = NGCell(input_dim=3, k=3, s=2, p=2)
         x = torch.randn(8, 3)
         state = cell.init_state(8, "cpu", torch.float32)
-        features, new_state = cell(x, state)
+        features, new_state = cell([x], state)
         assert features.shape == (8, cell.feature_dim)
         assert new_state.shape == (8, 4, 3)
 
@@ -209,7 +209,7 @@ class TestNGCellForwardShape:
         cell = NGCell(input_dim=4, k=2, p=2)
         x = torch.randn(batch, 4)
         state = cell.init_state(batch, "cpu", torch.float32)
-        features, _ = cell(x, state)
+        features, _ = cell([x], state)
         assert features.shape == (batch, cell.feature_dim)
 
 
@@ -227,7 +227,7 @@ class TestNGCellDelayTaps:
         x0 = torch.tensor([[1.0, 2.0]])
         state = cell.init_state(1, "cpu", torch.float32)  # (1, 1, 2) all zeros
 
-        features, new_state = cell(x0, state)
+        features, new_state = cell([x0], state)
 
         # The linear part lives at features[:, :D] when include_constant=False
         D = 2 * 2
@@ -243,8 +243,8 @@ class TestNGCellDelayTaps:
         x1 = torch.tensor([[3.0, 4.0]])
         state = cell.init_state(1, "cpu", torch.float32)
 
-        _, state = cell(x0, state)
-        features, _ = cell(x1, state)
+        _, state = cell([x0], state)
+        features, _ = cell([x1], state)
 
         D = 4
         o_lin = features[:, :D]
@@ -261,7 +261,7 @@ class TestNGCellDelayTaps:
         state = cell.init_state(1, "cpu", torch.float32)
 
         for i, x in enumerate(xs):
-            features, state = cell(x, state)
+            features, state = cell([x], state)
 
         # At step 4 (i=4): O_lin = [x4, x2, x0]
         D = d * 3
@@ -276,10 +276,10 @@ class TestNGCellDelayTaps:
         x1 = torch.tensor([[2.0, 0.0]])
         state = cell.init_state(1, "cpu", torch.float32)
 
-        _, s1 = cell(x0, state)
+        _, s1 = cell([x0], state)
         assert torch.allclose(s1, torch.tensor([[[1.0, 0.0]]]))  # buffer now holds x0
 
-        _, s2 = cell(x1, s1)
+        _, s2 = cell([x1], s1)
         assert torch.allclose(s2, torch.tensor([[[2.0, 0.0]]]))  # buffer now holds x1
 
 
@@ -297,7 +297,7 @@ class TestNGCellMonomials:
         x = torch.tensor([[3.0, 4.0]])
         state = cell.init_state(1, "cpu", torch.float32)
 
-        features, _ = cell(x, state)
+        features, _ = cell([x], state)
         # Expected: [9, 12, 16]
         expected = torch.tensor([[9.0, 12.0, 16.0]])
         assert torch.allclose(features, expected)
@@ -309,7 +309,7 @@ class TestNGCellMonomials:
         x = torch.randn(1, d)
         state = cell.init_state(1, "cpu", torch.float32)
 
-        features, _ = cell(x, state)
+        features, _ = cell([x], state)
         x_vals = x[0]
 
         expected_vals = [x_vals[i] * x_vals[j] for i, j in itertools.combinations_with_replacement(range(d), 2)]
@@ -322,7 +322,7 @@ class TestNGCellMonomials:
         x = torch.tensor([[2.0]])
         state = cell.init_state(1, "cpu", torch.float32)
 
-        features, _ = cell(x, state)
+        features, _ = cell([x], state)
         # Only monomial: x^3 = 8
         assert torch.allclose(features, torch.tensor([[8.0]]))
 
@@ -333,7 +333,7 @@ class TestNGCellMonomials:
 
         x = torch.tensor([[2.0, 3.0]])
         state = cell.init_state(1, "cpu", torch.float32)
-        features, _ = cell(x, state)
+        features, _ = cell([x], state)
         assert features.shape == (1, cell.feature_dim)
 
     def test_constant_prepended(self) -> None:
@@ -341,7 +341,7 @@ class TestNGCellMonomials:
         cell = NGCell(input_dim=3, k=1, p=2, include_constant=True, include_linear=True)
         x = torch.randn(4, 3)
         state = cell.init_state(4, "cpu", torch.float32)
-        features, _ = cell(x, state)
+        features, _ = cell([x], state)
         assert torch.all(features[:, 0] == 1.0)
 
     def test_linear_part_position(self) -> None:
@@ -352,8 +352,8 @@ class TestNGCellMonomials:
         x0 = torch.tensor([[1.0, 0.0, 0.0], [0.0, 2.0, 0.0]])
         x1 = torch.randn(2, d)
         state = cell.init_state(2, "cpu", torch.float32)
-        _, state = cell(x0, state)
-        features, _ = cell(x1, state)
+        _, state = cell([x0], state)
+        features, _ = cell([x1], state)
         # Column 0 is constant, columns [1, 1+D) are linear
         o_lin_from_features = features[:, 1 : 1 + D]
         # Manually build expected o_lin: [x1, x0]
@@ -432,7 +432,7 @@ class TestNGReservoirForwardShape:
 
     def test_non_3d_input_raises(self) -> None:
         layer = NGReservoir(input_dim=3)
-        with pytest.raises(ValueError, match="3-D"):
+        with pytest.raises(ValueError, match="3D"):
             layer(torch.randn(4, 3))
 
     def test_state_updated_after_forward(self) -> None:
@@ -577,7 +577,7 @@ class TestNGReservoirCausality:
         state = cell.init_state(2, "cpu", torch.float32)
         manual_out_list = []
         for t in range(10):
-            feats, state = cell(x[:, t, :], state)
+            feats, state = cell([x[:, t, :]], state)
             manual_out_list.append(feats)
         manual_out = torch.stack(manual_out_list, dim=1)
 

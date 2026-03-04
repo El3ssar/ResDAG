@@ -115,7 +115,7 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         for t in range(seq_len):
             inputs_t: list[torch.Tensor] = [feedback[:, t, :]]
-            for di in driving_inputs: # This is at most a list of one tensor, or an empty list
+            for di in driving_inputs:  # This is at most a list of one tensor, or an empty list
                 inputs_t.append(di[:, t, :])
 
             self.state = self.cell(inputs_t, self.state)
@@ -134,7 +134,12 @@ class BaseReservoirLayer(nn.Module, ABC):
         dtype: torch.dtype,
     ) -> None:
         """Initialize state to zeros if None, batch size changed, or device changed."""
-        if self.state is None or self.state.shape[0] != batch_size or self.state.device != device:
+        if (
+            self.state is None
+            or self.state.shape[0] != batch_size
+            or self.state.device != device
+            or self.state.dtype != dtype
+        ):
             self.state = torch.zeros(batch_size, self.cell.state_size, device=device, dtype=dtype)
 
     def reset_state(self, batch_size: int | None = None) -> None:

@@ -83,6 +83,8 @@ from .layers import (
     CGReadoutLayer,
     Concatenate,
     ESNLayer,
+    GRUCell,
+    GRULayer,
     OutliersFilteredMean,
     SelectiveExponentiation,
 )
@@ -109,6 +111,8 @@ __all__ = [
     "CGReadoutLayer",
     "Concatenate",
     "ESNLayer",
+    "GRUCell",
+    "GRULayer",
     "OutliersFilteredMean",
     "SelectiveExponentiation",
     # Model composition

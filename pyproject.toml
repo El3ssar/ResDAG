@@ -115,3 +115,8 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]

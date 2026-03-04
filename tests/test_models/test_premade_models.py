@@ -202,11 +202,11 @@ class TestLinearESN:
         model = linear_esn(reservoir_size=50, feedback_size=2)
 
         # Find reservoir layer and check activation
-        from resdag.layers import ReservoirLayer
+        from resdag.layers import ESNLayer
 
         reservoir = None
         for module in model.modules():
-            if isinstance(module, ReservoirLayer):
+            if isinstance(module, ESNLayer):
                 reservoir = module
                 break
 
@@ -226,11 +226,11 @@ class TestLinearESN:
         )
 
         # Verify activation is still identity
-        from resdag.layers import ReservoirLayer
+        from resdag.layers import ESNLayer
 
         reservoir = None
         for module in model.modules():
-            if isinstance(module, ReservoirLayer):
+            if isinstance(module, ESNLayer):
                 reservoir = module
                 break
 

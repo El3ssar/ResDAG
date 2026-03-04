@@ -14,14 +14,14 @@ from resdag.init.input_feedback import (
     RandomBinaryInitializer,
     RandomInputInitializer,
 )
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 
 print("=" * 70)
 print("Example 1: Random Uniform Initializer (Baseline)")
 print("=" * 70)
 
 feedback_init = RandomInputInitializer(input_scaling=1.0, seed=42)
-reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10, feedback_initializer=feedback_init)
+reservoir = ESNLayer(reservoir_size=100, feedback_size=10, feedback_initializer=feedback_init)
 
 print(f"Feedback weight shape: {reservoir.weight_feedback.shape}")
 print(
@@ -40,7 +40,7 @@ print("Example 2: Binary Initializer")
 print("=" * 70)
 
 binary_init = RandomBinaryInitializer(input_scaling=0.5, seed=42)
-reservoir2 = ReservoirLayer(reservoir_size=100, feedback_size=10, feedback_initializer=binary_init)
+reservoir2 = ESNLayer(reservoir_size=100, feedback_size=10, feedback_initializer=binary_init)
 
 print(f"Unique values: {torch.unique(reservoir2.weight_feedback).tolist()}")
 print(f"Number of +0.5: {(reservoir2.weight_feedback == 0.5).sum().item()}")
@@ -56,7 +56,7 @@ chebyshev_init = ChebyshevInitializer(
     k=3.5,  # Chaotic regime
     input_scaling=0.8,
 )
-reservoir3 = ReservoirLayer(
+reservoir3 = ESNLayer(
     reservoir_size=100, feedback_size=10, feedback_initializer=chebyshev_init
 )
 
@@ -71,7 +71,7 @@ print("Example 4: Binary Balanced (Hadamard-based)")
 print("=" * 70)
 
 balanced_init = BinaryBalancedInitializer(input_scaling=1.0, balance_global=True)
-reservoir4 = ReservoirLayer(
+reservoir4 = ESNLayer(
     reservoir_size=100, feedback_size=10, feedback_initializer=balanced_init
 )
 
@@ -85,7 +85,7 @@ print("Example 5: Pseudo-Diagonal (Structured)")
 print("=" * 70)
 
 pseudo_init = PseudoDiagonalInitializer(input_scaling=1.0, binarize=False, seed=42)
-reservoir5 = ReservoirLayer(reservoir_size=100, feedback_size=5, feedback_initializer=pseudo_init)
+reservoir5 = ESNLayer(reservoir_size=100, feedback_size=5, feedback_initializer=pseudo_init)
 
 nonzero = (reservoir5.weight_feedback.abs() > 1e-8).sum().item()
 total = reservoir5.weight_feedback.numel()
@@ -102,7 +102,7 @@ print("Example 6: Chessboard (Deterministic Pattern)")
 print("=" * 70)
 
 chess_init = ChessboardInitializer(input_scaling=0.5)
-reservoir6 = ReservoirLayer(reservoir_size=10, feedback_size=10, feedback_initializer=chess_init)
+reservoir6 = ESNLayer(reservoir_size=10, feedback_size=10, feedback_initializer=chess_init)
 
 print("First 5x5 block of weight matrix:")
 print(reservoir6.weight_feedback[:5, :5])
@@ -115,7 +115,7 @@ print("=" * 70)
 feedback_init = ChebyshevInitializer(p=0.3, k=3.5, input_scaling=0.5)
 input_init = BinaryBalancedInitializer(input_scaling=1.0)
 
-reservoir7 = ReservoirLayer(
+reservoir7 = ESNLayer(
     reservoir_size=200,
     feedback_size=10,
     input_size=5,

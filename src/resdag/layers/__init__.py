@@ -15,8 +15,6 @@ BaseReservoirLayer
     Abstract sequence-loop base with state management.
 ReservoirCell
     Abstract single-timestep cell interface.
-ReservoirLayer
-    Backwards-compatible alias for ESNLayer.
 ReadoutLayer
     Per-timestep linear layer with custom fitting interface.
 CGReadoutLayer
@@ -47,7 +45,7 @@ resdag.composition.ESNModel : Model composition using these layers.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
-from .base import BaseReservoirLayer, ReservoirCell
+from .cells import ReservoirCell
 from .custom import (
     Concatenate,
     FeaturePartitioner,
@@ -56,11 +54,8 @@ from .custom import (
     SelectiveDropout,
     SelectiveExponentiation,
 )
-from .esn import ESNCell, ESNLayer
 from .readouts import CGReadoutLayer, ReadoutLayer
-
-# Backwards-compatible alias — existing code using ReservoirLayer continues to work.
-ReservoirLayer = ESNLayer
+from .reservoirs import BaseReservoirLayer, ESNLayer
 
 __all__ = [
     # New hierarchy
@@ -68,8 +63,6 @@ __all__ = [
     "BaseReservoirLayer",
     "ESNCell",
     "ESNLayer",
-    # Legacy alias
-    "ReservoirLayer",
     # Readouts
     "ReadoutLayer",
     "CGReadoutLayer",

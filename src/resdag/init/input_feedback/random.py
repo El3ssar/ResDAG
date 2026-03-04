@@ -63,8 +63,8 @@ class RandomInputInitializer(InputFeedbackInitializer):
     >>> weight = torch.empty(100, 10)  # (reservoir_size, feedback_size)
     >>> init.initialize(weight)
     >>>
-    >>> # Use in ReservoirLayer
-    >>> reservoir = ReservoirLayer(
+    >>> # Use in ESNLayer
+    >>> reservoir = ESNLayer(
     ...     reservoir_size=100,
     ...     feedback_size=10,
     ...     feedback_initializer=init

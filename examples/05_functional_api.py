@@ -7,7 +7,7 @@ which provides a more concise syntax compared to ModelBuilder.
 import torch
 from pytorch_symbolic import Input, SymbolicModel
 
-from resdag.layers import ReadoutLayer, ReservoirLayer
+from resdag.layers import ESNLayer, ReadoutLayer
 
 print("=" * 80)
 print("Functional API Examples")
@@ -20,7 +20,7 @@ print("\n1. Simple Sequential Model")
 print("-" * 80)
 
 feedback = Input((10, 1))
-reservoir = ReservoirLayer(100, feedback_size=1)(feedback)
+reservoir = ESNLayer(100, feedback_size=1)(feedback)
 readout = ReadoutLayer(in_features=100, out_features=5)(reservoir)
 
 model = SymbolicModel(inputs=feedback, outputs=readout)
@@ -41,9 +41,9 @@ print("\n2. Deep Sequential Model")
 print("-" * 80)
 
 feedback = Input((10, 1))
-reservoir1 = ReservoirLayer(100, feedback_size=1)(feedback)
-reservoir2 = ReservoirLayer(80, feedback_size=100)(reservoir1)
-reservoir3 = ReservoirLayer(60, feedback_size=80)(reservoir2)
+reservoir1 = ESNLayer(100, feedback_size=1)(feedback)
+reservoir2 = ESNLayer(80, feedback_size=100)(reservoir1)
+reservoir3 = ESNLayer(60, feedback_size=80)(reservoir2)
 readout = ReadoutLayer(in_features=60, out_features=5)(reservoir3)
 
 model = SymbolicModel(inputs=feedback, outputs=readout)
@@ -63,16 +63,16 @@ print("\n3. Branching Model")
 print("-" * 80)
 
 feedback = Input((10, 1))
-reservoir1 = ReservoirLayer(100, feedback_size=1)(feedback)
-reservoir2 = ReservoirLayer(80, feedback_size=100)(reservoir1)
-reservoir3 = ReservoirLayer(60, feedback_size=80)(reservoir2)
+reservoir1 = ESNLayer(100, feedback_size=1)(feedback)
+reservoir2 = ESNLayer(80, feedback_size=100)(reservoir1)
+reservoir3 = ESNLayer(60, feedback_size=80)(reservoir2)
 readout1 = ReadoutLayer(in_features=60, out_features=5)(reservoir3)
 readout2 = ReadoutLayer(in_features=60, out_features=3)(reservoir3)
 model = SymbolicModel(inputs=feedback, outputs=[readout1, readout2])
 
 # Two parallel branches
-reservoir1 = ReservoirLayer(100, feedback_size=1)(feedback)
-reservoir2 = ReservoirLayer(80, feedback_size=1)(feedback)
+reservoir1 = ESNLayer(100, feedback_size=1)(feedback)
+reservoir2 = ESNLayer(80, feedback_size=1)(feedback)
 
 # Two outputs
 readout1 = ReadoutLayer(in_features=100, out_features=5)(reservoir1)
@@ -97,7 +97,7 @@ print("-" * 80)
 
 feedback = Input((10, 1))
 driving = Input((10, 5))
-reservoir = ReservoirLayer(100, feedback_size=1, input_size=5)(feedback, driving)
+reservoir = ESNLayer(100, feedback_size=1, input_size=5)(feedback, driving)
 readout = ReadoutLayer(in_features=100, out_features=1)(reservoir)
 model = SymbolicModel(inputs=[feedback, driving], outputs=readout)
 
@@ -119,11 +119,11 @@ print("-" * 80)
 feedback = Input((10, 1))
 driving = Input((10, 5))
 
-reservoir1 = ReservoirLayer(100, feedback_size=1, input_size=5)(feedback, driving)
+reservoir1 = ESNLayer(100, feedback_size=1, input_size=5)(feedback, driving)
 
 # Branch into two reservoirs
-reservoir2 = ReservoirLayer(80, feedback_size=100)(reservoir1)
-reservoir3 = ReservoirLayer(60, feedback_size=80)(reservoir2)
+reservoir2 = ESNLayer(80, feedback_size=100)(reservoir1)
+reservoir3 = ESNLayer(60, feedback_size=80)(reservoir2)
 
 readout1 = ReadoutLayer(in_features=80, out_features=5)(reservoir2)
 readout2 = ReadoutLayer(in_features=60, out_features=3)(reservoir3)

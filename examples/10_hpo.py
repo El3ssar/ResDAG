@@ -560,7 +560,7 @@ def example_input_driven():
     import pytorch_symbolic as ps
 
     from resdag.composition import ESNModel
-    from resdag.layers import ReservoirLayer
+    from resdag.layers import ESNLayer
     from resdag.layers.custom import Concatenate
     from resdag.layers.readouts import CGReadoutLayer
 
@@ -591,7 +591,7 @@ def example_input_driven():
 
 
         # Reservoir0: receives feedback + driver0
-        reservoir0 = ReservoirLayer(
+        reservoir0 = ESNLayer(
             reservoir_size=reservoir0_size,
             feedback_size=FEEDBACK_DIM,
             input_size=DRIVER0_DIM,  # Driver input
@@ -601,7 +601,7 @@ def example_input_driven():
         )(feedback, driver0)  # Two inputs: (feedback, driver)
 
         # Reservoir1: receives feedback + driver1
-        reservoir1 = ReservoirLayer(
+        reservoir1 = ESNLayer(
             reservoir_size=reservoir1_size,
             feedback_size=FEEDBACK_DIM,
             input_size=DRIVER1_DIM,  # Different driver

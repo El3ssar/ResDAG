@@ -26,7 +26,7 @@ import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, Power, ReservoirLayer
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, Power
 
 
 def power_augmented(
@@ -95,7 +95,7 @@ def power_augmented(
     readout_name : str, default='output'
         Name for the readout layer. Used as target key in training.
     **reservoir_kwargs
-        Additional keyword arguments passed to :class:`ReservoirLayer`.
+        Additional keyword arguments passed to :class:`ESNLayer`.
 
     Returns
     -------
@@ -147,7 +147,7 @@ def power_augmented(
     # Build model
     inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
 
-    reservoir = ReservoirLayer(
+    reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=0,

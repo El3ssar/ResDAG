@@ -1,80 +1,22 @@
 """
-Base Reservoir Classes
+Base Reservoir Class
 ======================
 
-This module provides abstract base classes for the cell/layer reservoir hierarchy:
+This module provides abstract base class for the layer ESN reservoir:
 
-- :class:`ReservoirCell` — abstract single-timestep reservoir update (owns parameters).
 - :class:`BaseReservoirLayer` — abstract sequence loop with full state-management API.
 
 See Also
 --------
-resdag.layers.esn : Concrete ESN implementation (ESNCell, ESNLayer).
-resdag.layers.ReservoirLayer : Public alias for ESNLayer.
+resdag.layers.reservoir : Concrete implementations.
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 
 import torch
 import torch.nn as nn
 
-
-class ReservoirCell(nn.Module, ABC):
-    """
-    Abstract base for a single-timestep reservoir state update.
-
-    Owns all trainable (or frozen) parameters.  Sequence iteration is
-    handled by the enclosing :class:`BaseReservoirLayer`, not by the cell
-    itself.
-
-    Parameters
-    ----------
-    (none — concrete subclasses define their own signatures)
-
-    Notes
-    -----
-    Subclasses must implement :attr:`state_size` and :meth:`forward`.
-
-    ``inputs[0]`` passed to :meth:`forward` is always the feedback slice.
-    Additional elements are driving inputs in the order they were passed to
-    the layer's ``forward``.
-
-    See Also
-    --------
-    resdag.layers.esn.ESNCell : Concrete ESN cell implementation.
-    resdag.layers.base.BaseReservoirLayer : Layer that drives the cell.
-    """
-
-    @property
-    @abstractmethod
-    def state_size(self) -> int:
-        """Dimensionality of the hidden state vector."""
-        ...
-
-    @abstractmethod
-    def forward(
-        self,
-        inputs: list[torch.Tensor],
-        state: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute the next hidden state from current inputs and state.
-
-        Parameters
-        ----------
-        inputs : list[torch.Tensor]
-            Per-timestep input slices, one per input stream, each of shape
-            ``(batch, feature_dim)``.  ``inputs[0]`` is always the feedback
-            slice; additional elements are driving inputs.
-        state : torch.Tensor
-            Current hidden state of shape ``(batch, state_size)``.
-
-        Returns
-        -------
-        torch.Tensor
-            Next hidden state of shape ``(batch, state_size)``.
-        """
-        ...
+from resdag.layers.cells import ReservoirCell
 
 
 class BaseReservoirLayer(nn.Module, ABC):
@@ -192,14 +134,8 @@ class BaseReservoirLayer(nn.Module, ABC):
         dtype: torch.dtype,
     ) -> None:
         """Initialize state to zeros if None, batch size changed, or device changed."""
-        if (
-            self.state is None
-            or self.state.shape[0] != batch_size
-            or self.state.device != device
-        ):
-            self.state = torch.zeros(
-                batch_size, self.cell.state_size, device=device, dtype=dtype
-            )
+        if self.state is None or self.state.shape[0] != batch_size or self.state.device != device:
+            self.state = torch.zeros(batch_size, self.cell.state_size, device=device, dtype=dtype)
 
     def reset_state(self, batch_size: int | None = None) -> None:
         """

@@ -8,9 +8,9 @@ This example shows how to visualize ESN models using:
 import pytorch_symbolic as ps
 
 from resdag.composition import ESNModel
-from resdag.layers import ReservoirLayer
-from resdag.layers.readouts import CGReadoutLayer
+from resdag.layers import ESNLayer
 from resdag.layers.custom import Concatenate
+from resdag.layers.readouts import CGReadoutLayer
 from resdag.models import classic_esn, ott_esn
 
 print("=" * 70)
@@ -25,7 +25,7 @@ print("-" * 70)
 
 # Build model
 feedback_input = ps.Input((50, 1))
-reservoir = ReservoirLayer(reservoir_size=100, feedback_size=1)(feedback_input)
+reservoir = ESNLayer(reservoir_size=100, feedback_size=1)(feedback_input)
 readout = CGReadoutLayer(in_features=100, out_features=1)(reservoir)
 model = ESNModel(feedback_input, readout)
 
@@ -45,7 +45,7 @@ print("-" * 70)
 # Build model with two inputs
 feedback_input = ps.Input((50, 1))
 driving_input = ps.Input((50, 3))
-reservoir = ReservoirLayer(reservoir_size=150, feedback_size=1, input_size=3)(
+reservoir = ESNLayer(reservoir_size=150, feedback_size=1, input_size=3)(
     feedback_input, driving_input
 )
 readout = CGReadoutLayer(in_features=150, out_features=1)(reservoir)
@@ -65,9 +65,9 @@ print("\n\n3. Deep ESN (Stacked Reservoirs)")
 print("-" * 70)
 
 feedback_input = ps.Input((50, 1))
-res1 = ReservoirLayer(reservoir_size=150, feedback_size=1)(feedback_input)
-res2 = ReservoirLayer(reservoir_size=100, feedback_size=150)(res1)
-res3 = ReservoirLayer(reservoir_size=50, feedback_size=100)(res2)
+res1 = ESNLayer(reservoir_size=150, feedback_size=1)(feedback_input)
+res2 = ESNLayer(reservoir_size=100, feedback_size=150)(res1)
+res3 = ESNLayer(reservoir_size=50, feedback_size=100)(res2)
 readout = CGReadoutLayer(in_features=50, out_features=1)(res3)
 model = ESNModel(feedback_input, readout)
 
@@ -87,14 +87,14 @@ print("-" * 70)
 # Build a complex model with branching paths
 feedback = ps.Input(shape=(1, 1))
 inputs = ps.Input(shape=(1, 1))
-reservoir = ReservoirLayer(200, 1, input_size=1)(feedback, inputs)
+reservoir = ESNLayer(200, 1, input_size=1)(feedback, inputs)
 readout = CGReadoutLayer(reservoir.shape[-1], 2)(reservoir)
 
 inputs1 = ps.Input(shape=(1, 2))
-reservoir1 = ReservoirLayer(100, 2, input_size=2)(readout, inputs1)
+reservoir1 = ESNLayer(100, 2, input_size=2)(readout, inputs1)
 readout1 = CGReadoutLayer(reservoir1.shape[-1], 1)(reservoir1)
 
-reservoir2 = ReservoirLayer(150, 1, input_size=0)(readout1)
+reservoir2 = ESNLayer(150, 1, input_size=0)(readout1)
 readout2 = CGReadoutLayer(reservoir2.shape[-1], 1)(reservoir2)
 
 concat = Concatenate()(readout, readout2)

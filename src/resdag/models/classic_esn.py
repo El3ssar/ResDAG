@@ -18,7 +18,7 @@ import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, ReservoirLayer
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
 
 
 def classic_esn(
@@ -89,7 +89,7 @@ def classic_esn(
     readout_name : str, default="output"
         Name for the readout layer (used in training targets).
     **reservoir_kwargs : Any
-        Additional keyword arguments passed to :class:`~resdag.layers.ReservoirLayer`.
+        Additional keyword arguments passed to :class:`~resdag.layers.ESNLayer`.
 
     Returns
     -------
@@ -130,7 +130,7 @@ def classic_esn(
     # Build model with pytorch_symbolic
     inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
 
-    reservoir = ReservoirLayer(
+    reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=0,  # No driving input in classic ESN

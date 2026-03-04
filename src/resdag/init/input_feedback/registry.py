@@ -20,7 +20,7 @@ def register_input_feedback(
     """Decorator to register an input/feedback initializer class.
 
     This decorator registers an initializer class in the registry at definition time,
-    making it available for use with ReservoirLayer and other components.
+    making it available for use with ESNLayer and other components.
 
     Parameters
     ----------

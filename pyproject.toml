@@ -7,7 +7,7 @@ name = "resdag"
 dynamic = ["version"]
 description = "PyTorch-native reservoir computing library with GPU acceleration"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
 license = "MIT"
 authors = [{ name = "Daniel Estevez-Moya", email = "kemossabee@gmail.com" }]
 keywords = [
@@ -21,19 +21,18 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "torch>=2.9.1",
-    "numpy>=2.4.0",
+    "torch>=2.10.0",
+    "numpy>=2.0.0",
     "networkx>=3.0",
     "pytorch-symbolic>=1.1.1",
     "graphviz>=0.21",
-    "basedpyright>=1.37.1",
     "scipy>=1.17.0",
 ]
 
@@ -45,6 +44,7 @@ Issues = "https://github.com/El3ssar/resdag/issues"
 [project.optional-dependencies]
 hpo = ["optuna>=3.0.0"]
 dev = [
+    "basedpyright>=1.37.1",
     "pytest>=9.0.2",
     "pytest-cov>=4.0.0",
     "black>=25.12.0",
@@ -85,11 +85,11 @@ addopts = [
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py311", "py312", "py313", "py314"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py311"
 lint.select = ["E", "F", "I", "N", "W"]
 lint.ignore = ["E501"]                  # Line too long (handled by black)
 
@@ -97,7 +97,7 @@ lint.ignore = ["E501"]                  # Line too long (handled by black)
 "__init__.py" = ["F401"] # Unused imports in __init__.py are OK
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

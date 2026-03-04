@@ -83,6 +83,8 @@ from .layers import (
     CGReadoutLayer,
     Concatenate,
     ESNLayer,
+    NGCell,
+    NGReservoir,
     OutliersFilteredMean,
     SelectiveExponentiation,
 )
@@ -109,6 +111,8 @@ __all__ = [
     "CGReadoutLayer",
     "Concatenate",
     "ESNLayer",
+    "NGCell",
+    "NGReservoir",
     "OutliersFilteredMean",
     "SelectiveExponentiation",
     # Model composition

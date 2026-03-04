@@ -48,7 +48,7 @@ from typing import Any
 import pytorch_symbolic as ps
 import torch
 
-from resdag.layers import ESNLayer
+from resdag.layers.reservoirs import BaseReservoirLayer
 
 # Re-export for convenience
 Input = ps.Input
@@ -115,7 +115,7 @@ class ESNModel(ps.SymbolicModel):
     See Also
     --------
     pytorch_symbolic.SymbolicModel : Parent class.
-    ESNLayer : Reservoir layer component.
+    BaseReservoirLayer : Reservoir layer component.
     ESNTrainer : Trainer for fitting readout layers.
     """
 
@@ -123,7 +123,7 @@ class ESNModel(ps.SymbolicModel):
         """
         Reset all reservoir layer states to zero.
 
-        This clears the internal hidden states of all :class:`ESNLayer`
+        This clears the internal hidden states of all :class:`BaseReservoirLayer`
         modules in the model, preparing it for a new sequence.
 
         Examples
@@ -132,7 +132,7 @@ class ESNModel(ps.SymbolicModel):
         >>> output = model(new_sequence)
         """
         for module in self.modules():
-            if isinstance(module, ESNLayer):
+            if isinstance(module, BaseReservoirLayer):
                 module.reset_state()
 
     def set_random_reservoir_states(self) -> None:
@@ -144,7 +144,7 @@ class ESNModel(ps.SymbolicModel):
         >>> model.set_random_reservoir_states()
         """
         for module in self.modules():
-            if isinstance(module, ESNLayer):
+            if isinstance(module, BaseReservoirLayer):
                 module.set_random_state()
 
     def get_reservoir_states(self) -> dict[str, torch.Tensor]:
@@ -165,7 +165,7 @@ class ESNModel(ps.SymbolicModel):
         """
         states = {}
         for name, module in self.named_modules():
-            if isinstance(module, ESNLayer) and module.state is not None:
+            if isinstance(module, BaseReservoirLayer) and module.state is not None:
                 states[name] = module.state.clone()
         return states
 
@@ -186,7 +186,7 @@ class ESNModel(ps.SymbolicModel):
         >>> model.set_reservoir_states(states)  # Restore states
         """
         for name, module in self.named_modules():
-            if isinstance(module, ESNLayer) and name in states:
+            if isinstance(module, BaseReservoirLayer) and name in states:
                 module.state = states[name].clone()
 
     def save(

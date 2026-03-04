@@ -143,6 +143,20 @@ class ESNCell(ReservoirCell):
         return self.reservoir_size
 
     @property
+    def output_size(self) -> int:
+        """Dimensionality of the per-step output (equals state_size for ESN)."""
+        return self.reservoir_size
+
+    def init_state(
+        self,
+        batch_size: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        """Return a zero hidden state of shape ``(batch_size, reservoir_size)``."""
+        return torch.zeros(batch_size, self.state_size, device=device, dtype=dtype)
+
+    @property
     def activation(self) -> str:
         """
         str : Name of the activation function.
@@ -153,7 +167,7 @@ class ESNCell(ReservoirCell):
         self,
         inputs: list[torch.Tensor],
         state: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute the next ESN state for a single timestep.
 
@@ -168,8 +182,10 @@ class ESNCell(ReservoirCell):
 
         Returns
         -------
-        torch.Tensor
+        output : torch.Tensor
             Next hidden state of shape ``(batch, reservoir_size)``.
+        new_state : torch.Tensor
+            Same tensor as output (state and output are identical for ESN).
 
         Raises
         ------
@@ -212,8 +228,8 @@ class ESNCell(ReservoirCell):
         new_state = self.activation_fn(pre_activation)
 
         if self.leak_rate < 1.0:
-            return (1 - self.leak_rate) * state + self.leak_rate * new_state
-        return new_state
+            new_state = (1 - self.leak_rate) * state + self.leak_rate * new_state
+        return new_state, new_state
 
     # ------------------------------------------------------------------
     # Weight initialization (verbatim from legacy ReservoirLayer)

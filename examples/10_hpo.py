@@ -589,7 +589,6 @@ def example_input_driven():
         driver0 = ps.Input((100, DRIVER0_DIM))
         driver1 = ps.Input((100, DRIVER1_DIM))
 
-
         # Reservoir0: receives feedback + driver0
         reservoir0 = ESNLayer(
             reservoir_size=reservoir0_size,
@@ -597,7 +596,7 @@ def example_input_driven():
             input_size=DRIVER0_DIM,  # Driver input
             spectral_radius=spectral_radius,
             leak_rate=leak_rate,
-            topology=("random", {"density":0.1}),
+            topology=("random", {"density": 0.1}),
         )(feedback, driver0)  # Two inputs: (feedback, driver)
 
         # Reservoir1: receives feedback + driver1

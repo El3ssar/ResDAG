@@ -269,9 +269,7 @@ class TestESNLayerSpectralRadius:
     def test_different_spectral_radii(self) -> None:
         """Test different spectral radius values."""
         for target_sr in [0.5, 0.9, 1.2]:
-            reservoir = ESNLayer(
-                reservoir_size=50, feedback_size=10, spectral_radius=target_sr
-            )
+            reservoir = ESNLayer(reservoir_size=50, feedback_size=10, spectral_radius=target_sr)
 
             eigenvalues = torch.linalg.eigvals(reservoir.weight_hh.data)
             actual_sr = torch.max(torch.abs(eigenvalues)).item()

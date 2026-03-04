@@ -50,8 +50,6 @@ class Power(nn.Module):
         """
         return torch.pow(input, self.exponent)
 
-
-
     def extra_repr(self) -> str:
         """String representation of layer configuration."""
         return f"exponent={self.exponent}"

@@ -417,8 +417,7 @@ class ESNModel(ps.SymbolicModel):
             for node, layer_name in node_to_name.items():
                 module = getattr(node, "layer", None)
                 cls_name = (
-                    type(module).__name__ if module is not None
-                    else layer_name.rsplit("_", 1)[0]
+                    type(module).__name__ if module is not None else layer_name.rsplit("_", 1)[0]
                 )
                 nodes[layer_name] = (cls_name, _get_shape_str(node), module, False, False)
                 for parent in getattr(node, "_parents", []):
@@ -473,8 +472,10 @@ class ESNModel(ps.SymbolicModel):
 
                 fill, border = _color_for(cls_name)
                 node_shape = "ellipse" if is_input else "box"
-                style = "filled" if is_input else (
-                    "filled,rounded,bold" if is_output else "filled,rounded"
+                style = (
+                    "filled"
+                    if is_input
+                    else ("filled,rounded,bold" if is_output else "filled,rounded")
                 )
                 lines.append(
                     f'  "{name}" [label={label}, shape={node_shape},'
@@ -507,6 +508,7 @@ class ESNModel(ps.SymbolicModel):
             if _is_jupyter():
                 from IPython.display import SVG
                 from IPython.display import display as ipy_display
+
                 ipy_display(SVG(src.pipe(format="svg").decode("utf-8")))
                 return None  # prevent double-display from cell output
 

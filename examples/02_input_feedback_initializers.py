@@ -56,9 +56,7 @@ chebyshev_init = ChebyshevInitializer(
     k=3.5,  # Chaotic regime
     input_scaling=0.8,
 )
-reservoir3 = ESNLayer(
-    reservoir_size=100, feedback_size=10, feedback_initializer=chebyshev_init
-)
+reservoir3 = ESNLayer(reservoir_size=100, feedback_size=10, feedback_initializer=chebyshev_init)
 
 print(
     f"Value range: [{reservoir3.weight_feedback.min():.3f}, {reservoir3.weight_feedback.max():.3f}]"
@@ -71,9 +69,7 @@ print("Example 4: Binary Balanced (Hadamard-based)")
 print("=" * 70)
 
 balanced_init = BinaryBalancedInitializer(input_scaling=1.0, balance_global=True)
-reservoir4 = ESNLayer(
-    reservoir_size=100, feedback_size=10, feedback_initializer=balanced_init
-)
+reservoir4 = ESNLayer(reservoir_size=100, feedback_size=10, feedback_initializer=balanced_init)
 
 col_sums = reservoir4.weight_feedback.sum(dim=0)
 print(f"Column sums (should be near 0): {col_sums.tolist()}")

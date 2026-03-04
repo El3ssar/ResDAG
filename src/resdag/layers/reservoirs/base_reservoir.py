@@ -115,7 +115,7 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         for t in range(seq_len):
             inputs_t: list[torch.Tensor] = [feedback[:, t, :]]
-            for di in driving_inputs:
+            for di in driving_inputs: # This is at most a list of one tensor, or an empty list
                 inputs_t.append(di[:, t, :])
 
             self.state = self.cell(inputs_t, self.state)

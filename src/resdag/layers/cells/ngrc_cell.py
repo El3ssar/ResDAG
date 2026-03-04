@@ -130,7 +130,7 @@ class NGCell(nn.Module):
         self.include_linear = include_linear
 
         # D = total linear feature dimension
-        D = input_dim * k
+        linear_feature_dim = input_dim * k
 
         # Precompute delay-tap row indices into the buffer (shape: (k-1,)).
         # For j = 1, ..., k-1:  X_{i - j*s} lives at row (k-1-j)*s of the
@@ -144,7 +144,7 @@ class NGCell(nn.Module):
         self.register_buffer("delay_indices", delay_idx)
 
         # Precompute monomial index tuples (shape: (n_monomials, p)).
-        raw_indices = list(itertools.combinations_with_replacement(range(D), p))
+        raw_indices = list(itertools.combinations_with_replacement(range(linear_feature_dim), p))
         monomial_idx = torch.tensor(raw_indices, dtype=torch.long)  # (n_monomials, p)
         self.register_buffer("monomial_indices", monomial_idx)
 
@@ -152,14 +152,14 @@ class NGCell(nn.Module):
 
         # Total output dimension
         self._feature_dim: int = (
-            int(include_constant) + int(include_linear) * D + n_monomials
+            int(include_constant) + int(include_linear) * linear_feature_dim + n_monomials
         )
 
         if self._feature_dim > 10_000:
             warnings.warn(
                 f"NGCell: feature_dim={self._feature_dim} exceeds 10,000. "
                 f"Consider reducing k, p, or input_dim to avoid combinatorial explosion. "
-                f"(D={D}, n_monomials={n_monomials})",
+                f"(linear_feature_dim={linear_feature_dim}, n_monomials={n_monomials})",
                 stacklevel=2,
             )
 
@@ -291,8 +291,3 @@ class NGCell(nn.Module):
             f"feature_dim={self.feature_dim}"
             f")"
         )
-
-
-def _n_monomials(D: int, p: int) -> int:
-    """Return C(D + p - 1, p): the number of degree-p monomials in D variables."""
-    return math.comb(D + p - 1, p)

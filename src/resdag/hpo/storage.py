@@ -75,9 +75,7 @@ def resolve_storage(
     """
     if storage is None:
         if n_workers > 1:
-            tmp = tempfile.NamedTemporaryFile(
-                suffix=".log", prefix="resdag_hpo_", delete=False
-            )
+            tmp = tempfile.NamedTemporaryFile(suffix=".log", prefix="resdag_hpo_", delete=False)
             tmp.close()
             logger.info(f"Created temporary journal storage: {tmp.name}")
             return JournalStorage(_JournalFileBackend(tmp.name))
@@ -86,9 +84,7 @@ def resolve_storage(
     # User-provided path — detect type
     if storage.startswith("sqlite:///") or storage.endswith(".db"):
         db_path = (
-            storage.removeprefix("sqlite:///")
-            if storage.startswith("sqlite:///")
-            else storage
+            storage.removeprefix("sqlite:///") if storage.startswith("sqlite:///") else storage
         )
         # Warn about stale empty files from crashed runs
         if os.path.exists(db_path) and os.path.getsize(db_path) == 0:

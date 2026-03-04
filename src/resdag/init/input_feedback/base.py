@@ -13,7 +13,7 @@ InputFeedbackInitializer
 See Also
 --------
 resdag.init.input_feedback.registry : Registry of available initializers.
-resdag.layers.ReservoirLayer : Uses these initializers for weight matrices.
+resdag.layers.ESNLayer : Uses these initializers for weight matrices.
 """
 
 from abc import ABC, abstractmethod
@@ -48,10 +48,10 @@ class InputFeedbackInitializer(ABC):
     >>> weight = torch.empty(100, 10)
     >>> initializer(weight)
 
-    Using with ReservoirLayer:
+    Using with ESNLayer:
 
-    >>> from resdag.layers import ReservoirLayer
-    >>> reservoir = ReservoirLayer(
+    >>> from resdag.layers import ESNLayer
+    >>> reservoir = ESNLayer(
     ...     reservoir_size=100,
     ...     feedback_size=10,
     ...     feedback_initializer=MyInitializer(),
@@ -60,7 +60,7 @@ class InputFeedbackInitializer(ABC):
     See Also
     --------
     resdag.init.input_feedback.registry : Get initializers by name.
-    resdag.layers.ReservoirLayer : Uses these initializers.
+    resdag.layers.ESNLayer : Uses these initializers.
     """
 
     @abstractmethod

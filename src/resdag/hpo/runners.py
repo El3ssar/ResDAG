@@ -128,9 +128,7 @@ def _worker_process(
         study: optuna.Study,
         _trial: optuna.trial.FrozenTrial,
     ) -> None:
-        done = len(
-            [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        )
+        done = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
         if done >= target_total:
             study.stop()
 

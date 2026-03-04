@@ -26,7 +26,7 @@ import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, ReservoirLayer, SelectiveExponentiation
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, SelectiveExponentiation
 
 
 def ott_esn(
@@ -93,7 +93,7 @@ def ott_esn(
     readout_name : str, default='output'
         Name for the readout layer. Used as target key in training.
     **reservoir_kwargs
-        Additional keyword arguments passed to :class:`ReservoirLayer`.
+        Additional keyword arguments passed to :class:`ESNLayer`.
 
     Returns
     -------
@@ -143,7 +143,7 @@ def ott_esn(
     # Build model
     inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
 
-    reservoir = ReservoirLayer(
+    reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=0,

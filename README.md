@@ -55,11 +55,11 @@ uv sync
 ```python
 import torch
 import pytorch_symbolic as ps
-from resdag import ESNModel, ReservoirLayer, CGReadoutLayer, ESNTrainer
+from resdag import ESNModel, ESNLayer, CGReadoutLayer, ESNTrainer
 
 # 1. Define the model architecture
 inp = ps.Input((100, 3))  # (seq_len, features)
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=500,
     feedback_size=3,
     spectral_radius=0.9,
@@ -105,10 +105,10 @@ model = ott_esn(
 The heart of ESNs - stateful RNN layers with randomly initialized, fixed recurrent weights:
 
 ```python
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 from resdag.init.topology import get_topology
 
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=500,        # Number of neurons
     feedback_size=3,           # Dimension of feedback input
     input_size=5,              # Optional: dimension of driving inputs
@@ -149,14 +149,14 @@ Build models using `pytorch_symbolic` for clean, functional composition:
 ```python
 import pytorch_symbolic as ps
 from resdag import ESNModel
-from resdag.layers import ReservoirLayer, Concatenate
+from resdag.layers import ESNLayer, Concatenate
 from resdag.layers.readouts import CGReadoutLayer
 
 # Multi-input model with driving signal
 feedback = ps.Input((100, 3))
 driver = ps.Input((100, 5))
 
-reservoir = ReservoirLayer(500, feedback_size=3, input_size=5)(feedback, driver)
+reservoir = ESNLayer(500, feedback_size=3, input_size=5)(feedback, driver)
 readout = CGReadoutLayer(500, 3, name="output")(reservoir)
 
 model = ESNModel([feedback, driver], readout)
@@ -224,7 +224,7 @@ show_topologies("erdos_renyi")
 topology = get_topology("watts_strogatz", k=6, p=0.3, seed=42)
 
 # Use in reservoir
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=500,
     feedback_size=3,
     topology=topology,
@@ -254,7 +254,7 @@ from resdag.init.input_feedback import show_input_initializers
 show_input_initializers()
 
 # Use custom initializer
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=500,
     feedback_size=3,
     feedback_initializer=get_input_feedback("chebyshev"),
@@ -268,7 +268,7 @@ Train models with multiple outputs:
 
 ```python
 # Define multiple readouts
-reservoir = ReservoirLayer(500, feedback_size=3)(inp)
+reservoir = ESNLayer(500, feedback_size=3)(inp)
 
 readout1 = CGReadoutLayer(500, 3, name="position")(reservoir)
 readout2 = CGReadoutLayer(500, 3, name="velocity")(reservoir)
@@ -406,7 +406,7 @@ predictions = model.forecast(forecast_warmup, horizon=5000)
 feedback = ps.Input((100, 3))
 driver = ps.Input((100, 2))
 
-reservoir = ReservoirLayer(500, feedback_size=3, input_size=2)(feedback, driver)
+reservoir = ESNLayer(500, feedback_size=3, input_size=2)(feedback, driver)
 readout = CGReadoutLayer(500, 3, name="output")(reservoir)
 model = ESNModel([feedback, driver], readout)
 
@@ -423,7 +423,7 @@ predictions = model.forecast(
 
 ```python
 # Predict at multiple timescales
-reservoir = ReservoirLayer(1000, feedback_size=3)(inp)
+reservoir = ESNLayer(1000, feedback_size=3)(inp)
 
 short_term = CGReadoutLayer(1000, 3, name="1step")(reservoir)
 medium_term = CGReadoutLayer(1000, 3, name="10step")(reservoir)

@@ -9,7 +9,7 @@ import pytorch_symbolic as ps
 import torch
 
 from resdag.composition import ESNModel
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 from resdag.layers.readouts import CGReadoutLayer
 
 print("=" * 70)
@@ -26,7 +26,7 @@ print("The reservoir receives only the previous output as feedback.")
 
 # Define model architecture
 feedback_input = ps.Input((50, 1))  # (seq_len, features)
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=100,
     feedback_size=1,  # Receives 1D feedback from readout
     input_size=0,  # No driving input
@@ -59,7 +59,7 @@ print("The reservoir receives both feedback and an external driving signal.")
 feedback_input = ps.Input((50, 1))  # Feedback from readout
 driving_input = ps.Input((50, 3))  # External driving signal
 
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=150,
     feedback_size=1,  # Receives 1D feedback
     input_size=3,  # Receives 3D driving input
@@ -96,7 +96,7 @@ print("Both feedback and driving can have multiple dimensions.")
 feedback_input = ps.Input((50, 5))  # 5D feedback
 driving_input = ps.Input((50, 10))  # 10D driving signal
 
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=200,
     feedback_size=5,  # 5D feedback
     input_size=10,  # 10D driving
@@ -133,9 +133,9 @@ print("Each reservoir feeds into the next, creating a deep hierarchy.")
 feedback_input = ps.Input((50, 1))
 
 # Stack of reservoirs
-res1 = ReservoirLayer(reservoir_size=150, feedback_size=1, input_size=0)(feedback_input)
-res2 = ReservoirLayer(reservoir_size=100, feedback_size=150, input_size=0)(res1)
-res3 = ReservoirLayer(reservoir_size=50, feedback_size=100, input_size=0)(res2)
+res1 = ESNLayer(reservoir_size=150, feedback_size=1, input_size=0)(feedback_input)
+res2 = ESNLayer(reservoir_size=100, feedback_size=150, input_size=0)(res1)
+res3 = ESNLayer(reservoir_size=50, feedback_size=100, input_size=0)(res2)
 
 readout = CGReadoutLayer(in_features=50, out_features=1)(res3)
 
@@ -160,7 +160,7 @@ print("-" * 70)
 
 # Create a simple model
 feedback_input = ps.Input((20, 1))
-reservoir = ReservoirLayer(reservoir_size=100, feedback_size=1)(feedback_input)
+reservoir = ESNLayer(reservoir_size=100, feedback_size=1)(feedback_input)
 readout = CGReadoutLayer(in_features=100, out_features=1)(reservoir)
 model = ESNModel(feedback_input, readout)
 
@@ -190,7 +190,7 @@ if torch.cuda.is_available():
     print("-" * 70)
 
     feedback_input = ps.Input((50, 1))
-    reservoir = ReservoirLayer(reservoir_size=200, feedback_size=1)(feedback_input)
+    reservoir = ESNLayer(reservoir_size=200, feedback_size=1)(feedback_input)
     readout = CGReadoutLayer(in_features=200, out_features=1)(reservoir)
     model = ESNModel(feedback_input, readout).cuda()
 
@@ -213,8 +213,8 @@ print("\n" + "=" * 70)
 print("SUMMARY")
 print("=" * 70)
 print("\nKey Concepts:")
-print("  1. Feedback-only: ReservoirLayer(feedback_size=N, input_size=0)")
-print("  2. Input-driven:  ReservoirLayer(feedback_size=N, input_size=M)")
+print("  1. Feedback-only: ESNLayer(feedback_size=N, input_size=0)")
+print("  2. Input-driven:  ESNLayer(feedback_size=N, input_size=M)")
 print("  3. Multi-input:   Pass multiple tensors to reservoir layer")
 print("  4. Deep models:   Stack reservoir layers sequentially")
 print("\nModel Building:")

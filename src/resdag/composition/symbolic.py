@@ -14,12 +14,12 @@ Examples
 Simple ESN model:
 
 >>> import pytorch_symbolic as ps
->>> from resdag.layers import ReservoirLayer
+>>> from resdag.layers import ESNLayer
 >>> from resdag.layers.readouts import CGReadoutLayer
 >>> from resdag.composition import ESNModel
 >>>
 >>> inp = ps.Input((100, 1))
->>> reservoir = ReservoirLayer(50, feedback_size=1)(inp)
+>>> reservoir = ESNLayer(50, feedback_size=1)(inp)
 >>> readout = CGReadoutLayer(50, 1)(reservoir)
 >>> model = ESNModel(inp, readout)
 >>> model.summary()
@@ -28,13 +28,13 @@ Multi-input model with driving signal:
 
 >>> feedback = ps.Input((100, 3))
 >>> driver = ps.Input((100, 5))
->>> reservoir = ReservoirLayer(100, feedback_size=3, input_size=5)(feedback, driver)
+>>> reservoir = ESNLayer(100, feedback_size=3, input_size=5)(feedback, driver)
 >>> readout = CGReadoutLayer(100, 3)(reservoir)
 >>> model = ESNModel([feedback, driver], readout)
 
 See Also
 --------
-resdag.layers.ReservoirLayer : Reservoir layer with recurrent dynamics.
+resdag.layers.ESNLayer : Reservoir layer with recurrent dynamics.
 resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
@@ -48,7 +48,7 @@ from typing import Any
 import pytorch_symbolic as ps
 import torch
 
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 
 # Re-export for convenience
 Input = ps.Input
@@ -91,11 +91,11 @@ class ESNModel(ps.SymbolicModel):
 
     >>> import pytorch_symbolic as ps
     >>> from resdag.composition import ESNModel
-    >>> from resdag.layers import ReservoirLayer
+    >>> from resdag.layers import ESNLayer
     >>> from resdag.layers.readouts import CGReadoutLayer
     >>>
     >>> inp = ps.Input((100, 3))
-    >>> reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+    >>> reservoir = ESNLayer(200, feedback_size=3)(inp)
     >>> readout = CGReadoutLayer(200, 3)(reservoir)
     >>> model = ESNModel(inp, readout)
     >>>
@@ -115,7 +115,7 @@ class ESNModel(ps.SymbolicModel):
     See Also
     --------
     pytorch_symbolic.SymbolicModel : Parent class.
-    ReservoirLayer : Reservoir layer component.
+    ESNLayer : Reservoir layer component.
     ESNTrainer : Trainer for fitting readout layers.
     """
 
@@ -123,7 +123,7 @@ class ESNModel(ps.SymbolicModel):
         """
         Reset all reservoir layer states to zero.
 
-        This clears the internal hidden states of all :class:`ReservoirLayer`
+        This clears the internal hidden states of all :class:`ESNLayer`
         modules in the model, preparing it for a new sequence.
 
         Examples
@@ -132,7 +132,7 @@ class ESNModel(ps.SymbolicModel):
         >>> output = model(new_sequence)
         """
         for module in self.modules():
-            if isinstance(module, ReservoirLayer):
+            if isinstance(module, ESNLayer):
                 module.reset_state()
 
     def set_random_reservoir_states(self) -> None:
@@ -144,7 +144,7 @@ class ESNModel(ps.SymbolicModel):
         >>> model.set_random_reservoir_states()
         """
         for module in self.modules():
-            if isinstance(module, ReservoirLayer):
+            if isinstance(module, ESNLayer):
                 module.set_random_state()
 
     def get_reservoir_states(self) -> dict[str, torch.Tensor]:
@@ -165,7 +165,7 @@ class ESNModel(ps.SymbolicModel):
         """
         states = {}
         for name, module in self.named_modules():
-            if isinstance(module, ReservoirLayer) and module.state is not None:
+            if isinstance(module, ESNLayer) and module.state is not None:
                 states[name] = module.state.clone()
         return states
 
@@ -186,7 +186,7 @@ class ESNModel(ps.SymbolicModel):
         >>> model.set_reservoir_states(states)  # Restore states
         """
         for name, module in self.named_modules():
-            if isinstance(module, ReservoirLayer) and name in states:
+            if isinstance(module, ESNLayer) and name in states:
                 module.state = states[name].clone()
 
     def save(
@@ -417,8 +417,7 @@ class ESNModel(ps.SymbolicModel):
             for node, layer_name in node_to_name.items():
                 module = getattr(node, "layer", None)
                 cls_name = (
-                    type(module).__name__ if module is not None
-                    else layer_name.rsplit("_", 1)[0]
+                    type(module).__name__ if module is not None else layer_name.rsplit("_", 1)[0]
                 )
                 nodes[layer_name] = (cls_name, _get_shape_str(node), module, False, False)
                 for parent in getattr(node, "_parents", []):
@@ -473,8 +472,10 @@ class ESNModel(ps.SymbolicModel):
 
                 fill, border = _color_for(cls_name)
                 node_shape = "ellipse" if is_input else "box"
-                style = "filled" if is_input else (
-                    "filled,rounded,bold" if is_output else "filled,rounded"
+                style = (
+                    "filled"
+                    if is_input
+                    else ("filled,rounded,bold" if is_output else "filled,rounded")
                 )
                 lines.append(
                     f'  "{name}" [label={label}, shape={node_shape},'
@@ -505,7 +506,9 @@ class ESNModel(ps.SymbolicModel):
                 return src
 
             if _is_jupyter():
-                from IPython.display import SVG, display as ipy_display
+                from IPython.display import SVG
+                from IPython.display import display as ipy_display
+
                 ipy_display(SVG(src.pipe(format="svg").decode("utf-8")))
                 return None  # prevent double-display from cell output
 

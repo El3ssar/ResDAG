@@ -19,11 +19,11 @@ Building a simple ESN:
 
 >>> import pytorch_symbolic as ps
 >>> from resdag.composition import ESNModel
->>> from resdag.layers import ReservoirLayer
+>>> from resdag.layers import ESNLayer
 >>> from resdag.layers.readouts import CGReadoutLayer
 >>>
 >>> inp = ps.Input((100, 3))
->>> reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+>>> reservoir = ESNLayer(200, feedback_size=3)(inp)
 >>> readout = CGReadoutLayer(200, 3)(reservoir)
 >>> model = ESNModel(inp, readout)
 
@@ -31,7 +31,7 @@ Multi-input model:
 
 >>> feedback = ps.Input((100, 3))
 >>> driver = ps.Input((100, 5))
->>> reservoir = ReservoirLayer(200, feedback_size=3, input_size=5)(feedback, driver)
+>>> reservoir = ESNLayer(200, feedback_size=3, input_size=5)(feedback, driver)
 >>> readout = CGReadoutLayer(200, 3)(reservoir)
 >>> model = ESNModel([feedback, driver], readout)
 

@@ -148,8 +148,7 @@ def build_objective(
             # Move data to device
             if device is not None:
                 data = {
-                    k: v.to(device) if isinstance(v, torch.Tensor) else v
-                    for k, v in data.items()
+                    k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in data.items()
                 }
 
             # 3. Create fresh model

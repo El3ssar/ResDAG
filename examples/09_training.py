@@ -11,7 +11,7 @@ Key concepts:
 
 import torch
 
-import resdag as trc
+import resdag as rd
 from resdag.composition import ESNModel, Input
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.training import ESNTrainer
@@ -32,7 +32,7 @@ def example_simple_training():
 
     # Build model with named readout
     feedback = Input(shape=(100, 1))
-    reservoir = trc.ReservoirLayer(100, 1)(feedback)
+    reservoir = rd.ESNLayer(100, 1)(feedback)
     readout = CGReadoutLayer(100, 1, name="output", alpha=1e-6)(reservoir)
     model = ESNModel(feedback, readout)
 
@@ -75,10 +75,10 @@ def example_multi_readout_training():
     # Build stacked model: reservoir1 -> readout1 -> reservoir2 -> readout2
     feedback = Input(shape=(100, 1))
 
-    reservoir1 = trc.ReservoirLayer(100, 1)(feedback)
+    reservoir1 = rd.ESNLayer(100, 1)(feedback)
     readout1 = CGReadoutLayer(100, 3, name="intermediate", alpha=1e-5)(reservoir1)
 
-    reservoir2 = trc.ReservoirLayer(50, 3)(readout1)
+    reservoir2 = rd.ESNLayer(50, 3)(readout1)
     readout2 = CGReadoutLayer(50, 1, name="output", alpha=1e-6)(reservoir2)
 
     model = ESNModel(feedback, readout2)
@@ -134,7 +134,7 @@ def example_training_with_drivers():
     feedback = Input(shape=(100, 1))
     driver = Input(shape=(100, 5))
 
-    reservoir = trc.ReservoirLayer(100, 1, input_size=5)(feedback, driver)
+    reservoir = rd.ESNLayer(100, 1, input_size=5)(feedback, driver)
     readout = CGReadoutLayer(100, 1, name="output", alpha=1e-6)(reservoir)
 
     model = ESNModel(inputs=[feedback, driver], outputs=readout)
@@ -184,7 +184,7 @@ def example_forecasting_after_training():
 
     # Build model
     feedback = Input(shape=(100, 1))
-    reservoir = trc.ReservoirLayer(100, 1)(feedback)
+    reservoir = rd.ESNLayer(100, 1)(feedback)
     readout = CGReadoutLayer(100, 1, name="output", alpha=1e-6)(reservoir)
     model = ESNModel(feedback, readout)
 
@@ -229,11 +229,11 @@ def example_different_alphas():
     print("=" * 60)
 
     feedback = Input(shape=(100, 1))
-    reservoir = trc.ReservoirLayer(100, 1)(feedback)
+    reservoir = rd.ESNLayer(100, 1)(feedback)
 
     # Different alpha for each readout
     readout1 = CGReadoutLayer(100, 2, name="weak_reg", alpha=1e-3)(reservoir)
-    reservoir2 = trc.ReservoirLayer(50, 2)(readout1)
+    reservoir2 = rd.ESNLayer(50, 2)(readout1)
     readout2 = CGReadoutLayer(50, 1, name="strong_reg", alpha=1e-8)(reservoir2)
 
     model = ESNModel(feedback, readout2)

@@ -1,21 +1,21 @@
-"""Example: Using ReservoirLayer with graph topologies.
+"""Example: Using ESNLayer with graph topologies.
 
 This example demonstrates how to use different graph topologies
-to initialize the recurrent weight matrix of a ReservoirLayer.
+to initialize the recurrent weight matrix of a ESNLayer.
 """
 
 import torch
 
 from resdag.init.graphs import erdos_renyi_graph
 from resdag.init.topology import GraphTopology, show_topologies
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 
 # Example 1: Using a pre-registered topology by name
 print("=" * 60)
 print("Example 1: Using a named topology")
 print("=" * 60)
 
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=100,
     feedback_size=10,
     topology="erdos_renyi",  # Use Erdős-Rényi random graph
@@ -46,7 +46,7 @@ print("=" * 60)
 print(f"Available topologies: {show_topologies()}")
 
 # Use Watts-Strogatz small-world topology with custom parameters
-reservoir2 = ReservoirLayer(
+reservoir2 = ESNLayer(
     reservoir_size=200,
     feedback_size=5,
     input_size=3,  # Also have driving inputs
@@ -71,7 +71,7 @@ custom_topology = GraphTopology(
     erdos_renyi_graph, {"p": 0.15, "directed": True, "self_loops": True, "seed": 123}
 )
 
-reservoir3 = ReservoirLayer(
+reservoir3 = ESNLayer(
     reservoir_size=150,
     feedback_size=8,
     topology=custom_topology,
@@ -91,7 +91,7 @@ print("=" * 60)
 topologies_to_compare = ["erdos_renyi", "watts_strogatz", "ring_chord", "regular"]
 
 for topo_name in topologies_to_compare:
-    res = ReservoirLayer(
+    res = ESNLayer(
         reservoir_size=50,
         feedback_size=5,
         topology=topo_name,
@@ -112,7 +112,7 @@ print("Example 5: Stateful processing with topology")
 print("=" * 60)
 
 # Topology-based reservoir maintains state across calls
-reservoir4 = ReservoirLayer(
+reservoir4 = ESNLayer(
     reservoir_size=80,
     feedback_size=10,
     topology="erdos_renyi",

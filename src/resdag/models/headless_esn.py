@@ -7,7 +7,7 @@ import torch
 
 from resdag.composition import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 
 
 def headless_esn(
@@ -61,7 +61,7 @@ def headless_esn(
     trainable : bool, default=False
         Whether reservoir weights are trainable.
     **reservoir_kwargs
-        Additional keyword arguments passed to ReservoirLayer.
+        Additional keyword arguments passed to ESNLayer.
 
     Returns
     -------
@@ -77,7 +77,7 @@ def headless_esn(
     # Build model - just input and reservoir
     inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
 
-    reservoir = ReservoirLayer(
+    reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=0,

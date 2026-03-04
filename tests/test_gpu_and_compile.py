@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from resdag.init.input_feedback import ChebyshevInitializer, RandomInputInitializer
-from resdag.layers import ReadoutLayer, ReservoirLayer
+from resdag.layers import ESNLayer, ReadoutLayer
 
 # torch.compile is not supported on Python 3.14+
 COMPILE_SUPPORTED = torch.__version__ >= "2.0.0" and sys.version_info < (3, 14)
@@ -17,8 +17,8 @@ class TestGPUSupport:
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_reservoir_on_gpu(self):
-        """Test ReservoirLayer works on GPU."""
-        reservoir = ReservoirLayer(
+        """Test ESNLayer works on GPU."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
             topology="erdos_renyi",
@@ -44,8 +44,8 @@ class TestGPUSupport:
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_reservoir_with_driving_inputs_on_gpu(self):
-        """Test ReservoirLayer with driving inputs on GPU."""
-        reservoir = ReservoirLayer(
+        """Test ESNLayer with driving inputs on GPU."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
             input_size=5,
@@ -82,7 +82,7 @@ class TestGPUSupport:
         feedback_init = ChebyshevInitializer(p=0.3, k=3.5, input_scaling=0.8)
         input_init = RandomInputInitializer(input_scaling=1.0, seed=42)
 
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
             input_size=5,
@@ -106,7 +106,7 @@ class TestGPUSupport:
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_state_persistence_on_gpu(self):
         """Test reservoir state persists correctly on GPU."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=10,
         ).cuda()
@@ -131,7 +131,7 @@ class TestGPUSupport:
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_device_transfer(self):
         """Test moving model between CPU and GPU."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=10,
             topology="erdos_renyi",
@@ -159,8 +159,8 @@ class TestTorchCompile:
 
     @pytest.mark.skipif(not COMPILE_SUPPORTED, reason="torch.compile not supported")
     def test_reservoir_compile(self):
-        """Test ReservoirLayer can be compiled."""
-        reservoir = ReservoirLayer(
+        """Test ESNLayer can be compiled."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
         )
@@ -177,8 +177,8 @@ class TestTorchCompile:
 
     @pytest.mark.skipif(not COMPILE_SUPPORTED, reason="torch.compile not supported")
     def test_reservoir_compile_with_topology(self):
-        """Test compiled ReservoirLayer with graph topology."""
-        reservoir = ReservoirLayer(
+        """Test compiled ESNLayer with graph topology."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
             topology="erdos_renyi",
@@ -194,8 +194,8 @@ class TestTorchCompile:
 
     @pytest.mark.skipif(not COMPILE_SUPPORTED, reason="torch.compile not supported")
     def test_reservoir_compile_with_driving_inputs(self):
-        """Test compiled ReservoirLayer with driving inputs."""
-        reservoir = ReservoirLayer(
+        """Test compiled ESNLayer with driving inputs."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
             input_size=5,
@@ -226,8 +226,8 @@ class TestTorchCompile:
         reason="torch.compile and CUDA required",
     )
     def test_reservoir_compile_on_gpu(self):
-        """Test compiled ReservoirLayer on GPU."""
-        reservoir = ReservoirLayer(
+        """Test compiled ESNLayer on GPU."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
             topology="watts_strogatz",
@@ -247,9 +247,9 @@ class TestMixedPrecision:
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_reservoir_fp16(self):
-        """Test ReservoirLayer with FP16."""
+        """Test ESNLayer with FP16."""
         reservoir = (
-            ReservoirLayer(
+            ESNLayer(
                 reservoir_size=100,
                 feedback_size=10,
             )
@@ -268,9 +268,9 @@ class TestMixedPrecision:
         reason="BF16 not available",
     )
     def test_reservoir_bf16(self):
-        """Test ReservoirLayer with BF16."""
+        """Test ESNLayer with BF16."""
         reservoir = (
-            ReservoirLayer(
+            ESNLayer(
                 reservoir_size=100,
                 feedback_size=10,
             )
@@ -286,8 +286,8 @@ class TestMixedPrecision:
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_mixed_precision_autocast(self):
-        """Test ReservoirLayer with autocast."""
-        reservoir = ReservoirLayer(
+        """Test ESNLayer with autocast."""
+        reservoir = ESNLayer(
             reservoir_size=100,
             feedback_size=10,
         ).cuda()
@@ -307,21 +307,21 @@ class TestBatchSizes:
 
     def test_batch_size_one(self):
         """Test with batch size of 1."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
         feedback = torch.randn(1, 20, 10)
         output = reservoir(feedback)
         assert output.shape == (1, 20, 50)
 
     def test_large_batch_size(self):
         """Test with large batch size."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10)
         feedback = torch.randn(128, 20, 10)
         output = reservoir(feedback)
         assert output.shape == (128, 20, 100)
 
     def test_varying_batch_sizes(self):
         """Test that state resets correctly with varying batch sizes."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         # Process batch of 4
         feedback1 = torch.randn(4, 10, 10)
@@ -342,21 +342,21 @@ class TestSequenceLengths:
 
     def test_short_sequence(self):
         """Test with very short sequences."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10)
         feedback = torch.randn(4, 1, 10)  # Single timestep
         output = reservoir(feedback)
         assert output.shape == (4, 1, 100)
 
     def test_long_sequence(self):
         """Test with long sequences."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10)
         feedback = torch.randn(2, 500, 10)
         output = reservoir(feedback)
         assert output.shape == (2, 500, 100)
 
     def test_varying_sequence_lengths(self):
         """Test multiple forward passes with different sequence lengths."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         # Different sequence lengths
         for seq_len in [5, 10, 20, 50, 100]:

@@ -14,7 +14,7 @@ import torch
 
 if TYPE_CHECKING:
     from resdag.composition import ESNModel
-    from resdag.layers import ReservoirLayer
+    from resdag.layers import ESNLayer
 
 
 def esp_index(
@@ -65,7 +65,7 @@ def esp_index(
     because the input contribution cancels out in the state difference.
     This is mathematically correct behavior.
     """
-    from resdag.layers import ReservoirLayer
+    from resdag.layers import ESNLayer
 
     device = feedback_seq.device
     dtype = feedback_seq.dtype
@@ -80,7 +80,7 @@ def esp_index(
     # Find all reservoir layers
     reservoirs = []
     for name, module in model.named_modules():
-        if isinstance(module, ReservoirLayer):
+        if isinstance(module, ESNLayer):
             reservoirs.append((name, module))
 
     if not reservoirs:
@@ -152,7 +152,7 @@ def esp_index(
 
 def _run_and_collect(
     model: "ESNModel",
-    reservoirs: list[tuple[str, "ReservoirLayer"]],
+    reservoirs: list[tuple[str, "ESNLayer"]],
     inputs: tuple[torch.Tensor, ...],
 ) -> dict[str, torch.Tensor]:
     """

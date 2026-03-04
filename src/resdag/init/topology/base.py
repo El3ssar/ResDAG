@@ -16,7 +16,7 @@ GraphTopology
 See Also
 --------
 resdag.init.graphs : Graph generation functions.
-resdag.layers.ReservoirLayer : Uses topologies for weight initialization.
+resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
 from abc import ABC, abstractmethod
@@ -41,7 +41,7 @@ class TopologyInitializer(ABC):
     See Also
     --------
     GraphTopology : Concrete implementation using NetworkX graphs.
-    resdag.layers.ReservoirLayer : Uses topology initializers.
+    resdag.layers.ESNLayer : Uses topology initializers.
     """
 
     @abstractmethod

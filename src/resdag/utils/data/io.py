@@ -26,9 +26,7 @@ _TORCH_TO_NUMPY = {
 def _torch_to_numpy_dtype(dtype: torch.dtype) -> np.dtype:
     """Convert a torch dtype to the corresponding numpy dtype."""
     if dtype not in _TORCH_TO_NUMPY:
-        raise ValueError(
-            f"Unsupported dtype {dtype}. Supported: {list(_TORCH_TO_NUMPY.keys())}"
-        )
+        raise ValueError(f"Unsupported dtype {dtype}. Supported: {list(_TORCH_TO_NUMPY.keys())}")
     return _TORCH_TO_NUMPY[dtype]
 
 
@@ -119,9 +117,7 @@ def load_npy(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     return torch.from_numpy(data)
 
 
-def load_npz(
-    path: PathLike, key: str = "data", dtype: torch.dtype | None = None
-) -> torch.Tensor:
+def load_npz(path: PathLike, key: str = "data", dtype: torch.dtype | None = None) -> torch.Tensor:
     """Load time series data from a NumPy .npz file.
 
     Parameters
@@ -188,9 +184,7 @@ def load_nc(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     return torch.from_numpy(data)
 
 
-def load_file(
-    path: PathLike, dtype: torch.dtype | None = None, **kwargs
-) -> torch.Tensor:
+def load_file(path: PathLike, dtype: torch.dtype | None = None, **kwargs) -> torch.Tensor:
     """Load time series data from a file, detecting format from extension.
 
     Parameters

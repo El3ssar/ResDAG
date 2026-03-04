@@ -337,7 +337,7 @@ def soft_valid_horizon(
 
     # Numerically safe Hill gate: clip the ratio to avoid overflow in x**n
     ratio = np.clip(e_t / threshold, 0.0, 1e4)
-    good_t = 1.0 / (1.0 + ratio ** n)
+    good_t = 1.0 / (1.0 + ratio**n)
 
     # Survival (cumulative product) — once one step fails, all later are ~0
     surv_t = np.cumprod(good_t)

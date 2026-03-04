@@ -1,19 +1,19 @@
-"""Tests for ReservoirLayer with graph topology initialization."""
+"""Tests for ESNLayer with graph topology initialization."""
 
 import pytest
 import torch
 
 from resdag.init.graphs import erdos_renyi_graph
 from resdag.init.topology import GraphTopology, get_topology
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 
 
-class TestReservoirLayerTopology:
-    """Tests for ReservoirLayer topology initialization."""
+class TestESNLayerTopology:
+    """Tests for ESNLayer topology initialization."""
 
     def test_reservoir_with_string_topology(self):
         """Test reservoir initialization with string topology name."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=10,
             topology="erdos_renyi",
@@ -34,7 +34,7 @@ class TestReservoirLayerTopology:
         """Test reservoir with TopologyInitializer object."""
         topology = get_topology("watts_strogatz", k=4, p=0.1, seed=42)
 
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=40,
             feedback_size=5,
             topology=topology,
@@ -52,7 +52,7 @@ class TestReservoirLayerTopology:
         """Test reservoir with custom GraphTopology."""
         topology = GraphTopology(erdos_renyi_graph, {"p": 0.15, "directed": True, "seed": 42})
 
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=30,
             feedback_size=8,
             topology=topology,
@@ -63,7 +63,7 @@ class TestReservoirLayerTopology:
 
     def test_reservoir_topology_forward_pass(self):
         """Test that reservoir with topology works in forward pass."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=10,
             topology="erdos_renyi",
@@ -82,7 +82,7 @@ class TestReservoirLayerTopology:
 
     def test_reservoir_topology_with_driving_inputs(self):
         """Test reservoir with topology and driving inputs."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=60,
             feedback_size=5,
             input_size=3,
@@ -100,13 +100,13 @@ class TestReservoirLayerTopology:
 
     def test_different_topologies_produce_different_weights(self):
         """Test that different topologies produce different weight matrices."""
-        reservoir1 = ReservoirLayer(
+        reservoir1 = ESNLayer(
             reservoir_size=30,
             feedback_size=5,
             topology="erdos_renyi",
         )
 
-        reservoir2 = ReservoirLayer(
+        reservoir2 = ESNLayer(
             reservoir_size=30,
             feedback_size=5,
             topology="watts_strogatz",
@@ -118,7 +118,7 @@ class TestReservoirLayerTopology:
     def test_reservoir_topology_invalid_type(self):
         """Test that invalid topology type raises error."""
         with pytest.raises(TypeError, match="Invalid topology spec type"):
-            ReservoirLayer(
+            ESNLayer(
                 reservoir_size=30,
                 feedback_size=5,
                 topology=123,  # Invalid type
@@ -126,7 +126,7 @@ class TestReservoirLayerTopology:
 
     def test_reservoir_with_tuple_topology_spec(self):
         """Test reservoir with tuple (name, params) topology specification."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=10,
             topology=("watts_strogatz", {"k": 4, "p": 0.3, "seed": 42}),
@@ -142,7 +142,7 @@ class TestReservoirLayerTopology:
 
     def test_reservoir_with_tuple_initializer_spec(self):
         """Test reservoir with tuple (name, params) initializer specification."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=10,
             feedback_initializer=("pseudo_diagonal", {"input_scaling": 0.5}),
@@ -153,7 +153,7 @@ class TestReservoirLayerTopology:
 
     def test_reservoir_topology_state_persistence(self):
         """Test that topology-based reservoir maintains state correctly."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=40,
             feedback_size=10,
             topology="erdos_renyi",
@@ -182,13 +182,13 @@ class TestReservoirLayerTopology:
         topology1 = GraphTopology(erdos_renyi_graph, {"p": 0.1, "directed": True, "seed": 42})
         topology2 = GraphTopology(erdos_renyi_graph, {"p": 0.1, "directed": True, "seed": 42})
 
-        reservoir1 = ReservoirLayer(
+        reservoir1 = ESNLayer(
             reservoir_size=30,
             feedback_size=5,
             topology=topology1,
         )
 
-        reservoir2 = ReservoirLayer(
+        reservoir2 = ESNLayer(
             reservoir_size=30,
             feedback_size=5,
             topology=topology2,
@@ -202,7 +202,7 @@ class TestReservoirLayerTopology:
         sizes = [50, 100, 200]
 
         for size in sizes:
-            reservoir = ReservoirLayer(
+            reservoir = ESNLayer(
                 reservoir_size=size,
                 feedback_size=5,
                 topology="erdos_renyi",

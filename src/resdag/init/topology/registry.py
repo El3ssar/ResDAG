@@ -3,7 +3,7 @@ Topology Registry
 =================
 
 This module provides a registry of pre-configured graph topologies that can
-be referenced by name when creating :class:`~resdag.layers.ReservoirLayer`.
+be referenced by name when creating :class:`~resdag.layers.ESNLayer`.
 
 The registry allows convenient access to common topologies without needing
 to import graph functions directly.
@@ -49,7 +49,7 @@ def register_graph_topology(
 
     Registers a graph generation function in the topology registry at
     definition time, making it available for use with
-    :class:`~resdag.layers.ReservoirLayer`.
+    :class:`~resdag.layers.ESNLayer`.
 
     Parameters
     ----------
@@ -124,10 +124,10 @@ def get_topology(
     >>> weight = torch.empty(100, 100)
     >>> topology.initialize(weight, spectral_radius=0.9)
 
-    With ReservoirLayer:
+    With ESNLayer:
 
-    >>> from resdag.layers import ReservoirLayer
-    >>> reservoir = ReservoirLayer(
+    >>> from resdag.layers import ESNLayer
+    >>> reservoir = ESNLayer(
     ...     reservoir_size=500,
     ...     feedback_size=10,
     ...     topology=get_topology("watts_strogatz", k=4, p=0.3),

@@ -1,17 +1,17 @@
-"""Unit tests for ReservoirLayer."""
+"""Unit tests for ESNLayer."""
 
 import pytest
 import torch
 
-from resdag.layers.reservoir import ReservoirLayer
+from resdag.layers import ESNLayer
 
 
-class TestReservoirLayerInstantiation:
-    """Test ReservoirLayer instantiation and configuration."""
+class TestESNLayerInstantiation:
+    """Test ESNLayer instantiation and configuration."""
 
     def test_instantiation_feedback_only(self) -> None:
         """Test creating reservoir with feedback only."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10)
 
         assert reservoir.reservoir_size == 100
         assert reservoir.feedback_size == 10
@@ -24,7 +24,7 @@ class TestReservoirLayerInstantiation:
 
     def test_instantiation_with_driving_inputs(self) -> None:
         """Test creating reservoir with feedback and driving inputs."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10, input_size=5)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10, input_size=5)
 
         assert reservoir.feedback_size == 10
         assert reservoir.input_size == 5
@@ -34,7 +34,7 @@ class TestReservoirLayerInstantiation:
 
     def test_custom_parameters(self) -> None:
         """Test custom spectral radius, activation, leak rate, etc."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=50,
             feedback_size=5,
             input_size=3,
@@ -51,15 +51,15 @@ class TestReservoirLayerInstantiation:
     def test_invalid_activation_raises_error(self) -> None:
         """Test that invalid activation name raises ValueError."""
         with pytest.raises(ValueError, match="Unknown activation"):
-            ReservoirLayer(reservoir_size=100, feedback_size=10, activation="invalid")
+            ESNLayer(reservoir_size=100, feedback_size=10, activation="invalid")
 
 
-class TestReservoirLayerForwardPass:
+class TestESNLayerForwardPass:
     """Test forward pass behavior."""
 
     def test_forward_feedback_only(self) -> None:
         """Test forward pass with feedback only."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
         feedback = torch.randn(2, 20, 10)  # (batch=2, seq=20, feedback=10)
 
         output = reservoir(feedback)
@@ -69,7 +69,7 @@ class TestReservoirLayerForwardPass:
 
     def test_forward_with_driving_inputs(self) -> None:
         """Test forward pass with feedback and driving inputs."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10, input_size=5)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10, input_size=5)
 
         feedback = torch.randn(3, 15, 10)  # (batch=3, seq=15, feedback=10)
         driving = torch.randn(3, 15, 5)  # (batch=3, seq=15, input=5)
@@ -80,7 +80,7 @@ class TestReservoirLayerForwardPass:
 
     def test_forward_with_multiple_driving_inputs(self) -> None:
         """Test forward with feedback and single driving input (multiple not supported)."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=10, input_size=8)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=10, input_size=8)
 
         feedback = torch.randn(2, 10, 10)
         driving = torch.randn(2, 10, 8)  # Single driving input matching input_size
@@ -91,14 +91,14 @@ class TestReservoirLayerForwardPass:
 
     def test_forward_invalid_feedback_dimensions_raises_error(self) -> None:
         """Test that non-3D feedback raises error."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         with pytest.raises(ValueError, match="Feedback must be 3D"):
             reservoir(torch.randn(2, 10))  # Only 2D
 
     def test_forward_feedback_size_mismatch_raises_error(self) -> None:
         """Test that wrong feedback size raises error."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
         feedback = torch.randn(2, 20, 8)  # Wrong size!
 
         with pytest.raises(ValueError, match="Feedback size mismatch"):
@@ -106,7 +106,7 @@ class TestReservoirLayerForwardPass:
 
     def test_forward_inconsistent_batch_sizes_raises_error(self) -> None:
         """Test that inconsistent batch sizes raise error."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10, input_size=5)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10, input_size=5)
 
         feedback = torch.randn(2, 10, 10)
         driving = torch.randn(3, 10, 5)  # Different batch size!
@@ -116,7 +116,7 @@ class TestReservoirLayerForwardPass:
 
     def test_forward_driving_without_input_size_raises_error(self) -> None:
         """Test that providing driving inputs without input_size raises error."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)  # No input_size
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)  # No input_size
 
         feedback = torch.randn(2, 10, 10)
         driving = torch.randn(2, 10, 5)
@@ -126,7 +126,7 @@ class TestReservoirLayerForwardPass:
 
     def test_forward_driving_size_mismatch_raises_error(self) -> None:
         """Test that wrong driving input size raises error."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10, input_size=5)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10, input_size=5)
 
         feedback = torch.randn(2, 10, 10)
         driving = torch.randn(2, 10, 8)  # Wrong size!
@@ -135,12 +135,12 @@ class TestReservoirLayerForwardPass:
             reservoir(feedback, driving)
 
 
-class TestReservoirLayerStatefulBehavior:
+class TestESNLayerStatefulBehavior:
     """Test stateful behavior (state persistence, reset, set)."""
 
     def test_state_persistence_across_forward_passes(self) -> None:
         """Test that state persists across multiple forward passes."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         fb1 = torch.randn(2, 5, 10)
         fb2 = torch.randn(2, 5, 10)
@@ -165,7 +165,7 @@ class TestReservoirLayerStatefulBehavior:
 
     def test_reset_state_without_batch_size(self) -> None:
         """Test reset_state() with no arguments sets state to None."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
         feedback = torch.randn(2, 5, 10)
 
         reservoir(feedback)
@@ -176,7 +176,7 @@ class TestReservoirLayerStatefulBehavior:
 
     def test_reset_state_with_batch_size(self) -> None:
         """Test reset_state() with batch_size initializes zeros."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         reservoir.reset_state(batch_size=3)
 
@@ -186,7 +186,7 @@ class TestReservoirLayerStatefulBehavior:
 
     def test_set_state(self) -> None:
         """Test set_state() sets internal state."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         custom_state = torch.randn(2, 50)
         reservoir.set_state(custom_state)
@@ -196,7 +196,7 @@ class TestReservoirLayerStatefulBehavior:
 
     def test_set_state_invalid_shape_raises_error(self) -> None:
         """Test set_state() with wrong shape raises error."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         wrong_state = torch.randn(2, 40)  # Wrong reservoir size!
 
@@ -205,7 +205,7 @@ class TestReservoirLayerStatefulBehavior:
 
     def test_get_state(self) -> None:
         """Test get_state() returns copy of state."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
         feedback = torch.randn(2, 5, 10)
 
         reservoir(feedback)
@@ -218,19 +218,19 @@ class TestReservoirLayerStatefulBehavior:
 
     def test_get_state_before_initialization_returns_none(self) -> None:
         """Test get_state() returns None if state not initialized."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         state = reservoir.get_state()
         assert state is None
 
 
-class TestReservoirLayerActivations:
+class TestESNLayerActivations:
     """Test different activation functions."""
 
     @pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "identity"])
     def test_different_activations(self, activation: str) -> None:
         """Test reservoir works with different activations."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10, activation=activation)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10, activation=activation)
         feedback = torch.randn(2, 5, 10)
 
         output = reservoir(feedback)
@@ -252,12 +252,12 @@ class TestReservoirLayerActivations:
             assert torch.all(output >= 0.0) and torch.all(output <= 1.0)
 
 
-class TestReservoirLayerSpectralRadius:
+class TestESNLayerSpectralRadius:
     """Test spectral radius scaling."""
 
     def test_spectral_radius_scaling(self) -> None:
         """Test that recurrent weights are scaled to target spectral radius."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10, spectral_radius=0.8)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10, spectral_radius=0.8)
 
         # Compute actual spectral radius
         eigenvalues = torch.linalg.eigvals(reservoir.weight_hh.data)
@@ -269,9 +269,7 @@ class TestReservoirLayerSpectralRadius:
     def test_different_spectral_radii(self) -> None:
         """Test different spectral radius values."""
         for target_sr in [0.5, 0.9, 1.2]:
-            reservoir = ReservoirLayer(
-                reservoir_size=50, feedback_size=10, spectral_radius=target_sr
-            )
+            reservoir = ESNLayer(reservoir_size=50, feedback_size=10, spectral_radius=target_sr)
 
             eigenvalues = torch.linalg.eigvals(reservoir.weight_hh.data)
             actual_sr = torch.max(torch.abs(eigenvalues)).item()
@@ -279,16 +277,16 @@ class TestReservoirLayerSpectralRadius:
             assert abs(actual_sr - target_sr) < 0.01
 
 
-class TestReservoirLayerLeakRate:
+class TestESNLayerLeakRate:
     """Test leaky integration."""
 
     def test_leak_rate_affects_output(self) -> None:
         """Test that leak rate changes output."""
         torch.manual_seed(42)
-        reservoir_no_leak = ReservoirLayer(reservoir_size=50, feedback_size=10, leak_rate=1.0)
+        reservoir_no_leak = ESNLayer(reservoir_size=50, feedback_size=10, leak_rate=1.0)
 
         torch.manual_seed(42)
-        reservoir_with_leak = ReservoirLayer(reservoir_size=50, feedback_size=10, leak_rate=0.5)
+        reservoir_with_leak = ESNLayer(reservoir_size=50, feedback_size=10, leak_rate=0.5)
 
         feedback = torch.randn(2, 10, 10)
 
@@ -299,12 +297,12 @@ class TestReservoirLayerLeakRate:
         assert not torch.allclose(out_no_leak, out_with_leak)
 
 
-class TestReservoirLayerDevice:
+class TestESNLayerDevice:
     """Test device handling."""
 
     def test_cpu_device(self) -> None:
         """Test reservoir works on CPU."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
         feedback = torch.randn(2, 5, 10)
 
         output = reservoir(feedback)
@@ -313,7 +311,7 @@ class TestReservoirLayerDevice:
 
     def test_to_device(self) -> None:
         """Test moving reservoir to different device."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
 
         # Move to CPU explicitly
         reservoir_cpu = reservoir.to("cpu")
@@ -329,12 +327,12 @@ class TestReservoirLayerDevice:
             assert output_gpu.device.type == "cuda"
 
 
-class TestReservoirLayerGradients:
+class TestESNLayerGradients:
     """Test gradient computation."""
 
     def test_gradients_flow_through_reservoir(self) -> None:
         """Test that gradients flow through the reservoir."""
-        reservoir = ReservoirLayer(reservoir_size=50, feedback_size=10, trainable=True)
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10, trainable=True)
         feedback = torch.randn(2, 5, 10, requires_grad=True)
 
         output = reservoir(feedback)
@@ -349,23 +347,23 @@ class TestReservoirLayerGradients:
         assert reservoir.weight_hh.grad is not None
 
 
-class TestReservoirLayerRepr:
+class TestESNLayerRepr:
     """Test string representation."""
 
     def test_repr_feedback_only(self) -> None:
         """Test __repr__ for feedback-only reservoir."""
-        reservoir = ReservoirLayer(reservoir_size=100, feedback_size=20, spectral_radius=0.95)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=20, spectral_radius=0.95)
 
         repr_str = repr(reservoir)
 
-        assert "ReservoirLayer" in repr_str
+        assert "ESNCell" in repr_str
         assert "reservoir_size=100" in repr_str
         assert "feedback_size=20" in repr_str
         assert "spectral_radius=0.95" in repr_str
 
     def test_repr_with_driving_inputs(self) -> None:
         """Test __repr__ for reservoir with driving inputs."""
-        reservoir = ReservoirLayer(
+        reservoir = ESNLayer(
             reservoir_size=100, feedback_size=20, input_size=5, spectral_radius=0.95
         )
 

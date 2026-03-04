@@ -8,8 +8,7 @@ import torch
 from resdag.init.input_feedback import ChebyshevInitializer, RandomInputInitializer
 from resdag.layers import ESNLayer, ReadoutLayer
 
-# torch.compile is not supported on Python 3.14+
-COMPILE_SUPPORTED = torch.__version__ >= "2.0.0" and sys.version_info < (3, 14)
+COMPILE_SUPPORTED = torch.__version__ >= "2.0.0" and sys.version_info < (3, 15)
 
 
 class TestGPUSupport:

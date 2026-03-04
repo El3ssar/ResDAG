@@ -9,7 +9,7 @@ Convention: First input is always feedback, remaining inputs are drivers.
 
 import torch
 
-import resdag as trc
+import resdag as rd
 from resdag.composition import ESNModel, Input
 from resdag.models import classic_esn
 
@@ -75,8 +75,8 @@ def example_with_driving_inputs():
     # Build model with driving input using symbolic API
     feedback = Input(shape=(50, 1))
     driving = Input(shape=(50, 5))
-    reservoir = trc.ReservoirLayer(100, 1, input_size=5)(feedback, driving)
-    readout = trc.CGReadoutLayer(100, 1)(reservoir)
+    reservoir = rd.layers.ESNLayer(100, 1, input_size=5)(feedback, driving)
+    readout = rd.CGReadoutLayer(100, 1)(reservoir)
     model = ESNModel([feedback, driving], readout)
 
     # Generate warmup data
@@ -157,9 +157,9 @@ def example_multi_reservoir():
 
     # Build deep ESN: stacked reservoirs
     feedback = Input(shape=(30, 1))
-    res1 = trc.ReservoirLayer(50, 1)(feedback)
-    res2 = trc.ReservoirLayer(60, 50)(res1)  # Takes res1 output as feedback
-    readout = trc.CGReadoutLayer(60, 1)(res2)
+    res1 = rd.layers.ESNLayer(50, 1)(feedback)
+    res2 = rd.layers.ESNLayer(60, 50)(res1)  # Takes res1 output as feedback
+    readout = rd.layers.CGReadoutLayer(60, 1)(res2)
     model = ESNModel(feedback, readout)
 
     # Forecast
@@ -188,14 +188,14 @@ def example_complex_topology():
     driver2 = Input(shape=(1, 2))
 
     # First reservoir: feedback + driver1
-    res1 = trc.ReservoirLayer(100, 1, input_size=1)(feedback, driver1)
-    readout1 = trc.CGReadoutLayer(100, 2)(res1)
+    res1 = rd.layers.ESNLayer(100, 1, input_size=1)(feedback, driver1)
+    readout1 = rd.layers.CGReadoutLayer(100, 2)(res1)
 
     # Second reservoir: readout1 output + driver2
-    res2 = trc.ReservoirLayer(80, 2, input_size=2)(readout1, driver2)
-    readout2 = trc.CGReadoutLayer(80, 1)(res2)
+    res2 = rd.layers.ESNLayer(80, 2, input_size=2)(readout1, driver2)
+    readout2 = rd.layers.CGReadoutLayer(80, 1)(res2)
 
-    readout3 = trc.CGReadoutLayer(80, 15)(res2)
+    readout3 = rd.layers.CGReadoutLayer(80, 15)(res2)
 
     model = ESNModel(inputs=(feedback, driver1, driver2), outputs=(readout2, readout3))
 

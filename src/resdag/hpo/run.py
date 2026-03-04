@@ -295,9 +295,7 @@ def run_hpo(
         sampler=sampler,
     )
 
-    completed_trials = len(
-        [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-    )
+    completed_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
     if completed_trials > 0:
         logger.info(f"Loaded existing study with {completed_trials} completed trials")
         logger.info(f"Best value so far: {study.best_value:.6f}")
@@ -349,9 +347,7 @@ def run_hpo(
             )
 
         # Final summary
-        done = len(
-            [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        )
+        done = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
         logger.info(f"Optimization completed: {len(study.trials)} total trials")
         if done > 0:
             logger.info(f"Best value: {study.best_value:.6f}")

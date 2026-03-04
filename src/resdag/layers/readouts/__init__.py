@@ -27,7 +27,7 @@ Examples
 See Also
 --------
 resdag.training.ESNTrainer : Trainer that uses these readouts.
-resdag.layers.ReservoirLayer : Reservoir layer for generating states.
+resdag.layers.ESNLayer : ESN layer for generating states.
 """
 
 from .base import ReadoutLayer

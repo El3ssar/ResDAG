@@ -19,7 +19,7 @@ Modules
 composition
     Model composition using pytorch_symbolic.
 layers
-    Neural network layers (ReservoirLayer, ReadoutLayer, etc.).
+    Neural network layers (ESNLayer, ReadoutLayer, etc.).
 init
     Weight initialization (topologies, input/feedback).
 training
@@ -36,10 +36,10 @@ Examples
 Basic reservoir usage:
 
 >>> import torch
->>> from resdag.layers import ReservoirLayer
+>>> from resdag.layers import ESNLayer
 >>> from resdag.layers.readouts import CGReadoutLayer
 >>>
->>> reservoir = ReservoirLayer(
+>>> reservoir = ESNLayer(
 ...     reservoir_size=100,
 ...     feedback_size=10,
 ...     topology="erdos_renyi"
@@ -52,10 +52,10 @@ torch.Size([32, 50, 100])
 Building a complete ESN model:
 
 >>> import pytorch_symbolic as ps
->>> from resdag import ESNModel, ReservoirLayer, CGReadoutLayer
+>>> from resdag import ESNModel, ESNLayer, CGReadoutLayer
 >>>
 >>> inp = ps.Input((100, 3))
->>> reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+>>> reservoir = ESNLayer(200, feedback_size=3)(inp)
 >>> readout = CGReadoutLayer(200, 3, name="output")(reservoir)
 >>> model = ESNModel(inp, readout)
 >>> model.summary()
@@ -68,7 +68,7 @@ Using premade models:
 See Also
 --------
 ESNModel : Main model class for ESN composition.
-ReservoirLayer : Core reservoir layer with recurrent dynamics.
+ESNLayer : Core reservoir layer with recurrent dynamics.
 ESNTrainer : Trainer for fitting readout layers.
 """
 
@@ -82,8 +82,8 @@ from .init import graphs, input_feedback, topology
 from .layers import (
     CGReadoutLayer,
     Concatenate,
+    ESNLayer,
     OutliersFilteredMean,
-    ReservoirLayer,
     SelectiveExponentiation,
 )
 from .models import classic_esn, headless_esn, linear_esn, ott_esn
@@ -108,8 +108,8 @@ __all__ = [
     # Core layers
     "CGReadoutLayer",
     "Concatenate",
+    "ESNLayer",
     "OutliersFilteredMean",
-    "ReservoirLayer",
     "SelectiveExponentiation",
     # Model composition
     "ESNModel",

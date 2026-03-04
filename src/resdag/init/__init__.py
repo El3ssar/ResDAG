@@ -30,7 +30,7 @@ Using input/feedback initializers:
 
 See Also
 --------
-resdag.layers.ReservoirLayer : Uses these initializers for weight matrices.
+resdag.layers.ESNLayer : Uses these initializers for weight matrices.
 """
 
 from . import graphs, input_feedback, topology, utils

@@ -67,7 +67,7 @@ Registering custom initializers:
 
 See Also
 --------
-resdag.layers.ReservoirLayer : Uses these initializers for weight matrices.
+resdag.layers.ESNLayer : Uses these initializers for weight matrices.
 resdag.init.topology : Topology initializers for recurrent weights.
 """
 

@@ -21,11 +21,16 @@ resdag/
 │   ├── composition/
 │   │   └── symbolic.py      # ESNModel (extends pytorch_symbolic.SymbolicModel)
 │   ├── layers/
-│   │   ├── reservoir.py     # ReservoirLayer — core stateful RNN
+│   │   ├── cells/
+│   │   │   ├── base_cell.py  # ReservoirCell (abstract single-step interface)
+│   │   │   └── esn_cell.py   # ESNCell — concrete leaky-ESN single-step update
+│   │   ├── reservoirs/
+│   │   │   ├── base_reservoir.py  # BaseReservoirLayer — sequence loop + state mgmt
+│   │   │   └── esn.py             # ESNLayer — public-facing stateful RNN
 │   │   ├── readouts/
-│   │   │   ├── base.py      # ReadoutLayer (abstract)
+│   │   │   ├── base.py       # ReadoutLayer (abstract)
 │   │   │   └── cg_readout.py # CGReadoutLayer — CG ridge regression
-│   │   └── custom/          # Concatenate, SelectiveExponentiation, etc.
+│   │   └── custom/           # Concatenate, SelectiveExponentiation, Power, etc.
 │   ├── init/
 │   │   ├── topology/        # Graph topology registry + base classes
 │   │   ├── input_feedback/  # Input/feedback weight initializer registry
@@ -127,16 +132,27 @@ mypy src/
 ### Tensor Conventions
 
 - **3D tensors**: `(batch, timesteps, features)` throughout
-- **Feedback input**: always the first positional argument to `ReservoirLayer.forward()`
+- **Feedback input**: always the first positional argument to `ESNLayer.forward()`
 - **Driving inputs**: optional additional positional args to `forward()`
 - Reservoir state shape: `(batch, reservoir_size)`
 
-### ReservoirLayer (core component)
+### Layer Hierarchy
+
+The reservoir stack has two levels of abstraction:
+
+| Class | Location | Responsibility |
+|---|---|---|
+| `ReservoirCell` | `layers/cells/base_cell.py` | Abstract single-step interface |
+| `ESNCell` | `layers/cells/esn_cell.py` | Concrete leaky-ESN single-step update; owns all weights |
+| `BaseReservoirLayer` | `layers/reservoirs/base_reservoir.py` | Abstract sequence loop + full state-management API |
+| `ESNLayer` | `layers/reservoirs/esn.py` | Public-facing stateful RNN; wraps `ESNCell` in `BaseReservoirLayer` |
+
+### ESNLayer (core component)
 
 ```python
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=500,        # Number of neurons
     feedback_size=3,           # Dim of feedback signal (required)
     input_size=5,              # Dim of driving input (optional)
@@ -155,11 +171,14 @@ states = reservoir(feedback, driving_input)     # with driver
 
 **State management** (critical — reservoir is stateful):
 ```python
-reservoir.reset_state()            # Reset to None (lazy re-init on next forward)
+reservoir.reset_state()             # Reset to None (lazy re-init on next forward)
 reservoir.reset_state(batch_size=4) # Reset to zeros with explicit batch size
-reservoir.get_state()              # Returns clone or None
-reservoir.set_state(state_tensor)  # Restore a saved state
+reservoir.get_state()               # Returns clone or None
+reservoir.set_state(state_tensor)   # Restore a saved state
+reservoir.set_random_state()        # Set state to standard-normal random values
 ```
+
+`ESNLayer` delegates unknown attribute lookups to its inner `ESNCell` via `__getattr__`, so `reservoir.reservoir_size`, `reservoir.weight_hh`, etc. all work directly.
 
 ### ESNModel and Composition
 
@@ -167,10 +186,10 @@ Models are built with `pytorch_symbolic` functional API, then wrapped in `ESNMod
 
 ```python
 import pytorch_symbolic as ps
-from resdag import ESNModel, ReservoirLayer, CGReadoutLayer
+from resdag import ESNModel, ESNLayer, CGReadoutLayer
 
 inp = ps.Input((100, 3))                          # (seq_len, features)
-reservoir = ReservoirLayer(200, feedback_size=3)(inp)
+reservoir = ESNLayer(200, feedback_size=3)(inp)
 readout = CGReadoutLayer(200, 3, name="output")(reservoir)
 model = ESNModel(inp, readout)
 ```
@@ -230,7 +249,7 @@ Training process:
 
 ### Topology System
 
-**Three ways to specify topology** (used in `ReservoirLayer(topology=...)`):
+**Three ways to specify topology** (used in `ESNLayer(topology=...)`):
 ```python
 # 1. String name (uses registry defaults)
 topology = "erdos_renyi"
@@ -263,7 +282,7 @@ Same three-way specification as topology (string | tuple | object):
 ```python
 from resdag.init.input_feedback import get_input_feedback
 
-reservoir = ReservoirLayer(
+reservoir = ESNLayer(
     reservoir_size=500,
     feedback_size=3,
     feedback_initializer="chebyshev",
@@ -411,6 +430,19 @@ The `.github/workflows/release.yml` workflow:
 2. Register via `@register_input_feedback("my_init")`
 3. Import in `src/resdag/init/input_feedback/__init__.py`
 
+### Adding a New Reservoir Cell
+
+1. Create `src/resdag/layers/cells/my_cell.py` extending `ReservoirCell`
+2. Implement `state_size` property and `forward(inputs, state)` method
+3. Import in `src/resdag/layers/cells/__init__.py`
+
+### Adding a New Reservoir Layer
+
+1. Create `src/resdag/layers/reservoirs/my_layer.py` extending `BaseReservoirLayer`
+2. Create an appropriate cell and pass it to `super().__init__(cell)`
+3. Import in `src/resdag/layers/reservoirs/__init__.py`
+4. Re-export from `src/resdag/layers/__init__.py` if it belongs in the public API
+
 ### Adding a New Premade Model
 
 1. Create `src/resdag/models/my_model.py` with a factory function returning `ESNModel`
@@ -443,7 +475,7 @@ The codebase uses **NumPy-style docstrings** with `Parameters`, `Returns`, `Rais
 
 3. **input_size=0 in ott_esn**: The `ott_esn` factory passes `input_size=0` — this is intentional to create the driving-input weight matrix as a zero-size placeholder.
 
-4. **Topology spec is resolved at init time**: The `topology` argument to `ReservoirLayer` is resolved during `__init__`, not lazily.
+4. **Topology spec is resolved at init time**: The `topology` argument to `ESNLayer` (and `ESNCell`) is resolved during `__init__`, not lazily.
 
 5. **float64 in CG solver**: `CGReadoutLayer._solve_ridge_cg` internally casts to `float64` for numerical stability, then copies back to the layer's dtype.
 

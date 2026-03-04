@@ -52,7 +52,7 @@ Registering custom topologies:
 See Also
 --------
 resdag.init.graphs : Graph generation functions.
-resdag.layers.ReservoirLayer : Uses topologies for weight initialization.
+resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
 from .base import GraphTopology, TopologyInitializer

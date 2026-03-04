@@ -13,7 +13,7 @@ from resdag.composition import ModelBuilder
 
 builder = ModelBuilder()
 inp = builder.input("input")
-reservoir = builder.add(ReservoirLayer(100, 1, 0), inputs=inp)
+reservoir = builder.add(ESNLayer(100, 1, 0), inputs=inp)
 readout = builder.add(CGReadoutLayer(100, 1), inputs=reservoir)
 model = builder.build(outputs=readout)
 
@@ -28,7 +28,7 @@ import pytorch_symbolic as ps
 from resdag.composition import ESNModel
 
 inp = ps.Input((100, 1))  # seq_len, features
-reservoir = ReservoirLayer(100, 1, 0)(inp)
+reservoir = ESNLayer(100, 1, 0)(inp)
 readout = CGReadoutLayer(100, 1)(reservoir)
 model = ESNModel(inp, readout)
 

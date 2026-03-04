@@ -8,7 +8,7 @@ import pytorch_symbolic as ps
 import torch
 
 from resdag.composition import ESNModel
-from resdag.layers import ReservoirLayer
+from resdag.layers import ESNLayer
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.models import classic_esn, headless_esn
 
@@ -186,7 +186,7 @@ class TestModelArchitecture:
         """Test save/load with manually built pytorch_symbolic model."""
         # Build model manually with pytorch_symbolic
         inp = ps.Input((20, 1))
-        res = ReservoirLayer(reservoir_size=50, feedback_size=1, input_size=0)(inp)
+        res = ESNLayer(reservoir_size=50, feedback_size=1, input_size=0)(inp)
         out = CGReadoutLayer(in_features=50, out_features=1)(res)
         model = ESNModel(inp, out)
 

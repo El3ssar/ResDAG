@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-import resdag as trc
+import resdag as rd
 from resdag.composition import ESNModel, Input
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.training import ESNTrainer
@@ -15,7 +15,7 @@ class TestESNTrainerBasic:
     def test_trainer_init(self):
         """Test trainer initialization."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -26,7 +26,7 @@ class TestESNTrainerBasic:
         """Test training a simple single-readout model."""
         # Build model
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -54,7 +54,7 @@ class TestESNTrainerBasic:
     def test_unnamed_readout(self):
         """Test training with auto-generated readout names."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         # No name provided - uses auto-generated "CGReadoutLayer_1"
         readout = CGReadoutLayer(50, 1)(reservoir)
         model = ESNModel(feedback, readout)
@@ -79,7 +79,7 @@ class TestESNTrainerBasic:
     def test_model_produces_output_after_training(self):
         """Test model works after training."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -109,10 +109,10 @@ class TestESNTrainerMultiReadout:
     def test_stacked_readouts(self):
         """Test training stacked readouts (readout1 -> reservoir2 -> readout2)."""
         feedback = Input(shape=(10, 1))
-        reservoir1 = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir1 = rd.ESNLayer(50, 1)(feedback)
         readout1 = CGReadoutLayer(50, 2, name="intermediate")(reservoir1)
 
-        reservoir2 = trc.ReservoirLayer(30, 2)(readout1)
+        reservoir2 = rd.ESNLayer(30, 2)(readout1)
         readout2 = CGReadoutLayer(30, 1, name="output")(reservoir2)
 
         model = ESNModel(feedback, readout2)
@@ -143,7 +143,7 @@ class TestESNTrainerMultiReadout:
     def test_parallel_readouts_from_same_reservoir(self):
         """Test training parallel readouts from the same reservoir."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
 
         # Two readouts from same reservoir
         readout1 = CGReadoutLayer(50, 2, name="branch1")(reservoir)
@@ -154,7 +154,7 @@ class TestESNTrainerMultiReadout:
 
         concat = Concatenate()(readout1, readout2)
 
-        reservoir2 = trc.ReservoirLayer(30, 5)(concat)
+        reservoir2 = rd.ESNLayer(30, 5)(concat)
         readout_final = CGReadoutLayer(30, 1, name="output")(reservoir2)
 
         model = ESNModel(feedback, readout_final)
@@ -191,7 +191,7 @@ class TestESNTrainerWithDrivers:
         feedback = Input(shape=(10, 1))
         driver = Input(shape=(10, 3))
 
-        reservoir = trc.ReservoirLayer(50, 1, input_size=3)(feedback, driver)
+        reservoir = rd.ESNLayer(50, 1, input_size=3)(feedback, driver)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
 
         model = ESNModel(inputs=[feedback, driver], outputs=readout)
@@ -222,7 +222,7 @@ class TestESNTrainerValidation:
     def test_missing_target_raises_error(self):
         """Test that missing target raises ValueError."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -238,7 +238,7 @@ class TestESNTrainerValidation:
     def test_wrong_target_name_raises_error(self):
         """Test that wrong target name raises ValueError."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -254,7 +254,7 @@ class TestESNTrainerValidation:
     def test_input_count_mismatch_raises_error(self):
         """Test that mismatched warmup/train input counts raise error."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -270,7 +270,7 @@ class TestESNTrainerValidation:
     def test_target_timesteps_mismatch_raises_error(self):
         """Test that target with wrong timesteps raises error."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -286,7 +286,7 @@ class TestESNTrainerValidation:
     def test_extra_targets_warning(self):
         """Test that extra targets raise a warning."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -305,7 +305,7 @@ class TestESNTrainerValidation:
     def test_no_warmup_inputs_raises_error(self):
         """Test that no warmup inputs raises error."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -321,7 +321,7 @@ class TestESNTrainerValidation:
     def test_no_train_inputs_raises_error(self):
         """Test that no train inputs raises error."""
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
@@ -344,7 +344,7 @@ class TestESNTrainerGPU:
         device = torch.device("cuda")
 
         feedback = Input(shape=(10, 1))
-        reservoir = trc.ReservoirLayer(50, 1)(feedback)
+        reservoir = rd.ESNLayer(50, 1)(feedback)
         readout = CGReadoutLayer(50, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout).to(device)
 

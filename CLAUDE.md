@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-`resdag` is a **PyTorch-native reservoir computing library** (v0.2.0) for building Echo State Networks (ESNs). It provides GPU-accelerated, modular components for reservoir computing research: stateful reservoir layers, graph-based topology initialization, algebraic readout training, model composition via `pytorch_symbolic`, and Optuna-based hyperparameter optimization.
+`resdag` is a **PyTorch-native reservoir computing library** (v0.3.0) for building Echo State Networks (ESNs) and Next Generation Reservoir Computers (NG-RC). It provides GPU-accelerated, modular components for reservoir computing research: stateful reservoir layers, graph-based topology initialization, algebraic readout training, model composition via `pytorch_symbolic`, and Optuna-based hyperparameter optimization.
 
 - **Package name**: `resdag`
 - **Author**: Daniel Estevez-Moya
 - **License**: MIT
 - **Homepage**: https://github.com/El3ssar/resdag
-- **Python**: >=3.11 (runtime); classifiers include 3.9–3.12
+- **Python**: >=3.11,<3.15 (classifiers: 3.11–3.14)
 
 ---
 
@@ -23,10 +23,12 @@ resdag/
 │   ├── layers/
 │   │   ├── cells/
 │   │   │   ├── base_cell.py  # ReservoirCell (abstract single-step interface)
-│   │   │   └── esn_cell.py   # ESNCell — concrete leaky-ESN single-step update
+│   │   │   ├── esn_cell.py   # ESNCell — concrete leaky-ESN single-step update
+│   │   │   └── ngrc_cell.py  # NGCell — NG-RC feature construction (no weights)
 │   │   ├── reservoirs/
 │   │   │   ├── base_reservoir.py  # BaseReservoirLayer — sequence loop + state mgmt
-│   │   │   └── esn.py             # ESNLayer — public-facing stateful RNN
+│   │   │   ├── esn.py             # ESNLayer — public-facing stateful RNN
+│   │   │   └── ngrc.py            # NGReservoir — NG-RC sequence wrapper
 │   │   ├── readouts/
 │   │   │   ├── base.py       # ReadoutLayer (abstract)
 │   │   │   └── cg_readout.py # CGReadoutLayer — CG ridge regression
@@ -34,19 +36,23 @@ resdag/
 │   ├── init/
 │   │   ├── topology/        # Graph topology registry + base classes
 │   │   ├── input_feedback/  # Input/feedback weight initializer registry
-│   │   ├── graphs/          # NetworkX graph generation functions (15+ types)
+│   │   ├── graphs/          # NetworkX graph generation functions (17 types)
 │   │   └── utils/           # resolve_topology(), resolve_initializer()
 │   ├── training/
 │   │   └── trainer.py       # ESNTrainer — algebraic readout fitting
 │   ├── models/              # Premade architectures
 │   │   ├── classic_esn.py
 │   │   ├── ott_esn.py       # Ott state-augmented ESN (recommended for chaos)
+│   │   ├── power_augmented.py  # Generalized power-augmented ESN
 │   │   ├── headless_esn.py
 │   │   └── linear_esn.py
 │   ├── hpo/                 # Optuna HPO integration (optional dep)
 │   │   ├── run.py           # run_hpo()
 │   │   ├── losses.py        # efh, horizon, lyap, standard, discounted
-│   │   └── objective.py     # build_objective()
+│   │   ├── objective.py     # build_objective()
+│   │   ├── runners.py       # run_single, run_multiprocess
+│   │   ├── storage.py       # Storage backend resolution
+│   │   └── utils.py         # get_study_summary, make_study_name, get_best_params
 │   └── utils/
 │       ├── data/            # load_file(), prepare_esn_data()
 │       ├── states/          # esp_index()
@@ -75,9 +81,9 @@ pip install -e ".[dev,hpo]"
 # or: uv sync --extra hpo
 ```
 
-**Runtime dependencies**: `torch>=2.9.1`, `numpy>=2.4.0`, `networkx>=3.0`, `pytorch-symbolic>=1.1.1`, `graphviz>=0.21`, `basedpyright>=1.37.1`, `scipy>=1.17.0`
+**Runtime dependencies**: `torch>=2.10.0`, `numpy>=2.0.0`, `networkx>=3.0`, `pytorch-symbolic>=1.1.1`, `graphviz>=0.21`, `scipy>=1.17.0`
 
-**Dev dependencies**: `pytest`, `pytest-cov`, `black`, `ruff`, `mypy`, `optuna`
+**Dev dependencies**: `basedpyright`, `pytest`, `pytest-cov`, `black`, `ruff`, `mypy`, `optuna`
 
 ---
 
@@ -122,7 +128,7 @@ mypy src/
 
 **Key formatting rules**:
 - Line length: **100 characters** (black + ruff)
-- Target: Python 3.9+ syntax (ruff target-version)
+- Target: Python 3.11+ syntax (black target `py311`–`py314`, ruff target `py311`)
 - `__init__.py` files: unused imports (`F401`) are allowed — they expose the public API
 
 ---
@@ -134,18 +140,20 @@ mypy src/
 - **3D tensors**: `(batch, timesteps, features)` throughout
 - **Feedback input**: always the first positional argument to `ESNLayer.forward()`
 - **Driving inputs**: optional additional positional args to `forward()`
-- Reservoir state shape: `(batch, reservoir_size)`
+- Reservoir state shape: `(batch, reservoir_size)` for ESN, `(batch, state_size, input_dim)` for NG-RC
 
 ### Layer Hierarchy
 
-The reservoir stack has two levels of abstraction:
+The reservoir stack has two levels of abstraction, with two concrete cell implementations:
 
 | Class | Location | Responsibility |
 |---|---|---|
 | `ReservoirCell` | `layers/cells/base_cell.py` | Abstract single-step interface |
 | `ESNCell` | `layers/cells/esn_cell.py` | Concrete leaky-ESN single-step update; owns all weights |
+| `NGCell` | `layers/cells/ngrc_cell.py` | NG-RC feature construction; no weights, delay buffer state |
 | `BaseReservoirLayer` | `layers/reservoirs/base_reservoir.py` | Abstract sequence loop + full state-management API |
-| `ESNLayer` | `layers/reservoirs/esn.py` | Public-facing stateful RNN; wraps `ESNCell` in `BaseReservoirLayer` |
+| `ESNLayer` | `layers/reservoirs/esn.py` | Public-facing stateful RNN; wraps `ESNCell` |
+| `NGReservoir` | `layers/reservoirs/ngrc.py` | Public-facing NG-RC layer; wraps `NGCell` |
 
 ### ESNLayer (core component)
 
@@ -180,6 +188,42 @@ reservoir.set_random_state()        # Set state to standard-normal random values
 
 `ESNLayer` delegates unknown attribute lookups to its inner `ESNCell` via `__getattr__`, so `reservoir.reservoir_size`, `reservoir.weight_hh`, etc. all work directly.
 
+### NGReservoir (Next Generation Reservoir Computing)
+
+Implements the NG-RC architecture from Gauthier et al. (arXiv:2106.07688v2). Unlike traditional ESNs, NG-RC uses **no recurrent weights** — it constructs features via time-delayed input embeddings and polynomial monomials.
+
+```python
+from resdag.layers import NGReservoir
+
+layer = NGReservoir(
+    input_dim=3,              # Dimensionality of input vector
+    k=2,                      # Number of delay taps (including current)
+    s=1,                      # Spacing between taps in timesteps
+    p=2,                      # Polynomial degree for monomials
+    include_constant=True,    # Prepend constant 1.0 feature
+    include_linear=True,      # Include linear delay-embedded features
+)
+
+x = torch.randn(4, 100, 3)   # (batch, seq_len, features)
+features = layer(x)           # (4, 100, feature_dim)
+```
+
+**Feature construction**:
+1. **O_lin**: Linear delay-embedded features `[X_i || X_{i-s} || ... || X_{i-(k-1)s}]` — dimension `D = input_dim * k`
+2. **O_nonlin**: All degree-p monomials from O_lin — `C(D+p-1, p)` combinations
+3. **O_total**: `[constant] + O_lin + O_nonlin` concatenated
+
+**Feature dimension**: `int(include_constant) + int(include_linear)*D + C(D+p-1, p)`
+
+**Key differences from ESN**:
+- State is a FIFO delay buffer of shape `(batch, (k-1)*s, input_dim)`, not a recurrent hidden state
+- No learnable parameters (no weights)
+- Warmup length = `(k-1)*s` steps for buffer to fill
+- When `k=1`: state_size=0 (no delay buffer needed)
+- Warns if `feature_dim > 10,000` (combinatorial explosion risk)
+
+**State management** inherits from `BaseReservoirLayer` with 3D buffer validation in `set_state()`.
+
 ### ESNModel and Composition
 
 Models are built with `pytorch_symbolic` functional API, then wrapped in `ESNModel`:
@@ -196,10 +240,13 @@ model = ESNModel(inp, readout)
 
 `ESNModel` extends `pytorch_symbolic.SymbolicModel` with:
 - `reset_reservoirs()` — reset all reservoir states
+- `set_random_reservoir_states()` — set all states to standard-normal random
+- `get_reservoir_states()` → `dict[str, Tensor]` — get state clones
+- `set_reservoir_states(states)` — restore states from dict
 - `warmup(*inputs)` — teacher-forced state synchronization
 - `forecast(*warmup_inputs, horizon=N, ...)` — two-phase autoregressive forecasting
 - `save(path)` / `load(path)` — model persistence
-- `plot_model()` — architecture visualization
+- `plot_model()` — architecture visualization via graphviz
 
 ### CGReadoutLayer (algebraic training)
 
@@ -247,6 +294,19 @@ Training process:
 2. Warmup phase (teacher-forced forward pass)
 3. Single forward pass with pre-hooks that fit each readout in topological order
 
+### Custom Layers
+
+All in `src/resdag/layers/custom/`:
+
+| Layer | Purpose |
+|---|---|
+| `Concatenate` | Concatenates inputs along feature dimension (parameterless) |
+| `SelectiveExponentiation` | Exponentiates even/odd feature indices (used in `ott_esn`) |
+| `Power` | Exponentiates all features to a given power (used in `power_augmented`) |
+| `SelectiveDropout` | Per-feature dropout with selectivity control |
+| `FeaturePartitioner` | Partitions features into overlapping groups |
+| `OutliersFilteredMean` | Computes mean with outlier filtering |
+
 ### Topology System
 
 **Three ways to specify topology** (used in `ESNLayer(topology=...)`):
@@ -262,7 +322,7 @@ from resdag.init.topology import get_topology
 topology = get_topology("barabasi_albert", m=3, seed=42)
 ```
 
-**Available topologies** (all in `src/resdag/init/graphs/`):
+**Available topologies** (17, all in `src/resdag/init/graphs/`):
 `barabasi_albert`, `chord_dendrocycle`, `complete`, `connected_erdos_renyi`, `connected_watts_strogatz`, `dendrocycle`, `erdos_renyi`, `kleinberg_small_world`, `multi_cycle`, `newman_watts_strogatz`, `random`, `regular`, `ring_chord`, `simple_cycle_jumps`, `spectral_cascade`, `watts_strogatz`, `zero`
 
 **Registering a new topology**:
@@ -290,7 +350,7 @@ reservoir = ESNLayer(
 )
 ```
 
-**Available initializers**: `binary_balanced`, `chain_of_neurons_input`, `chebyshev`, `chessboard`, `dendrocycle_input`, `opposite_anchors`, `pseudo_diagonal`, `random`, `random_binary`, `ring_window`, `zero`
+**Available initializers** (11): `binary_balanced`, `chain_of_neurons_input`, `chebyshev`, `chessboard`, `dendrocycle_input`, `opposite_anchors`, `pseudo_diagonal`, `random`, `random_binary`, `ring_window`, `zero`
 
 ---
 
@@ -299,10 +359,13 @@ reservoir = ESNLayer(
 All in `src/resdag/models/` and importable from `resdag.models`:
 
 ```python
-from resdag.models import ott_esn, classic_esn, headless_esn, linear_esn
+from resdag.models import ott_esn, classic_esn, headless_esn, linear_esn, power_augmented
 
 # Ott's ESN — best for chaotic systems (state augmentation)
 model = ott_esn(reservoir_size=500, feedback_size=3, output_size=3)
+
+# Power Augmented — generalized state augmentation with configurable exponent
+model = power_augmented(reservoir_size=500, feedback_size=3, output_size=3, exponent=2.0)
 
 # Classic ESN — simple feedback-only
 model = classic_esn(reservoir_size=500, feedback_size=3, output_size=3)
@@ -314,7 +377,12 @@ model = headless_esn(reservoir_size=500, feedback_size=3)
 model = linear_esn(reservoir_size=500, feedback_size=3, output_size=3)
 ```
 
-The `ott_esn` architecture: `Input → Reservoir → SelectiveExponentiation (square even indices) → Concatenate(Input, Augmented) → CGReadout`
+**Architectures**:
+- `ott_esn`: `Input → Reservoir → SelectiveExponentiation (square even indices) → Concatenate(Input, Augmented) → CGReadout`
+- `power_augmented`: `Input → Reservoir → Power(exponent) → Concatenate(Input, Augmented) → CGReadout`
+- `classic_esn`: `Input → Reservoir → CGReadout`
+- `headless_esn`: `Input → Reservoir`
+- `linear_esn`: `Input → Reservoir → Linear Readout`
 
 ---
 
@@ -357,9 +425,38 @@ study = run_hpo(
     n_trials=100,
     loss="efh",                        # "efh"|"horizon"|"lyap"|"standard"|"discounted"
     n_workers=4,
-    storage="sqlite:///study.db",      # optional persistence
+    storage="study.log",               # journal file (recommended for multi-worker)
 )
 ```
+
+**Loss functions** (always available, no optuna required):
+- `"efh"` — Expected Forecast Horizon (default, recommended for chaotic systems)
+- `"horizon"` — Forecast Horizon (contiguous valid steps)
+- `"lyap"` — Lyapunov-weighted (exponential decay)
+- `"standard"` — Standard Loss (mean geometric mean error)
+- `"discounted"` — Discounted RMSE (half-life weighted)
+
+**Additional `run_hpo()` parameters**:
+- `loss_params` — kwargs for the loss function
+- `targets_key` — readout layer name (default `"output"`)
+- `drivers_keys` — driver input keys for input-driven models
+- `monitor_losses` — additional losses to compute and log (not optimized on)
+- `monitor_params` — kwargs per monitor loss
+- `sampler` — custom Optuna sampler (default: `TPESampler(multivariate=True)`)
+- `seed` — reproducibility seed (seeds sampler + per-trial `seed + trial.number`)
+- `device` — target device for models/data
+- `verbosity` — 0=silent, 1=normal, 2=verbose
+- `catch_exceptions` — catch and return `penalty_value` on failure
+- `clip_value` / `prune_on_clip` — upper-bound clamping / pruning
+
+**Storage backends**:
+- `None` — in-memory (single worker) or temp journal file (multi-worker)
+- `"study.log"` — `JournalFileStorage` (recommended for multi-worker)
+- `"study.db"` or `"sqlite:///study.db"` — SQLite with WAL mode
+
+**Multi-worker** uses real OS processes (not threads), throttles BLAS/OpenMP threads before fork.
+
+**Utility functions** (require optuna): `get_study_summary()`, `make_study_name()`, `get_best_params()`
 
 ---
 
@@ -388,7 +485,7 @@ model = ESNModel.load_from_file("weights.pt", model=pre_built_model)
 
 Version is defined in one place: `src/resdag/__init__.py`:
 ```python
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 ```
 
 The `pyproject.toml` reads this dynamically via:
@@ -433,15 +530,18 @@ The `.github/workflows/release.yml` workflow:
 ### Adding a New Reservoir Cell
 
 1. Create `src/resdag/layers/cells/my_cell.py` extending `ReservoirCell`
-2. Implement `state_size` property and `forward(inputs, state)` method
-3. Import in `src/resdag/layers/cells/__init__.py`
+2. Implement `state_size`, `output_size` properties and `forward(inputs, state) -> (output, new_state)` method
+3. Implement `init_state(batch_size, device, dtype) -> Tensor` for initial state creation
+4. Import in `src/resdag/layers/cells/__init__.py`
 
 ### Adding a New Reservoir Layer
 
 1. Create `src/resdag/layers/reservoirs/my_layer.py` extending `BaseReservoirLayer`
 2. Create an appropriate cell and pass it to `super().__init__(cell)`
-3. Import in `src/resdag/layers/reservoirs/__init__.py`
-4. Re-export from `src/resdag/layers/__init__.py` if it belongs in the public API
+3. Optionally override `set_state()` for custom state shape validation
+4. Add `__getattr__` delegation to inner cell for convenience access
+5. Import in `src/resdag/layers/reservoirs/__init__.py`
+6. Re-export from `src/resdag/layers/__init__.py` if it belongs in the public API
 
 ### Adding a New Premade Model
 
@@ -473,7 +573,7 @@ The codebase uses **NumPy-style docstrings** with `Parameters`, `Returns`, `Rais
 
 2. **Readout name must match targets key**: If `CGReadoutLayer(..., name="output")`, then `targets={"output": ...}` in `trainer.fit()`.
 
-3. **input_size=0 in ott_esn**: The `ott_esn` factory passes `input_size=0` — this is intentional to create the driving-input weight matrix as a zero-size placeholder.
+3. **input_size=0 in ott_esn/power_augmented**: These factories pass `input_size=0` — this is intentional to create the driving-input weight matrix as a zero-size placeholder.
 
 4. **Topology spec is resolved at init time**: The `topology` argument to `ESNLayer` (and `ESNCell`) is resolved during `__init__`, not lazily.
 
@@ -482,3 +582,9 @@ The codebase uses **NumPy-style docstrings** with `Parameters`, `Returns`, `Rais
 6. **Multi-output forecasting**: For multi-output models, the **first** output is used as feedback in `forecast()`. Ensure its dimension matches the feedback input.
 
 7. **HPO is an optional dependency**: `from resdag.hpo import run_hpo` will fail if `optuna` is not installed. Use `pip install resdag[hpo]`.
+
+8. **NG-RC combinatorial explosion**: `NGCell` warns when `feature_dim > 10,000`. High values of `k`, `p`, or `input_dim` cause combinatorial blowup in monomial count (`C(D+p-1, p)` where `D = input_dim * k`).
+
+9. **NG-RC warmup**: The delay buffer needs `(k-1)*s` steps to fill. Earlier outputs contain zeros from unfilled buffer slots — discard the first `warmup_length` outputs if accuracy matters.
+
+10. **NG-RC state shape**: Unlike ESN's 2D state `(batch, reservoir_size)`, NG-RC state is 3D: `(batch, state_size, input_dim)`. The `set_state()` override validates this shape.

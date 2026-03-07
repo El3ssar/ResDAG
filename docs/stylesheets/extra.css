@@ -1,0 +1,452 @@
+/* ============================================================
+   resdag documentation — extra styles
+   ============================================================ */
+
+/* ── Fonts ─────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* ── CSS Variables ─────────────────────────────────────────── */
+:root {
+  --rd-gradient-start: #3949ab;
+  --rd-gradient-end:   #00bcd4;
+  --rd-glow:           rgba(57, 73, 171, 0.35);
+  --rd-surface:        rgba(57, 73, 171, 0.08);
+  --rd-border-radius:  12px;
+  --rd-card-shadow:    0 4px 24px rgba(0, 0, 0, 0.15);
+  --rd-transition:     all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color:        #0d1117;
+  --md-default-fg-color:        rgba(255,255,255,0.92);
+  --md-code-bg-color:           #161b22;
+  --rd-surface:                 rgba(57, 73, 171, 0.12);
+  --rd-card-shadow:             0 4px 32px rgba(0, 0, 0, 0.40);
+}
+
+/* ── Hero Section (Home Page) ──────────────────────────────── */
+.rd-hero {
+  background: linear-gradient(135deg, var(--rd-gradient-start) 0%, var(--rd-gradient-end) 100%);
+  padding: 4rem 2rem 5rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.rd-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(255,255,255,0.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.08) 0%, transparent 40%),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+.rd-hero__inner {
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.rd-hero__badge {
+  display: inline-block;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.35em 1em;
+  border-radius: 999px;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(8px);
+}
+
+.rd-hero__title {
+  font-size: clamp(2.4rem, 5vw, 3.8rem);
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.15;
+  margin: 0 0 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.rd-hero__title span {
+  background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.75) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.rd-hero__subtitle {
+  font-size: 1.15rem;
+  color: rgba(255,255,255,0.82);
+  max-width: 620px;
+  margin: 0 auto 2.5rem;
+  line-height: 1.65;
+  font-weight: 400;
+}
+
+.rd-hero__actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.rd-hero__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 2rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none !important;
+  transition: var(--rd-transition);
+  cursor: pointer;
+}
+
+.rd-hero__btn--primary {
+  background: #ffffff;
+  color: var(--rd-gradient-start);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+
+.rd-hero__btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+}
+
+.rd-hero__btn--secondary {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.3);
+  backdrop-filter: blur(8px);
+}
+
+.rd-hero__btn--secondary:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+}
+
+/* ── Feature Grid ──────────────────────────────────────────── */
+.rd-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin: 2rem 0;
+}
+
+.rd-feature-card {
+  background: var(--rd-surface);
+  border: 1px solid rgba(57, 73, 171, 0.18);
+  border-radius: var(--rd-border-radius);
+  padding: 1.5rem;
+  transition: var(--rd-transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.rd-feature-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--rd-card-shadow);
+  border-color: rgba(57, 73, 171, 0.4);
+}
+
+.rd-feature-card__icon {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.rd-feature-card__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--md-default-fg-color);
+}
+
+.rd-feature-card__body {
+  font-size: 0.875rem;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Architecture Diagram Wrapper ──────────────────────────── */
+.rd-arch-diagram {
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: var(--rd-border-radius);
+  padding: 2rem 1.5rem;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+
+/* ── Topology Grid ─────────────────────────────────────────── */
+.rd-topology-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.rd-topology-item {
+  background: var(--rd-surface);
+  border: 1px solid rgba(57, 73, 171, 0.15);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--md-code-font-family, monospace);
+  font-weight: 500;
+  transition: var(--rd-transition);
+}
+
+.rd-topology-item:hover {
+  border-color: rgba(0, 188, 212, 0.5);
+  background: rgba(0, 188, 212, 0.06);
+}
+
+.rd-topology-item::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--rd-gradient-start), var(--rd-gradient-end));
+  flex-shrink: 0;
+}
+
+/* ── Pipeline Steps ────────────────────────────────────────── */
+.rd-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 1.5rem 0;
+}
+
+.rd-pipeline__step {
+  display: flex;
+  gap: 1.25rem;
+  position: relative;
+  padding-bottom: 1.5rem;
+}
+
+.rd-pipeline__step:last-child {
+  padding-bottom: 0;
+}
+
+.rd-pipeline__indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.rd-pipeline__dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--rd-gradient-start), var(--rd-gradient-end));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.85rem;
+  box-shadow: 0 0 0 4px var(--rd-surface);
+  flex-shrink: 0;
+}
+
+.rd-pipeline__line {
+  width: 2px;
+  flex: 1;
+  background: linear-gradient(to bottom, var(--rd-gradient-start), var(--rd-gradient-end));
+  opacity: 0.25;
+  margin-top: 4px;
+}
+
+.rd-pipeline__content {
+  flex: 1;
+  padding-top: 0.4rem;
+  padding-bottom: 0.5rem;
+}
+
+.rd-pipeline__content h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.rd-pipeline__content p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.55;
+}
+
+/* ── Stats Strip ───────────────────────────────────────────── */
+.rd-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--rd-surface);
+  border-radius: var(--rd-border-radius);
+  border: 1px solid rgba(57, 73, 171, 0.15);
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+.rd-stat__value {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--rd-gradient-start), var(--rd-gradient-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: block;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+
+.rd-stat__label {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+/* ── API Reference Overrides ───────────────────────────────── */
+.doc-heading {
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(to bottom, var(--rd-gradient-start), var(--rd-gradient-end)) 1;
+  padding-left: 0.85rem;
+  margin-left: -1rem !important;
+}
+
+.doc-label {
+  font-size: 0.7rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2em 0.6em !important;
+  border-radius: 4px !important;
+}
+
+/* ── Code Blocks ───────────────────────────────────────────── */
+.highlight code,
+.highlight pre {
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+/* ── Admonition Custom Icons ───────────────────────────────── */
+.md-typeset .admonition.tip,
+.md-typeset details.tip {
+  border-color: #00bcd4 !important;
+}
+
+.md-typeset .admonition.tip > .admonition-title,
+.md-typeset details.tip > summary {
+  background-color: rgba(0, 188, 212, 0.1) !important;
+}
+
+/* ── Table Enhancements ────────────────────────────────────── */
+.md-typeset table:not([class]) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+}
+
+.md-typeset table:not([class]) th {
+  background: linear-gradient(135deg, rgba(57,73,171,0.15), rgba(0,188,212,0.10));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background: linear-gradient(135deg, rgba(57,73,171,0.25), rgba(0,188,212,0.15));
+}
+
+/* ── Nav Tabs ──────────────────────────────────────────────── */
+.md-tabs__link--active,
+.md-tabs__link:focus,
+.md-tabs__link:hover {
+  color: var(--md-accent-fg-color) !important;
+}
+
+/* ── Glossary / Abbr ───────────────────────────────────────── */
+abbr {
+  text-decoration: underline dotted rgba(57, 73, 171, 0.5);
+  cursor: help;
+}
+
+/* ── Breadcrumbs (toc) ─────────────────────────────────────── */
+.md-nav__link--active {
+  font-weight: 600 !important;
+}
+
+/* ── Smooth Scroll ─────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── Mermaid Diagrams ──────────────────────────────────────── */
+.mermaid {
+  text-align: center;
+  margin: 1.5rem auto;
+}
+
+/* ── Responsive Hero ───────────────────────────────────────── */
+@media (max-width: 600px) {
+  .rd-hero {
+    padding: 2.5rem 1rem 3.5rem;
+  }
+  .rd-hero__actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  .rd-hero__btn {
+    width: 100%;
+    justify-content: center;
+    max-width: 280px;
+  }
+}
+
+/* ── Version badge on header ───────────────────────────────── */
+.md-header__version {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 999px;
+  padding: 0.15em 0.65em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.85);
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+/* ── Announcement Banner ───────────────────────────────────── */
+.md-banner {
+  background: linear-gradient(90deg, var(--rd-gradient-start), var(--rd-gradient-end)) !important;
+  color: #fff !important;
+  font-weight: 500;
+}
+
+/* ── Search Highlight ──────────────────────────────────────── */
+mark {
+  background: rgba(0, 188, 212, 0.25) !important;
+  color: inherit !important;
+  border-radius: 2px;
+  padding: 0 2px;
+}

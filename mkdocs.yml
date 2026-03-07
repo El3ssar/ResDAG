@@ -1,0 +1,201 @@
+site_name: resdag
+site_description: PyTorch-native reservoir computing — Echo State Networks & NG-RC with GPU acceleration
+site_author: Daniel Estevez-Moya
+site_url: https://el3ssar.github.io/resdag
+repo_url: https://github.com/El3ssar/resdag
+repo_name: El3ssar/resdag
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2026 Daniel Estevez-Moya &mdash; MIT License
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: assets/logo.svg
+  favicon: assets/favicon.png
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+    - content.code.select
+    - content.tooltips
+    - toc.follow
+    - header.autohide
+    - announce.dismiss
+
+plugins:
+  - search:
+      separator: '[\s\-\_]+'
+      lang: en
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            inherited_members: true
+            members_order: source
+            separate_signature: true
+            unwrap_annotated: true
+            filters: ["!^_"]
+            merge_init_into_class: true
+            docstring_section_style: table
+            show_if_no_docstring: false
+            show_docstring_parameters: true
+            show_docstring_returns: true
+            show_docstring_raises: true
+            show_docstring_examples: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - tables
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - docs/includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/El3ssar/resdag
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/resdag
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: Help us improve this page.
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Core Concepts: getting-started/concepts.md
+  - User Guide:
+    - guide/index.md
+    - ESN Layer: guide/esn-layer.md
+    - NG-RC: guide/ngrc.md
+    - Readout Layer: guide/readouts.md
+    - Training: guide/training.md
+    - Model Composition: guide/composition.md
+    - Forecasting: guide/forecasting.md
+    - Topologies: guide/topologies.md
+    - Initializers: guide/initializers.md
+    - Premade Models: guide/premade-models.md
+    - Custom Layers: guide/custom-layers.md
+    - Persistence: guide/persistence.md
+  - HPO:
+    - hpo/index.md
+    - Overview: hpo/overview.md
+    - Loss Functions: hpo/loss-functions.md
+    - Advanced Usage: hpo/advanced.md
+  - Extending:
+    - extending/index.md
+    - New Topology: extending/new-topology.md
+    - New Initializer: extending/new-initializer.md
+    - New Cell & Layer: extending/new-cell.md
+    - New Premade Model: extending/new-model.md
+  - API Reference:
+    - api/index.md
+    - Layers: api/layers.md
+    - Models: api/models.md
+    - Training: api/training.md
+    - Initialization: api/init.md
+    - Composition: api/composition.md
+    - HPO: api/hpo.md
+  - Examples:
+    - examples/index.md
+    - Lorenz Attractor: examples/lorenz.md
+    - NG-RC Demo: examples/ngrc-demo.md
+    - Input-Driven Systems: examples/input-driven.md
+    - Hyperparameter Tuning: examples/hpo-example.md

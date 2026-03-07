@@ -58,3 +58,6 @@ _Notebooks
 
 # graphviz temp files
 *.gv
+
+# MkDocs
+site/

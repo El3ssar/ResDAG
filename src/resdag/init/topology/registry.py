@@ -151,87 +151,65 @@ def get_topology(
     return GraphTopology(graph_func, kwargs)
 
 
-def show_topologies(name: str | None = None) -> list[str] | dict[str, Any] | None:
+def show_topologies(name: str | None = None) -> None:
     """
     Show available topologies or details for a specific topology.
 
     Parameters
     ----------
     name : str, optional
-        Name of topology to inspect. If None, returns list of all
+        Name of topology to inspect. If None, prints all
         registered topology names.
 
     Returns
     -------
-    list of str or dict or None
-        If ``name`` is None: sorted list of registered topology names.
-        If ``name`` is provided: prints details and returns None.
+    None
+        Prints formatted information to stdout.
 
     Raises
     ------
     ValueError
         If the specified topology name is not registered.
-
-    Examples
-    --------
-    List all topologies:
-
-    >>> show_topologies()
-    ['barabasi_albert', 'chain_of_neurons', 'dendrocycle', ...]
-
-    Get details for a specific topology:
-
-    >>> show_topologies("erdos_renyi")
-    Topology: erdos_renyi
-
-    Parameters:
-      - directed: type=bool, default=True
-      - p: type=float, default=0.1
-      - seed: type=int | NoneType, default=None
     """
     if name is None:
-        return sorted(_TOPOLOGY_REGISTRY.keys())
+        print("\nAvailable topologies:\n")
+        for n in sorted(_TOPOLOGY_REGISTRY):
+            print(f"  - {n}")
+        print(f"\nTotal: {len(_TOPOLOGY_REGISTRY)}\n")
+        return
 
     if name not in _TOPOLOGY_REGISTRY:
-        available = ", \n".join(sorted(_TOPOLOGY_REGISTRY.keys()))
-        raise ValueError(f"Unknown topology '{name}'.\n Available: \n{available}")
+        available = "\n".join(sorted(_TOPOLOGY_REGISTRY.keys()))
+        raise ValueError(f"Unknown topology '{name}'.\nAvailable:\n{available}")
 
     graph_func, default_kwargs = _TOPOLOGY_REGISTRY[name]
 
-    # Extract function signature
     sig = inspect.signature(graph_func)
-    types = {}
+
+    print(f"\nTopology: {name}\n")
+    print("Parameters:\n")
+
     for param_name, param in sig.parameters.items():
         if param_name == "n":
             continue
 
-        # Get type annotation if available
+        # Type extraction
         if param.annotation is not inspect.Parameter.empty:
             origin = get_origin(param.annotation)
             if origin is None:
-                types[param_name] = param.annotation.__name__
+                type_str = param.annotation.__name__
             else:
                 args = get_args(param.annotation)
-                types[param_name] = " | ".join(a.__name__ for a in args)
+                type_str = " | ".join(a.__name__ for a in args)
         else:
-            types[param_name] = "Any"
+            type_str = "Any"
 
-    info = {
-        "name": name,
-        "parameters": {
-            k: {
-                "type": types.get(k, "Any"),
-                "default": default_kwargs.get(k, "<required>"),
-            }
-            for k in sorted(set(types) | set(default_kwargs))
-        },
-    }
-    return _format_topology(info)
+        # Default resolution
+        if param.default is not inspect.Parameter.empty:
+            default = param.default
+        else:
+            default = default_kwargs.get(param_name, "<required>")
 
-
-def _format_topology(info: dict) -> None:
-    """Print formatted topology information."""
-    lines = [f"\nTopology: {info['name']}", "", "Parameters:"]
-    for name, meta in info["parameters"].items():
-        lines.append(f"  - {name}: type={meta['type']}, default={meta['default']}")
-    print("\n".join(lines))
+        print(f"  - {param_name}")
+        print(f"      type:    {type_str}")
+        print(f"      default: {default}\n")

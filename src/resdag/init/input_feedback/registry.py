@@ -102,19 +102,18 @@ def get_input_feedback(
     return init_class(**kwargs)
 
 
-def show_input_initializers(name: str | None = None) -> list[str] | None:
+def show_input_initializers(name: str | None = None) -> None:
     """Show available input/feedback initializers or details for a specific one.
 
     Parameters
     ----------
     name : str, optional
-        Name of initializer to inspect. If None, returns list of all initializers.
+        Name of initializer to inspect. If None, prints all initializers.
 
     Returns
     -------
-    list[str] | None
-        If name is None: sorted list of registered initializer names.
-        If name is provided: dict with 'name', 'defaults', and 'parameters' keys.
+    None
+        Prints formatted information to stdout.
 
     Raises
     ------
@@ -137,52 +136,43 @@ def show_input_initializers(name: str | None = None) -> list[str] | None:
     }
     """
     if name is None:
-        return sorted(_INPUT_FEEDBACK_REGISTRY.keys())
+        print("\nAvailable input/feedback initializers:\n")
+        for n in sorted(_INPUT_FEEDBACK_REGISTRY):
+            print(f"  - {n}")
+        print(f"\nTotal: {len(_INPUT_FEEDBACK_REGISTRY)}\n")
+        return
 
     if name not in _INPUT_FEEDBACK_REGISTRY:
-        available = ", \n".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
-        raise ValueError(f"Unknown initializer '{name}'.\n Available: \n{available}")
+        available = "\n".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
+        raise ValueError(f"Unknown initializer '{name}'.\nAvailable:\n{available}")
 
     init_class, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
-
     sig = inspect.signature(init_class.__init__)
-    types: dict[str, str] = {}
+
+    print(f"\nInitializer: {name}\n")
+    print("Parameters:\n")
 
     for param_name, param in sig.parameters.items():
         if param_name == "self":
             continue
 
+        # Type extraction
         if param.annotation is not inspect.Parameter.empty:
             origin = get_origin(param.annotation)
             if origin is None:
-                types[param_name] = param.annotation.__name__
+                type_str = param.annotation.__name__
             else:
                 args = get_args(param.annotation)
-                types[param_name] = " | ".join(a.__name__ for a in args)
+                type_str = " | ".join(a.__name__ for a in args)
         else:
-            types[param_name] = "Any"
+            type_str = "Any"
 
-    info = {
-        "name": name,
-        "parameters": {
-            k: {
-                "type": types.get(k, "Any"),
-                "default": (
-                    sig.parameters[k].default
-                    if sig.parameters[k].default is not inspect.Parameter.empty
-                    else default_kwargs.get(k, "<required>")
-                ),
-            }
-            for k in sorted(set(types) | set(default_kwargs))
-        },
-    }
+        # Default resolution
+        if param.default is not inspect.Parameter.empty:
+            default = param.default
+        else:
+            default = default_kwargs.get(param_name, "<required>")
 
-    return _format_init(info)
-
-
-def _format_init(info: dict) -> str:
-    """Format and print initializer information dictionary."""
-    lines = [f"\nInitializer: {info['name']}", "", "Parameters:"]
-    for name, meta in info["parameters"].items():
-        lines.append(f"  - {name}: type={meta['type']}, default={meta['default']}")
-    print("\n".join(lines))
+        print(f"  - {param_name}")
+        print(f"      type:    {type_str}")
+        print(f"      default: {default}\n")

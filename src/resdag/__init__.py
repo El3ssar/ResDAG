@@ -91,7 +91,7 @@ from .layers import (
 from .models import classic_esn, headless_esn, linear_esn, ott_esn
 from .training import ESNTrainer
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     # Modules

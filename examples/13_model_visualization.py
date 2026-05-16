@@ -1,7 +1,11 @@
-"""Example: Model Visualization with pytorch_symbolic and torchvista.
+"""Example 13: Model visualisation with pytorch_symbolic and plot_model.
 
-This example demonstrates how to visualize ESN models using the new
-pytorch_symbolic-based API with torchvista integration.
+This example shows how to inspect and render ESN model architectures via
+``ESNModel.summary()`` (text) and ``ESNModel.plot_model()`` (graphviz).
+Useful when prototyping topology variations or when documenting a study.
+
+Used to live next to ``09_training.py`` as ``09_model_visualization_new.py``;
+renamed to ``13_*`` in 0.4.0 to give every numbered example a unique slot.
 """
 
 import torch
@@ -132,7 +136,7 @@ print("""
 Usage in Notebooks:
    >>> model = classic_esn(100, 1, 1)
    >>> model.plot_model()  # Interactive graph
-   
+
 Usage in Scripts:
    >>> model.summary()  # Text-based summary
 """)

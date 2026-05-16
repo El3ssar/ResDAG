@@ -216,24 +216,59 @@ class BaseReservoirLayer(nn.Module, ABC):
         """
         if state.shape[-1] != self.cell.state_size:
             raise ValueError(
-                f"State size mismatch. Expected (..., {self.cell.state_size}), got {state.shape}"
+                f"State size mismatch on {type(self).__name__} "
+                f"(cell={type(self.cell).__name__}). Expected last dim "
+                f"{self.cell.state_size}, got tensor of shape {tuple(state.shape)}. "
+                f"Tip: call reset_state(batch_size=...) before set_state() "
+                f"to match the expected layout."
             )
         self.state = state.clone()
 
-    def set_random_state(self) -> None:
+    def set_random_state(
+        self,
+        batch_size: int | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> None:
         """
         Set the internal state to random (standard-normal) values.
+
+        Parameters
+        ----------
+        batch_size : int, optional
+            If provided, lazily initialise the state with this batch size
+            before filling it with random values.  Uses ``device`` / ``dtype``
+            kwargs when given, otherwise the cell's first floating-point
+            parameter/buffer (falling back to CPU/float32).
+        device : torch.device, optional
+            Target device when lazily initialising.  Ignored if the state is
+            already initialised.
+        dtype : torch.dtype, optional
+            Target dtype when lazily initialising.  Ignored if the state is
+            already initialised.
 
         Raises
         ------
         RuntimeError
-            If the state has not been initialized yet (i.e. is ``None``).
+            If the state has not been initialised and ``batch_size`` is not
+            provided.
 
         Examples
         --------
-        >>> layer.reset_state(batch_size=4)
+        >>> # Lazy: initialise then randomise in one call
+        >>> layer.set_random_state(batch_size=4)
+        >>> # Already-initialised state: just randomise in place
         >>> layer.set_random_state()
         """
         if self.state is None:
-            raise RuntimeError("Reservoir not initialized")
+            if batch_size is None:
+                raise RuntimeError(
+                    "Reservoir state is not initialised. "
+                    "Pass batch_size= to initialise it before randomising."
+                )
+            self.reset_state(batch_size=batch_size)
+            # ``reset_state`` honours device/dtype of existing state or cell;
+            # apply overrides if explicitly requested.
+            if device is not None or dtype is not None:
+                self.state = self.state.to(device=device, dtype=dtype)
         self.state = torch.randn_like(self.state)

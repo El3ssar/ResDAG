@@ -519,8 +519,16 @@ class TestNGReservoirStateManagement:
 
     def test_set_random_state_before_init_raises(self) -> None:
         layer = NGReservoir(input_dim=3)
-        with pytest.raises(RuntimeError, match="not initialized"):
+        with pytest.raises(RuntimeError, match="not initialised"):
             layer.set_random_state()
+
+    def test_set_random_state_lazy_initialises(self) -> None:
+        """``set_random_state(batch_size=...)`` lazily initialises before
+        randomising (P2.3)."""
+        layer = NGReservoir(input_dim=3, k=2, s=1)
+        layer.set_random_state(batch_size=4)
+        assert layer.state is not None
+        assert layer.state.shape[0] == 4
 
     def test_state_persists_across_forward_passes(self) -> None:
         """State at end of forward is used as init for next forward."""

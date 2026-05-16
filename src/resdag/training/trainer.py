@@ -182,8 +182,7 @@ class ESNTrainer:
                     f"but train_inputs has {train_steps} timesteps. Must match."
                 )
 
-        # Single warmup to sync reservoir states
-        self.model.reset_reservoirs()
+        # Single warmup to sync reservoir states (warmup resets by default)
         self.model.warmup(*warmup_inputs)
 
         # Register pre-hooks that fit each readout before its forward

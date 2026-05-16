@@ -243,16 +243,19 @@ class CGReadoutLayer(ReadoutLayer):
             targets = targets.reshape(batch_size * seq_len, outputs)
 
         # Validate shapes
+        readout_id = f"'{self._name}'" if self._name is not None else f"{type(self).__name__}"
         if inputs.shape[0] != targets.shape[0]:
             raise ValueError(
-                f"Number of samples must match: states has {inputs.shape[0]}, "
-                f"targets has {targets.shape[0]}"
+                f"CGReadoutLayer.fit({readout_id}): sample count mismatch. "
+                f"Inputs have {inputs.shape[0]} samples after flattening, "
+                f"targets have {targets.shape[0]}."
             )
 
         if targets.shape[1] != self.out_features:
             raise ValueError(
-                f"Target output dimension ({targets.shape[1]}) must match "
-                f"out_features ({self.out_features})"
+                f"CGReadoutLayer.fit({readout_id}): target feature dimension "
+                f"({targets.shape[1]}) does not match readout out_features "
+                f"({self.out_features})."
             )
 
         # Solve ridge regression with CG

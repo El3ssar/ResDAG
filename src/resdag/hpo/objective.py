@@ -143,7 +143,7 @@ def build_objective(
 
             # 2. Load data
             data = data_loader(trial)
-            _validate_data_keys(data)
+            _validate_data_keys(data, drivers_keys=drivers_keys)
 
             # Move data to device
             if device is not None:
@@ -182,8 +182,8 @@ def build_objective(
             )
 
             # Prepare forecast warmup inputs (feedback + drivers)
-            f_warmup_inputs = (data["f_warmup"],)
-            forecast_drivers_list = []
+            f_warmup_inputs: tuple = (data["f_warmup"],)
+            forecast_drivers_list: list = []
 
             if drivers_keys:
                 for key in drivers_keys:
@@ -199,9 +199,9 @@ def build_objective(
 
             # Run forecast
             preds = model.forecast(
-                *f_warmup_inputs,
+                f_warmup_inputs,
+                forecast_inputs=tuple(forecast_drivers_list) if forecast_drivers_list else None,
                 horizon=horizon,
-                forecast_drivers=tuple(forecast_drivers_list),
             )
 
             # 7. Compute loss
@@ -259,23 +259,70 @@ def build_objective(
     return objective
 
 
-def _validate_data_keys(data: dict[str, Any]) -> None:
-    """Validate that the data dictionary contains all required keys.
+_REQUIRED_DATA_KEYS = ("warmup", "train", "target", "f_warmup", "val")
+
+
+def _validate_data_keys(
+    data: Any,
+    drivers_keys: list[str] | None = None,
+) -> None:
+    """Validate the dictionary returned by the user-provided ``data_loader``.
+
+    The data dict must contain the five required keys (``"warmup"``,
+    ``"train"``, ``"target"``, ``"f_warmup"``, ``"val"``), each mapping to
+    a 3-D ``torch.Tensor`` of shape ``(batch, timesteps, features)``.
+    Driver keys named by ``drivers_keys`` are also validated when present.
 
     Parameters
     ----------
-    data : dict[str, Any]
-        Dictionary returned by the user-provided ``data_loader`` callback.
+    data : Any
+        Value returned by ``data_loader(trial)``.  Must be a dict-like
+        object.
+    drivers_keys : list of str, optional
+        Driver feature keys.  If provided, the corresponding ``warmup_*``,
+        ``train_*``, ``f_warmup_*`` and ``forecast_*`` entries (when
+        present) are validated as 3-D tensors.
 
     Raises
     ------
+    TypeError
+        If ``data`` is not a dictionary.
     KeyError
-        If one or more of the required keys (``"warmup"``, ``"train"``,
-        ``"target"``, ``"f_warmup"``, ``"val"``) are missing.
+        If one or more required keys are missing, listed alongside the keys
+        the loader did return for easy typo spotting.
+    ValueError
+        If any required entry is not a ``torch.Tensor`` or is not 3-D.
     """
-    required = ["warmup", "train", "target", "f_warmup", "val"]
-    missing = [k for k in required if k not in data]
+    if not isinstance(data, dict):
+        raise TypeError(
+            f"data_loader must return a dict, got {type(data).__name__}. "
+            f"Expected keys: {list(_REQUIRED_DATA_KEYS)}."
+        )
+
+    missing = [k for k in _REQUIRED_DATA_KEYS if k not in data]
     if missing:
         raise KeyError(
-            f"Missing required keys in data dictionary: {missing}. Required keys: {required}"
+            f"data_loader output is missing required keys: {missing}. "
+            f"Required: {list(_REQUIRED_DATA_KEYS)}. "
+            f"Got keys: {sorted(data.keys())}."
         )
+
+    keys_to_check = list(_REQUIRED_DATA_KEYS)
+    if drivers_keys:
+        for key in drivers_keys:
+            for prefix in ("warmup_", "train_", "f_warmup_", "forecast_"):
+                full = f"{prefix}{key}"
+                if full in data:
+                    keys_to_check.append(full)
+
+    for key in keys_to_check:
+        value = data[key]
+        if not isinstance(value, torch.Tensor):
+            raise ValueError(
+                f"data['{key}'] must be a torch.Tensor, got {type(value).__name__}."
+            )
+        if value.dim() != 3:
+            raise ValueError(
+                f"data['{key}'] must be a 3-D tensor (batch, timesteps, features); "
+                f"got shape {tuple(value.shape)}."
+            )

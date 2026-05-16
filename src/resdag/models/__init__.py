@@ -50,6 +50,7 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 from .classic_esn import classic_esn
+from .coupled_ensemble_esn import coupled_ensemble_esn
 from .headless_esn import headless_esn
 from .linear_esn import linear_esn
 from .ott_esn import ott_esn
@@ -57,6 +58,7 @@ from .power_augmented import power_augmented
 
 __all__ = [
     "classic_esn",
+    "coupled_ensemble_esn",
     "headless_esn",
     "linear_esn",
     "ott_esn",

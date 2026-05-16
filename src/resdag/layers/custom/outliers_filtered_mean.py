@@ -110,23 +110,22 @@ class OutliersFilteredMean(nn.Module):
         # Expand mask to broadcast over features dimension
         mask_expanded = mask.unsqueeze(-1)  # (samples, batch, timesteps, 1)
 
+        # Plain mean saved before masking — used as fallback when all samples are outliers
+        plain_mean = input.mean(dim=0)  # (batch, timesteps, features)
+
         # Apply mask (zero out outliers)
         masked_input = input * mask_expanded
 
         # Sum over samples and count valid samples
         sum_inliers = masked_input.sum(dim=0)  # (batch, timesteps, features)
-        count_inliers = mask_expanded.float().sum(dim=0)  # (batch, timesteps, 1)
+        count_inliers = mask_expanded.float().sum(dim=0).expand_as(sum_inliers)
 
-        # Broadcast count to match features dimension
-        count_inliers = count_inliers.expand_as(sum_inliers)
-
-        # Avoid division by zero: if no inliers, use all samples
-        count_inliers = torch.where(
-            count_inliers > 0, count_inliers, torch.ones_like(count_inliers)
+        # Where inliers exist use filtered mean, otherwise fall back to plain mean
+        mean_result = torch.where(
+            count_inliers > 0,
+            sum_inliers / count_inliers.clamp(min=1),
+            plain_mean,
         )
-
-        # Compute mean
-        mean_result = sum_inliers / count_inliers
 
         return mean_result
 

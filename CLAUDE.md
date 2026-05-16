@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`resdag` is a **PyTorch-native reservoir computing library** (v0.3.0) for building Echo State Networks (ESNs) and Next Generation Reservoir Computers (NG-RC). It provides GPU-accelerated, modular components for reservoir computing research: stateful reservoir layers, graph-based topology initialization, algebraic readout training, model composition via `pytorch_symbolic`, and Optuna-based hyperparameter optimization.
+`resdag` is a **PyTorch-native reservoir computing library** (v0.4.0) for building Echo State Networks (ESNs) and Next Generation Reservoir Computers (NG-RC). It provides GPU-accelerated, modular components for reservoir computing research: stateful reservoir layers, graph-based topology initialization, algebraic readout training, model composition via `pytorch_symbolic`, and Optuna-based hyperparameter optimization.
 
 - **Package name**: `resdag`
 - **Author**: Daniel Estevez-Moya
@@ -18,8 +18,10 @@
 resdag/
 ├── src/resdag/              # Main package (src layout)
 │   ├── __init__.py          # Public API + lazy HPO imports; version string
-│   ├── composition/
-│   │   └── symbolic.py      # ESNModel (extends pytorch_symbolic.SymbolicModel)
+│   ├── core/                # Core model class
+│   │   ├── model.py         # ESNModel (extends pytorch_symbolic.SymbolicModel)
+│   │   └── __init__.py      # + reservoir_input helper
+│   ├── composition/         # ⚠ Deprecated shim → resdag.core (kept for backward compat)
 │   ├── layers/
 │   │   ├── cells/
 │   │   │   ├── base_cell.py  # ReservoirCell (abstract single-step interface)
@@ -32,7 +34,8 @@ resdag/
 │   │   ├── readouts/
 │   │   │   ├── base.py       # ReadoutLayer (abstract)
 │   │   │   └── cg_readout.py # CGReadoutLayer — CG ridge regression
-│   │   └── custom/           # Concatenate, SelectiveExponentiation, Power, etc.
+│   │   ├── transforms/       # Concatenate, SelectiveExponentiation, Power, etc.
+│   │   └── custom/           # ⚠ Deprecated shim → layers.transforms (backward compat)
 │   ├── init/
 │   │   ├── topology/        # Graph topology registry + base classes
 │   │   ├── input_feedback/  # Input/feedback weight initializer registry
@@ -224,7 +227,18 @@ features = layer(x)           # (4, 100, feature_dim)
 
 **State management** inherits from `BaseReservoirLayer` with 3D buffer validation in `set_state()`.
 
-### ESNModel and Composition
+### ESNModel (core model class)
+
+`ESNModel` lives in `resdag.core`. Import it directly from the top-level package
+or from `resdag.core`:
+
+```python
+# Preferred (top-level)
+from resdag import ESNModel, ESNLayer, CGReadoutLayer
+
+# Explicit module path
+from resdag.core import ESNModel
+```
 
 Models are built with `pytorch_symbolic` functional API, then wrapped in `ESNModel`:
 
@@ -294,9 +308,9 @@ Training process:
 2. Warmup phase (teacher-forced forward pass)
 3. Single forward pass with pre-hooks that fit each readout in topological order
 
-### Custom Layers
+### Transform Layers
 
-All in `src/resdag/layers/custom/`:
+All in `src/resdag/layers/transforms/` (import via `resdag.layers.transforms`):
 
 | Layer | Purpose |
 |---|---|
@@ -305,7 +319,9 @@ All in `src/resdag/layers/custom/`:
 | `Power` | Exponentiates all features to a given power (used in `power_augmented`) |
 | `SelectiveDropout` | Per-feature dropout with selectivity control |
 | `FeaturePartitioner` | Partitions features into overlapping groups |
-| `OutliersFilteredMean` | Computes mean with outlier filtering |
+| `OutliersFilteredMean` | Computes mean with outlier filtering (in `ensemble.aggregators`) |
+
+> **Note:** `resdag.layers.custom` is a deprecated backward-compat shim — use `resdag.layers.transforms`.
 
 ### Topology System
 
@@ -485,7 +501,7 @@ model = ESNModel.load_from_file("weights.pt", model=pre_built_model)
 
 Version is defined in one place: `src/resdag/__init__.py`:
 ```python
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 ```
 
 The `pyproject.toml` reads this dynamically via:
@@ -502,8 +518,8 @@ When bumping version, **only update `__init__.py`**.
 
 Releases are triggered automatically by pushing a version tag:
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 The `.github/workflows/release.yml` workflow:
@@ -546,8 +562,15 @@ The `.github/workflows/release.yml` workflow:
 ### Adding a New Premade Model
 
 1. Create `src/resdag/models/my_model.py` with a factory function returning `ESNModel`
-2. Import in `src/resdag/models/__init__.py`
-3. Add to `src/resdag/__init__.py` public API and `__all__`
+2. Import `ESNModel` from `resdag.core` (not `resdag.composition`)
+3. Import in `src/resdag/models/__init__.py`
+4. Add to `src/resdag/__init__.py` public API and `__all__`
+
+### Adding a New Transform Layer
+
+1. Create `src/resdag/layers/transforms/my_layer.py` extending `nn.Module`
+2. Import in `src/resdag/layers/transforms/__init__.py`
+3. Re-export from `src/resdag/layers/__init__.py` if it belongs in the public API
 
 ### Public API Changes
 

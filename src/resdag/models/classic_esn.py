@@ -13,7 +13,7 @@ See Also
 
 from typing import Any
 
-from resdag.composition import ESNModel, reservoir_input
+from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
 
@@ -90,7 +90,7 @@ def classic_esn(
 
     Returns
     -------
-    :class:`~resdag.composition.ESNModel`
+    :class:`~resdag.core.ESNModel`
         Configured ESN model ready for training and inference.
 
     Examples

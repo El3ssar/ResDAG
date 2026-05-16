@@ -18,7 +18,7 @@ resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
 
 import torch
 
-from resdag.composition import ESNModel
+from resdag.core import ESNModel
 from resdag.layers import ReadoutLayer
 
 
@@ -56,7 +56,7 @@ class ESNTrainer:
     Basic training workflow:
 
     >>> from resdag.training import ESNTrainer
-    >>> from resdag.composition import ESNModel
+    >>> from resdag.core import ESNModel
     >>>
     >>> trainer = ESNTrainer(model)
     >>> trainer.fit(

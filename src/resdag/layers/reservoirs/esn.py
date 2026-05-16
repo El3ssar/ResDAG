@@ -119,7 +119,7 @@ class ESNLayer(BaseReservoirLayer):
     resdag.layers.base.BaseReservoirLayer : Base providing state management.
     resdag.init.topology.TopologyInitializer : Base class for topology init.
     resdag.init.input_feedback.InputFeedbackInitializer : Input init base.
-    resdag.composition.ESNModel : Model composition using reservoir layers.
+    resdag.core.ESNModel : Model composition using reservoir layers.
     """
 
     def __init__(

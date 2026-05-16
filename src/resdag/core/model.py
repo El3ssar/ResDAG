@@ -1,6 +1,5 @@
 """
-Model Composition with pytorch_symbolic
-========================================
+ESNModel — core model class for reservoir computing.
 
 This module provides the main model class for building ESN architectures
 using the ``pytorch_symbolic`` library for symbolic tensor computation.
@@ -16,7 +15,7 @@ Simple ESN model:
 >>> import pytorch_symbolic as ps
 >>> from resdag.layers import ESNLayer
 >>> from resdag.layers.readouts import CGReadoutLayer
->>> from resdag.composition import ESNModel
+>>> from resdag.core import ESNModel
 >>>
 >>> inp = ps.Input((100, 1))
 >>> reservoir = ESNLayer(50, feedback_size=1)(inp)
@@ -90,7 +89,7 @@ class ESNModel(ps.SymbolicModel):
     Create and use a simple ESN:
 
     >>> import pytorch_symbolic as ps
-    >>> from resdag.composition import ESNModel
+    >>> from resdag.core import ESNModel
     >>> from resdag.layers import ESNLayer
     >>> from resdag.layers.readouts import CGReadoutLayer
     >>>
@@ -345,7 +344,7 @@ class ESNModel(ps.SymbolicModel):
     def load_from_file(
         cls,
         path: str | Path,
-        model: "ESNModel" | None = None,
+        model: "ESNModel | None" = None,
         strict: bool = True,
         load_states: bool = False,
     ) -> "ESNModel":

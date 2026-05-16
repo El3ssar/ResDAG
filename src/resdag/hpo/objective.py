@@ -18,7 +18,7 @@ import numpy as np
 import optuna
 import torch
 
-from resdag.composition import ESNModel
+from resdag.core import ESNModel
 from resdag.training import ESNTrainer
 
 from .losses import LossProtocol

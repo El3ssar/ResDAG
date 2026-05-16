@@ -8,7 +8,7 @@ This example shows how to build ESN models with different input configurations:
 import pytorch_symbolic as ps
 import torch
 
-from resdag.composition import ESNModel
+from resdag.core import ESNModel
 from resdag.layers import ESNLayer
 from resdag.layers.readouts import CGReadoutLayer
 

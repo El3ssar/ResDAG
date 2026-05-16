@@ -12,7 +12,7 @@ Key concepts:
 import torch
 
 import resdag as rd
-from resdag.composition import ESNModel, Input
+from resdag.core import ESNModel, Input
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.training import ESNTrainer
 

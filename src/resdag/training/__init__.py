@@ -23,7 +23,7 @@ Examples
 See Also
 --------
 resdag.layers.readouts.CGReadoutLayer : Readout with CG solver.
-resdag.composition.ESNModel : ESN model class.
+resdag.core.ESNModel : ESN model class.
 """
 
 from .trainer import ESNTrainer

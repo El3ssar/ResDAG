@@ -21,7 +21,7 @@ headless_esn : Reservoir-only model for analysis.
 
 from typing import Any
 
-from resdag.composition import ESNModel, reservoir_input
+from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, SelectiveExponentiation
 

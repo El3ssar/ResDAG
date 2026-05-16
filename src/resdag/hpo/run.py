@@ -21,7 +21,7 @@ import optuna
 import torch
 from optuna.samplers import TPESampler
 
-from resdag.composition import ESNModel
+from resdag.core import ESNModel
 
 from .losses import LossProtocol, get_loss
 from .objective import build_objective

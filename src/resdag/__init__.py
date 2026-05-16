@@ -72,10 +72,11 @@ ESNLayer : Core reservoir layer with recurrent dynamics.
 ESNTrainer : Trainer for fitting readout layers.
 """
 
-from . import composition, hpo, init, layers, models, training, utils
+from . import composition, ensemble, hpo, init, layers, models, training, utils
 
 # Convenience imports for common use cases
 from .composition import ESNModel
+from .ensemble import CoupledEnsembleESNModel
 
 # Convenience submodule imports
 from .init import graphs, input_feedback, topology
@@ -88,7 +89,7 @@ from .layers import (
     OutliersFilteredMean,
     SelectiveExponentiation,
 )
-from .models import classic_esn, headless_esn, linear_esn, ott_esn
+from .models import classic_esn, coupled_ensemble_esn, headless_esn, linear_esn, ott_esn
 from .training import ESNTrainer
 
 __version__ = "0.3.1"
@@ -96,6 +97,7 @@ __version__ = "0.3.1"
 __all__ = [
     # Modules
     "composition",
+    "ensemble",
     "hpo",
     "init",
     "layers",
@@ -117,10 +119,13 @@ __all__ = [
     "SelectiveExponentiation",
     # Model composition
     "ESNModel",
+    # Ensemble
+    "CoupledEnsembleESNModel",
     # Training
     "ESNTrainer",
     # Premade models
     "classic_esn",
+    "coupled_ensemble_esn",
     "ott_esn",
     "headless_esn",
     "linear_esn",

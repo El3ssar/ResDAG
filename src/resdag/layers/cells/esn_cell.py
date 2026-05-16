@@ -110,7 +110,11 @@ class ESNCell(ReservoirCell):
         # Store configuration
         self.reservoir_size = reservoir_size
         self.feedback_size = feedback_size
-        self.input_size = input_size
+        # Treat input_size == 0 the same as input_size is None (no driving
+        # input weight matrix is created).  This avoids the historical
+        # (reservoir_size, 0) zero-column tensor produced by passing ``0``
+        # explicitly from the premade factories.
+        self.input_size = input_size if input_size else None
         self.topology = topology
         self.spectral_radius = spectral_radius
         self.feedback_initializer = feedback_initializer

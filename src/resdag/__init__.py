@@ -75,24 +75,38 @@ ESNTrainer : Trainer for fitting readout layers.
 from . import composition, ensemble, hpo, init, layers, models, training, utils
 
 # Convenience imports for common use cases
-from .composition import ESNModel
+from .composition import ESNModel, reservoir_input
 from .ensemble import CoupledEnsembleESNModel
 
 # Convenience submodule imports
 from .init import graphs, input_feedback, topology
 from .layers import (
+    BaseReservoirLayer,
     CGReadoutLayer,
     Concatenate,
+    ESNCell,
     ESNLayer,
+    FeaturePartitioner,
     NGCell,
     NGReservoir,
     OutliersFilteredMean,
+    Power,
+    ReadoutLayer,
+    ReservoirCell,
+    SelectiveDropout,
     SelectiveExponentiation,
 )
-from .models import classic_esn, coupled_ensemble_esn, headless_esn, linear_esn, ott_esn
+from .models import (
+    classic_esn,
+    coupled_ensemble_esn,
+    headless_esn,
+    linear_esn,
+    ott_esn,
+    power_augmented,
+)
 from .training import ESNTrainer
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 __all__ = [
     # Modules
@@ -109,16 +123,26 @@ __all__ = [
     "graphs",
     "topology",
     "input_feedback",
-    # Core layers
-    "CGReadoutLayer",
-    "Concatenate",
+    # Composition helpers
+    "ESNModel",
+    "reservoir_input",
+    # Core reservoir layers / cells
+    "BaseReservoirLayer",
+    "ESNCell",
     "ESNLayer",
     "NGCell",
     "NGReservoir",
+    "ReservoirCell",
+    # Readouts
+    "CGReadoutLayer",
+    "ReadoutLayer",
+    # Custom / utility layers
+    "Concatenate",
+    "FeaturePartitioner",
     "OutliersFilteredMean",
+    "Power",
+    "SelectiveDropout",
     "SelectiveExponentiation",
-    # Model composition
-    "ESNModel",
     # Ensemble
     "CoupledEnsembleESNModel",
     # Training
@@ -129,6 +153,7 @@ __all__ = [
     "ott_esn",
     "headless_esn",
     "linear_esn",
+    "power_augmented",
 ]
 
 

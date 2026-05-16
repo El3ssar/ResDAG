@@ -151,7 +151,7 @@ def get_topology(
     return GraphTopology(graph_func, kwargs)
 
 
-def show_topologies(name: str | None = None) -> None:
+def show_topologies(name: str | None = None) -> list[str] | None:
     """
     Show available topologies or details for a specific topology.
 
@@ -159,12 +159,14 @@ def show_topologies(name: str | None = None) -> None:
     ----------
     name : str, optional
         Name of topology to inspect. If None, prints all
-        registered topology names.
+        registered topology names *and* returns them as a list.
 
     Returns
     -------
-    None
-        Prints formatted information to stdout.
+    list of str or None
+        When ``name is None``, returns the sorted list of registered
+        topology names (in addition to printing them).  When ``name`` is
+        provided, returns ``None`` after printing the parameter table.
 
     Raises
     ------
@@ -172,11 +174,12 @@ def show_topologies(name: str | None = None) -> None:
         If the specified topology name is not registered.
     """
     if name is None:
+        names = sorted(_TOPOLOGY_REGISTRY)
         print("\nAvailable topologies:\n")
-        for n in sorted(_TOPOLOGY_REGISTRY):
+        for n in names:
             print(f"  - {n}")
-        print(f"\nTotal: {len(_TOPOLOGY_REGISTRY)}\n")
-        return
+        print(f"\nTotal: {len(names)}\n")
+        return names
 
     if name not in _TOPOLOGY_REGISTRY:
         available = "\n".join(sorted(_TOPOLOGY_REGISTRY.keys()))
@@ -213,3 +216,5 @@ def show_topologies(name: str | None = None) -> None:
         print(f"  - {param_name}")
         print(f"      type:    {type_str}")
         print(f"      default: {default}\n")
+
+    return None

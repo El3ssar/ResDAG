@@ -44,7 +44,7 @@ class CoupledEnsembleESNModel(nn.Module):
         - Any ``nn.Module`` that accepts a stacked tensor of shape
           ``(N, batch, timesteps, features)`` and returns
           ``(batch, timesteps, features)``.  E.g.
-          :class:`~resdag.layers.OutliersFilteredMean`.
+          :class:`~resdag.ensemble.aggregators.OutliersFilteredMean`.
 
     Examples
     --------
@@ -61,7 +61,7 @@ class CoupledEnsembleESNModel(nn.Module):
 
     With a custom aggregator:
 
-    >>> from resdag.layers import OutliersFilteredMean
+    >>> from resdag.ensemble.aggregators import OutliersFilteredMean
     >>> ensemble = coupled_ensemble_esn(
     ...     n_models=10, reservoir_size=300, feedback_size=3, output_size=3,
     ...     aggregate=OutliersFilteredMean(method="z_score", threshold=2.0),
@@ -70,7 +70,7 @@ class CoupledEnsembleESNModel(nn.Module):
     See Also
     --------
     resdag.models.coupled_ensemble_esn : Convenience factory function.
-    resdag.layers.OutliersFilteredMean : Outlier-robust aggregation layer.
+    resdag.ensemble.aggregators.OutliersFilteredMean : Outlier-robust aggregation layer.
     """
 
     def __init__(
@@ -168,16 +168,35 @@ class CoupledEnsembleESNModel(nn.Module):
         """
         return [model.get_reservoir_states() for model in self.models]
 
-    def set_reservoir_states(self, states: list[dict[str, torch.Tensor]]) -> None:
+    def set_reservoir_states(
+        self,
+        states: list[dict[str, torch.Tensor]],
+        strict: bool = True,
+    ) -> None:
         """Restore reservoir states in all sub-models.
 
         Parameters
         ----------
         states : list of dict
             One dict per sub-model as returned by :meth:`get_reservoir_states`.
+        strict : bool, default=True
+            Forwarded to :meth:`ESNModel.set_reservoir_states`.  When
+            ``True`` (default), each sub-model raises on missing/unexpected
+            reservoir keys.
+
+        Raises
+        ------
+        ValueError
+            If the number of dicts in ``states`` does not match
+            ``self.n_models``.
         """
+        if len(states) != self.n_models:
+            raise ValueError(
+                f"Expected {self.n_models} state dict(s) (one per sub-model), "
+                f"got {len(states)}."
+            )
         for model, state_dict in zip(self.models, states):
-            model.set_reservoir_states(state_dict)
+            model.set_reservoir_states(state_dict, strict=strict)
 
     # ------------------------------------------------------------------
     # Training
@@ -188,12 +207,13 @@ class CoupledEnsembleESNModel(nn.Module):
         warmup_inputs: tuple[torch.Tensor, ...],
         train_inputs: tuple[torch.Tensor, ...],
         targets: dict[str, torch.Tensor],
+        n_workers: int = 1,
     ) -> None:
         """Train all sub-models independently using :class:`~resdag.training.ESNTrainer`.
 
         Each sub-model is trained separately on the same warmup/train data.
         Ensemble diversity comes from the different random reservoir
-        initializations of each sub-model.
+        initialisations of each sub-model.
 
         Parameters
         ----------
@@ -206,9 +226,39 @@ class CoupledEnsembleESNModel(nn.Module):
         targets : dict of str to torch.Tensor
             Mapping from readout name to target tensor.
             Shape of each target: ``(batch, train_steps, out_features)``.
+        n_workers : int, default ``1``
+            Number of worker threads used to fit sub-models concurrently.
+            ``1`` (the default) runs sequentially in the calling thread.
+            Larger values dispatch fits through a
+            :class:`concurrent.futures.ThreadPoolExecutor` — PyTorch releases
+            the GIL during BLAS, so threading gives a real speed-up for
+            CPU-bound CG ridge solves without the pickling cost of
+            multiprocessing.  On GPU, all workers share one device and may
+            interfere via the same CUDA stream; benchmark before raising
+            ``n_workers`` above 1 in that case.
+
+        Raises
+        ------
+        ValueError
+            If ``n_workers < 1``.
         """
-        for model in self.models:
+        if n_workers < 1:
+            raise ValueError(f"n_workers must be >= 1, got {n_workers}.")
+
+        if n_workers == 1 or self.n_models == 1:
+            for model in self.models:
+                ESNTrainer(model).fit(warmup_inputs, train_inputs, targets)
+            return
+
+        # Thread-pool path.  Each thread gets its own ESNTrainer over a
+        # distinct sub-model, so there is no shared mutable state to guard.
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _fit_one(model: ESNModel) -> None:
             ESNTrainer(model).fit(warmup_inputs, train_inputs, targets)
+
+        with ThreadPoolExecutor(max_workers=min(n_workers, self.n_models)) as pool:
+            list(pool.map(_fit_one, self.models))
 
     # ------------------------------------------------------------------
     # Forecasting
@@ -216,11 +266,13 @@ class CoupledEnsembleESNModel(nn.Module):
 
     def forecast(
         self,
-        *warmup_inputs: torch.Tensor,
+        warmup_inputs: tuple[torch.Tensor, ...] | torch.Tensor,
+        forecast_inputs: tuple[torch.Tensor, ...] | None = None,
+        *,
         horizon: int,
-        forecast_drivers: tuple[torch.Tensor, ...] | None = None,
         return_warmup: bool = False,
         return_individuals: bool = False,
+        reset: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """Coupled autoregressive forecast.
 
@@ -234,13 +286,15 @@ class CoupledEnsembleESNModel(nn.Module):
 
         Parameters
         ----------
-        *warmup_inputs : torch.Tensor
-            Warmup sequences ``(feedback, driver1, ...)``.
-        horizon : int
+        warmup_inputs : tuple of torch.Tensor or torch.Tensor
+            Warmup sequences ``(feedback, driver1, ...)``.  A single tensor
+            is accepted for the common feedback-only case.
+        forecast_inputs : tuple of torch.Tensor, optional
+            Exogenous driver inputs for the autoregressive phase (feedback is
+            generated by the ensemble itself).  Each tensor must have shape
+            ``(batch, horizon, driver_features)``.
+        horizon : int, keyword-only
             Number of autoregressive steps to generate.
-        forecast_drivers : tuple of torch.Tensor, optional
-            Exogenous driving inputs for the forecast phase.  Each must have
-            shape ``(batch, horizon, driver_features)``.
         return_warmup : bool, default ``False``
             If ``True``, prepend the averaged warmup outputs to the returned
             aggregated forecast, giving shape
@@ -253,6 +307,9 @@ class CoupledEnsembleESNModel(nn.Module):
             pre-allocated per sub-model on the same device at the start of the
             forecast loop — only set this flag when you actually need the
             individual sequences, to avoid allocating N extra GPU buffers.
+        reset : bool, default ``True``
+            If ``True``, every sub-model's reservoir state is reset before
+            warmup.
 
         Returns
         -------
@@ -271,9 +328,14 @@ class CoupledEnsembleESNModel(nn.Module):
         Raises
         ------
         ValueError
-            If driver arguments are inconsistent with the number of warmup inputs
-            or if ``forecast_drivers`` timesteps do not match ``horizon``.
+            If driver arguments are inconsistent with the number of warmup
+            inputs or if ``forecast_inputs`` timesteps do not match
+            ``horizon``.
         """
+        if isinstance(warmup_inputs, torch.Tensor):
+            warmup_inputs = (warmup_inputs,)
+        else:
+            warmup_inputs = tuple(warmup_inputs)
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input (feedback) is required.")
 
@@ -281,19 +343,20 @@ class CoupledEnsembleESNModel(nn.Module):
         has_drivers = num_drivers > 0
 
         if has_drivers:
-            if forecast_drivers is None:
+            if forecast_inputs is None:
                 raise ValueError(
                     f"Model has {num_drivers} driving input(s). "
-                    "forecast_drivers must be provided for the forecast phase."
+                    "forecast_inputs must be provided for the autoregressive phase."
                 )
-            if len(forecast_drivers) != num_drivers:
+            forecast_inputs = tuple(forecast_inputs)
+            if len(forecast_inputs) != num_drivers:
                 raise ValueError(
-                    f"Expected {num_drivers} forecast driver(s), got {len(forecast_drivers)}."
+                    f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}."
                 )
-            for i, driver in enumerate(forecast_drivers):
+            for i, driver in enumerate(forecast_inputs):
                 if driver.shape[1] != horizon:
                     raise ValueError(
-                        f"forecast_drivers[{i}] has {driver.shape[1]} timesteps, "
+                        f"forecast_inputs[{i}] has {driver.shape[1]} timesteps, "
                         f"expected {horizon}."
                     )
 
@@ -304,7 +367,7 @@ class CoupledEnsembleESNModel(nn.Module):
         # Phase 1: warmup — all models independently, same teacher-forced data
         warmup_outputs_per_model: list[torch.Tensor] = []
         for model in self.models:
-            out = model.warmup(*warmup_inputs, return_outputs=True)
+            out = model.warmup(*warmup_inputs, return_outputs=True, reset=reset)
             warmup_outputs_per_model.append(out)  # (batch, W, output_size)
 
         output_size = warmup_outputs_per_model[0].shape[-1]
@@ -332,7 +395,7 @@ class CoupledEnsembleESNModel(nn.Module):
         # Phase 2: coupled autoregressive loop
         for t in range(1, horizon):
             if has_drivers:
-                driver_slice = tuple(d[:, t : t + 1, :] for d in forecast_drivers)
+                driver_slice = tuple(d[:, t : t + 1, :] for d in forecast_inputs)
                 step_inputs: tuple[torch.Tensor, ...] = (current_feedback,) + driver_slice
             else:
                 step_inputs = (current_feedback,)

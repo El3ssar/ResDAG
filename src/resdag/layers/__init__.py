@@ -49,7 +49,6 @@ from .cells import ESNCell, NGCell, ReservoirCell
 from .custom import (
     Concatenate,
     FeaturePartitioner,
-    OutliersFilteredMean,
     Power,
     SelectiveDropout,
     SelectiveExponentiation,
@@ -73,7 +72,6 @@ __all__ = [
     # Custom layers
     "Concatenate",
     "FeaturePartitioner",
-    "OutliersFilteredMean",
     "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",

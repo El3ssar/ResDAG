@@ -13,9 +13,11 @@ resdag.models.ott_esn : Default sub-model factory.
 resdag.models.classic_esn : Alternative sub-model factory.
 """
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
+import torch
 import torch.nn as nn
 
 from resdag.composition import ESNModel
@@ -27,6 +29,7 @@ def coupled_ensemble_esn(
     n_models: int,
     model_factory: Callable[..., ESNModel] = ott_esn,
     aggregate: str | nn.Module = "mean",
+    seed: int | None = None,
     **model_kwargs: Any,
 ) -> CoupledEnsembleESNModel:
     """Build a coupled ensemble of N independently-initialized ESN models.
@@ -58,7 +61,14 @@ def coupled_ensemble_esn(
         - ``nn.Module`` — any module accepting a stacked tensor of shape
           ``(N, batch, timesteps, features)`` and returning
           ``(batch, timesteps, features)``.  E.g.
-          :class:`~resdag.layers.OutliersFilteredMean`.
+          :class:`~resdag.ensemble.aggregators.OutliersFilteredMean`.
+    seed : int, optional
+        Master seed for deterministic sub-model construction.  Sub-model
+        ``i`` is built with ``torch.manual_seed(seed + i)`` set immediately
+        before the factory call.  If ``model_factory`` itself accepts a
+        ``seed`` keyword argument, ``seed + i`` is also forwarded as that
+        argument so initialisers downstream of pytorch's global RNG (e.g.
+        graph topologies that take an explicit seed) become reproducible.
 
     **model_kwargs
         All remaining keyword arguments are forwarded verbatim to each
@@ -105,7 +115,7 @@ def coupled_ensemble_esn(
 
     Outlier-robust aggregation:
 
-    >>> from resdag.layers import OutliersFilteredMean
+    >>> from resdag.ensemble.aggregators import OutliersFilteredMean
     >>> ensemble = rd.coupled_ensemble_esn(
     ...     n_models=10,
     ...     reservoir_size=300,
@@ -130,8 +140,27 @@ def coupled_ensemble_esn(
     See Also
     --------
     CoupledEnsembleESNModel : The ensemble class with full API documentation.
-    resdag.layers.OutliersFilteredMean : Outlier-robust aggregation layer.
+    resdag.ensemble.aggregators.OutliersFilteredMean : Outlier-robust aggregation layer.
     resdag.models.ott_esn : Default sub-model factory.
     """
-    models = [model_factory(**model_kwargs) for _ in range(n_models)]
+    # Detect whether the factory accepts a ``seed`` kwarg so we can forward
+    # the per-model seed to initialisers that take an explicit one (graph
+    # topologies, etc.). When it doesn't, the global torch RNG seed below
+    # still controls every non-seeded random draw.
+    factory_accepts_seed = (
+        seed is not None
+        and "seed" in inspect.signature(model_factory).parameters
+    )
+
+    models: list[ESNModel] = []
+    for i in range(n_models):
+        if seed is not None:
+            sub_seed = seed + i
+            torch.manual_seed(sub_seed)
+            kwargs = dict(model_kwargs)
+            if factory_accepts_seed:
+                kwargs.setdefault("seed", sub_seed)
+            models.append(model_factory(**kwargs))
+        else:
+            models.append(model_factory(**model_kwargs))
     return CoupledEnsembleESNModel(models, aggregator=aggregate)

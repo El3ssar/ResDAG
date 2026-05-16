@@ -196,17 +196,21 @@ class BaseReservoirLayer(nn.Module, ABC):
         """
         Set the internal state to a specific tensor.
 
+        Validation is delegated to ``self.cell.validate_state(state)`` so
+        each cell type owns its own state-shape contract (2-D for ESNCell,
+        3-D delay buffer for NGCell, etc.).
+
         Parameters
         ----------
         state : torch.Tensor
-            New state tensor.  Its last dimension must equal
-            ``cell.state_size``.
+            New state tensor.
 
         Raises
         ------
         ValueError
-            If the last dimension of ``state`` does not match
-            ``cell.state_size``.
+            If the cell's :meth:`ReservoirCell.validate_state` rejects the
+            tensor.  The error includes the cell class name and the
+            offending shape.
 
         Examples
         --------
@@ -214,26 +218,62 @@ class BaseReservoirLayer(nn.Module, ABC):
         >>> # ... process data ...
         >>> layer.set_state(saved)  # Restore
         """
-        if state.shape[-1] != self.cell.state_size:
+        try:
+            self.cell.validate_state(state)
+        except ValueError as exc:
+            # Re-raise with a richer message including a recovery hint.
             raise ValueError(
-                f"State size mismatch. Expected (..., {self.cell.state_size}), got {state.shape}"
-            )
+                f"{type(self).__name__}.set_state failed: {exc}. "
+                f"Tip: call reset_state(batch_size=...) before set_state() "
+                f"to materialise an empty state of the expected layout."
+            ) from None
         self.state = state.clone()
 
-    def set_random_state(self) -> None:
+    def set_random_state(
+        self,
+        batch_size: int | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> None:
         """
         Set the internal state to random (standard-normal) values.
+
+        Parameters
+        ----------
+        batch_size : int, optional
+            If provided, lazily initialise the state with this batch size
+            before filling it with random values.  Uses ``device`` / ``dtype``
+            kwargs when given, otherwise the cell's first floating-point
+            parameter/buffer (falling back to CPU/float32).
+        device : torch.device, optional
+            Target device when lazily initialising.  Ignored if the state is
+            already initialised.
+        dtype : torch.dtype, optional
+            Target dtype when lazily initialising.  Ignored if the state is
+            already initialised.
 
         Raises
         ------
         RuntimeError
-            If the state has not been initialized yet (i.e. is ``None``).
+            If the state has not been initialised and ``batch_size`` is not
+            provided.
 
         Examples
         --------
-        >>> layer.reset_state(batch_size=4)
+        >>> # Lazy: initialise then randomise in one call
+        >>> layer.set_random_state(batch_size=4)
+        >>> # Already-initialised state: just randomise in place
         >>> layer.set_random_state()
         """
         if self.state is None:
-            raise RuntimeError("Reservoir not initialized")
+            if batch_size is None:
+                raise RuntimeError(
+                    "Reservoir state is not initialised. "
+                    "Pass batch_size= to initialise it before randomising."
+                )
+            self.reset_state(batch_size=batch_size)
+            # ``reset_state`` honours device/dtype of existing state or cell;
+            # apply overrides if explicitly requested.
+            if device is not None or dtype is not None:
+                self.state = self.state.to(device=device, dtype=dtype)
         self.state = torch.randn_like(self.state)

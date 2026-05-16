@@ -247,7 +247,7 @@ class TestCGReadoutFit:
         X = torch.randn(100, 20)
         y = torch.randn(50, 5)  # Different number of samples
 
-        with pytest.raises(ValueError, match="Number of samples must match"):
+        with pytest.raises(ValueError, match="sample count mismatch"):
             readout.fit(X, y)
 
     def test_fit_with_wrong_output_dim_raises_error(self):
@@ -257,7 +257,7 @@ class TestCGReadoutFit:
         X = torch.randn(100, 20)
         y = torch.randn(100, 3)  # Should be 5, not 3
 
-        with pytest.raises(ValueError, match="Target output dimension"):
+        with pytest.raises(ValueError, match="target feature dimension"):
             readout.fit(X, y)
 
 

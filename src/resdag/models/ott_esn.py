@@ -21,10 +21,7 @@ headless_esn : Reservoir-only model for analysis.
 
 from typing import Any
 
-import pytorch_symbolic as ps
-import torch
-
-from resdag.composition import ESNModel
+from resdag.composition import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, SelectiveExponentiation
 
@@ -140,13 +137,13 @@ def ott_esn(
     resdag.training.ESNTrainer : Trainer for fitting readout.
     resdag.init.topology.get_topology : Get topology by name.
     """
-    # Build model
-    inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
+    # Build model.  The time dimension on the symbolic input is a placeholder.
+    inp = reservoir_input(feedback_size)
 
     reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
-        input_size=0,
+        input_size=None,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,

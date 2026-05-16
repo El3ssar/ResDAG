@@ -13,10 +13,7 @@ See Also
 
 from typing import Any
 
-import pytorch_symbolic as ps
-import torch
-
-from resdag.composition import ESNModel
+from resdag.composition import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
 
@@ -127,13 +124,14 @@ def classic_esn(
     :func:`resdag.models.linear_esn` : Linear ESN variant
     :class:`resdag.training.ESNTrainer` : Trainer for fitting readouts
     """
-    # Build model with pytorch_symbolic
-    inp = ps.Input((100, feedback_size), dtype=torch.get_default_dtype())
+    # Build model with pytorch_symbolic.  The time dimension is a placeholder
+    # — actual sequence lengths are inferred from the input at call time.
+    inp = reservoir_input(feedback_size)
 
     reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
-        input_size=0,  # No driving input in classic ESN
+        input_size=None,  # No driving input in classic ESN
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,

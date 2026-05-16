@@ -45,7 +45,7 @@ resdag.composition.ESNModel : Model composition using these layers.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
-from .cells import ESNCell, NGCell
+from .cells import ESNCell, NGCell, ReservoirCell
 from .custom import (
     Concatenate,
     FeaturePartitioner,
@@ -55,13 +55,16 @@ from .custom import (
     SelectiveExponentiation,
 )
 from .readouts import CGReadoutLayer, ReadoutLayer
-from .reservoirs import ESNLayer, NGReservoir
+from .reservoirs import BaseReservoirLayer, ESNLayer, NGReservoir
 
 __all__ = [
-    # Reservoir layers
+    # Reservoir base classes
+    "BaseReservoirLayer",
+    "ReservoirCell",
+    # Reservoir layers / cells
     "ESNCell",
     "ESNLayer",
-    # NG-RC layers
+    # NG-RC layers / cells
     "NGCell",
     "NGReservoir",
     # Readouts

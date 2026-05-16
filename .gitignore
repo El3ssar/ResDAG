@@ -58,3 +58,6 @@ _Notebooks
 
 # graphviz temp files
 *.gv
+
+# Generated documentation site (mkdocs build output)
+site/

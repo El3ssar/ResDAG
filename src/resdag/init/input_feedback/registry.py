@@ -102,18 +102,21 @@ def get_input_feedback(
     return init_class(**kwargs)
 
 
-def show_input_initializers(name: str | None = None) -> None:
+def show_input_initializers(name: str | None = None) -> list[str] | None:
     """Show available input/feedback initializers or details for a specific one.
 
     Parameters
     ----------
     name : str, optional
-        Name of initializer to inspect. If None, prints all initializers.
+        Name of initializer to inspect. If None, prints all initializers
+        *and* returns them as a list.
 
     Returns
     -------
-    None
-        Prints formatted information to stdout.
+    list of str or None
+        When ``name is None``, returns the sorted list of registered
+        initializer names (in addition to printing them).  When ``name``
+        is provided, returns ``None`` after printing the parameter table.
 
     Raises
     ------
@@ -124,23 +127,14 @@ def show_input_initializers(name: str | None = None) -> None:
     --------
     >>> show_input_initializers()
     ['binary_balanced', 'chebyshev', 'chessboard', ...]
-
-    >>> show_input_initializers("chebyshev")
-    {
-        'name': 'chebyshev',
-        'defaults': {'input_scaling': 1.0},
-        'parameters': {
-            'input_scaling': {'type': 'float', 'default': 1.0},
-            ...
-        }
-    }
     """
     if name is None:
+        names = sorted(_INPUT_FEEDBACK_REGISTRY)
         print("\nAvailable input/feedback initializers:\n")
-        for n in sorted(_INPUT_FEEDBACK_REGISTRY):
+        for n in names:
             print(f"  - {n}")
-        print(f"\nTotal: {len(_INPUT_FEEDBACK_REGISTRY)}\n")
-        return
+        print(f"\nTotal: {len(names)}\n")
+        return names
 
     if name not in _INPUT_FEEDBACK_REGISTRY:
         available = "\n".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
@@ -176,3 +170,5 @@ def show_input_initializers(name: str | None = None) -> None:
         print(f"  - {param_name}")
         print(f"      type:    {type_str}")
         print(f"      default: {default}\n")
+
+    return None

@@ -16,6 +16,8 @@ See Also
 resdag.models.coupled_ensemble_esn : Factory function for quick construction.
 """
 
+from . import aggregators
+from .aggregators import OutliersFilteredMean
 from .coupled import CoupledEnsembleESNModel
 
-__all__ = ["CoupledEnsembleESNModel"]
+__all__ = ["CoupledEnsembleESNModel", "OutliersFilteredMean", "aggregators"]

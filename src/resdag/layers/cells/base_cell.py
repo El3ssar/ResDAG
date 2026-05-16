@@ -114,3 +114,31 @@ class ReservoirCell(nn.Module, ABC):
             Updated state tensor.
         """
         ...
+
+    def validate_state(self, state: torch.Tensor) -> None:
+        """
+        Validate that ``state`` matches the layout this cell expects.
+
+        The base implementation enforces the 2-D ``(batch, state_size)``
+        contract used by classical RNN-style cells (e.g. :class:`ESNCell`).
+        Cells with a different state layout — for example
+        :class:`~resdag.layers.cells.ngrc_cell.NGCell` whose state is a 3-D
+        delay buffer — override this method to check their own shape.
+
+        Parameters
+        ----------
+        state : torch.Tensor
+            Candidate state tensor to validate.
+
+        Raises
+        ------
+        ValueError
+            If ``state`` does not match the expected layout.  The error
+            message names the cell class and the offending shape so callers
+            can act on it without digging into the layer/cell internals.
+        """
+        if state.dim() != 2 or state.shape[-1] != self.state_size:
+            raise ValueError(
+                f"{type(self).__name__}.validate_state: expected a 2-D state of shape "
+                f"(batch, {self.state_size}); got tensor of shape {tuple(state.shape)}."
+            )

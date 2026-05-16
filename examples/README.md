@@ -1,164 +1,52 @@
 # resdag Examples
 
-This directory contains examples demonstrating the various features of the `resdag` library.
+This directory contains runnable scripts demonstrating every major feature of
+the library. They are numbered roughly by progression: registry primitives →
+single models → training → forecasting → HPO → ensembles → pipeline
+integration.
 
-## Migration to pytorch_symbolic
+All examples target the **pytorch_symbolic-based 0.4.0 API**. The legacy
+`ModelBuilder` / `model_scope` APIs from pre-0.3 are gone.
 
-**Note**: Examples have been updated to use the new `pytorch_symbolic`-based API. The main differences:
+## Quick reference
 
-### Old API (deprecated):
+| #  | File                                    | What it teaches                                                                       |
+| -- | --------------------------------------- | ------------------------------------------------------------------------------------- |
+| 00 | `00_registry_system.py`                 | The topology + input/feedback registries; `show_topologies()`, `get_topology()`        |
+| 01 | `01_reservoir_with_topology.py`         | Plugging graph topologies into a single `ESNLayer`                                     |
+| 02 | `02_input_feedback_initializers.py`     | Input / feedback weight initialisers                                                  |
+| 03 | `03_model_composition.py`               | Building `ESNModel`s by hand with `pytorch_symbolic.Input`                            |
+| 04 | `04_model_visualization.py`             | `model.summary()` and graphviz-backed `model.plot_model()`                            |
+| 05 | `05_functional_api.py`                  | Functional building idioms with `pytorch_symbolic`                                    |
+| 06 | `06_premade_models.py`                  | The premade factories: `classic_esn`, `ott_esn`, `headless_esn`, `linear_esn`        |
+| 07 | `07_save_load_models.py`                | `ESNModel.save / load`, checkpoints, cross-device loading                              |
+| 08 | `08_forecasting.py`                     | Algebraic training + `forecast()` with the unified driver passing                      |
+| 09 | `09_training.py`                        | `ESNTrainer` workflows: single / multi-readout, driving inputs                         |
+| 10 | `10_hpo.py`                             | Optuna-based hyperparameter optimisation via `run_hpo`                                |
+| 11 | `11_ensemble_forecasting.py`            | `CoupledEnsembleESNModel`: mean / median / outlier-filtered aggregation                |
+| 12 | `12_pipeline_integration.py`            | ESN as a torch sub-module: frozen-feature + SGD head, fully trainable, `nn.Sequential` |
+| 13 | `13_model_visualization.py`             | Alternative visualisation pipeline (was `09_model_visualization_new.py`)              |
 
-```python
-from resdag.composition import ModelBuilder
-
-builder = ModelBuilder()
-inp = builder.input("input")
-reservoir = builder.add(ESNLayer(100, 1, 0), inputs=inp)
-readout = builder.add(CGReadoutLayer(100, 1), inputs=reservoir)
-model = builder.build(outputs=readout)
-
-# Dict-based forward
-output = model({"input": x})
-```
-
-### New API (current):
-
-```python
-import pytorch_symbolic as ps
-from resdag.composition import ESNModel
-
-inp = ps.Input((100, 1))  # seq_len, features
-reservoir = ESNLayer(100, 1, 0)(inp)
-readout = CGReadoutLayer(100, 1)(reservoir)
-model = ESNModel(inp, readout)
-
-# Direct forward (no dict!)
-output = model(x)
-```
-
-## Examples Overview
-
-### Basic Examples
-
-1. **01_reservoir_with_topology.py** - Using graph topologies for reservoir initialization
-
-   - Pre-registered topologies
-   - Custom topology parameters
-   - Comparing different topologies
-
-2. **02_input_feedback_initializers.py** - Input/feedback weight initialization methods
-   - Standard initializers
-   - Custom initializers
-   - Comparing initialization strategies
-
-### Model Building
-
-3. **03_model_composition.py** - Building ESN models with ModelBuilder (legacy)
-
-   - Sequential models
-   - Branching models
-   - Multi-input models
-   - **Note**: Uses legacy ModelBuilder API for backward compatibility
-
-4. **04_model_visualization.py** - Visualizing model architectures
-
-   - Model summary (Keras-style)
-   - Graph visualization with torchvista
-
-5. **05_functional_api.py** - Using model_scope for concise model building (legacy)
-   - Context manager API
-   - **Note**: Uses legacy model_scope API
-
-### Premade Models
-
-6. **06_premade_models.py** ✅ - Using premade architectures (pytorch_symbolic)
-   - `classic_esn`: Traditional ESN with input concatenation
-   - `ott_esn`: Ott's ESN with state augmentation
-   - `headless_esn`: Reservoir-only for analysis
-   - `linear_esn`: Linear reservoir for baselines
-
-### Advanced Features
-
-7. **07_save_load_models.py** ✅ - Model persistence (pytorch_symbolic)
-
-   - Basic save/load
-   - Training workflows
-   - Checkpoint systems
-   - Cross-device loading
-
-8. **08_forecasting.py** ✅ - Time series forecasting (pytorch_symbolic)
-
-   - Basic forecasting
-   - With driving inputs
-   - State history tracking
-   - Long-horizon prediction
-
-9. **09_training.py** ✅ - ESN training with ESNTrainer (pytorch_symbolic)
-
-   - Simple training workflow
-   - Multi-readout training
-   - Training with driving inputs
-   - Different regularization per readout
-
-10. **10_hpo.py** ✅ - Hyperparameter Optimization with Optuna
-    - Basic HPO setup
-    - Different loss functions (EFH, Lyapunov, discounted RMSE)
-    - Study persistence and resumption
-    - Parallel execution
-    - Advanced conditional search spaces
-    - Custom loss functions
-
-## Running Examples
-
-Each example is standalone and can be run directly:
+## Running examples
 
 ```bash
-# Run a specific example
-uv run python examples/06_premade_models.py
+# A single example
+uv run --extra dev python examples/06_premade_models.py
 
-# Run all examples
-for example in examples/*.py; do
-    echo "Running $example..."
-    uv run python "$example"
+# All of them in order
+for f in examples/[0-9][0-9]_*.py; do
+    echo "=== $f ==="
+    uv run --extra dev python "$f"
 done
 ```
 
-## Migration Status
+## Companion docs
 
-| Example                           | Status               | Notes                               |
-| --------------------------------- | -------------------- | ----------------------------------- |
-| 01_reservoir_with_topology.py     | ✅ No changes needed | Layer-level only                    |
-| 02_input_feedback_initializers.py | ✅ No changes needed | Layer-level only                    |
-| 03_model_composition.py           | ⚠️ Legacy            | Uses ModelBuilder (still supported) |
-| 04_model_visualization.py         | ⚠️ Legacy            | Uses ModelBuilder (still supported) |
-| 05_functional_api.py              | ⚠️ Legacy            | Uses model_scope (still supported)  |
-| 06_premade_models.py              | ✅ Migrated          | Uses pytorch_symbolic               |
-| 07_save_load_models.py            | ✅ Migrated          | Uses pytorch_symbolic               |
-| 08_forecasting.py                 | ✅ Migrated          | Uses pytorch_symbolic               |
-| 09_training.py                    | ✅ New               | ESNTrainer with pytorch_symbolic    |
-| 10_hpo.py                         | ✅ New               | Optuna-based HPO                    |
+- `../docs/training-paths.md` — when to pick algebraic vs mixed vs full-BPTT.
+- `../CHANGELOG.md` — recent API changes, especially the 0.4.0 entries.
+- `../CLAUDE.md` — full developer reference.
 
-## Key Features Demonstrated
+## Need help?
 
-### pytorch_symbolic Features:
-
-- Direct tensor input (no dicts)
-- Keras-style `model.summary()`
-- Cleaner, more Pythonic API
-- Better IDE support
-
-### ESN Features:
-
-- Graph-based reservoir topologies
-- Custom weight initialization
-- Stateful processing
-- Multi-input/multi-output models
-- Time series forecasting
-- Model persistence
-- GPU acceleration
-
-## Need Help?
-
-- Check the main README: `../README.md`
-- Read migration guide: `../PYTORCH_SYMBOLIC_MIGRATION.md`
-- View API docs: `../docs/`
+- Top-level README: `../README.md`
+- API reference (in source): `src/resdag/`

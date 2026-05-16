@@ -17,7 +17,7 @@ Outline
 import torch
 
 import resdag as rd
-from resdag.layers import OutliersFilteredMean
+from resdag.ensemble.aggregators import OutliersFilteredMean
 from resdag.models import classic_esn
 
 # ---------------------------------------------------------------------------

@@ -167,16 +167,19 @@ class ReadoutLayer(nn.Linear):
                 f"got {input.dim()}D tensor with shape {input.shape}"
             )
 
+    @torch.no_grad()
     def fit(
         self,
         states: torch.Tensor,
         targets: torch.Tensor,
     ) -> None:
         """
-        Fit readout weights using ridge regression.
+        Fit readout weights to the given (states, targets) pair.
 
-        This is an abstract method that should be overridden by subclasses.
-        See :class:`CGReadoutLayer` for a concrete implementation.
+        This base implementation handles the bookkeeping that every readout
+        needs: shape normalisation from ``(B, T, F)`` → ``(B*T, F)`` plus
+        sample-count and out-features validation.  The actual algebraic
+        solve is delegated to :meth:`_fit_impl`, which subclasses override.
 
         Parameters
         ----------
@@ -188,15 +191,88 @@ class ReadoutLayer(nn.Linear):
         Raises
         ------
         NotImplementedError
-            This base class does not implement fitting.
+            The base ``ReadoutLayer`` does not implement an algebraic solver;
+            use a subclass such as :class:`CGReadoutLayer`.
+        ValueError
+            If ``states`` and ``targets`` disagree on the sample dimension
+            after flattening, or if the target's feature dimension does not
+            match ``self.out_features``.
+
+        Notes
+        -----
+        After ``fit()`` returns successfully, :attr:`is_fitted` is ``True``.
 
         See Also
         --------
-        CGReadoutLayer.fit : Concrete implementation using Conjugate Gradient.
+        CGReadoutLayer : Concrete implementation using Conjugate Gradient.
+        """
+        if states.dim() == 3:
+            b, t, f = states.shape
+            states = states.reshape(b * t, f)
+        if targets.dim() == 3:
+            b, t, f = targets.shape
+            targets = targets.reshape(b * t, f)
+
+        readout_id = f"'{self._name}'" if self._name is not None else type(self).__name__
+        if states.shape[0] != targets.shape[0]:
+            raise ValueError(
+                f"{type(self).__name__}.fit({readout_id}): sample count mismatch. "
+                f"States have {states.shape[0]} samples after flattening, "
+                f"targets have {targets.shape[0]}."
+            )
+        if targets.shape[1] != self.out_features:
+            raise ValueError(
+                f"{type(self).__name__}.fit({readout_id}): target feature dimension "
+                f"({targets.shape[1]}) does not match readout out_features "
+                f"({self.out_features})."
+            )
+
+        coefs, intercept = self._fit_impl(states, targets)
+
+        self.weight.copy_(coefs.T.to(self.weight.dtype))
+        if self.bias is not None and intercept is not None:
+            self.bias.copy_(intercept.to(self.bias.dtype))
+
+        self._is_fitted = True
+
+    def _fit_impl(
+        self,
+        states: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Solve the readout fit on *already-flattened* inputs.
+
+        Subclasses override this hook instead of :meth:`fit` so they don't
+        need to re-implement shape normalisation, validation, or parameter
+        copy-back.
+
+        Parameters
+        ----------
+        states : torch.Tensor
+            Flattened input states of shape ``(N, in_features)``.
+        targets : torch.Tensor
+            Flattened targets of shape ``(N, out_features)``.
+
+        Returns
+        -------
+        coefs : torch.Tensor
+            Coefficient matrix of shape ``(in_features, out_features)``.
+            The base ``fit`` transposes this into the ``(out, in)`` layout
+            expected by ``nn.Linear``.
+        intercept : torch.Tensor or None
+            Bias vector of shape ``(out_features,)``, or ``None`` to leave
+            the layer's bias untouched.
+
+        Raises
+        ------
+        NotImplementedError
+            The base class does not implement an algebraic solve.
         """
         raise NotImplementedError(
-            "ReadoutLayer.fit() is not implemented in the base class. "
-            "Use CGReadoutLayer for ridge regression fitting."
+            "ReadoutLayer._fit_impl() is not implemented in the base class. "
+            "Use CGReadoutLayer for ridge regression fitting, or subclass "
+            "ReadoutLayer and override _fit_impl()."
         )
 
     def __repr__(self) -> str:

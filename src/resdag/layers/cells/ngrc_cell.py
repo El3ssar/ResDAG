@@ -289,6 +289,29 @@ class NGCell(ReservoirCell):
 
         return o_total, new_state
 
+    def validate_state(self, state: torch.Tensor) -> None:
+        """
+        Validate the 3-D delay-buffer layout used by NG-RC.
+
+        Parameters
+        ----------
+        state : torch.Tensor
+            Candidate state of shape ``(batch, state_size, input_dim)``.
+
+        Raises
+        ------
+        ValueError
+            If ``state`` is not 3-D or its non-batch dimensions do not match
+            ``(state_size, input_dim)``.
+        """
+        expected = (self.state_size, self.input_dim)
+        if state.dim() != 3 or state.shape[1:] != torch.Size(expected):
+            raise ValueError(
+                f"NGCell.validate_state: expected a 3-D delay buffer of shape "
+                f"(batch, {self.state_size}, {self.input_dim}); "
+                f"got tensor of shape {tuple(state.shape)}."
+            )
+
     def __repr__(self) -> str:
         return (
             f"NGCell("

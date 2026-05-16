@@ -86,12 +86,12 @@ def example_with_driving_inputs():
     # Known future driving inputs (e.g., weather forecast)
     forecast_driving = torch.randn(2, 30, 5)
 
-    # Forecast: (feedback, driving) as warmup, forecast_drivers for future
+    # Forecast: warmup is (feedback, driving), forecast_inputs holds the
+    # known future drivers (feedback is generated autoregressively).
     predictions = model.forecast(
-        warmup_feedback,
-        warmup_driving,
+        (warmup_feedback, warmup_driving),
+        forecast_inputs=(forecast_driving,),
         horizon=30,
-        forecast_drivers=(forecast_driving,),
     )
 
     print(f"Predictions shape: {predictions.shape}")
@@ -216,11 +216,9 @@ def example_complex_topology():
 
     # Forecast
     predictions = model.forecast(
-        warmup_fb,
-        warmup_d1,
-        warmup_d2,
+        (warmup_fb, warmup_d1, warmup_d2),
+        forecast_inputs=(forecast_d1, forecast_d2),
         horizon=forecast_len,
-        forecast_drivers=(forecast_d1, forecast_d2),
     )
 
     print(f"Predictions shape: {[pred.shape for pred in predictions]}")

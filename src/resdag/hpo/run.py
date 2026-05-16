@@ -91,7 +91,7 @@ def run_hpo(
         Loss function to optimize. Can be:
 
         - ``"efh"``: Expected Forecast Horizon (default, recommended)
-        - ``"horizon"``: Forecast Horizon Loss
+        - ``"forecast_horizon"``: Forecast Horizon Loss
         - ``"lyap"``: Lyapunov-weighted Loss
         - ``"standard"``: Standard Loss
         - ``"discounted"``: Discounted RMSE

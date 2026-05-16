@@ -135,17 +135,33 @@ class ESNModel(ps.SymbolicModel):
             if isinstance(module, BaseReservoirLayer):
                 module.reset_state()
 
-    def set_random_reservoir_states(self) -> None:
+    def set_random_reservoir_states(
+        self,
+        batch_size: int | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> None:
         """
         Set random states of all reservoir layers.
 
+        Parameters
+        ----------
+        batch_size : int, optional
+            If provided, lazily initialise each reservoir's state with this
+            batch size before filling it with random values.
+        device : torch.device, optional
+            Target device for lazy initialisation.
+        dtype : torch.dtype, optional
+            Target dtype for lazy initialisation.
+
         Examples
         --------
-        >>> model.set_random_reservoir_states()
+        >>> model.set_random_reservoir_states()                # state must exist
+        >>> model.set_random_reservoir_states(batch_size=4)    # lazy
         """
         for module in self.modules():
             if isinstance(module, BaseReservoirLayer):
-                module.set_random_state()
+                module.set_random_state(batch_size=batch_size, device=device, dtype=dtype)
 
     def get_reservoir_states(self) -> dict[str, torch.Tensor]:
         """
@@ -169,7 +185,11 @@ class ESNModel(ps.SymbolicModel):
                 states[name] = module.state.clone()
         return states
 
-    def set_reservoir_states(self, states: dict[str, torch.Tensor]) -> None:
+    def set_reservoir_states(
+        self,
+        states: dict[str, torch.Tensor],
+        strict: bool = True,
+    ) -> None:
         """
         Set states of reservoir layers.
 
@@ -178,6 +198,17 @@ class ESNModel(ps.SymbolicModel):
         states : dict of str to torch.Tensor
             Dictionary mapping layer names to state tensors.
             Names should match those returned by :meth:`get_reservoir_states`.
+        strict : bool, default=True
+            If ``True``, raise a ``KeyError`` when the provided ``states``
+            dict is missing entries for any reservoir in the model or
+            contains keys that don't match any reservoir.  Set to ``False``
+            to silently ignore both kinds of mismatch (legacy behaviour).
+
+        Raises
+        ------
+        KeyError
+            If ``strict=True`` and the keys of ``states`` do not exactly
+            match the set of reservoir layer names in the model.
 
         Examples
         --------
@@ -185,6 +216,26 @@ class ESNModel(ps.SymbolicModel):
         >>> # ... do something ...
         >>> model.set_reservoir_states(states)  # Restore states
         """
+        reservoir_names = {
+            name
+            for name, module in self.named_modules()
+            if isinstance(module, BaseReservoirLayer)
+        }
+        provided = set(states.keys())
+
+        if strict:
+            missing = reservoir_names - provided
+            extra = provided - reservoir_names
+            if missing or extra:
+                parts: list[str] = []
+                if missing:
+                    parts.append(f"missing keys for reservoirs: {sorted(missing)}")
+                if extra:
+                    parts.append(f"unexpected keys not matching any reservoir: {sorted(extra)}")
+                raise KeyError(
+                    "set_reservoir_states(strict=True): " + "; ".join(parts)
+                )
+
         for name, module in self.named_modules():
             if isinstance(module, BaseReservoirLayer) and name in states:
                 module.state = states[name].clone()
@@ -530,6 +581,7 @@ class ESNModel(ps.SymbolicModel):
         self,
         *inputs: torch.Tensor,
         return_outputs: bool = False,
+        reset: bool = True,
     ) -> torch.Tensor | None:
         """
         Teacher-forced warmup to synchronize reservoir states.
@@ -545,6 +597,10 @@ class ESNModel(ps.SymbolicModel):
             Convention: first input is feedback, remaining are drivers.
         return_outputs : bool, default=False
             If True, return model outputs during warmup.
+        reset : bool, default=True
+            If True, reservoir states are reset to ``None`` before the
+            warmup pass.  Set to ``False`` only if you want to continue
+            from a previously saved state — typical workflows always reset.
 
         Returns
         -------
@@ -572,6 +628,11 @@ class ESNModel(ps.SymbolicModel):
 
         >>> model.warmup(feedback, driving_signal)
 
+        Continue warming from a saved state:
+
+        >>> model.set_reservoir_states(saved_states)
+        >>> model.warmup(more_data, reset=False)
+
         See Also
         --------
         forecast : Two-phase forecasting with warmup and generation.
@@ -580,6 +641,9 @@ class ESNModel(ps.SymbolicModel):
         if len(inputs) == 0:
             raise ValueError("At least one input (feedback) is required")
 
+        if reset:
+            self.reset_reservoirs()
+
         output = self(*inputs)
 
         return output if return_outputs else None
@@ -587,11 +651,13 @@ class ESNModel(ps.SymbolicModel):
     @torch.no_grad()
     def forecast(
         self,
-        *warmup_inputs: torch.Tensor,
+        warmup_inputs: tuple[torch.Tensor, ...] | torch.Tensor,
+        forecast_inputs: tuple[torch.Tensor, ...] | None = None,
+        *,
         horizon: int,
-        forecast_drivers: tuple[torch.Tensor, ...] | None = None,
         initial_feedback: torch.Tensor | None = None,
         return_warmup: bool = False,
+        reset: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
         """
         Two-phase forecast: teacher-forced warmup + autoregressive generation.
@@ -601,24 +667,30 @@ class ESNModel(ps.SymbolicModel):
 
         Phase 2 (Forecast): Autoregressive generation where feedback comes
         from the model's own output while driving inputs (if any) are
-        provided via ``forecast_drivers``.
+        supplied through ``forecast_inputs``.
 
         Parameters
         ----------
-        *warmup_inputs : torch.Tensor
+        warmup_inputs : tuple of torch.Tensor or torch.Tensor
             Warmup tensors of shape ``(batch, warmup_steps, features)``.
-            Convention: first input is feedback, remaining are drivers.
-        horizon : int
+            Convention: first element is feedback, remaining are drivers.
+            A single tensor is accepted for the common feedback-only case.
+        forecast_inputs : tuple of torch.Tensor, optional
+            Driver inputs for the autoregressive phase (feedback is provided
+            by the model's own output, so it is not part of this tuple).
+            Each tensor must have shape ``(batch, horizon, driver_features)``.
+            Required when the model has driver inputs.
+        horizon : int, keyword-only
             Number of autoregressive steps to generate.
-        forecast_drivers : tuple of torch.Tensor, optional
-            Driving inputs for forecast phase. Each tensor should have
-            shape ``(batch, horizon, features)``. Required if model has
-            driving inputs.
         initial_feedback : torch.Tensor, optional
             Custom initial feedback of shape ``(batch, 1, feedback_dim)``.
             If None, uses last warmup output.
         return_warmup : bool, default=False
             If True, prepend warmup outputs to the result.
+        reset : bool, default=True
+            If True, reservoir states are reset to ``None`` before warmup.
+            Set to ``False`` only if you want to continue from a previously
+            saved state.
 
         Returns
         -------
@@ -627,17 +699,17 @@ class ESNModel(ps.SymbolicModel):
             ``(batch, horizon, output_dim)`` or
             ``(batch, warmup_steps + horizon, output_dim)`` if ``return_warmup``.
 
-            For multi-output models: tuple of tensors with same structure.
+            For multi-output models: tuple of tensors with the same structure.
 
         Raises
         ------
         ValueError
-            If no warmup inputs provided, if forecast_drivers is required
-            but not provided, or if dimensions don't match.
+            If no warmup inputs are provided, if ``forecast_inputs`` is required
+            but missing, or if dimensions don't match.
 
         Notes
         -----
-        - Convention: first input is always feedback (used for autoregression).
+        - Convention: first warmup element is always feedback (used for autoregression).
         - For multi-output models, first output is used as feedback.
         - Feedback output dimension must match feedback input dimension.
 
@@ -653,10 +725,9 @@ class ESNModel(ps.SymbolicModel):
         Input-driven model:
 
         >>> predictions = model.forecast(
-        ...     warmup_feedback,
-        ...     warmup_driver,
+        ...     (warmup_feedback, warmup_driver),
+        ...     forecast_inputs=(future_driver,),
         ...     horizon=100,
-        ...     forecast_drivers=(future_driver,),
         ... )
 
         Include warmup in output:
@@ -664,7 +735,7 @@ class ESNModel(ps.SymbolicModel):
         >>> full_output = model.forecast(
         ...     warmup_data,
         ...     horizon=100,
-        ...     return_warmup=True
+        ...     return_warmup=True,
         ... )
         >>> print(full_output.shape)  # warmup_steps + horizon
         torch.Size([1, 150, 3])
@@ -674,6 +745,11 @@ class ESNModel(ps.SymbolicModel):
         warmup : Teacher-forced warmup only.
         reset_reservoirs : Reset reservoir states before forecasting.
         """
+        # Normalise warmup_inputs into a tuple
+        if isinstance(warmup_inputs, torch.Tensor):
+            warmup_inputs = (warmup_inputs,)
+        else:
+            warmup_inputs = tuple(warmup_inputs)
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input (feedback) is required")
 
@@ -681,21 +757,22 @@ class ESNModel(ps.SymbolicModel):
         num_drivers = len(warmup_inputs) - 1
         has_drivers = num_drivers > 0
 
-        # Validate forecast_drivers
+        # Validate forecast_inputs (drivers only)
         if has_drivers:
-            if forecast_drivers is None:
+            if forecast_inputs is None:
                 raise ValueError(
                     f"Model has {num_drivers} driving input(s). "
-                    f"forecast_drivers must be provided for forecast phase."
+                    f"forecast_inputs must be provided for the autoregressive phase."
                 )
-            if len(forecast_drivers) != num_drivers:
+            forecast_inputs = tuple(forecast_inputs)
+            if len(forecast_inputs) != num_drivers:
                 raise ValueError(
-                    f"Expected {num_drivers} forecast drivers, got {len(forecast_drivers)}"
+                    f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}"
                 )
-            for i, driver in enumerate(forecast_drivers):
+            for i, driver in enumerate(forecast_inputs):
                 if driver.shape[1] != horizon:
                     raise ValueError(
-                        f"forecast_drivers[{i}] has {driver.shape[1]} steps, expected {horizon}"
+                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected {horizon}"
                     )
 
         batch_size = warmup_inputs[0].shape[0]
@@ -703,8 +780,8 @@ class ESNModel(ps.SymbolicModel):
         device = warmup_inputs[0].device
         dtype = warmup_inputs[0].dtype
 
-        # Phase 1: Warmup
-        warmup_outputs = self.warmup(*warmup_inputs, return_outputs=True)
+        # Phase 1: Warmup (handles reset internally)
+        warmup_outputs = self.warmup(*warmup_inputs, return_outputs=True, reset=reset)
 
         # Determine output structure
         output_shape = self.output_shape
@@ -717,10 +794,22 @@ class ESNModel(ps.SymbolicModel):
             feedback_output_dim = output_shape[-1]
 
         if feedback_output_dim != feedback_dim:
+            # Collect readout layer names for a helpful hint.
+            readout_names = []
+            for name, module in self.named_modules():
+                # ReadoutLayer subclasses always have an out_features attribute.
+                if hasattr(module, "out_features") and hasattr(module, "_is_fitted"):
+                    label = getattr(module, "_name", None) or name
+                    readout_names.append(f"{label} (out_features={module.out_features})")
+            readouts_hint = (
+                f" Model readouts: {readout_names}." if readout_names else ""
+            )
             raise ValueError(
-                f"Model design error: feedback input expects {feedback_dim} features, "
-                f"but model output (used as feedback) has {feedback_output_dim} features. "
-                f"For forecasting, the first output must match the feedback input dimension."
+                f"forecast(): feedback dimension mismatch. "
+                f"Feedback input has {feedback_dim} features but the model output "
+                f"used as feedback has {feedback_output_dim} features. "
+                f"For autoregressive forecasting the first output must match the "
+                f"feedback input dimension.{readouts_hint}"
             )
 
         # Get initial feedback
@@ -753,7 +842,7 @@ class ESNModel(ps.SymbolicModel):
         # Phase 2: Autoregressive forecast
         for t in range(1, horizon):
             if has_drivers:
-                driver_inputs_t = tuple(driver[:, t : t + 1, :] for driver in forecast_drivers)
+                driver_inputs_t = tuple(driver[:, t : t + 1, :] for driver in forecast_inputs)
                 step_inputs = (current_feedback,) + driver_inputs_t
             else:
                 step_inputs = (current_feedback,)

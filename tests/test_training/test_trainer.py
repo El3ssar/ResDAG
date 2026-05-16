@@ -361,3 +361,108 @@ class TestESNTrainerGPU:
         )
 
         assert model.CGReadoutLayer_1.is_fitted
+
+
+class TestESNTrainerInternals:
+    """Regression tests covering the trainer's reliance on pytorch_symbolic."""
+
+    def test_trainer_does_not_reach_into_pytorch_symbolic_privates(self):
+        """The trainer must only use stable PyTorch APIs (named_modules)
+        to discover readouts (Phase 3.1).
+
+        Concretely: ESNTrainer must not access ``_execution_order_nodes``,
+        ``_execution_order_layers``, or ``_node_to_layer_name`` on the
+        underlying SymbolicModel.  We assert by replacing those attributes
+        with sentinels that explode on access and confirming training
+        still works.
+        """
+
+        class _Forbidden:
+            def __get__(self, *_args, **_kwargs):
+                raise AssertionError(
+                    "ESNTrainer reached into a private pytorch_symbolic attribute"
+                )
+
+        feedback = Input(shape=(10, 1))
+        reservoir = rd.ESNLayer(40, 1)(feedback)
+        readout_layer = CGReadoutLayer(40, 1, name="output")
+        readout = readout_layer(reservoir)
+        model = ESNModel(feedback, readout)
+
+        # Stash the originals so we can restore them and avoid leaking
+        # sentinels into other tests sharing the symbolic graph.
+        cls = type(model)
+        originals = {}
+        for name in (
+            "_execution_order_nodes",
+            "_execution_order_layers",
+            "_node_to_layer_name",
+        ):
+            if hasattr(cls, name):
+                originals[name] = getattr(cls, name)
+            setattr(cls, name, _Forbidden())
+
+        try:
+            warmup = torch.randn(2, 50, 1)
+            train = torch.randn(2, 100, 1)
+            target = torch.randn(2, 100, 1)
+            ESNTrainer(model).fit(
+                warmup_inputs=(warmup,),
+                train_inputs=(train,),
+                targets={"output": target},
+            )
+            assert readout_layer.is_fitted
+        finally:
+            for name, original in originals.items():
+                setattr(cls, name, original)
+            # Use ``cls.__dict__`` lookup rather than ``hasattr`` so we don't
+            # re-trigger the descriptor we planted.
+            for name in (
+                "_execution_order_nodes",
+                "_execution_order_layers",
+                "_node_to_layer_name",
+            ):
+                if name not in originals and name in cls.__dict__:
+                    delattr(cls, name)
+
+    def test_branching_dag_multi_readout(self):
+        """Trainer fits all readouts in a branching DAG."""
+        feedback = Input(shape=(10, 1))
+        res = rd.ESNLayer(30, 1)(feedback)
+
+        from resdag.layers.custom import Concatenate
+
+        head_a_layer = CGReadoutLayer(30, 2, name="head_a")
+        head_b_layer = CGReadoutLayer(30, 3, name="head_b")
+        out_layer = CGReadoutLayer(20, 1, name="out")
+
+        head_a = head_a_layer(res)
+        head_b = head_b_layer(res)
+        merged = Concatenate()(head_a, head_b)
+        res2 = rd.ESNLayer(20, 5)(merged)
+        out = out_layer(res2)
+
+        model = ESNModel(feedback, out)
+
+        warmup = torch.randn(2, 40, 1)
+        train = torch.randn(2, 80, 1)
+        targets = {
+            "head_a": torch.randn(2, 80, 2),
+            "head_b": torch.randn(2, 80, 3),
+            "out": torch.randn(2, 80, 1),
+        }
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(warmup,),
+            train_inputs=(train,),
+            targets=targets,
+        )
+
+        # Confirm each named readout layer was fitted.
+        for readout_layer in (head_a_layer, head_b_layer, out_layer):
+            assert readout_layer.is_fitted
+
+        fitted_readouts = [
+            m for _, m in model.named_modules() if isinstance(m, CGReadoutLayer)
+        ]
+        assert len(fitted_readouts) == 3

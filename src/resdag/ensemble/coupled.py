@@ -44,7 +44,7 @@ class CoupledEnsembleESNModel(nn.Module):
         - Any ``nn.Module`` that accepts a stacked tensor of shape
           ``(N, batch, timesteps, features)`` and returns
           ``(batch, timesteps, features)``.  E.g.
-          :class:`~resdag.layers.OutliersFilteredMean`.
+          :class:`~resdag.ensemble.aggregators.OutliersFilteredMean`.
 
     Examples
     --------
@@ -61,7 +61,7 @@ class CoupledEnsembleESNModel(nn.Module):
 
     With a custom aggregator:
 
-    >>> from resdag.layers import OutliersFilteredMean
+    >>> from resdag.ensemble.aggregators import OutliersFilteredMean
     >>> ensemble = coupled_ensemble_esn(
     ...     n_models=10, reservoir_size=300, feedback_size=3, output_size=3,
     ...     aggregate=OutliersFilteredMean(method="z_score", threshold=2.0),
@@ -70,7 +70,7 @@ class CoupledEnsembleESNModel(nn.Module):
     See Also
     --------
     resdag.models.coupled_ensemble_esn : Convenience factory function.
-    resdag.layers.OutliersFilteredMean : Outlier-robust aggregation layer.
+    resdag.ensemble.aggregators.OutliersFilteredMean : Outlier-robust aggregation layer.
     """
 
     def __init__(
@@ -207,12 +207,13 @@ class CoupledEnsembleESNModel(nn.Module):
         warmup_inputs: tuple[torch.Tensor, ...],
         train_inputs: tuple[torch.Tensor, ...],
         targets: dict[str, torch.Tensor],
+        n_workers: int = 1,
     ) -> None:
         """Train all sub-models independently using :class:`~resdag.training.ESNTrainer`.
 
         Each sub-model is trained separately on the same warmup/train data.
         Ensemble diversity comes from the different random reservoir
-        initializations of each sub-model.
+        initialisations of each sub-model.
 
         Parameters
         ----------
@@ -225,9 +226,39 @@ class CoupledEnsembleESNModel(nn.Module):
         targets : dict of str to torch.Tensor
             Mapping from readout name to target tensor.
             Shape of each target: ``(batch, train_steps, out_features)``.
+        n_workers : int, default ``1``
+            Number of worker threads used to fit sub-models concurrently.
+            ``1`` (the default) runs sequentially in the calling thread.
+            Larger values dispatch fits through a
+            :class:`concurrent.futures.ThreadPoolExecutor` — PyTorch releases
+            the GIL during BLAS, so threading gives a real speed-up for
+            CPU-bound CG ridge solves without the pickling cost of
+            multiprocessing.  On GPU, all workers share one device and may
+            interfere via the same CUDA stream; benchmark before raising
+            ``n_workers`` above 1 in that case.
+
+        Raises
+        ------
+        ValueError
+            If ``n_workers < 1``.
         """
-        for model in self.models:
+        if n_workers < 1:
+            raise ValueError(f"n_workers must be >= 1, got {n_workers}.")
+
+        if n_workers == 1 or self.n_models == 1:
+            for model in self.models:
+                ESNTrainer(model).fit(warmup_inputs, train_inputs, targets)
+            return
+
+        # Thread-pool path.  Each thread gets its own ESNTrainer over a
+        # distinct sub-model, so there is no shared mutable state to guard.
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _fit_one(model: ESNModel) -> None:
             ESNTrainer(model).fit(warmup_inputs, train_inputs, targets)
+
+        with ThreadPoolExecutor(max_workers=min(n_workers, self.n_models)) as pool:
+            list(pool.map(_fit_one, self.models))
 
     # ------------------------------------------------------------------
     # Forecasting

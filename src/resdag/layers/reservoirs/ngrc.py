@@ -13,8 +13,6 @@ resdag.layers.cells.ngrc_cell : Single-step NG-RC cell (NGCell).
 resdag.layers.reservoirs.base_reservoir : Abstract base (BaseReservoirLayer).
 """
 
-import torch
-
 from resdag.layers.cells.ngrc_cell import NGCell
 
 from .base_reservoir import BaseReservoirLayer
@@ -137,33 +135,6 @@ class NGReservoir(BaseReservoirLayer):
         the first ``warmup_length`` outputs if needed.
         """
         return self.cell.state_size  # == (k-1)*s
-
-    # ------------------------------------------------------------------
-    # set_state override — 3-D buffer shape validation
-    # ------------------------------------------------------------------
-
-    def set_state(self, state: torch.Tensor) -> None:
-        """
-        Set the internal delay buffer to an externally supplied tensor.
-
-        Parameters
-        ----------
-        state : torch.Tensor
-            Buffer tensor of shape ``(batch, state_size, input_dim)``.
-
-        Raises
-        ------
-        ValueError
-            If the shape of ``state`` does not match
-            ``(*, state_size, input_dim)``.
-        """
-        expected = (self.cell.state_size, self.cell.input_dim)
-        if state.shape[1:] != torch.Size(expected):
-            raise ValueError(
-                f"State shape mismatch. Expected (batch, {self.cell.state_size}, "
-                f"{self.cell.input_dim}), got {tuple(state.shape)}"
-            )
-        self.state = state.clone()
 
     # ------------------------------------------------------------------
     # Convenience delegation

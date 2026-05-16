@@ -77,6 +77,7 @@ from . import composition, ensemble, hpo, init, layers, models, training, utils
 # Convenience imports for common use cases
 from .composition import ESNModel, reservoir_input
 from .ensemble import CoupledEnsembleESNModel
+from .ensemble.aggregators import OutliersFilteredMean
 
 # Convenience submodule imports
 from .init import graphs, input_feedback, topology
@@ -89,7 +90,6 @@ from .layers import (
     FeaturePartitioner,
     NGCell,
     NGReservoir,
-    OutliersFilteredMean,
     Power,
     ReadoutLayer,
     ReservoirCell,

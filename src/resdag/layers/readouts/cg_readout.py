@@ -59,6 +59,13 @@ class CGReadoutLayer(ReadoutLayer):
     tol : float, default=1e-5
         Convergence tolerance for CG solver. Iterations stop when
         residual norm squared is below ``tol**2``.
+    use_float64 : bool, default=True
+        If ``True`` (default), CG runs in ``float64`` for numerical
+        stability and the result is cast back to the layer's parameter
+        dtype.  Set to ``False`` to stay in the input dtype (typically
+        ``float32``) when the doubled memory footprint matters and the
+        inputs are already well-scaled — for example, very large reservoirs
+        on GPU.
 
     Attributes
     ----------
@@ -106,11 +113,36 @@ class CGReadoutLayer(ReadoutLayer):
         max_iter: int = 100,
         tol: float = 1e-5,
         alpha: float = 1e-6,
+        use_float64: bool = True,
     ) -> None:
         super().__init__(in_features, out_features, bias, name, trainable)
         self.max_iter = max_iter
         self.tol = tol
         self.alpha = alpha
+        self.use_float64 = use_float64
+
+    def _fit_impl(
+        self,
+        states: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Solve ridge regression via Conjugate Gradient on flattened inputs.
+
+        Parameters
+        ----------
+        states : torch.Tensor
+            Flattened state matrix of shape ``(N, in_features)``.
+        targets : torch.Tensor
+            Flattened target matrix of shape ``(N, out_features)``.
+
+        Returns
+        -------
+        coefs : torch.Tensor
+            Coefficient matrix of shape ``(in_features, out_features)``.
+        intercept : torch.Tensor
+            Intercept vector of shape ``(out_features,)``.
+        """
+        return self._solve_ridge_cg(states, targets, self.alpha)
 
     def _solve_ridge_cg(
         self,
@@ -122,9 +154,13 @@ class CGReadoutLayer(ReadoutLayer):
         if alpha < 0:
             raise ValueError(f"Alpha must be non-negative, got {alpha}")
 
-        # Work in float64 for numerical stability
-        X = X.to(torch.float64)
-        y = y.to(torch.float64)
+        original_dtype = X.dtype
+        # Upcast to float64 for numerical stability unless the caller opted out.
+        # For very large reservoirs the doubled memory footprint can be the
+        # bottleneck and the inputs are often already well-scaled.
+        if self.use_float64:
+            X = X.to(torch.float64)
+            y = y.to(torch.float64)
 
         # Center the data
         X_mean = X.mean(dim=0, keepdim=True)
@@ -174,100 +210,7 @@ class CGReadoutLayer(ReadoutLayer):
         # Compute intercept
         intercept = (y_mean - X_mean @ coefs).squeeze(0)
 
-        return coefs, intercept
-
-    def fit(
-        self,
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-    ) -> None:
-        """
-        Fit readout weights using Conjugate Gradient ridge regression.
-
-        Fits the readout layer to map input states to target outputs using
-        L2-regularized least squares (ridge regression), solved via the
-        Conjugate Gradient method.
-
-        The method automatically:
-
-        - Handles both 2D and 3D input tensors
-        - Centers data for numerical stability
-        - Computes optimal weights and bias
-        - Updates layer parameters in-place
-
-        Parameters
-        ----------
-        inputs : torch.Tensor
-            Input states of shape ``(batch, time, features)`` or
-            ``(n_samples, features)``. For 3D inputs, data is flattened
-            to ``(batch * time, features)``.
-        targets : torch.Tensor
-            Target outputs of shape ``(batch, time, outputs)`` or
-            ``(n_samples, outputs)``. Must have same number of samples
-            as inputs after flattening.
-
-        Raises
-        ------
-        ValueError
-            If number of samples doesn't match between inputs and targets,
-            or if target output dimension doesn't match ``out_features``.
-
-        Notes
-        -----
-        After calling ``fit()``, the ``is_fitted`` property returns True.
-
-        Examples
-        --------
-        Fit on batched time-series data:
-
-        >>> readout = CGReadoutLayer(100, 10)
-        >>> states = torch.randn(4, 200, 100)  # (batch, time, features)
-        >>> targets = torch.randn(4, 200, 10)
-        >>> readout.fit(states, targets)
-        >>> print(readout.is_fitted)
-        True
-
-        Fit on flattened data:
-
-        >>> states_flat = torch.randn(800, 100)  # (n_samples, features)
-        >>> targets_flat = torch.randn(800, 10)
-        >>> readout.fit(states_flat, targets_flat)
-        """
-        # Handle 3D inputs by reshaping to 2D
-        if inputs.dim() == 3:
-            batch_size, seq_len, features = inputs.shape
-            inputs = inputs.reshape(batch_size * seq_len, features)
-
-        if targets.dim() == 3:
-            batch_size, seq_len, outputs = targets.shape
-            targets = targets.reshape(batch_size * seq_len, outputs)
-
-        # Validate shapes
-        readout_id = f"'{self._name}'" if self._name is not None else f"{type(self).__name__}"
-        if inputs.shape[0] != targets.shape[0]:
-            raise ValueError(
-                f"CGReadoutLayer.fit({readout_id}): sample count mismatch. "
-                f"Inputs have {inputs.shape[0]} samples after flattening, "
-                f"targets have {targets.shape[0]}."
-            )
-
-        if targets.shape[1] != self.out_features:
-            raise ValueError(
-                f"CGReadoutLayer.fit({readout_id}): target feature dimension "
-                f"({targets.shape[1]}) does not match readout out_features "
-                f"({self.out_features})."
-            )
-
-        # Solve ridge regression with CG
-        coefs, intercept = self._solve_ridge_cg(inputs, targets, self.alpha)
-
-        # Update parameters
-        with torch.no_grad():
-            self.weight.copy_(coefs.T.to(self.weight.dtype))
-            if self.bias is not None:
-                self.bias.copy_(intercept.to(self.bias.dtype))
-
-        self._is_fitted = True
+        return coefs.to(original_dtype), intercept.to(original_dtype)
 
     def __repr__(self) -> str:
         """Return string representation."""

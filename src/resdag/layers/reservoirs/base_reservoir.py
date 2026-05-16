@@ -196,17 +196,21 @@ class BaseReservoirLayer(nn.Module, ABC):
         """
         Set the internal state to a specific tensor.
 
+        Validation is delegated to ``self.cell.validate_state(state)`` so
+        each cell type owns its own state-shape contract (2-D for ESNCell,
+        3-D delay buffer for NGCell, etc.).
+
         Parameters
         ----------
         state : torch.Tensor
-            New state tensor.  Its last dimension must equal
-            ``cell.state_size``.
+            New state tensor.
 
         Raises
         ------
         ValueError
-            If the last dimension of ``state`` does not match
-            ``cell.state_size``.
+            If the cell's :meth:`ReservoirCell.validate_state` rejects the
+            tensor.  The error includes the cell class name and the
+            offending shape.
 
         Examples
         --------
@@ -214,14 +218,15 @@ class BaseReservoirLayer(nn.Module, ABC):
         >>> # ... process data ...
         >>> layer.set_state(saved)  # Restore
         """
-        if state.shape[-1] != self.cell.state_size:
+        try:
+            self.cell.validate_state(state)
+        except ValueError as exc:
+            # Re-raise with a richer message including a recovery hint.
             raise ValueError(
-                f"State size mismatch on {type(self).__name__} "
-                f"(cell={type(self.cell).__name__}). Expected last dim "
-                f"{self.cell.state_size}, got tensor of shape {tuple(state.shape)}. "
+                f"{type(self).__name__}.set_state failed: {exc}. "
                 f"Tip: call reset_state(batch_size=...) before set_state() "
-                f"to match the expected layout."
-            )
+                f"to materialise an empty state of the expected layout."
+            ) from None
         self.state = state.clone()
 
     def set_random_state(

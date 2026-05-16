@@ -165,16 +165,14 @@ class ESNTrainer:
                 f"but train_inputs has {len(train_inputs)} tensors. Must match."
             )
 
-        # Validate all readouts have targets
-        self._validate_targets(targets)
+        # Resolve readouts once; reuse for target validation and hook setup.
+        readouts = self._discover_readouts()
+        self._validate_targets(targets, readouts)
 
         train_steps = train_inputs[0].shape[1]
 
-        # Get readouts in topological order
-        readouts = self._get_readouts_in_order()
-
         # Validate target shapes
-        for name, _, _ in readouts:
+        for name, _ in readouts:
             target = targets[name]
             if target.shape[1] != train_steps:
                 raise ValueError(
@@ -185,9 +183,12 @@ class ESNTrainer:
         # Single warmup to sync reservoir states (warmup resets by default)
         self.model.warmup(*warmup_inputs)
 
-        # Register pre-hooks that fit each readout before its forward
+        # Register pre-hooks that fit each readout when its forward fires.
+        # We don't need explicit topological order: ``self.model(*train_inputs)``
+        # walks the graph in execution order, so each hook runs exactly when
+        # its readout would naturally execute.
         hooks = []
-        for name, readout, _ in readouts:
+        for name, readout in readouts:
             target = targets[name]
 
             def make_fit_hook(layer: ReadoutLayer, tgt: torch.Tensor):
@@ -200,7 +201,7 @@ class ESNTrainer:
             hooks.append(handle)
 
         try:
-            # Single forward pass - hooks fit each readout in topological order
+            # Single forward pass - hooks fit each readout as it executes
             with torch.no_grad():
                 self.model(*train_inputs)
         finally:
@@ -208,23 +209,37 @@ class ESNTrainer:
             for h in hooks:
                 h.remove()
 
-    def _get_readouts_in_order(self) -> list[tuple[str, ReadoutLayer, object]]:
-        """Return readouts in topological order."""
-        readouts = []
-        for node, layer in zip(
-            self.model._execution_order_nodes,
-            self.model._execution_order_layers,
-        ):
-            if isinstance(layer, ReadoutLayer):
-                module_name = self.model._node_to_layer_name[node]
-                resolved_name = layer.name if layer.name else module_name
-                readouts.append((resolved_name, layer, node))
+    def _discover_readouts(self) -> list[tuple[str, ReadoutLayer]]:
+        """Return ``(resolved_name, readout)`` pairs for every readout in the model.
+
+        Walks ``self.model.named_modules()`` (a stable PyTorch API) instead of
+        reaching into ``pytorch_symbolic``'s private ``_execution_order_*`` /
+        ``_node_to_layer_name`` attributes.  Readouts keep their
+        user-supplied ``name`` when set; otherwise the module path returned
+        by ``named_modules()`` is used as the fallback name.
+
+        The list order matches ``named_modules`` traversal, which is not the
+        graph's topological order — that's fine because each hook fires at
+        the moment its own forward executes during ``self.model(...)``.
+        """
+        readouts: list[tuple[str, ReadoutLayer]] = []
+        seen: set[int] = set()
+        for module_name, module in self.model.named_modules():
+            if isinstance(module, ReadoutLayer) and id(module) not in seen:
+                resolved_name = module.name if module.name else module_name
+                readouts.append((resolved_name, module))
+                seen.add(id(module))
         return readouts
 
-    def _validate_targets(self, targets: dict[str, torch.Tensor]) -> None:
+    def _validate_targets(
+        self,
+        targets: dict[str, torch.Tensor],
+        readouts: list[tuple[str, ReadoutLayer]] | None = None,
+    ) -> None:
         """Validate that all readouts have targets."""
-        readouts = self._get_readouts_in_order()
-        readout_names = [name for name, _, _ in readouts]
+        if readouts is None:
+            readouts = self._discover_readouts()
+        readout_names = [name for name, _ in readouts]
         missing = [name for name in readout_names if name not in targets]
 
         if missing:

@@ -200,7 +200,7 @@ class TestESNLayerStatefulBehavior:
 
         wrong_state = torch.randn(2, 40)  # Wrong reservoir size!
 
-        with pytest.raises(ValueError, match="State size mismatch"):
+        with pytest.raises(ValueError, match="validate_state"):
             reservoir.set_state(wrong_state)
 
     def test_get_state(self) -> None:

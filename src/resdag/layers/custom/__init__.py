@@ -11,12 +11,22 @@ Concatenate
     Concatenates multiple inputs along the feature dimension.
 FeaturePartitioner
     Partitions input features into overlapping groups.
-OutliersFilteredMean
-    Computes mean with outlier filtering.
+Power
+    Per-feature exponentiation by a fixed power.
 SelectiveDropout
     Per-feature dropout with selectivity control.
 SelectiveExponentiation
     Per-feature exponentiation transformation.
+
+Notes
+-----
+``OutliersFilteredMean`` moved to :mod:`resdag.ensemble.aggregators` in
+0.4.0.  Import it from the new location:
+
+>>> from resdag.ensemble.aggregators import OutliersFilteredMean
+
+It is also still re-exported at the top level as
+``resdag.OutliersFilteredMean``.
 
 Examples
 --------
@@ -31,7 +41,6 @@ Examples
 
 from .concatenate import Concatenate
 from .feature_partitioner import FeaturePartitioner
-from .outliers_filtered_mean import OutliersFilteredMean
 from .power import Power
 from .selective_dropout import SelectiveDropout
 from .selective_exponentiation import SelectiveExponentiation
@@ -39,7 +48,6 @@ from .selective_exponentiation import SelectiveExponentiation
 __all__ = [
     "Concatenate",
     "FeaturePartitioner",
-    "OutliersFilteredMean",
     "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",

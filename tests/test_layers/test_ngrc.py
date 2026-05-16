@@ -506,7 +506,7 @@ class TestNGReservoirStateManagement:
     def test_set_state_wrong_shape_raises(self) -> None:
         layer = NGReservoir(input_dim=3)
         bad_state = torch.randn(2, 2, 3)  # state_size=1, not 2
-        with pytest.raises(ValueError, match="State shape mismatch"):
+        with pytest.raises(ValueError, match="validate_state"):
             layer.set_state(bad_state)
 
     def test_set_random_state(self) -> None:

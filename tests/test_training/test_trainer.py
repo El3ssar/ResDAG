@@ -4,7 +4,7 @@ import pytest
 import torch
 
 import resdag as rd
-from resdag.composition import ESNModel, Input
+from resdag.core import ESNModel, Input
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.training import ESNTrainer
 
@@ -150,7 +150,7 @@ class TestESNTrainerMultiReadout:
         readout2 = CGReadoutLayer(50, 3, name="branch2")(reservoir)
 
         # Concatenate and output
-        from resdag.layers.custom import Concatenate
+        from resdag.layers.transforms import Concatenate
 
         concat = Concatenate()(readout1, readout2)
 
@@ -430,7 +430,7 @@ class TestESNTrainerInternals:
         feedback = Input(shape=(10, 1))
         res = rd.ESNLayer(30, 1)(feedback)
 
-        from resdag.layers.custom import Concatenate
+        from resdag.layers.transforms import Concatenate
 
         head_a_layer = CGReadoutLayer(30, 2, name="head_a")
         head_b_layer = CGReadoutLayer(30, 3, name="head_b")

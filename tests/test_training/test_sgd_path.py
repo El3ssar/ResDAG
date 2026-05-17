@@ -18,7 +18,7 @@ import pytest
 import torch
 
 import resdag as rd
-from resdag.composition import ESNModel, reservoir_input
+from resdag.core import ESNModel, reservoir_input
 from resdag.layers import CGReadoutLayer, ESNLayer
 
 

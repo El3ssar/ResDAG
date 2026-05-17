@@ -3,7 +3,7 @@ Ensemble Reservoir Computing Models
 =====================================
 
 This module provides ensemble wrappers for groups of independently-trained
-:class:`~resdag.composition.ESNModel` instances.
+:class:`~resdag.core.ESNModel` instances.
 
 Classes
 -------

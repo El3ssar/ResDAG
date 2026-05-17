@@ -10,7 +10,7 @@ Convention: First input is always feedback, remaining inputs are drivers.
 import torch
 
 import resdag as rd
-from resdag.composition import ESNModel, Input
+from resdag.core import ESNModel, Input
 from resdag.models import classic_esn
 
 

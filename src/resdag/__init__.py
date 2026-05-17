@@ -16,8 +16,8 @@ Features
 
 Modules
 -------
-composition
-    Model composition using pytorch_symbolic.
+core
+    Core model class (ESNModel) and input helpers.
 layers
     Neural network layers (ESNLayer, ReadoutLayer, etc.).
 init
@@ -67,15 +67,15 @@ Using premade models:
 
 See Also
 --------
-ESNModel : Main model class for ESN composition.
+ESNModel : Main model class for reservoir computing.
 ESNLayer : Core reservoir layer with recurrent dynamics.
 ESNTrainer : Trainer for fitting readout layers.
 """
 
-from . import composition, ensemble, hpo, init, layers, models, training, utils
+from . import composition, core, ensemble, hpo, init, layers, models, training, utils
 
 # Convenience imports for common use cases
-from .composition import ESNModel, reservoir_input
+from .core import ESNModel, reservoir_input
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
 
@@ -110,7 +110,8 @@ __version__ = "0.4.0"
 
 __all__ = [
     # Modules
-    "composition",
+    "composition",  # backward compat shim
+    "core",
     "ensemble",
     "hpo",
     "init",

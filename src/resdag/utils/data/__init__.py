@@ -59,7 +59,7 @@ Using load_and_prepare for convenience:
 See Also
 --------
 resdag.training.ESNTrainer : Uses prepared data for training.
-resdag.composition.ESNModel.forecast : Uses prepared data for forecasting.
+resdag.core.ESNModel.forecast : Uses prepared data for forecasting.
 """
 
 from .io import (

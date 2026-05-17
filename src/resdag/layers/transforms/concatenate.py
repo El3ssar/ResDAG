@@ -31,7 +31,7 @@ class Concatenate(nn.Module):
     Basic concatenation:
 
     >>> import torch
-    >>> from resdag.layers.custom import Concatenate
+    >>> from resdag.layers.transforms import Concatenate
     >>>
     >>> concat = Concatenate()
     >>> x1 = torch.randn(32, 50, 100)  # (batch, time, features1)

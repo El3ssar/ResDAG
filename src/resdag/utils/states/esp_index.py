@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Tuple, Union
 import torch
 
 if TYPE_CHECKING:
-    from resdag.composition import ESNModel
+    from resdag.core import ESNModel
     from resdag.layers import ESNLayer
 
 

@@ -20,7 +20,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from resdag.composition import ESNModel
+from resdag.core import ESNModel
 from resdag.ensemble import CoupledEnsembleESNModel
 from resdag.models.ott_esn import ott_esn
 
@@ -47,7 +47,7 @@ def coupled_ensemble_esn(
     n_models : int
         Number of sub-models in the ensemble.
     model_factory : callable, default :func:`ott_esn`
-        Factory that creates one :class:`~resdag.composition.ESNModel`.
+        Factory that creates one :class:`~resdag.core.ESNModel`.
         All keyword arguments not consumed by ``coupled_ensemble_esn`` itself
         (i.e. ``model_kwargs``) are forwarded verbatim to every call of this
         factory.  All premade factories (``ott_esn``, ``classic_esn``,

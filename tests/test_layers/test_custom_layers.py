@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from resdag.ensemble.aggregators import OutliersFilteredMean
-from resdag.layers.custom import (
+from resdag.layers.transforms import (
     FeaturePartitioner,
     SelectiveDropout,
     SelectiveExponentiation,

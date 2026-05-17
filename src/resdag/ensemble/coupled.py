@@ -9,7 +9,7 @@ averaged feedback signal at each autoregressive step.
 See Also
 --------
 resdag.models.coupled_ensemble_esn : Factory function to build this ensemble.
-resdag.composition.ESNModel : Base ESN model used as sub-models.
+resdag.core.ESNModel : Base ESN model used as sub-models.
 """
 
 import warnings
@@ -18,15 +18,15 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from resdag.composition import ESNModel
+from resdag.core import ESNModel
 from resdag.training import ESNTrainer
 
 
 class CoupledEnsembleESNModel(nn.Module):
     """Ensemble of N independently-trained ESN models with coupled feedback.
 
-    Each sub-model is a complete :class:`~resdag.composition.ESNModel` built
-    via the symbolic composition API. The models are trained independently but
+    Each sub-model is a complete :class:`~resdag.core.ESNModel` built
+    via the ``pytorch_symbolic`` API. The models are trained independently but
     coupled during forecasting: at every autoregressive step every model
     receives the **same** aggregated output (e.g. the mean across models) as
     its next feedback input.

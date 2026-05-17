@@ -41,12 +41,12 @@ Examples
 
 See Also
 --------
-resdag.composition.ESNModel : Model composition using these layers.
+resdag.core.ESNModel : Core model class used to compose these layers.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 from .cells import ESNCell, NGCell, ReservoirCell
-from .custom import (
+from .transforms import (
     Concatenate,
     FeaturePartitioner,
     Power,

@@ -44,7 +44,7 @@ Classic ESN with custom topology:
 
 See Also
 --------
-resdag.composition.ESNModel : Base ESN model class.
+resdag.core.ESNModel : Base ESN model class.
 resdag.layers.ESNLayer : ESN layer used by these models.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """

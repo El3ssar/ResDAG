@@ -68,12 +68,8 @@ class ESNModel(ps.SymbolicModel):
     The model inherits all standard ``torch.nn.Module`` functionality and
     the ``summary()`` method from pytorch_symbolic.
 
-    Parameters
-    ----------
-    inputs : Input or list of Input
-        Model input(s) created with ``pytorch_symbolic.Input()``.
-    outputs : SymbolicTensor or list of SymbolicTensor
-        Model output(s) from the computational graph.
+    Pass symbolic ``inputs`` and ``outputs`` to the constructor (see
+    ``pytorch_symbolic.SymbolicModel``).
 
     Attributes
     ----------

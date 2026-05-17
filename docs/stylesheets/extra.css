@@ -1,0 +1,197 @@
+/* =========================================================================
+   ResDAG — custom theme layer on top of MkDocs Material
+   -------------------------------------------------------------------------
+   Strategy: stay inside Material's design tokens (CSS variables) so the
+   palette flips correctly between light & dark schemes. Only override what
+   the theme can't express, and never introduce hard-coded hexes that would
+   look broken when the user toggles modes.
+   ========================================================================= */
+
+/* ----- Color tokens -------------------------------------------------- */
+:root {
+  --md-primary-fg-color: #6c3bd9;
+  --md-primary-fg-color--light: #8b5cf6;
+  --md-primary-fg-color--dark: #4b1fa0;
+  --md-accent-fg-color: #f59e0b;
+
+  --resdag-grad-from: #6c3bd9;
+  --resdag-grad-to: #ec4899;
+  --resdag-grad-accent: #f59e0b;
+
+  --resdag-surface-elev: 0 1px 2px rgba(15, 23, 42, 0.04),
+                         0 4px 24px rgba(15, 23, 42, 0.06);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #8b5cf6;
+  --md-accent-fg-color: #fbbf24;
+  --resdag-surface-elev: 0 1px 2px rgba(0, 0, 0, 0.4),
+                         0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* ----- Typographic polish ------------------------------------------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  letter-spacing: -0.015em;
+}
+
+.md-typeset h1 {
+  font-weight: 800;
+  font-size: 2.4rem;
+  line-height: 1.15;
+  background: linear-gradient(120deg,
+              var(--resdag-grad-from),
+              var(--resdag-grad-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.md-typeset h2 {
+  margin-top: 2.5rem;
+  padding-top: 0.5rem;
+  font-weight: 700;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset h3 {
+  margin-top: 1.75rem;
+  font-weight: 650;
+}
+
+/* ----- Code blocks & inline code ------------------------------------ */
+.md-typeset code {
+  border-radius: 0.35em;
+  padding: 0.12em 0.4em;
+  font-size: 0.85em;
+}
+
+.md-typeset .highlight pre {
+  border-radius: 0.6em;
+  box-shadow: var(--resdag-surface-elev);
+}
+
+.highlight .filename,
+.md-typeset .codehilite > .filename {
+  border-top-left-radius: 0.6em;
+  border-top-right-radius: 0.6em;
+}
+
+/* ----- Hero (used on the landing page) ------------------------------ */
+.resdag-hero {
+  margin: 2rem 0 3rem;
+  padding: 3rem 2rem;
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(ellipse at top left,
+      rgba(108, 59, 217, 0.18) 0%,
+      transparent 55%),
+    radial-gradient(ellipse at bottom right,
+      rgba(236, 72, 153, 0.18) 0%,
+      transparent 55%),
+    linear-gradient(135deg,
+      rgba(108, 59, 217, 0.08),
+      rgba(236, 72, 153, 0.06));
+  text-align: center;
+  box-shadow: var(--resdag-surface-elev);
+}
+
+.resdag-hero h1 {
+  margin: 0 0 0.5rem;
+  font-size: 3rem;
+  line-height: 1.05;
+}
+
+.resdag-hero .tagline {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 1.75rem;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.resdag-hero .cta-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.resdag-hero .md-button {
+  border-radius: 999px;
+  padding: 0.55rem 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.resdag-hero .md-button--primary {
+  background: linear-gradient(135deg,
+              var(--resdag-grad-from),
+              var(--resdag-grad-to));
+  border-color: transparent;
+  color: white;
+}
+
+/* ----- Feature grid (cards) ----------------------------------------- */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border-radius: 0.85rem;
+  box-shadow: var(--resdag-surface-elev);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, 0.05),
+    0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+/* ----- Admonitions get a softer feel ------------------------------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 0.6em;
+  border-width: 0;
+  box-shadow: var(--resdag-surface-elev);
+}
+
+/* ----- API reference: tighten signatures, accent labels ----------- */
+.doc-class .doc-heading,
+.doc-function .doc-heading {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 1.05rem;
+}
+
+.doc-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.15em 0.55em;
+  border-radius: 999px;
+}
+
+/* ----- Navigation tabs ---------------------------------------------- */
+.md-tabs__link {
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.md-tabs__link--active {
+  opacity: 1;
+}
+
+/* ----- Footer spacing ----------------------------------------------- */
+.md-footer-meta__inner {
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+/* ----- Math (KaTeX) doesn't get squished --------------------------- */
+.md-typeset .arithmatex {
+  overflow-x: auto;
+}

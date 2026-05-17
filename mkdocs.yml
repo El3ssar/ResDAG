@@ -173,6 +173,11 @@ plugins:
       handlers:
         python:
           paths: [src]
+          inventories:
+            - https://docs.python.org/3/objects.inv
+            - https://pytorch.org/docs/stable/objects.inv
+            - https://numpy.org/doc/stable/objects.inv
+            - https://networkx.org/documentation/stable/objects.inv
           options:
             # Discovery
             docstring_style: numpy
@@ -197,7 +202,7 @@ plugins:
             show_labels: true
             show_source: true
             show_bases: true
-            show_inherited_members: false
+            inherited_members: false
             show_submodules: false
             members_order: source
             group_by_category: true
@@ -205,12 +210,6 @@ plugins:
             filters:
               - "!^_"
               - "^__init__$"
-            # Cross-references to upstream libraries
-            inventories:
-              - https://docs.python.org/3/objects.inv
-              - https://pytorch.org/docs/stable/objects.inv
-              - https://numpy.org/doc/stable/objects.inv
-              - https://networkx.org/documentation/stable/objects.inv
 
 # -------------------------------------------------------------------------
 # Markdown extensions
@@ -253,6 +252,7 @@ markdown_extensions:
   - pymdownx.snippets:
       check_paths: true
       base_path:
+        - .
         - docs
         - examples
   - pymdownx.superfences:
@@ -342,6 +342,7 @@ nav:
           - States: reference/utils/states.md
   - About:
       - about/index.md
+      - Training paths: about/training-paths.md
       - Changelog: about/changelog.md
       - Citation: about/citation.md
       - Related work: about/related-work.md

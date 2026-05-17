@@ -118,9 +118,6 @@ extra:
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/resdag/
       name: ResDAG on PyPI
-  version:
-    provider: mike
-    default: latest
   analytics:
     feedback:
       title: Was this page helpful?
@@ -281,25 +278,11 @@ nav:
       - Your first ESN: getting-started/your-first-esn.md
       - Mental model: getting-started/mental-model.md
       - Lorenz in 60 lines: getting-started/lorenz-walkthrough.md
-  - Learn:
-      - learn/index.md
-      - What is reservoir computing?: learn/what-is-reservoir-computing.md
-      - The Echo State Property: learn/echo-state-property.md
-      - Reservoir layers: learn/reservoir-layers.md
-      - Readouts & ridge regression: learn/readouts.md
-      - Two-phase training: learn/two-phase-training.md
-      - Autoregressive forecasting: learn/forecasting.md
-      - Graph topologies: learn/topologies.md
-      - Input & feedback initializers: learn/input-feedback-initializers.md
-      - Next-Generation RC: learn/ngrc.md
-      - Coupled ensembles: learn/ensembles.md
-      - Chaos & loss functions: learn/chaos-and-losses.md
   - Guides:
       - guides/index.md
       - Forecasting chaotic systems: guides/chaotic-systems.md
       - Input-driven systems: guides/input-driven-systems.md
       - Multi-readout models: guides/multi-readout.md
-      - NG-RC vs ESN — when to use which: guides/ngrc-vs-esn.md
       - Coupled ensemble forecasting: guides/coupled-ensembles.md
       - Hyperparameter optimization: guides/hyperparameter-optimization.md
       - Save, load, checkpoint: guides/save-and-load.md

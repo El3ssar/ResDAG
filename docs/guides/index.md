@@ -1,63 +1,31 @@
 # Guides
 
-Task-oriented recipes: copy, adapt, run. For theory see [Learn](../learn/index.md).
+Task-oriented pages: data loading and splits, forecasting, ensembles,
+hyperparameter search, persistence, and performance. Each guide assumes
+`prepare_esn_data` unless noted otherwise.
 
-<div class="grid cards" markdown>
+**[Data preparation](data-preparation.md)** — `load_file`, `prepare_esn_data`,
+normalization, and the definition of `f_warmup`.
 
--   :material-weather-windy:{ .lg .middle } **Chaotic systems**
+**[Forecasting chaotic systems](chaotic-systems.md)** — Lorenz-style workflow with
+`ott_esn` and validation on `val`.
 
-    ---
+**[Input-driven systems](input-driven-systems.md)** — feedback plus exogenous drivers
+in the symbolic graph and in `forecast`.
 
-    Train `ott_esn`, forecast Lorenz-like data.
+**[Multi-readout models](multi-readout.md)** — several readout heads in one
+`ESNTrainer.fit`.
 
-    [:octicons-arrow-right-24: Guide](chaotic-systems.md)
+**[Coupled ensemble forecasting](coupled-ensembles.md)** — `coupled_ensemble_esn`
+with shared feedback during autoregression.
 
--   :material-source-branch:{ .lg .middle } **Input-driven**
+**[Hyperparameter optimization](hyperparameter-optimization.md)** — `run_hpo`,
+loss registry, parallel studies.
 
-    ---
+**[Save and load](save-and-load.md)** — weights and optional reservoir states.
 
-    Feedback + exogenous drivers in one graph.
+**[Visualizing architectures](visualizing-architectures.md)** — `summary()` and
+`plot_model()`.
 
-    [:octicons-arrow-right-24: Guide](input-driven-systems.md)
-
--   :material-chart-multiple:{ .lg .middle } **Multi-readout**
-
-    ---
-
-    Fit several heads in one `ESNTrainer.fit`.
-
-    [:octicons-arrow-right-24: Guide](multi-readout.md)
-
--   :material-tune:{ .lg .middle } **Hyperparameter search**
-
-    ---
-
-    Optuna `run_hpo` with chaos losses.
-
-    [:octicons-arrow-right-24: Guide](hyperparameter-optimization.md)
-
--   :material-content-save:{ .lg .middle } **Save & load**
-
-    ---
-
-    Checkpoints with optional reservoir states.
-
-    [:octicons-arrow-right-24: Guide](save-and-load.md)
-
--   :material-database:{ .lg .middle } **Data preparation**
-
-    ---
-
-    `load_file`, `prepare_esn_data`, normalization.
-
-    [:octicons-arrow-right-24: Guide](data-preparation.md)
-
--   :material-gpu:{ .lg .middle } **GPU & performance**
-
-    ---
-
-    Devices, batching, float64 trade-offs.
-
-    [:octicons-arrow-right-24: Guide](gpu-and-performance.md)
-
-</div>
+**[GPU and performance](gpu-and-performance.md)** — devices, batching, readout
+precision, HPO workers.

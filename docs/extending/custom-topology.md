@@ -36,5 +36,5 @@ Requirements:
 
 ## See also
 
-- [Topologies (Learn)](../learn/topologies.md)
+- [Topology reference](../reference/init/topology.md)
 - [Graph reference](../reference/init/graphs.md)

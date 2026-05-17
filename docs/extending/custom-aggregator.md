@@ -38,4 +38,4 @@ See [`OutliersFilteredMean`](https://github.com/El3ssar/resdag/blob/main/src/res
 
 ## See also
 
-- [Coupled ensembles](../learn/ensembles.md)
+- [Ensemble reference](../reference/ensemble.md)

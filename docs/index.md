@@ -1,9 +1,6 @@
 ---
-title: ResDAG — PyTorch-native reservoir computing
-description: >-
-  ResDAG is a PyTorch-native reservoir computing library. Build Echo State
-  Networks, Next-Generation Reservoir Computers, and coupled ensembles on
-  GPU, with graph-driven topologies and algebraic ridge-regression training.
+title: ResDAG
+description: PyTorch-native reservoir computing — modular layers, algebraic readouts, forecasting.
 hide:
   - navigation
   - toc
@@ -11,186 +8,113 @@ hide:
 
 <div class="resdag-hero" markdown>
 
-# Reservoir computing, the PyTorch way.
+# ResDAG
 
 <p class="tagline">
-ResDAG turns the rich theory of Echo State Networks into a modular,
-GPU-accelerated library that composes like any other <code>torch.nn.Module</code>
-— and trains in a single algebraic step.
+PyTorch library for reservoir computing: composable recurrent layers,
+algebraic readout fitting, and autoregressive forecasting on GPU.
 </p>
 
 <div class="cta-row" markdown>
-[:material-rocket-launch-outline: Get started](getting-started/index.md){ .md-button .md-button--primary }
-[:material-book-open-page-variant: Learn the theory](learn/index.md){ .md-button }
-[:material-source-branch: View on GitHub](https://github.com/El3ssar/resdag){ .md-button }
+[:material-book-open-variant: Documentation](getting-started/index.md){ .md-button .md-button--primary }
+[GitHub](https://github.com/El3ssar/resdag){ .md-button }
+[PyPI](https://pypi.org/project/resdag/){ .md-button }
 </div>
 
 </div>
 
-## Why ResDAG?
+## Install
 
-Reservoir computing sits in a strange spot. The theory is beautiful — a random
-recurrent network, frozen forever, plus a single linear readout — but most
-existing libraries either:
+```bash
+pip install resdag
+```
 
-- treat reservoirs as *opaque black boxes* you can't compose, or
-- live outside the modern deep-learning ecosystem, forcing you to choose
-  between RC and the rest of your PyTorch stack.
+Optional extras:
 
-**ResDAG fixes both.** Every component is a `torch.nn.Module`. Reservoirs run
-on GPU. Models are built with a functional graph API (`pytorch_symbolic`),
-so a five-layer multi-readout architecture is as easy to write as a single
-ESN. Readouts are trained algebraically by Conjugate Gradient — no gradient
-descent, no learning rate to tune — and the whole training loop is one
-function call.
+```bash
+pip install "resdag[hpo]"    # Optuna hyperparameter search
+pip install "resdag[docs]"   # build this documentation site
+```
 
-<div class="grid cards" markdown>
+From source:
 
--   :material-flash:{ .lg .middle } **GPU-native, end to end**
+```bash
+git clone https://github.com/El3ssar/resdag.git
+cd resdag
+pip install -e ".[dev]"
+```
 
-    ---
+Requires Python 3.11–3.14 and PyTorch 2.x. Verify:
 
-    Reservoir layers, ridge-regression readouts, NG-RC feature construction
-    and ensemble forecasting all run on GPU. No NumPy fallbacks. No copies.
+```bash
+python -c "import resdag; print(resdag.__version__)"
+```
 
-    [:octicons-arrow-right-24: GPU & performance](guides/gpu-and-performance.md)
+## Overview
 
--   :material-graph-outline:{ .lg .middle } **17 graph topologies, one registry**
+ResDAG implements the standard reservoir-computing workflow as `torch.nn.Module`
+components wired through `pytorch_symbolic`:
 
-    ---
+1. A **reservoir layer** maps input sequences to state trajectories (weights
+   typically fixed after initialization).
+2. A **readout layer** maps states to targets; training is algebraic (ridge-type
+   solvers), not SGD over the reservoir.
+3. **`ESNModel.forecast`** runs teacher-forced warmup, then autoregressive
+   generation for a chosen horizon.
 
-    Erdős–Rényi, Watts–Strogatz, Barabási–Albert, ring-chord, dendrocycle…
-    Pick one by name, override its parameters with a tuple, or plug in your
-    own graph generator with a single decorator.
+Data splits for training and evaluation should use
+[`prepare_esn_data`](reference/utils/data.md): it returns `warmup`, `train`,
+`target`, `f_warmup`, and `val`. The tensor `f_warmup` is the **last
+`warmup_steps` timesteps of `train`** — the segment immediately before the held-out
+`val` series. That is the input drive the reservoir has already seen when
+forecasting starts; `val` is what you score against.
 
-    [:octicons-arrow-right-24: Topology system](learn/topologies.md)
-
--   :material-chart-line:{ .lg .middle } **Forecasting that just works**
-
-    ---
-
-    Two-phase `model.forecast(warmup, horizon=N)` handles state
-    synchronization and autoregressive generation for you, with full support
-    for input-driven systems and multi-output models.
-
-    [:octicons-arrow-right-24: Forecasting](learn/forecasting.md)
-
--   :material-cog-transfer-outline:{ .lg .middle } **Composable like any nn.Module**
-
-    ---
-
-    Build a multi-input, multi-readout DAG with `pytorch_symbolic`. Wrap it
-    in `ESNModel`. Train it in one call. Save, load, visualize.
-
-    [:octicons-arrow-right-24: Model composition](learn/reservoir-layers.md)
-
--   :material-tune-variant:{ .lg .middle } **HPO out of the box**
-
-    ---
-
-    First-class Optuna integration with five loss functions designed for
-    chaotic systems — including the Expected Forecast Horizon — and real
-    multi-process parallelism over journal-file storage.
-
-    [:octicons-arrow-right-24: Hyperparameter optimization](guides/hyperparameter-optimization.md)
-
--   :material-puzzle-outline:{ .lg .middle } **Extensible by design**
-
-    ---
-
-    Every system — cells, topologies, initializers, readouts, losses — has
-    a registry and a base class. Adding your own is a 20-line file plus a
-    decorator.
-
-    [:octicons-arrow-right-24: Extend ResDAG](extending/index.md)
-
-</div>
-
-## A complete ESN in 20 lines
+## Minimal example
 
 ```python
 import torch
-import pytorch_symbolic as ps
-from resdag import ESNModel, ESNLayer, CGReadoutLayer, ESNTrainer
+from resdag import classic_esn
+from resdag.training import ESNTrainer
+from resdag.utils.data import prepare_esn_data
 
-# 1.  Build a graph.  Inputs are symbolic; layers are real torch.nn.Modules.
-inp = ps.Input((None, 3))                                      # (T, features)
-states = ESNLayer(reservoir_size=500,
-                  feedback_size=3,
-                  spectral_radius=0.9,
-                  topology="erdos_renyi")(inp)
-out = CGReadoutLayer(500, 3, alpha=1e-6, name="output")(states)
+# (1, T, features)
+data = torch.randn(1, 25_000, 1).cumsum(dim=1) * 0.01
 
-model = ESNModel(inp, out)
-
-# 2.  Train.  No SGD — one algebraic Conjugate-Gradient ridge solve.
-ESNTrainer(model).fit(
-    warmup_inputs=(warmup,),       # synchronise reservoir state
-    train_inputs=(train,),          # teacher-force the dynamics
-    targets={"output": targets},    # one key per readout
+warmup, train, target, f_warmup, val = prepare_esn_data(
+    data,
+    warmup_steps=2_000,
+    train_steps=18_000,
+    val_steps=5_000,
+    normalize=True,
 )
 
-# 3.  Forecast.  Two-phase: warmup + autoregressive generation.
-predictions = model.forecast(forecast_warmup, horizon=1000)
+model = classic_esn(reservoir_size=500, feedback_size=1, output_size=1)
+ESNTrainer(model).fit(
+    warmup_inputs=(warmup,),
+    train_inputs=(train,),
+    targets={"output": target},
+)
+model.reset_reservoirs()
+pred = model.forecast(f_warmup, horizon=val.shape[1])
 ```
 
-That's the whole loop. No epochs, no schedulers, no dropout — just the
-mathematics of reservoir computing in code that reads like the equations.
+## Documentation map
 
-## Where to go next
+| Section | Contents |
+|---------|----------|
+| [Get started](getting-started/index.md) | Installation, mental model, first model, Lorenz example |
+| [Guides](guides/index.md) | Task workflows: data prep, forecasting, HPO, ensembles, persistence |
+| [Extend](extending/index.md) | Register topologies, initializers, cells, readouts, losses |
+| [Reference](reference/index.md) | API generated from source docstrings |
+| [About](about/index.md) | Changelog, citation, contributing, related libraries |
 
-<div class="grid cards" markdown>
+## Links
 
--   :material-school-outline:{ .lg .middle } **New to reservoir computing?**
+- Repository: [github.com/El3ssar/resdag](https://github.com/El3ssar/resdag)
+- Issues: [github.com/El3ssar/resdag/issues](https://github.com/El3ssar/resdag/issues)
+- Package: [pypi.org/project/resdag](https://pypi.org/project/resdag)
 
-    ---
+## Status
 
-    Start with the [mental model](getting-started/mental-model.md) — it's
-    the 10-minute version of the field. Then walk through the
-    [Lorenz tutorial](getting-started/lorenz-walkthrough.md).
-
--   :material-tools:{ .lg .middle } **Coming from another RC library?**
-
-    ---
-
-    The [Reference](reference/index.md) maps every public symbol with full
-    signatures and cross-links. The
-    [related-work page](about/related-work.md) compares ResDAG to
-    ReservoirPy, EchoTorch, and RcTorch.
-
--   :material-rocket-outline:{ .lg .middle } **Building something specific?**
-
-    ---
-
-    Browse the [Guides](guides/index.md) — task-oriented recipes for
-    chaotic forecasting, input-driven systems, multi-readout architectures,
-    coupled ensembles, and HPO.
-
--   :material-source-pull:{ .lg .middle } **Want to contribute?**
-
-    ---
-
-    The [Extend section](extending/index.md) walks through adding your own
-    topology, initializer, cell, readout, or HPO loss — each is a single
-    decorated function or class.
-
-</div>
-
-## The honest fine print
-
-ResDAG is in active development (v0.4.0, alpha status). The public API
-documented here is the API the maintainers commit to keeping stable —
-backward-compatible shims redirect old imports (e.g. `resdag.composition →
-resdag.core`) with deprecation warnings. We follow [semantic
-versioning](https://semver.org/) once we reach 1.0; until then, minor
-versions may rename internals but **not** the public surface listed in
-[`resdag/__init__.py`](https://github.com/El3ssar/resdag/blob/main/src/resdag/__init__.py).
-
----
-
-<small>
-Built with :heart: in PyTorch · MIT-licensed · By [Daniel
-Estevez-Moya](mailto:kemossabee@gmail.com). Documentation generated by
-[MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and
-[mkdocstrings](https://mkdocstrings.github.io/).
-</small>
+Current release: v0.4.0 (alpha). Public symbols are listed in
+[`resdag.__init__.py`](https://github.com/El3ssar/resdag/blob/main/src/resdag/__init__.py).

@@ -25,4 +25,4 @@ Study [`chebyshev.py`](https://github.com/El3ssar/resdag/blob/main/src/resdag/in
 
 ## See also
 
-- [Input & feedback initializers](../learn/input-feedback-initializers.md)
+- [Input/feedback reference](../reference/init/input-feedback.md)

@@ -1,71 +1,49 @@
 # Your first ESN
 
-A minimal sine-wave forecast: build a model, fit the readout, predict ahead.
-
-## 1. Imports and data
+Sine wave, `prepare_esn_data`, `classic_esn`, train, forecast on the validation segment.
 
 ```python
 import torch
 from resdag import classic_esn
 from resdag.training import ESNTrainer
+from resdag.utils.data import prepare_esn_data
 
 torch.manual_seed(0)
-t = torch.linspace(0, 4 * torch.pi, 400)
-data = torch.sin(t).view(1, -1, 1)  # (batch=1, time, features=1)
-```
+t = torch.linspace(0, 40 * torch.pi, 4_000)
+data = torch.sin(t).view(1, -1, 1)
 
-## 2. Splits
+warmup, train, target, f_warmup, val = prepare_esn_data(
+    data,
+    warmup_steps=400,
+    train_steps=3_000,
+    val_steps=600,
+    normalize=True,
+    norm_method="minmax",
+)
 
-We need warmup (state sync), training (fit readout), and a segment to forecast from.
-
-```python
-warmup = data[:, :200, :]
-train = data[:, 200:350, :]
-target = data[:, 201:351, :]  # one-step-ahead targets
-f_warmup = data[:, 350:380, :]
-```
-
-## 3. Model
-
-`classic_esn` wires reservoir → readout for you ([API](../reference/models.md)).
-
-```python
 model = classic_esn(
-    reservoir_size=200,
+    reservoir_size=400,
     feedback_size=1,
     output_size=1,
     spectral_radius=0.9,
 )
-```
 
-## 4. Train
-
-The readout layer is named `"output"` by default — `targets` keys must match.
-
-```python
-trainer = ESNTrainer(model)
-trainer.fit(
+ESNTrainer(model).fit(
     warmup_inputs=(warmup,),
     train_inputs=(train,),
     targets={"output": target},
 )
+
+model.reset_reservoirs()
+pred = model.forecast(f_warmup, horizon=val.shape[1])
+mse = torch.mean((pred - val) ** 2).item()
+print("val MSE:", mse)
 ```
 
-## 5. Forecast
-
-```python
-pred = model.forecast(f_warmup, horizon=50)
-print(pred.shape)  # torch.Size([1, 50, 1])
-```
-
-## What each step did
-
-| Step | Concept page |
-|------|----------------|
-| Reservoir + readout graph | [Reservoir layers](../learn/reservoir-layers.md) |
-| `ESNTrainer.fit` | [Two-phase training](../learn/two-phase-training.md) |
-| `model.forecast` | [Forecasting](../learn/forecasting.md) |
+`f_warmup` is the last `warmup_steps` rows of `train` (see
+[`prepare_esn_data`](../reference/utils/data.md)). `val` is the unseen tail used
+only for evaluation.
 
 ## Next
 
-[Lorenz walkthrough](lorenz-walkthrough.md) for a chaotic 3D system with `ott_esn`.
+[Lorenz walkthrough](lorenz-walkthrough.md)

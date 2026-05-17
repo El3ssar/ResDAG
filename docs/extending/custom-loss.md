@@ -36,5 +36,5 @@ wrap `get_loss`.
 
 ## See also
 
-- [Chaos & losses](../learn/chaos-and-losses.md)
+- [HPO losses](../reference/hpo/losses.md)
 - [`LossProtocol`](../reference/hpo/losses.md)

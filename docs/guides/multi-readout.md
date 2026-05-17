@@ -1,48 +1,31 @@
 # Multi-readout models
 
-Fit **several readout heads** on one graph in a single `ESNTrainer.fit` call. Hooks
-ensure each readout is solved before downstream layers consume its output.
-
-## Example
+Several readout layers can share one reservoir graph. `ESNTrainer` fits each readout
+in forward order via hooks; `targets` keys must match readout `name` values.
 
 ```python
 import pytorch_symbolic as ps
-import torch
 from resdag.core import ESNModel
 from resdag.layers import ESNLayer
 from resdag.layers.readouts import CGReadoutLayer
+from resdag.training import ESNTrainer
 
-fb = ps.Input((80, 4))
-res = ESNLayer(300, feedback_size=4)(fb)
+fb = ps.Input((1, 4))
+res = ESNLayer(400, feedback_size=4)(fb)
 
-pos = CGReadoutLayer(300, 3, name="position")(res)
-vel = CGReadoutLayer(300, 3, name="velocity")(res)
+pos = CGReadoutLayer(400, 3, name="position")(res)
+vel = CGReadoutLayer(400, 3, name="velocity")(res)
 
 model = ESNModel(fb, [pos, vel])
-
-from resdag.training import ESNTrainer
 
 ESNTrainer(model).fit(
     warmup_inputs=(warmup,),
     train_inputs=(train,),
-    targets={
-        "position": target_pos,
-        "velocity": target_vel,
-    },
+    targets={"position": target_pos, "velocity": target_vel},
 )
 ```
 
-Each key in `targets` must match a `CGReadoutLayer(..., name=...)`.
+For `forecast`, the first output tensor is used as feedback; its feature dimension
+must match `feedback_size`.
 
-## Forecasting note
-
-`model.forecast()` uses **only the first output** as feedback. If that head is not
-4-dimensional (matching feedback), either:
-
-- reorder outputs so the feedback-sized head is first, or
-- build a dedicated low-dimensional readout for autoregression.
-
-## See also
-
-- [Two-phase training](../learn/two-phase-training.md)
-- [Training example](https://github.com/El3ssar/resdag/blob/main/examples/09_training.py)
+See [`ReadoutLayer`](../reference/layers/readouts.md).

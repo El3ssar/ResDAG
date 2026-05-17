@@ -1,71 +1,82 @@
-# Data preparation & loading
+# Data preparation and loading
 
-## Load from disk
+Use `resdag.utils.data` for file I/O and the standard train/forecast split.
+
+## Load
 
 ```python
 from resdag.utils.data import load_file
 
-data = load_file("series.csv")  # auto-detect csv / npy / npz / nc
-# shape: (batch or 1, time, features) depending on file
+data = load_file("series.csv")  # shape (1, T, D) or (T, D) depending on file
+if data.dim() == 2:
+    data = data.unsqueeze(0)
 ```
 
-## Split for ESN workflows
+## Split with `prepare_esn_data`
 
 ```python
 from resdag.utils.data import prepare_esn_data
 
 warmup, train, target, f_warmup, val = prepare_esn_data(
     data,
-    warmup_steps=200,
-    train_steps=1000,
-    val_steps=300,
-    discard_steps=500,      # burn-in on raw series
+    warmup_steps=2_000,
+    train_steps=20_000,
+    val_steps=5_000,
+    discard_steps=1_000,
     normalize=True,
     norm_method="minmax",
 )
 ```
 
-Layout after optional `discard_steps`:
+Layout on the trimmed series:
 
 ```text
-[warmup][-------- train --------][-- val --]
-        ^ target = train shifted +1
+| discard | warmup | train | val |
 ```
 
-`f_warmup` = last `warmup_steps` of the train segment — use as `forecast()` warmup.
+| Tensor | Shape | Role |
+|--------|-------|------|
+| `warmup` | `(B, warmup_steps, D)` | Teacher-forced state sync before training |
+| `train` | `(B, train_steps, D)` | Training inputs for readout fit |
+| `target` | `(B, train_steps, D)` | One-step-ahead targets (`train` shifted by +1) |
+| **`f_warmup`** | `(B, warmup_steps, D)` | **`train[:, -warmup_steps:, :]`** — last warmup window of train; use as `forecast()` input drive immediately before `val` |
+| `val` | `(B, val_steps, D)` | Held-out segment; compare `forecast(f_warmup, horizon=val.shape[1])` to this |
 
-## One-shot helper
+`f_warmup` is **not** a separate region of the raw file. It is the suffix of `train`
+adjacent to `val`, so the reservoir state at the start of the forecast matches the
+end of the training drive.
+
+## One-shot
 
 ```python
 from resdag.utils.data import load_and_prepare
 
-splits = load_and_prepare(
+warmup, train, target, f_warmup, val = load_and_prepare(
     "lorenz.csv",
-    warmup_steps=200,
-    train_steps=1000,
-    val_steps=300,
-    normalize="minmax",
+    warmup_steps=2_000,
+    train_steps=20_000,
+    val_steps=5_000,
+    normalize=True,
 )
-warmup, train, target, f_warmup, val = splits
 ```
 
-## Normalization methods
+## HPO `data_loader`
 
-| `norm_method` | Effect |
-|---------------|--------|
-| `minmax` | Scale to $[-1, 1]$ |
-| `standard` | Zero mean, unit variance |
-| `noncentered` | Divide by max absolute value |
-| `meanpreserving` | Scale fluctuations, keep mean |
+Return the same five keys:
 
-Stats are computed on the training portion and applied globally to all splits.
-
-## Gotchas
-
-- Ensure `warmup_steps + train_steps + val_steps` fits after `discard_steps`.
-- For HPO, return the five tensors from `data_loader` with shapes `(B, T, D)`.
+```python
+def data_loader(trial):
+    data = ...
+    warmup, train, target, f_warmup, val = prepare_esn_data(...)
+    return {
+        "warmup": warmup,
+        "train": train,
+        "target": target,
+        "f_warmup": f_warmup,
+        "val": val,
+    }
+```
 
 ## See also
 
-- [`prepare_esn_data`](../reference/utils/data.md)
-- [Chaotic systems guide](chaotic-systems.md)
+[`prepare_esn_data`](../reference/utils/data.md)

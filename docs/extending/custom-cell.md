@@ -45,5 +45,5 @@ Override `set_state` on the layer if your state tensor rank differs from `(batch
 
 ## See also
 
-- [Reservoir layers](../learn/reservoir-layers.md)
+- [Reservoir layers](../reference/layers/reservoirs.md)
 - [`ReservoirCell`](../reference/layers/cells.md)

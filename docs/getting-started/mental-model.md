@@ -1,55 +1,52 @@
 # Mental model
 
-Reservoir computing looks complicated in papers but the software story in ResDAG
-is short.
+## Components
 
-## The core idea
+- **Reservoir layer** — maps `(batch, time, features)` to states. Internal recurrent
+  weights are set at initialization and usually not updated by gradient descent.
+- **Readout layer** — maps states to outputs. Fitted from collected states and targets
+  (implementation may use conjugate-gradient ridge, closed-form solvers, or other
+  algebraic methods depending on the class).
+- **`ESNModel`** — wraps a `pytorch_symbolic` graph, exposes `warmup`, `forecast`,
+  state save/load, and standard `forward`.
 
-1. **Reservoir** — a large, random, recurrent network with **frozen** weights.
-   It turns an input time series into a rich state trajectory.
-2. **Readout** — a **linear** map from reservoir states to outputs, fit by
-   **ridge regression** (not SGD).
-3. **Forecasting** — feed the model's own prediction back as input
-   (autoregression) after a teacher-forced **warmup**.
+## Training
 
-If you remember nothing else:
+`ESNTrainer.fit` expects:
 
-- The reservoir is a fixed feature extractor; you only tune readout regularization
-  (`alpha`) and reservoir *hyperparameters* (size, spectral radius, topology).
-- Training is **two phases**: warmup synchronizes internal state; one forward pass
-  fits the readout.
-- The first output dimension used for feedback must match the feedback input size
-  when you call `model.forecast()`.
+1. **Warmup** — teacher-forced inputs to align reservoir state with the data segment
+   before training.
+2. **Train** — teacher-forced inputs on the fitting segment; readout hooks solve for
+   weights against `targets` (dict keyed by readout `name`).
 
-## Two-phase training
+No epoch loop over the reservoir is required for the default algebraic readouts.
 
-```mermaid
-sequenceDiagram
-    participant Data
-    participant Reservoir
-    participant Readout
-    Data->>Reservoir: warmup (teacher forcing)
-    Note over Reservoir: state x(t) follows true inputs
-    Data->>Reservoir: train forward pass
-    Reservoir->>Readout: states H
-    Readout->>Readout: ridge / CG solve for W
+## Forecasting
+
+`model.forecast(f_warmup, horizon=…)`:
+
+1. Warmup (optional reset) on `f_warmup` and any drivers.
+2. Autoregressive steps: the model output at step $t$ becomes feedback at $t+1$.
+
+The feedback channel dimension must match the first output head used for feedback.
+
+## Data splits (`prepare_esn_data`)
+
+Timeline after optional `discard_steps`:
+
+```text
+[ warmup | train | val ]
 ```
 
-Warmup teaches the reservoir *where* to start in state space. The training pass
-collects all states and solves for readout weights in one shot (`ESNTrainer`).
+- `target` — `train` shifted by one timestep (one-step-ahead supervision).
+- **`f_warmup`** — `train[:, -warmup_steps:, :]`, i.e. the final warmup-length suffix
+  of **train**. The reservoir has already been driven on the preceding train segment
+  during fitting; `f_warmup` is the drive immediately before `val`, which is the
+  held-out segment used for scoring forecasts.
 
-## Where ResDAG adds structure
-
-| Concept | ResDAG type |
-|---------|-------------|
-| Single-step dynamics | `ESNCell`, `NGCell` |
-| Sequence + state API | `ESNLayer`, `NGReservoir` |
-| Full graph + forecast | `ESNModel` |
-| Readout fitting | `CGReadoutLayer` + `ESNTrainer` |
-
-See [Reservoir layers](../learn/reservoir-layers.md) and
-[two-phase training](../learn/two-phase-training.md) for the full narrative.
+Do not take `f_warmup` from an arbitrary later index in the series; use
+`prepare_esn_data` or reproduce its definition exactly.
 
 ## Next
 
-[Your first ESN](your-first-esn.md) puts this into code.
+[Your first ESN](your-first-esn.md)

@@ -8,10 +8,10 @@ time steps, and *D* is the number of dimensions.
 Available Losses
 ----------------
 - ``"efh"`` : Expected Forecast Horizon (default, recommended for chaotic systems)
-- ``"horizon"`` : Forecast Horizon Loss (contiguous valid steps)
-- ``"lyap"`` : Lyapunov-weighted Loss (exponential decay for chaotic systems)
+- ``"forecast_horizon"`` : Forecast Horizon Loss (contiguous valid steps)
+- ``"lyapunov"`` : Lyapunov-weighted Loss (exponential decay for chaotic systems)
 - ``"standard"`` : Standard Loss (mean geometric mean error)
-- ``"discounted"`` : Discounted RMSE (half-life weighted)
+- ``"soft_horizon"`` : Soft valid horizon (cumulative survival probability)
 
 Example
 -------

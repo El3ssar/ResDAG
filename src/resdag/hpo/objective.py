@@ -123,8 +123,8 @@ def build_objective(
     ...     search_space=my_search_space,
     ...     data_loader=my_data_loader,
     ...     loss_fn=get_loss("efh"),
-    ...     monitor_losses=[get_loss("standard"), get_loss("lyap")],
-    ...     monitor_params={"lyapunov_weighted_loss": {"lyapunov_time": 50}},
+    ...     monitor_losses=[get_loss("standard"), get_loss("lyapunov")],
+    ...     monitor_params={"lyapunov_weighted": {"lyapunov_t": 50}},
     ... )
     >>> study = optuna.create_study()
     >>> study.optimize(objective, n_trials=100)

@@ -1,52 +1,52 @@
-"""Selective exponentiation layer for resdag.
-
-Exponentiates the input to a power element-wise.
-"""
+"""Element-wise power transform for reservoir feature augmentation."""
 
 import torch
 import torch.nn as nn
 
 
 class Power(nn.Module):
-    """Layer that exponentiates to a power.
+    """Exponentiate every feature to a fixed power.
 
-    This layer exponentiates the input to a power element-wise.
+    Applies ``torch.pow`` element-wise along the last dimension. Used in
+    power-augmented ESN architectures to enrich reservoir states before
+    readout.
 
-    Args:
-        exponent: The exponent value to apply to the input
+    Parameters
+    ----------
+    exponent : float
+        Power applied to each element of the input tensor.
 
-    Input Shape:
-        (batch, ..., features) - any shape with at least 1 dimension
-
-    Output Shape:
-        Same as input
-
-    Example:
-        >>> layer = Power(exponent=2.0)
-        >>> x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
-        >>> y = layer(x)
-        >>> print(y)
-        tensor([[ 1.,  4.,  9., 16.]])  # All elements are squared
+    Examples
+    --------
+    >>> layer = Power(exponent=2.0)
+    >>> x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
+    >>> layer(x)
+    tensor([[ 1.,  4.,  9., 16.]])
     """
 
     def __init__(self, exponent: float) -> None:
-        """Initialize the SelectiveExponentiation layer.
+        """Store the exponent used in the forward pass.
 
-        Args:
-            index: Integer determining which parity to exponentiate (even/odd)
-            exponent: Exponent value for transformation
+        Parameters
+        ----------
+        exponent : float
+            Value passed to ``torch.pow`` for every element.
         """
         super().__init__()
         self.exponent = exponent
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Apply selective exponentiation based on feature index parity.
+        """Raise the input to ``self.exponent``.
 
-        Args:
-            input: Input tensor of any shape
+        Parameters
+        ----------
+        input : torch.Tensor
+            Tensor of shape ``(batch, ..., features)``.
 
-        Returns:
-            Tensor where either even or odd positions (in last dim) are exponentiated
+        Returns
+        -------
+        torch.Tensor
+            Same shape as *input*, with each element raised to ``exponent``.
         """
         return torch.pow(input, self.exponent)
 

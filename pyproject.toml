@@ -38,6 +38,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/El3ssar/resdag"
+Documentation = "https://el3ssar.github.io/resdag/"
 Repository = "https://github.com/El3ssar/resdag"
 Issues = "https://github.com/El3ssar/resdag/issues"
 

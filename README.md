@@ -2,6 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-purple.svg)](https://el3ssar.github.io/resdag/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **A modern, GPU-accelerated reservoir computing library for PyTorch.**
@@ -436,24 +437,21 @@ model = ESNModel(inp, [short_term, medium_term, long_term])
 
 ## 🎓 Documentation
 
-Full documentation is available in the [`docs/`](docs/) directory:
+**Live docs:** [https://el3ssar.github.io/resdag/](https://el3ssar.github.io/resdag/)
 
-- **[Topology System](docs/topology_system.md)** - Graph topologies for reservoirs
-- **[Input/Feedback Initializers](docs/input_feedback_initializers.md)** - Weight initialization strategies
-- **[Model Composition](docs/model_composition.md)** - Building complex architectures
-- **[Training Guide](docs/training.md)** - ESN training workflows
-- **[Hyperparameter Optimization](docs/hyperparameter_optimization.md)** - HPO best practices
-- **[Save/Load Models](docs/save_load.md)** - Model persistence
-
-### API Reference
-
-Generate API documentation using Sphinx:
+Build locally with MkDocs Material:
 
 ```bash
-cd docs/
-sphinx-apidoc -o api/ ../src/resdag
-make html
+pip install -e ".[docs]"
+mkdocs serve
 ```
+
+Source pages live under [`docs/`](docs/). Highlights:
+
+- [Get started](https://el3ssar.github.io/resdag/getting-started/) — install and first forecast
+- [Learn](https://el3ssar.github.io/resdag/learn/) — theory and design
+- [Guides](https://el3ssar.github.io/resdag/guides/) — task recipes
+- [API reference](https://el3ssar.github.io/resdag/reference/) — auto-generated from docstrings
 
 ---
 

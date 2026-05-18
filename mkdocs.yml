@@ -61,18 +61,18 @@ theme:
     text: Inter
     code: JetBrains Mono
   palette:
-    # Light scheme
+    # Light scheme — calm indigo, restrained amber accent
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: indigo
+      accent: deep orange
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     # Dark scheme
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
+      primary: indigo
       accent: amber
       toggle:
         icon: material/weather-sunny
@@ -267,38 +267,44 @@ markdown_extensions:
   - pymdownx.tilde
 
 # -------------------------------------------------------------------------
-# Navigation — the two-track architecture (Learn + Reference) plus
-# auxiliary sections for onboarding and contribution
+# Navigation — mirrors reservoirpy's layout: Get started → User guide →
+# Examples gallery → API reference → Developer guide.  The Examples section
+# is the "Read me, copy me, run me" track; User guide is the conceptual
+# walk-through; Developer guide covers contribution + every extension point.
 # -------------------------------------------------------------------------
 nav:
   - Home: index.md
   - Get started:
       - getting-started/index.md
       - Installation: getting-started/installation.md
-      - Your first ESN: getting-started/your-first-esn.md
       - Mental model: getting-started/mental-model.md
-      - Lorenz in 60 lines: getting-started/lorenz-walkthrough.md
-  - Guides:
+      - Your first ESN: getting-started/your-first-esn.md
+      - Lorenz walkthrough: getting-started/lorenz-walkthrough.md
+  - User guide:
       - guides/index.md
+      - Built-in models: guides/builtin-models.md
+      - Functional API (custom architectures): guides/functional-api.md
+      - Graph topologies: guides/topologies.md
+      - Input & feedback initializers: guides/initializers.md
+      - Data preparation: guides/data-preparation.md
       - Forecasting chaotic systems: guides/chaotic-systems.md
       - Input-driven systems: guides/input-driven-systems.md
       - Multi-readout models: guides/multi-readout.md
-      - Coupled ensemble forecasting: guides/coupled-ensembles.md
+      - Coupled ensembles: guides/coupled-ensembles.md
       - Hyperparameter optimization: guides/hyperparameter-optimization.md
       - Save, load, checkpoint: guides/save-and-load.md
       - Visualizing architectures: guides/visualizing-architectures.md
-      - Data preparation & loading: guides/data-preparation.md
-      - GPU & performance tips: guides/gpu-and-performance.md
-  - Extend:
-      - extending/index.md
-      - Add a graph topology: extending/custom-topology.md
-      - Add an input/feedback initializer: extending/custom-initializer.md
-      - Add a reservoir cell: extending/custom-cell.md
-      - Add a readout: extending/custom-readout.md
-      - Add an HPO loss: extending/custom-loss.md
-      - Add a premade model: extending/custom-model.md
-      - Add an ensemble aggregator: extending/custom-aggregator.md
-  - Reference:
+      - GPU & performance: guides/gpu-and-performance.md
+  - Examples:
+      - examples/index.md
+      - Sine forecasting: examples/sine.md
+      - Lorenz-63: examples/lorenz.md
+      - Mackey–Glass: examples/mackey-glass.md
+      - Coupled ensemble: examples/ensemble.md
+      - Custom initializer: examples/custom-initializer.md
+      - Custom architecture: examples/custom-model.md
+      - Pipeline integration: examples/pipeline-integration.md
+  - API reference:
       - reference/index.md
       - Top-level API: reference/top-level.md
       - Core (ESNModel): reference/core.md
@@ -323,13 +329,22 @@ nav:
       - Utilities:
           - Data I/O: reference/utils/data.md
           - States: reference/utils/states.md
+  - Developer guide:
+      - extending/index.md
+      - Add a graph topology: extending/custom-topology.md
+      - Add an input/feedback initializer: extending/custom-initializer.md
+      - Add a reservoir cell: extending/custom-cell.md
+      - Add a readout: extending/custom-readout.md
+      - Add an HPO loss: extending/custom-loss.md
+      - Add a premade model: extending/custom-model.md
+      - Add an ensemble aggregator: extending/custom-aggregator.md
+      - Contributing: about/contributing.md
   - About:
       - about/index.md
       - Training paths: about/training-paths.md
       - Changelog: about/changelog.md
       - Citation: about/citation.md
       - Related work: about/related-work.md
-      - Contributing: about/contributing.md
 
 # -------------------------------------------------------------------------
 # Validation — strict mode catches broken links during build

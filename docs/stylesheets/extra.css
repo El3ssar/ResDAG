@@ -1,197 +1,303 @@
 /* =========================================================================
-   ResDAG — custom theme layer on top of MkDocs Material
+   ResDAG — restrained, professional theme on top of MkDocs Material
    -------------------------------------------------------------------------
-   Strategy: stay inside Material's design tokens (CSS variables) so the
-   palette flips correctly between light & dark schemes. Only override what
-   the theme can't express, and never introduce hard-coded hexes that would
-   look broken when the user toggles modes.
+   Design intent: an academic-grade reference site that reads as scientific
+   software, not a marketing page. Subtle palette, no gradient text, no
+   transform-hover gimmicks, no neon code blocks. The visual identity comes
+   from typography rhythm, generous whitespace, and small accent dots — not
+   from chrome.
    ========================================================================= */
 
-/* ----- Color tokens -------------------------------------------------- */
+/* ----- Color tokens (override Material's defaults) ------------------- */
 :root {
-  --md-primary-fg-color: #6c3bd9;
-  --md-primary-fg-color--light: #8b5cf6;
-  --md-primary-fg-color--dark: #4b1fa0;
-  --md-accent-fg-color: #f59e0b;
+  /* Light theme primary: a calm indigo */
+  --md-primary-fg-color:        #3d4f87;
+  --md-primary-fg-color--light: #5a6db0;
+  --md-primary-fg-color--dark:  #2a376e;
 
-  --resdag-grad-from: #6c3bd9;
-  --resdag-grad-to: #ec4899;
-  --resdag-grad-accent: #f59e0b;
+  /* Accent: deep amber, kept small */
+  --md-accent-fg-color:         #c2410c;
 
-  --resdag-surface-elev: 0 1px 2px rgba(15, 23, 42, 0.04),
-                         0 4px 24px rgba(15, 23, 42, 0.06);
+  /* Custom tokens used by the rules below */
+  --resdag-rule:   #e4e7ec;
+  --resdag-muted:  #6b7280;
+  --resdag-soft:   #f7f7fb;
+  --resdag-code-bg: #f5f6fa;
+  --resdag-shadow:
+        0 1px 1px rgba(15, 23, 42, 0.03),
+        0 6px 18px rgba(15, 23, 42, 0.04);
+
+  /* Brand stripe (only used on the hero accent line, not on text) */
+  --resdag-stripe-from: #3d4f87;
+  --resdag-stripe-to:   #c2410c;
 }
 
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #8b5cf6;
-  --md-accent-fg-color: #fbbf24;
-  --resdag-surface-elev: 0 1px 2px rgba(0, 0, 0, 0.4),
-                         0 4px 24px rgba(0, 0, 0, 0.35);
+  --md-primary-fg-color:        #6b7ec8;
+  --md-primary-fg-color--light: #8593d4;
+  --md-primary-fg-color--dark:  #4f63b0;
+  --md-accent-fg-color:         #f59e0b;
+
+  --resdag-rule:   #2e3140;
+  --resdag-muted:  #9aa0aa;
+  --resdag-soft:   #1f2230;
+  --resdag-code-bg: #1d2030;
+  --resdag-shadow:
+        0 1px 1px rgba(0, 0, 0, 0.3),
+        0 6px 18px rgba(0, 0, 0, 0.35);
+
+  --resdag-stripe-from: #6b7ec8;
+  --resdag-stripe-to:   #f59e0b;
 }
 
-/* ----- Typographic polish ------------------------------------------- */
-.md-typeset h1,
-.md-typeset h2,
-.md-typeset h3 {
-  letter-spacing: -0.015em;
+/* ----- Typography rhythm -------------------------------------------- */
+.md-typeset {
+  font-feature-settings: "kern", "liga", "calt", "ss01";
 }
 
 .md-typeset h1 {
-  font-weight: 800;
-  font-size: 2.4rem;
-  line-height: 1.15;
-  background: linear-gradient(120deg,
-              var(--resdag-grad-from),
-              var(--resdag-grad-to));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  font-weight: 700;
+  font-size: 2.05rem;
+  letter-spacing: -0.015em;
+  line-height: 1.18;
+  margin-top: 0.25rem;
+  /* No gradient text — keep it readable and theme-aware. */
+  color: var(--md-default-fg-color);
 }
 
 .md-typeset h2 {
-  margin-top: 2.5rem;
-  padding-top: 0.5rem;
-  font-weight: 700;
-  border-top: 1px solid var(--md-default-fg-color--lightest);
+  margin-top: 2.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--resdag-rule);
+  font-weight: 650;
+  font-size: 1.45rem;
+  letter-spacing: -0.01em;
 }
 
 .md-typeset h3 {
-  margin-top: 1.75rem;
-  font-weight: 650;
+  margin-top: 1.6rem;
+  font-weight: 620;
+  font-size: 1.15rem;
 }
 
-/* ----- Code blocks & inline code ------------------------------------ */
-.md-typeset code {
-  border-radius: 0.35em;
-  padding: 0.12em 0.4em;
-  font-size: 0.85em;
+.md-typeset p,
+.md-typeset li {
+  font-size: 0.92rem;
+  line-height: 1.65;
 }
 
-.md-typeset .highlight pre {
-  border-radius: 0.6em;
-  box-shadow: var(--resdag-surface-elev);
+.md-typeset a {
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease, color 120ms ease;
 }
 
-.highlight .filename,
-.md-typeset .codehilite > .filename {
-  border-top-left-radius: 0.6em;
-  border-top-right-radius: 0.6em;
+.md-typeset a:hover {
+  border-bottom-color: currentColor;
 }
 
-/* ----- Hero (used on the landing page) ------------------------------ */
+/* ----- Landing-page hero (restrained version) ----------------------- */
 .resdag-hero {
-  margin: 2rem 0 3rem;
-  padding: 3rem 2rem;
-  border-radius: 1.25rem;
-  background:
-    radial-gradient(ellipse at top left,
-      rgba(108, 59, 217, 0.18) 0%,
-      transparent 55%),
-    radial-gradient(ellipse at bottom right,
-      rgba(236, 72, 153, 0.18) 0%,
-      transparent 55%),
-    linear-gradient(135deg,
-      rgba(108, 59, 217, 0.08),
-      rgba(236, 72, 153, 0.06));
-  text-align: center;
-  box-shadow: var(--resdag-surface-elev);
+  margin: 1.25rem 0 2.5rem;
+  padding: 0 0 1.5rem;
+  border-bottom: 1px solid var(--resdag-rule);
+  background: none;
+  box-shadow: none;
+  text-align: left;
 }
 
 .resdag-hero h1 {
-  margin: 0 0 0.5rem;
-  font-size: 3rem;
-  line-height: 1.05;
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.resdag-hero h1::after {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 3px;
+  margin-top: 0.6rem;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--resdag-stripe-from),
+    var(--resdag-stripe-to)
+  );
 }
 
 .resdag-hero .tagline {
-  font-size: 1.15rem;
-  font-weight: 500;
-  color: var(--md-default-fg-color--light);
-  margin-bottom: 1.75rem;
-  max-width: 36rem;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: 44rem;
+  margin: 1rem 0 1.4rem;
+  font-size: 1.02rem;
+  color: var(--resdag-muted);
 }
 
 .resdag-hero .cta-row {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.75rem;
+  gap: 0.55rem;
 }
 
 .resdag-hero .md-button {
-  border-radius: 999px;
-  padding: 0.55rem 1.25rem;
+  border-radius: 6px;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.005em;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.resdag-hero .md-button:hover {
+  border-color: var(--md-primary-fg-color);
+  background: var(--md-default-bg-color);
 }
 
 .resdag-hero .md-button--primary {
-  background: linear-gradient(135deg,
-              var(--resdag-grad-from),
-              var(--resdag-grad-to));
-  border-color: transparent;
+  background: var(--md-primary-fg-color);
+  border-color: var(--md-primary-fg-color);
   color: white;
 }
 
-/* ----- Feature grid (cards) ----------------------------------------- */
+.resdag-hero .md-button--primary:hover {
+  background: var(--md-primary-fg-color--dark);
+  border-color: var(--md-primary-fg-color--dark);
+}
+
+/* ----- Code blocks: clean, subdued ---------------------------------- */
+.md-typeset code {
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  background: var(--resdag-code-bg);
+  font-size: 0.84em;
+}
+
+.md-typeset .highlight pre {
+  border-radius: 6px;
+  border: 1px solid var(--resdag-rule);
+  box-shadow: none;
+}
+
+.md-typeset .codehilite > .filename,
+.md-typeset .highlight .filename {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--resdag-soft);
+  color: var(--resdag-muted);
+}
+
+/* ----- Tables ------------------------------------------------------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--resdag-rule);
+  font-size: 0.86rem;
+  box-shadow: none;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--resdag-soft);
+  border-bottom: 1px solid var(--resdag-rule);
+  font-weight: 650;
+  letter-spacing: 0.005em;
+}
+
+/* ----- Admonitions: low-noise --------------------------------------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 6px;
+  border: 1px solid var(--resdag-rule);
+  border-left-width: 3px;
+  box-shadow: none;
+}
+
+/* ----- Figures: bordered, captioned --------------------------------- */
+.md-typeset figure {
+  margin: 1.5rem 0;
+}
+
+.md-typeset figure img {
+  border: 1px solid var(--resdag-rule);
+  border-radius: 6px;
+  background: white;
+}
+
+[data-md-color-scheme="slate"] .md-typeset figure img {
+  background: #f3f3f5;
+}
+
+.md-typeset figcaption {
+  font-size: 0.82rem;
+  color: var(--resdag-muted);
+  text-align: center;
+  margin-top: 0.55rem;
+}
+
+/* ----- Cards (kept available, but subtle) --------------------------- */
 .md-typeset .grid.cards > ul > li,
 .md-typeset .grid > .card {
-  border-radius: 0.85rem;
-  box-shadow: var(--resdag-surface-elev);
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  border-radius: 8px;
+  border: 1px solid var(--resdag-rule);
+  box-shadow: none;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .md-typeset .grid.cards > ul > li:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 2px 4px rgba(15, 23, 42, 0.05),
-    0 10px 30px rgba(15, 23, 42, 0.08);
+  border-color: var(--md-primary-fg-color--light);
+  background: var(--resdag-soft);
+  transform: none;
 }
 
-/* ----- Admonitions get a softer feel ------------------------------- */
-.md-typeset .admonition,
-.md-typeset details {
-  border-radius: 0.6em;
-  border-width: 0;
-  box-shadow: var(--resdag-surface-elev);
-}
-
-/* ----- API reference: tighten signatures, accent labels ----------- */
+/* ----- API reference signatures ------------------------------------- */
 .doc-class .doc-heading,
 .doc-function .doc-heading {
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 1.05rem;
+  font-size: 1rem;
 }
 
 .doc-label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 0.15em 0.55em;
+  padding: 0.12em 0.5em;
   border-radius: 999px;
+  background: var(--resdag-soft);
+  color: var(--resdag-muted);
+  border: 1px solid var(--resdag-rule);
 }
 
-/* ----- Navigation tabs ---------------------------------------------- */
+/* ----- Top tabs: subdued, no shadow --------------------------------- */
+.md-tabs {
+  border-bottom: 1px solid var(--resdag-rule);
+  box-shadow: none;
+}
+
 .md-tabs__link {
   font-weight: 600;
-  opacity: 0.85;
+  font-size: 0.85rem;
+  opacity: 0.78;
 }
 
 .md-tabs__link--active {
   opacity: 1;
 }
 
-/* ----- Footer spacing ----------------------------------------------- */
-.md-footer-meta__inner {
-  padding-top: 1.25rem;
-  padding-bottom: 1.25rem;
-}
-
-/* ----- Math (KaTeX) doesn't get squished --------------------------- */
+/* ----- Math overflow ------------------------------------------------ */
 .md-typeset .arithmatex {
   overflow-x: auto;
+}
+
+/* ----- Footer ------------------------------------------------------- */
+.md-footer-meta {
+  background: var(--resdag-soft);
+  color: var(--resdag-muted);
+}
+
+[data-md-color-scheme="slate"] .md-footer-meta {
+  background: var(--resdag-soft);
 }

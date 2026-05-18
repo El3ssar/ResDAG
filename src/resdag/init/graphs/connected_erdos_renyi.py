@@ -40,9 +40,11 @@ def connected_erdos_renyi_graph(
         If True, allows self-loops in the graph.
     seed : int or np.random.Generator or None
         Seed for the random number generator.
-    tries : int, optional
-        Number of attempts to generate a connected graph. This parameter is handled
-        by the ``@connected_graph`` decorator.
+
+    Notes
+    -----
+    The ``tries`` argument is accepted by the ``@connected_graph`` wrapper, not
+    this function's signature.
 
     Returns
     -------

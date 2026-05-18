@@ -30,7 +30,7 @@ resdag.training.ESNTrainer : Trainer that uses these readouts.
 resdag.layers.ESNLayer : ESN layer for generating states.
 """
 
-from .base_readout import ReadoutLayer
+from .base import ReadoutLayer
 from .cg_readout import CGReadoutLayer
 
 __all__ = ["ReadoutLayer", "CGReadoutLayer"]

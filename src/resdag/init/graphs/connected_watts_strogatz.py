@@ -45,9 +45,11 @@ def connected_watts_strogatz_graph(
         If True, allows self-loops during the rewiring step. Default is True.
     seed : int or np.random.Generator or None, optional
         Seed for random number generator (RNG). If None, a random seed is used.
-    tries : int, optional
-        Number of attempts to generate a connected graph. This parameter is handled
-        by the ``@connected_graph`` decorator, not passed directly here.
+
+    Notes
+    -----
+    The ``tries`` argument is accepted by the ``@connected_graph`` wrapper, not
+    this function's signature.
 
     Returns
     -------

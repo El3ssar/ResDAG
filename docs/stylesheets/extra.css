@@ -1,0 +1,303 @@
+/* =========================================================================
+   ResDAG — restrained, professional theme on top of MkDocs Material
+   -------------------------------------------------------------------------
+   Design intent: an academic-grade reference site that reads as scientific
+   software, not a marketing page. Subtle palette, no gradient text, no
+   transform-hover gimmicks, no neon code blocks. The visual identity comes
+   from typography rhythm, generous whitespace, and small accent dots — not
+   from chrome.
+   ========================================================================= */
+
+/* ----- Color tokens (override Material's defaults) ------------------- */
+:root {
+  /* Light theme primary: a calm indigo */
+  --md-primary-fg-color:        #3d4f87;
+  --md-primary-fg-color--light: #5a6db0;
+  --md-primary-fg-color--dark:  #2a376e;
+
+  /* Accent: deep amber, kept small */
+  --md-accent-fg-color:         #c2410c;
+
+  /* Custom tokens used by the rules below */
+  --resdag-rule:   #e4e7ec;
+  --resdag-muted:  #6b7280;
+  --resdag-soft:   #f7f7fb;
+  --resdag-code-bg: #f5f6fa;
+  --resdag-shadow:
+        0 1px 1px rgba(15, 23, 42, 0.03),
+        0 6px 18px rgba(15, 23, 42, 0.04);
+
+  /* Brand stripe (only used on the hero accent line, not on text) */
+  --resdag-stripe-from: #3d4f87;
+  --resdag-stripe-to:   #c2410c;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #6b7ec8;
+  --md-primary-fg-color--light: #8593d4;
+  --md-primary-fg-color--dark:  #4f63b0;
+  --md-accent-fg-color:         #f59e0b;
+
+  --resdag-rule:   #2e3140;
+  --resdag-muted:  #9aa0aa;
+  --resdag-soft:   #1f2230;
+  --resdag-code-bg: #1d2030;
+  --resdag-shadow:
+        0 1px 1px rgba(0, 0, 0, 0.3),
+        0 6px 18px rgba(0, 0, 0, 0.35);
+
+  --resdag-stripe-from: #6b7ec8;
+  --resdag-stripe-to:   #f59e0b;
+}
+
+/* ----- Typography rhythm -------------------------------------------- */
+.md-typeset {
+  font-feature-settings: "kern", "liga", "calt", "ss01";
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+  font-size: 2.05rem;
+  letter-spacing: -0.015em;
+  line-height: 1.18;
+  margin-top: 0.25rem;
+  /* No gradient text — keep it readable and theme-aware. */
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset h2 {
+  margin-top: 2.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--resdag-rule);
+  font-weight: 650;
+  font-size: 1.45rem;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset h3 {
+  margin-top: 1.6rem;
+  font-weight: 620;
+  font-size: 1.15rem;
+}
+
+.md-typeset p,
+.md-typeset li {
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.md-typeset a {
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.md-typeset a:hover {
+  border-bottom-color: currentColor;
+}
+
+/* ----- Landing-page hero (restrained version) ----------------------- */
+.resdag-hero {
+  margin: 1.25rem 0 2.5rem;
+  padding: 0 0 1.5rem;
+  border-bottom: 1px solid var(--resdag-rule);
+  background: none;
+  box-shadow: none;
+  text-align: left;
+}
+
+.resdag-hero h1 {
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.resdag-hero h1::after {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 3px;
+  margin-top: 0.6rem;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--resdag-stripe-from),
+    var(--resdag-stripe-to)
+  );
+}
+
+.resdag-hero .tagline {
+  max-width: 44rem;
+  margin: 1rem 0 1.4rem;
+  font-size: 1.02rem;
+  color: var(--resdag-muted);
+}
+
+.resdag-hero .cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.resdag-hero .md-button {
+  border-radius: 6px;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.resdag-hero .md-button:hover {
+  border-color: var(--md-primary-fg-color);
+  background: var(--md-default-bg-color);
+}
+
+.resdag-hero .md-button--primary {
+  background: var(--md-primary-fg-color);
+  border-color: var(--md-primary-fg-color);
+  color: white;
+}
+
+.resdag-hero .md-button--primary:hover {
+  background: var(--md-primary-fg-color--dark);
+  border-color: var(--md-primary-fg-color--dark);
+}
+
+/* ----- Code blocks: clean, subdued ---------------------------------- */
+.md-typeset code {
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  background: var(--resdag-code-bg);
+  font-size: 0.84em;
+}
+
+.md-typeset .highlight pre {
+  border-radius: 6px;
+  border: 1px solid var(--resdag-rule);
+  box-shadow: none;
+}
+
+.md-typeset .codehilite > .filename,
+.md-typeset .highlight .filename {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--resdag-soft);
+  color: var(--resdag-muted);
+}
+
+/* ----- Tables ------------------------------------------------------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--resdag-rule);
+  font-size: 0.86rem;
+  box-shadow: none;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--resdag-soft);
+  border-bottom: 1px solid var(--resdag-rule);
+  font-weight: 650;
+  letter-spacing: 0.005em;
+}
+
+/* ----- Admonitions: low-noise --------------------------------------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 6px;
+  border: 1px solid var(--resdag-rule);
+  border-left-width: 3px;
+  box-shadow: none;
+}
+
+/* ----- Figures: bordered, captioned --------------------------------- */
+.md-typeset figure {
+  margin: 1.5rem 0;
+}
+
+.md-typeset figure img {
+  border: 1px solid var(--resdag-rule);
+  border-radius: 6px;
+  background: white;
+}
+
+[data-md-color-scheme="slate"] .md-typeset figure img {
+  background: #f3f3f5;
+}
+
+.md-typeset figcaption {
+  font-size: 0.82rem;
+  color: var(--resdag-muted);
+  text-align: center;
+  margin-top: 0.55rem;
+}
+
+/* ----- Cards (kept available, but subtle) --------------------------- */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border-radius: 8px;
+  border: 1px solid var(--resdag-rule);
+  box-shadow: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--md-primary-fg-color--light);
+  background: var(--resdag-soft);
+  transform: none;
+}
+
+/* ----- API reference signatures ------------------------------------- */
+.doc-class .doc-heading,
+.doc-function .doc-heading {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 1rem;
+}
+
+.doc-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.12em 0.5em;
+  border-radius: 999px;
+  background: var(--resdag-soft);
+  color: var(--resdag-muted);
+  border: 1px solid var(--resdag-rule);
+}
+
+/* ----- Top tabs: subdued, no shadow --------------------------------- */
+.md-tabs {
+  border-bottom: 1px solid var(--resdag-rule);
+  box-shadow: none;
+}
+
+.md-tabs__link {
+  font-weight: 600;
+  font-size: 0.85rem;
+  opacity: 0.78;
+}
+
+.md-tabs__link--active {
+  opacity: 1;
+}
+
+/* ----- Math overflow ------------------------------------------------ */
+.md-typeset .arithmatex {
+  overflow-x: auto;
+}
+
+/* ----- Footer ------------------------------------------------------- */
+.md-footer-meta {
+  background: var(--resdag-soft);
+  color: var(--resdag-muted);
+}
+
+[data-md-color-scheme="slate"] .md-footer-meta {
+  background: var(--resdag-soft);
+}

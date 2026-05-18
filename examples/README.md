@@ -43,7 +43,7 @@ done
 ## Companion docs
 
 - `../docs/training-paths.md` — when to pick algebraic vs mixed vs full-BPTT.
-- `../CHANGELOG.md` — recent API changes, especially the 0.4.0 entries.
+- Releases: <https://github.com/El3ssar/resdag/releases>.
 - `../CLAUDE.md` — full developer reference.
 
 ## Need help?

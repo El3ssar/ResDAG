@@ -1,0 +1,356 @@
+# =========================================================================
+# ResDAG documentation site configuration
+# =========================================================================
+#
+# Built with MkDocs Material + mkdocstrings (Python). Designed to be:
+#   - Modular: every page is a single Markdown file under docs/
+#   - Extensible: API reference is auto-generated from NumPy-style docstrings
+#   - Deployable: `mkdocs gh-deploy` (or the GitHub Actions workflow under
+#     .github/workflows/docs.yml) publishes a static site to GitHub Pages
+#   - Story-rich: Learn (concepts) and Guides (tasks) sit side by side with
+#     a dense Reference track
+#
+# Local preview:    mkdocs serve
+# Production build: mkdocs build --strict
+# Deploy:           mkdocs gh-deploy --force
+# =========================================================================
+
+site_name: ResDAG
+site_description: >-
+  A PyTorch-native reservoir computing library — Echo State Networks,
+  Next-Generation Reservoir Computers, and graph-driven topologies on GPU.
+site_url: https://el3ssar.github.io/resdag/
+site_author: Daniel Estevez-Moya
+
+repo_name: El3ssar/resdag
+repo_url: https://github.com/El3ssar/resdag
+edit_uri: edit/main/docs/
+copyright: >-
+  Copyright &copy; 2024–2026 Daniel Estevez-Moya — MIT License
+
+docs_dir: docs
+
+# -------------------------------------------------------------------------
+# Theme
+# -------------------------------------------------------------------------
+theme:
+  name: material
+  custom_dir: docs/_overrides
+  language: en
+  favicon: assets/favicon.svg
+  logo: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+    annotation: material/arrow-right-circle
+    admonition:
+      note: material/pencil-circle
+      abstract: material/clipboard-text
+      info: material/information
+      tip: material/lightbulb-on
+      success: material/check-circle
+      question: material/help-circle
+      warning: material/alert
+      failure: material/close-octagon
+      danger: material/lightning-bolt-circle
+      bug: material/shield-bug
+      example: material/test-tube
+      quote: material/format-quote-close
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    # Light scheme — calm indigo, restrained amber accent
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    # Dark scheme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.code.select
+    - content.footnote.tooltips
+    - content.tabs.link
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.instant.prefetch
+    - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+# -------------------------------------------------------------------------
+# Extras / social / version banner
+# -------------------------------------------------------------------------
+extra:
+  generator: false
+  status:
+    new: Recently added
+    deprecated: Deprecated
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/El3ssar/resdag
+      name: ResDAG on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/resdag/
+      name: ResDAG on PyPI
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: Thanks for the feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Tell us how we can make it better by opening an
+            <a href="https://github.com/El3ssar/resdag/issues/new" target="_blank" rel="noopener">issue on GitHub</a>.
+
+# -------------------------------------------------------------------------
+# Extra CSS / JS (modern visual identity)
+# -------------------------------------------------------------------------
+extra_css:
+  - stylesheets/extra.css
+  - https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css
+
+extra_javascript:
+  - javascripts/extra.js
+  - https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
+  - https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
+
+# -------------------------------------------------------------------------
+# Plugins
+# -------------------------------------------------------------------------
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      slide_effect: slide
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: true
+  - section-index
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+      fallback_to_build_date: true
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          inventories:
+            - https://docs.python.org/3/objects.inv
+            - https://pytorch.org/docs/stable/objects.inv
+            - https://numpy.org/doc/stable/objects.inv
+            - https://networkx.org/documentation/stable/objects.inv
+          options:
+            # Discovery
+            docstring_style: numpy
+            docstring_section_style: spacy
+            docstring_options:
+              ignore_init_summary: true
+            # Rendering
+            show_root_heading: true
+            show_root_full_path: false
+            show_root_members_full_path: false
+            show_object_full_path: false
+            show_category_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            separate_signature: true
+            line_length: 88
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            show_labels: true
+            show_source: true
+            show_bases: true
+            inherited_members: false
+            show_submodules: false
+            members_order: source
+            group_by_category: true
+            heading_level: 2
+            filters:
+              - "!^_"
+              - "^__init__$"
+
+# -------------------------------------------------------------------------
+# Markdown extensions
+# -------------------------------------------------------------------------
+markdown_extensions:
+  # Python Markdown core
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      title: On this page
+  # PyMdown
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      use_pygments: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: El3ssar
+      repo: resdag
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      check_paths: true
+      base_path:
+        - .
+        - docs
+        - examples
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# -------------------------------------------------------------------------
+# Navigation — mirrors reservoirpy's layout: Get started → User guide →
+# Examples gallery → API reference → Developer guide.  The Examples section
+# is the "Read me, copy me, run me" track; User guide is the conceptual
+# walk-through; Developer guide covers contribution + every extension point.
+# -------------------------------------------------------------------------
+nav:
+  - Home: index.md
+  - Get started:
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Mental model: getting-started/mental-model.md
+      - Your first ESN: getting-started/your-first-esn.md
+      - Lorenz walkthrough: getting-started/lorenz-walkthrough.md
+  - User guide:
+      - guides/index.md
+      - Built-in models: guides/builtin-models.md
+      - Functional API (custom architectures): guides/functional-api.md
+      - Graph topologies: guides/topologies.md
+      - Input & feedback initializers: guides/initializers.md
+      - Data preparation: guides/data-preparation.md
+      - Forecasting chaotic systems: guides/chaotic-systems.md
+      - Input-driven systems: guides/input-driven-systems.md
+      - Multi-readout models: guides/multi-readout.md
+      - Coupled ensembles: guides/coupled-ensembles.md
+      - Hyperparameter optimization: guides/hyperparameter-optimization.md
+      - Save, load, checkpoint: guides/save-and-load.md
+      - Visualizing architectures: guides/visualizing-architectures.md
+      - GPU & performance: guides/gpu-and-performance.md
+  - Examples:
+      - examples/index.md
+      - Sine forecasting: examples/sine.md
+      - Lorenz-63: examples/lorenz.md
+      - Mackey–Glass: examples/mackey-glass.md
+      - Coupled ensemble: examples/ensemble.md
+      - Custom initializer: examples/custom-initializer.md
+      - Custom architecture: examples/custom-model.md
+      - Pipeline integration: examples/pipeline-integration.md
+  - API reference:
+      - reference/index.md
+      - Top-level API: reference/top-level.md
+      - Core (ESNModel): reference/core.md
+      - Layers:
+          - Reservoirs: reference/layers/reservoirs.md
+          - Cells: reference/layers/cells.md
+          - Readouts: reference/layers/readouts.md
+          - Transforms: reference/layers/transforms.md
+      - Initialization:
+          - Topology: reference/init/topology.md
+          - Input/Feedback: reference/init/input-feedback.md
+          - Graph generators: reference/init/graphs.md
+          - Resolvers: reference/init/resolvers.md
+      - Training: reference/training.md
+      - Premade models: reference/models.md
+      - Ensemble: reference/ensemble.md
+      - HPO:
+          - Run & objective: reference/hpo/run.md
+          - Loss functions: reference/hpo/losses.md
+          - Storage & runners: reference/hpo/internals.md
+          - Utilities: reference/hpo/utils.md
+      - Utilities:
+          - Data I/O: reference/utils/data.md
+          - States: reference/utils/states.md
+  - Developer guide:
+      - extending/index.md
+      - Add a graph topology: extending/custom-topology.md
+      - Add an input/feedback initializer: extending/custom-initializer.md
+      - Add a reservoir cell: extending/custom-cell.md
+      - Add a readout: extending/custom-readout.md
+      - Add an HPO loss: extending/custom-loss.md
+      - Add a premade model: extending/custom-model.md
+      - Add an ensemble aggregator: extending/custom-aggregator.md
+      - Contributing: about/contributing.md
+  - About:
+      - about/index.md
+      - Training paths: about/training-paths.md
+      - Changelog: about/changelog.md
+      - Citation: about/citation.md
+      - Related work: about/related-work.md
+
+# -------------------------------------------------------------------------
+# Validation — strict mode catches broken links during build
+# -------------------------------------------------------------------------
+strict: false
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn

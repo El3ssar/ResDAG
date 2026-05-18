@@ -14,7 +14,7 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 
 import torch
 
-from .base_readout import ReadoutLayer
+from .base import ReadoutLayer
 
 
 class CGReadoutLayer(ReadoutLayer):

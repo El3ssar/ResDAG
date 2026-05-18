@@ -206,13 +206,12 @@ def prepare_esn_data(
 
     # Determine validation length
     if val_steps is None:
-        # Use all remaining data (need +1 for target shift)
-        val_steps = timesteps - train_end - 1
+        val_steps = timesteps - train_end
     else:
-        required = train_end + val_steps + 1  # +1 for target shift
+        required = train_end + val_steps
         if required > timesteps:
             raise ValueError(
-                f"Required data ({required} = warmup + train + val + 1) "
+                f"Required data ({required} = warmup + train + val) "
                 f"exceeds available length ({timesteps})"
             )
 

@@ -25,10 +25,6 @@ class ReservoirCell(nn.Module, ABC):
     handled by the enclosing :class:`BaseReservoirLayer`, not by the cell
     itself.
 
-    Parameters
-    ----------
-    (none — concrete subclasses define their own signatures)
-
     Notes
     -----
     Subclasses must implement :attr:`state_size`, :attr:`output_size`,

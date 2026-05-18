@@ -92,9 +92,9 @@ def run_hpo(
 
         - ``"efh"``: Expected Forecast Horizon (default, recommended)
         - ``"forecast_horizon"``: Forecast Horizon Loss
-        - ``"lyap"``: Lyapunov-weighted Loss
+        - ``"lyapunov"``: Lyapunov-weighted Loss
         - ``"standard"``: Standard Loss
-        - ``"discounted"``: Discounted RMSE
+        - ``"soft_horizon"``: Soft valid horizon
         - A custom callable following LossProtocol
 
     loss_params : dict, optional
@@ -105,7 +105,7 @@ def run_hpo(
         List of driver input keys in data dict for input-driven models.
     monitor_losses : list[str | LossProtocol], optional
         Additional loss functions to compute and log (but not optimize on).
-        Can be loss names (e.g., ``"standard"``, ``"lyap"``) or callables.
+        Can be loss names (e.g., ``"standard"``, ``"lyapunov"``) or callables.
         Results are stored as trial user attributes with prefix ``monitor_``.
     monitor_params : dict[str, dict[str, Any]], optional
         Keyword arguments for each monitor loss. Keys are loss function names

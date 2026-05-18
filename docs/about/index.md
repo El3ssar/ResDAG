@@ -4,7 +4,7 @@
 
 | Page | Contents |
 |------|----------|
-| [Changelog](changelog.md) | Release notes |
+| [Changelog](changelog.md) | Links to GitHub Releases |
 | [Citation](citation.md) | BibTeX |
 | [Related work](related-work.md) | Comparison with other RC libraries |
 | [Contributing](contributing.md) | Development setup |

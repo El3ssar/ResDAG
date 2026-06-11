@@ -212,9 +212,7 @@ class ESNModel(ps.SymbolicModel):
         >>> model.set_reservoir_states(states)  # Restore states
         """
         reservoir_names = {
-            name
-            for name, module in self.named_modules()
-            if isinstance(module, BaseReservoirLayer)
+            name for name, module in self.named_modules() if isinstance(module, BaseReservoirLayer)
         }
         provided = set(states.keys())
 
@@ -227,9 +225,7 @@ class ESNModel(ps.SymbolicModel):
                     parts.append(f"missing keys for reservoirs: {sorted(missing)}")
                 if extra:
                     parts.append(f"unexpected keys not matching any reservoir: {sorted(extra)}")
-                raise KeyError(
-                    "set_reservoir_states(strict=True): " + "; ".join(parts)
-                )
+                raise KeyError("set_reservoir_states(strict=True): " + "; ".join(parts))
 
         for name, module in self.named_modules():
             if isinstance(module, BaseReservoirLayer) and name in states:
@@ -673,8 +669,14 @@ class ESNModel(ps.SymbolicModel):
         forecast_inputs : tuple of torch.Tensor, optional
             Driver inputs for the autoregressive phase (feedback is provided
             by the model's own output, so it is not part of this tuple).
-            Each tensor must have shape ``(batch, horizon, driver_features)``.
-            Required when the model has driver inputs.
+            ``forecast_inputs[i][:, t, :]`` is the driver value at the
+            ``t``-th timestep *after* the warmup window — i.e. pass the
+            driver series sliced over the forecast window, continuing
+            exactly where the warmup drivers ended.  Each tensor must have
+            ``horizon - 1`` timesteps (or ``horizon``; the last step is then
+            unused, which lets you slice drivers over the same window as
+            your validation targets).  Required when the model has driver
+            inputs.
         horizon : int, keyword-only
             Number of autoregressive steps to generate.
         initial_feedback : torch.Tensor, optional
@@ -707,6 +709,15 @@ class ESNModel(ps.SymbolicModel):
         - Convention: first warmup element is always feedback (used for autoregression).
         - For multi-output models, first output is used as feedback.
         - Feedback output dimension must match feedback input dimension.
+
+        **Driver time alignment.** Training pairs ``(feedback_t, driver_t)``
+        with target ``feedback_{t+1}``.  The forecast loop keeps that pairing:
+        prediction ``i`` (for the ``(i+1)``-th step after warmup) is produced
+        from the previous prediction together with ``forecast_inputs[:, i-1]``,
+        the driver at that same timestep.  Prediction ``0`` is produced during
+        warmup from the last warmup feedback/driver pair, so the forecast
+        drivers start at the first step *after* the warmup window — no overlap
+        with the warmup drivers.
 
         Examples
         --------
@@ -765,9 +776,12 @@ class ESNModel(ps.SymbolicModel):
                     f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}"
                 )
             for i, driver in enumerate(forecast_inputs):
-                if driver.shape[1] != horizon:
+                if driver.shape[1] not in (horizon - 1, horizon):
                     raise ValueError(
-                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected {horizon}"
+                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected "
+                        f"{horizon - 1} (or {horizon}; the last step is unused). "
+                        f"forecast_inputs must hold the driver series for the "
+                        f"forecast window, starting right after the warmup window."
                     )
 
         batch_size = warmup_inputs[0].shape[0]
@@ -796,9 +810,7 @@ class ESNModel(ps.SymbolicModel):
                 if hasattr(module, "out_features") and hasattr(module, "_is_fitted"):
                     label = getattr(module, "_name", None) or name
                     readout_names.append(f"{label} (out_features={module.out_features})")
-            readouts_hint = (
-                f" Model readouts: {readout_names}." if readout_names else ""
-            )
+            readouts_hint = f" Model readouts: {readout_names}." if readout_names else ""
             raise ValueError(
                 f"forecast(): feedback dimension mismatch. "
                 f"Feedback input has {feedback_dim} features but the model output "
@@ -837,7 +849,11 @@ class ESNModel(ps.SymbolicModel):
         # Phase 2: Autoregressive forecast
         for t in range(1, horizon):
             if has_drivers:
-                driver_inputs_t = tuple(driver[:, t : t + 1, :] for driver in forecast_inputs)
+                # Prediction t pairs the previous prediction (feedback at the
+                # t-th step after warmup) with the driver at that same step,
+                # which is forecast_inputs[:, t-1] (drivers start right after
+                # the warmup window; the step-0 driver was consumed in warmup).
+                driver_inputs_t = tuple(driver[:, t - 1 : t, :] for driver in forecast_inputs)
                 step_inputs = (current_feedback,) + driver_inputs_t
             else:
                 step_inputs = (current_feedback,)

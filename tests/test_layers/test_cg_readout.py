@@ -370,3 +370,55 @@ class TestCGReadoutGPU:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestFitWithoutBias:
+    """Fit correctness for bias=False (uncentered ridge, no intercept)."""
+
+    def test_no_bias_recovers_linear_map(self):
+        """y = X @ W with nonzero-mean X must be recovered without an
+        intercept.  The legacy solver centered the data and then discarded
+        the intercept, shifting every prediction."""
+        torch.manual_seed(42)
+
+        X = torch.randn(500, 20) + 2.0  # deliberately not zero-mean
+        true_weight = torch.randn(20, 5)
+        y = X @ true_weight
+
+        readout = CGReadoutLayer(in_features=20, out_features=5, bias=False, alpha=1e-8)
+        readout.fit(X, y)
+
+        y_pred = readout(X)
+        assert readout.bias is None
+        assert torch.allclose(y_pred, y, atol=1e-3)
+
+    def test_no_bias_matches_closed_form_ridge(self):
+        """Weights must solve (XᵀX + αI) W = Xᵀy on the raw (uncentered) data."""
+        torch.manual_seed(0)
+        alpha = 1e-2
+
+        X = torch.randn(300, 10) + 1.0
+        y = torch.randn(300, 4)
+
+        readout = CGReadoutLayer(in_features=10, out_features=4, bias=False, alpha=alpha)
+        readout.fit(X, y)
+
+        X64, y64 = X.to(torch.float64), y.to(torch.float64)
+        gram = X64.T @ X64 + alpha * torch.eye(10, dtype=torch.float64)
+        expected = torch.linalg.solve(gram, X64.T @ y64)
+
+        assert torch.allclose(readout.weight.data.to(torch.float64).T, expected, atol=1e-4)
+
+    def test_with_bias_still_centers(self):
+        """bias=True keeps the centered solve with unpenalized intercept."""
+        torch.manual_seed(1)
+
+        X = torch.randn(400, 15) + 3.0
+        true_weight = torch.randn(15, 2)
+        true_bias = torch.tensor([5.0, -2.0])
+        y = X @ true_weight + true_bias
+
+        readout = CGReadoutLayer(in_features=15, out_features=2, alpha=1e-8)
+        readout.fit(X, y)
+
+        assert torch.allclose(readout(X), y, atol=1e-3)

@@ -30,17 +30,23 @@ class ESNCell(ReservoirCell):
     Owns all weight matrices and bias.  Sequence iteration is delegated to
     the enclosing :class:`ESNLayer`.
 
-    The state update follows:
+    The state update follows the standard leaky-integrator ESN equation
+    (Jaeger 2001; Lukoševičius 2012):
 
     .. math::
 
-        h_t = f((1 - \\alpha)\\,h_{t-1} + \\alpha\\,g(W_{fb}\\,x_{fb,t}
-               + W_{in}\\,x_{in,t} + W_{rec}\\,h_{t-1} + b))
+        h_t = (1 - \\alpha)\\,h_{t-1} + \\alpha\\,f(W_{fb}\\,x_{fb,t}
+               + W_{in}\\,x_{in,t} + W_{rec}\\,h_{t-1} + b)
 
     where :math:`f` is the activation function, :math:`\\alpha` is the leak
     rate, :math:`W_{fb}` is the feedback weight matrix, :math:`W_{in}` is the
-    (optional) input weight matrix, and :math:`W_{rec}` is the recurrent
-    weight matrix.
+    (optional) input weight matrix, :math:`W_{rec}` is the recurrent
+    weight matrix, and :math:`b` is a fixed random bias drawn from
+    :math:`\\mathcal{U}(-\\beta, \\beta)` with :math:`\\beta` = ``bias_scaling``.
+
+    The bias breaks the odd symmetry of ``tanh`` dynamics: without it,
+    negated inputs produce exactly negated states, which constrains the
+    representations the readout can draw from.
 
     Parameters
     ----------
@@ -56,6 +62,13 @@ class ESNCell(ReservoirCell):
         spectral radius scaling is applied.
     bias : bool, default=True
         Whether to include a bias term.
+    bias_scaling : float, default=1.0
+        Scale of the random bias: entries are drawn from
+        ``uniform(-bias_scaling, bias_scaling)``, matching the default
+        initialization of the feedback/input weights.  Ignored when
+        ``bias=False``.  Set to ``0.0`` to keep a zero bias (the historical
+        pre-0.5 behaviour, where ``bias=True`` was effectively a no-op
+        because the bias was zero-initialized and frozen).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
     leak_rate : float, default=1.0
@@ -98,6 +111,7 @@ class ESNCell(ReservoirCell):
         input_size: int | None = None,
         spectral_radius: float | None = None,
         bias: bool = True,
+        bias_scaling: float = 1.0,
         activation: str = "tanh",
         leak_rate: float = 1.0,
         trainable: bool = False,
@@ -126,8 +140,9 @@ class ESNCell(ReservoirCell):
         self._activation_name = activation
         self.activation_fn = self._get_activation(activation)
 
-        # Store bias flag before initialization
+        # Store bias config before initialization
         self._bias = bias
+        self.bias_scaling = bias_scaling
 
         # Initialize weight matrices
         self._initialize_weights()
@@ -267,7 +282,14 @@ class ESNCell(ReservoirCell):
         self._initialize_recurrent_weights()
 
         if self._bias:
-            self.bias_h = nn.Parameter(torch.zeros(self.reservoir_size))
+            # Random bias drawn like the feedback/input weights.  A
+            # zero-initialized frozen bias would be a no-op and leave the
+            # tanh dynamics oddly symmetric (f(-x) = -f(x)).
+            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size))
+            if self.bias_scaling != 0.0:
+                nn.init.uniform_(self.bias_h, -self.bias_scaling, self.bias_scaling)
+            else:
+                nn.init.zeros_(self.bias_h)
         else:
             self.register_parameter("bias_h", None)
 

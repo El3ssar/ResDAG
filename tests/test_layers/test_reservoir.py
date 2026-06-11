@@ -371,3 +371,98 @@ class TestESNLayerRepr:
 
         assert "feedback_size=20" in repr_str
         assert "input_size=5" in repr_str
+
+
+class TestESNLayerBias:
+    """Test reservoir bias initialization and its effect on dynamics."""
+
+    def test_bias_is_random_by_default(self) -> None:
+        """Default bias must be nonzero — a zero frozen bias is a no-op."""
+        torch.manual_seed(0)
+        reservoir = ESNLayer(reservoir_size=100, feedback_size=3)
+
+        assert reservoir.bias_h is not None
+        assert not torch.allclose(reservoir.bias_h, torch.zeros(100))
+        assert reservoir.bias_h.abs().max() <= 1.0
+
+    def test_bias_scaling_bounds(self) -> None:
+        """bias_scaling controls the uniform range of the bias."""
+        torch.manual_seed(0)
+        reservoir = ESNLayer(reservoir_size=200, feedback_size=3, bias_scaling=0.3)
+
+        assert reservoir.bias_h.abs().max() <= 0.3
+        assert not torch.allclose(reservoir.bias_h, torch.zeros(200))
+
+    def test_bias_scaling_zero_gives_zero_bias(self) -> None:
+        """bias_scaling=0.0 reproduces the legacy zero-bias behaviour."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=3, bias_scaling=0.0)
+
+        assert reservoir.bias_h is not None
+        assert torch.allclose(reservoir.bias_h, torch.zeros(50))
+
+    def test_bias_false_still_none(self) -> None:
+        """bias=False must not create a bias parameter regardless of scaling."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=3, bias=False, bias_scaling=0.5)
+
+        assert reservoir.bias_h is None
+
+    def test_bias_breaks_odd_symmetry(self) -> None:
+        """Without bias, tanh dynamics are odd (f(-x) = -f(x)); the random
+        bias must break that symmetry."""
+        torch.manual_seed(7)
+        x = torch.randn(1, 30, 3)
+
+        sym = ESNLayer(reservoir_size=64, feedback_size=3, bias=False, spectral_radius=0.9)
+        sym.reset_state()
+        out_pos = sym(x)
+        sym.reset_state()
+        out_neg = sym(-x)
+        assert torch.allclose(out_neg, -out_pos, atol=1e-6)
+
+        torch.manual_seed(7)
+        biased = ESNLayer(reservoir_size=64, feedback_size=3, bias=True, spectral_radius=0.9)
+        biased.reset_state()
+        out_pos = biased(x)
+        biased.reset_state()
+        out_neg = biased(-x)
+        assert not torch.allclose(out_neg, -out_pos, atol=1e-3)
+
+    def test_bias_frozen_when_not_trainable(self) -> None:
+        """The random bias is a fixed parameter on the frozen path."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=3, trainable=False)
+
+        assert reservoir.bias_h.requires_grad is False
+
+
+class TestStateDetachBetweenCalls:
+    """Truncated-BPTT contract: stored state never carries the call graph."""
+
+    def test_state_detached_after_forward(self) -> None:
+        """Stored state has no grad_fn after a grad-enabled forward."""
+        reservoir = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        x = torch.randn(2, 10, 3)
+
+        out = reservoir(x)
+
+        assert out.requires_grad
+        assert reservoir.state is not None
+        assert reservoir.state.grad_fn is None
+
+    def test_opt_out_keeps_graph(self) -> None:
+        """detach_state_between_calls=False preserves cross-call graphs."""
+        reservoir = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        reservoir.detach_state_between_calls = False
+        x = torch.randn(2, 10, 3)
+
+        reservoir(x)
+
+        assert reservoir.state.grad_fn is not None
+
+    def test_consecutive_backward_without_reset(self) -> None:
+        """Two forward+backward cycles without reset must not raise."""
+        reservoir = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        x = torch.randn(2, 10, 3)
+
+        for _ in range(2):
+            out = reservoir(x)
+            out.sum().backward()

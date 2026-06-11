@@ -43,6 +43,10 @@ class ESNLayer(BaseReservoirLayer):
         radius scaling is applied.
     bias : bool, default=True
         Whether to include a bias term.
+    bias_scaling : float, default=1.0
+        Scale of the random bias: entries are drawn from
+        ``uniform(-bias_scaling, bias_scaling)``.  Set to ``0.0`` for a
+        zero bias (pre-0.5 behaviour).  Ignored when ``bias=False``.
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
     leak_rate : float, default=1.0
@@ -129,6 +133,7 @@ class ESNLayer(BaseReservoirLayer):
         input_size: int | None = None,
         spectral_radius: float | None = None,
         bias: bool = True,
+        bias_scaling: float = 1.0,
         activation: str = "tanh",
         leak_rate: float = 1.0,
         trainable: bool = False,
@@ -142,6 +147,7 @@ class ESNLayer(BaseReservoirLayer):
             input_size=input_size,
             spectral_radius=spectral_radius,
             bias=bias,
+            bias_scaling=bias_scaling,
             activation=activation,
             leak_rate=leak_rate,
             trainable=trainable,

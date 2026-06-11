@@ -148,8 +148,7 @@ def coupled_ensemble_esn(
     # topologies, etc.). When it doesn't, the global torch RNG seed below
     # still controls every non-seeded random draw.
     factory_accepts_seed = (
-        seed is not None
-        and "seed" in inspect.signature(model_factory).parameters
+        seed is not None and "seed" in inspect.signature(model_factory).parameters
     )
 
     models: list[ESNModel] = []

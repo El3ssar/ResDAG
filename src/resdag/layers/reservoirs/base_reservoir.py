@@ -40,6 +40,16 @@ class BaseReservoirLayer(nn.Module, ABC):
     state : torch.Tensor or None
         Current reservoir state of shape ``(batch, cell.state_size)``, or
         ``None`` if not yet initialized.
+    detach_state_between_calls : bool
+        If ``True`` (default), the stored state is detached from the autograd
+        graph at the end of each forward call (truncated BPTT at call
+        boundaries).  Gradients still flow through the *returned* states
+        within a call — this only severs gradient flow *across* calls, which
+        otherwise raises "backward through the graph a second time" when a
+        model is trained with SGD over consecutive batches without resetting
+        the reservoir.  Set to ``False`` only if you intentionally backprop
+        through state carried across multiple forward calls (and manage the
+        retained graphs yourself).
 
     See Also
     --------
@@ -51,6 +61,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         super().__init__()
         self.cell = cell
         self.state: torch.Tensor | None = None
+        self.detach_state_between_calls: bool = True
 
     def forward(
         self,
@@ -122,6 +133,17 @@ class BaseReservoirLayer(nn.Module, ABC):
             output, self.state = self.cell(inputs_t, self.state)
             outputs[:, t, :] = output
 
+        # Truncated BPTT at call boundaries: gradients flow through the
+        # returned states within this call, but the *stored* state must not
+        # keep the graph alive — a later forward + backward would otherwise
+        # try to backprop through this call's already-freed graph.
+        if (
+            self.detach_state_between_calls
+            and self.state is not None
+            and self.state.grad_fn is not None
+        ):
+            self.state = self.state.detach()
+
         return outputs
 
     # ------------------------------------------------------------------
@@ -164,8 +186,11 @@ class BaseReservoirLayer(nn.Module, ABC):
                 device, dtype = self.state.device, self.state.dtype
             else:
                 ref = next(
-                    (t for t in chain(self.cell.parameters(), self.cell.buffers())
-                     if t.is_floating_point()),
+                    (
+                        t
+                        for t in chain(self.cell.parameters(), self.cell.buffers())
+                        if t.is_floating_point()
+                    ),
                     None,
                 )
                 device = ref.device if ref is not None else torch.device("cpu")

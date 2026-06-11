@@ -125,7 +125,7 @@ class CGReadoutLayer(ReadoutLayer):
         self,
         states: torch.Tensor,
         targets: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Solve ridge regression via Conjugate Gradient on flattened inputs.
 
         Parameters
@@ -139,8 +139,10 @@ class CGReadoutLayer(ReadoutLayer):
         -------
         coefs : torch.Tensor
             Coefficient matrix of shape ``(in_features, out_features)``.
-        intercept : torch.Tensor
-            Intercept vector of shape ``(out_features,)``.
+        intercept : torch.Tensor or None
+            Intercept vector of shape ``(out_features,)``, or ``None`` when
+            the layer was built with ``bias=False`` (the ridge problem is
+            then solved without centering, i.e. with no intercept).
         """
         return self._solve_ridge_cg(states, targets, self.alpha)
 
@@ -149,10 +151,19 @@ class CGReadoutLayer(ReadoutLayer):
         X: torch.Tensor,
         y: torch.Tensor,
         alpha: float,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Solve ridge regression using Conjugate Gradient method."""
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Solve ridge regression using Conjugate Gradient method.
+
+        When the layer has a bias, the data is centered and an unpenalized
+        intercept is recovered afterwards (standard ridge-with-intercept).
+        When built with ``bias=False`` the raw, uncentered normal equations
+        are solved instead — centering without applying the intercept at
+        predict time would systematically shift every prediction.
+        """
         if alpha < 0:
             raise ValueError(f"Alpha must be non-negative, got {alpha}")
+
+        fit_intercept = self.bias is not None
 
         original_dtype = X.dtype
         # Upcast to float64 for numerical stability unless the caller opted out.
@@ -162,13 +173,15 @@ class CGReadoutLayer(ReadoutLayer):
             X = X.to(torch.float64)
             y = y.to(torch.float64)
 
-        # Center the data
-        X_mean = X.mean(dim=0, keepdim=True)
-        y_mean = y.mean(dim=0, keepdim=True)
-        n = float(X.shape[0])
-
-        # Gram matrix of centered X
-        XtX = X.T @ X - n * (X_mean.T @ X_mean)
+        if fit_intercept:
+            # Center the data; the intercept is recovered after the solve.
+            X_mean = X.mean(dim=0, keepdim=True)
+            y_mean = y.mean(dim=0, keepdim=True)
+            n = float(X.shape[0])
+            # Gram matrix of centered X
+            XtX = X.T @ X - n * (X_mean.T @ X_mean)
+        else:
+            XtX = X.T @ X
 
         def matvec(w: torch.Tensor) -> torch.Tensor:
             """Matrix-vector product: (X^T X + alpha * I) @ w."""
@@ -202,15 +215,18 @@ class CGReadoutLayer(ReadoutLayer):
             return X
 
         # Right-hand side
-        rhs = X.T @ y - n * (X_mean.T @ y_mean)
+        if fit_intercept:
+            rhs = X.T @ y - n * (X_mean.T @ y_mean)
+        else:
+            rhs = X.T @ y
 
         # Solve using CG
         coefs = conjugate_gradient(matvec, rhs, self.max_iter, self.tol)
 
-        # Compute intercept
-        intercept = (y_mean - X_mean @ coefs).squeeze(0)
-
-        return coefs.to(original_dtype), intercept.to(original_dtype)
+        if fit_intercept:
+            intercept = (y_mean - X_mean @ coefs).squeeze(0)
+            return coefs.to(original_dtype), intercept.to(original_dtype)
+        return coefs.to(original_dtype), None
 
     def __repr__(self) -> str:
         """Return string representation."""

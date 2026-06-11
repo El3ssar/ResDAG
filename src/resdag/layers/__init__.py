@@ -46,6 +46,8 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 from .cells import ESNCell, NGCell, ReservoirCell
+from .readouts import CGReadoutLayer, ReadoutLayer
+from .reservoirs import BaseReservoirLayer, ESNLayer, NGReservoir
 from .transforms import (
     Concatenate,
     FeaturePartitioner,
@@ -53,8 +55,6 @@ from .transforms import (
     SelectiveDropout,
     SelectiveExponentiation,
 )
-from .readouts import CGReadoutLayer, ReadoutLayer
-from .reservoirs import BaseReservoirLayer, ESNLayer, NGReservoir
 
 __all__ = [
     # Reservoir base classes

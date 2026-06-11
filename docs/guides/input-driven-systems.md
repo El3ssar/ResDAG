@@ -35,3 +35,15 @@ pred = model.forecast(
 
 Use `prepare_esn_data` on each channel or stack features if they share the same
 time base. `forecast_inputs` supplies drivers only; feedback is autoregressive.
+
+## Driver alignment
+
+`forecast_inputs` must be the driver series **continuing exactly where the
+warmup drivers ended**. If the full driver series is `d` and warmup used
+`d[:, :T]`, pass `d[:, T:T+horizon-1]` — or `d[:, T:T+horizon]`, whose last
+step is accepted but unused, convenient when slicing the same window as the
+validation targets. The model pairs each autoregressive feedback with the
+driver of the *same* timestep, matching how the readout was trained
+(`target = feedback shifted by 1`). See
+[Timing & alignment](../under-the-hood/timing-and-alignment.md) for the full
+index-by-index walkthrough.

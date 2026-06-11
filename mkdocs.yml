@@ -304,6 +304,11 @@ nav:
       - Custom initializer: examples/custom-initializer.md
       - Custom architecture: examples/custom-model.md
       - Pipeline integration: examples/pipeline-integration.md
+  - Under the hood:
+      - under-the-hood/index.md
+      - Reservoir equations: under-the-hood/reservoir-equations.md
+      - Readout fitting: under-the-hood/readout-fitting.md
+      - Timing & alignment: under-the-hood/timing-and-alignment.md
   - API reference:
       - reference/index.md
       - Top-level API: reference/top-level.md
@@ -341,6 +346,7 @@ nav:
       - Contributing: about/contributing.md
   - About:
       - about/index.md
+      - Architecture & design: about/architecture.md
       - Training paths: about/training-paths.md
       - Changelog: about/changelog.md
       - Citation: about/citation.md

@@ -115,6 +115,7 @@ Lorenz butterfly for ~5 Lyapunov times before phase drift dominates:
 | [Get started](getting-started/index.md) | Installation, mental model, first model, Lorenz walkthrough |
 | [User guide](guides/index.md) | Data prep, forecasting, ensembles, HPO, persistence, performance |
 | [Examples](examples/index.md) | Runnable end-to-end scripts with embedded figures |
+| [Under the hood](under-the-hood/index.md) | The equations and timing conventions behind every call |
 | [API reference](reference/index.md) | Auto-generated from NumPy-style docstrings in `src/resdag/` |
 | [Developer guide](extending/index.md) | Register custom topologies, initializers, cells, readouts, losses |
 | [About](about/index.md) | Changelog, citation, related libraries, training-path discussion |

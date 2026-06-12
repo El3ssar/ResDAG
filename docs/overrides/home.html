@@ -62,8 +62,19 @@
     margin: 0; padding: 0; border: none; background: transparent; box-shadow: none;
     animation: nb-fade 0.9s 0.3s both;
   }
-  .nb-attractor svg { width: 100%; height: auto; display: block; }
-  .nb-attractor path { fill: none; stroke: var(--nb-accent); stroke-width: 1.05; opacity: 0.85; }
+  .nb-attractor canvas { width: 100%; height: auto; display: block; }
+  .nb-legend {
+    display: flex; gap: 1.1rem; justify-content: flex-end;
+    margin-top: 0.45rem;
+    font-size: 0.62rem; font-weight: 600; letter-spacing: 0.06em;
+    color: var(--nb-ink-soft);
+  }
+  .nb-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .nb-legend i {
+    width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+  }
+  .nb-legend .nb-leg-true i { background: var(--nb-ink-soft); }
+  .nb-legend .nb-leg-pred i { background: var(--nb-accent); }
   .nb-attractor figcaption {
     margin-top: 0.3rem; text-align: right;
     font-family: var(--nb-display); font-style: italic;
@@ -144,11 +155,14 @@
       </div>
     </div>
     <figure class="nb-attractor">
-      <svg id="nb-attractor-svg" viewBox="0 0 460 400" xmlns="http://www.w3.org/2000/svg" aria-label="A chaotic attractor, drawn live">
-        <path id="nb-attractor-path" d=""/>
-      </svg>
-      <figcaption><span id="nb-attractor-name">—</span>, drawn live — a
-      different system on every visit, courtesy of
+      <canvas id="nb-attractor-canvas" width="920" height="800"
+        aria-label="A chaotic attractor and a live ESN forecast of it, rotating in 3D"></canvas>
+      <div class="nb-legend">
+        <span class="nb-leg-true"><i></i>system</span>
+        <span class="nb-leg-pred"><i></i>ESN forecast</span>
+      </div>
+      <figcaption><span id="nb-attractor-name">—</span> — forecast by a
+      real 500-unit ESN; a different system on every visit, courtesy of
       <a href="https://github.com/El3ssar/TSDynamics">TSDynamics</a></figcaption>
     </figure>
   </section>
@@ -237,79 +251,130 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <sp
 
 <script>
 (function () {
-  // A different strange attractor on every visit. Systems and default
-  // parameters ported from TSDynamics (github.com/El3ssar/TSDynamics);
-  // integrated client-side with fixed-step RK4.
-  var SYSTEMS = [
-    { name: "Lorenz-63", dt: 0.01, n: 4000, skip: 200, s0: [1, 1, 25], proj: [0, 2],
-      f: function (s) { return [10 * (s[1] - s[0]), 28 * s[0] - s[0] * s[2] - s[1], s[0] * s[1] - 8 / 3 * s[2]]; } },
-    { name: "Rössler", dt: 0.04, n: 5000, skip: 500, s0: [1, 1, 1], proj: [0, 1],
-      f: function (s) { return [-s[1] - s[2], s[0] + 0.2 * s[1], 0.2 + s[2] * (s[0] - 5.7)]; } },
-    { name: "Thomas", dt: 0.02, n: 5000, skip: 500, s0: [1, 0, 0.5], proj: [0, 1],
-      f: function (s) { return [-1.85 * s[0] + 10 * Math.sin(s[1]), -1.85 * s[1] + 10 * Math.sin(s[2]), -1.85 * s[2] + 10 * Math.sin(s[0])]; } },
-    { name: "Halvorsen", dt: 0.01, n: 5000, skip: 500, s0: [-5, 0, 0], proj: [0, 1],
-      f: function (s) { return [-1.4 * s[0] - 4 * s[1] - 4 * s[2] - s[1] * s[1], -1.4 * s[1] - 4 * s[2] - 4 * s[0] - s[2] * s[2], -1.4 * s[2] - 4 * s[0] - 4 * s[1] - s[0] * s[0]]; } },
-    { name: "Dadras", dt: 0.01, n: 6000, skip: 500, s0: [1, 1, 1], proj: [0, 1],
-      f: function (s) { return [s[1] - 3 * s[0] + 2.7 * s[1] * s[2], 1.7 * s[1] - s[0] * s[2] + s[2], 2 * s[0] * s[1] - 9 * s[2]]; } },
-    { name: "Arneodo", dt: 0.02, n: 5000, skip: 500, s0: [0.2, 0.2, 0.2], proj: [0, 1],
-      f: function (s) { return [s[1], s[2], 5.5 * s[0] - 4.5 * s[1] - s[2] - s[0] * s[0] * s[0]]; } },
-    { name: "Rucklidge", dt: 0.02, n: 5000, skip: 500, s0: [1, 0, 4.5], proj: [1, 2],
-      f: function (s) { return [-2 * s[0] + 6.7 * s[1] - s[1] * s[2], s[0], -s[2] + s[1] * s[1]]; } },
-    { name: "Sprott B", dt: 0.02, n: 6000, skip: 500, s0: [0.1, 0.1, 0.1], proj: [0, 2],
-      f: function (s) { return [s[1] * s[2], s[0] - s[1], 1 - s[0] * s[1]]; } }
-  ];
+  // The hero animation: a chaotic system (ink) and a real ResDAG forecast
+  // of it (vermilion), rotating slowly in 3D. Trajectory pairs were
+  // generated offline by scripts/generate_hero_forecasts.py — the orange
+  // curve is a genuine 500-unit ESN running autoregressively. Systems
+  // ported from TSDynamics (github.com/El3ssar/TSDynamics).
+  var FILES = ["lorenz", "thomas", "halvorsen", "arneodo", "rucklidge", "sprott_b"];
+  var TAIL = 420;          // samples kept on screen — the "medium tail"
+  var SPEED = 2.4;         // samples advanced per frame
+  var YAW_RATE = 0.10;     // rad/s — the slow rotation
+  var TILT = -0.42;        // fixed pitch for the 3D feel
 
-  function rk4(f, s, dt) {
-    var k1 = f(s);
-    var k2 = f([s[0] + dt / 2 * k1[0], s[1] + dt / 2 * k1[1], s[2] + dt / 2 * k1[2]]);
-    var k3 = f([s[0] + dt / 2 * k2[0], s[1] + dt / 2 * k2[1], s[2] + dt / 2 * k2[2]]);
-    var k4 = f([s[0] + dt * k3[0], s[1] + dt * k3[1], s[2] + dt * k3[2]]);
-    return [
-      s[0] + dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]),
-      s[1] + dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]),
-      s[2] + dt / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2])
-    ];
+  var canvas = document.getElementById("nb-attractor-canvas");
+  if (!canvas || canvas.dataset.live) return;
+  canvas.dataset.live = "1";
+  var ctx = canvas.getContext("2d");
+  var label = document.getElementById("nb-attractor-name");
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var W = canvas.width, H = canvas.height;
+  var colors = { true_: "#575047", pred: "#c2410c" };
+  var frame = 0;
+
+  function readColors() {
+    var cs = getComputedStyle(document.body);
+    colors.true_ = (cs.getPropertyValue("--nb-ink-soft") || "#575047").trim();
+    colors.pred = (cs.getPropertyValue("--nb-accent") || "#c2410c").trim();
   }
 
-  function draw() {
-    var path = document.getElementById("nb-attractor-path");
-    var label = document.getElementById("nb-attractor-name");
-    if (!path || path.dataset.drawn) return;
-    path.dataset.drawn = "1";
+  function center(data) {
+    var pts = data.true.concat(data.pred);
+    var c = [0, 0, 0], i, j;
+    for (i = 0; i < pts.length; i++) for (j = 0; j < 3; j++) c[j] += pts[i][j];
+    for (j = 0; j < 3; j++) c[j] /= pts.length;
+    var ds = [];
+    for (i = 0; i < pts.length; i++) {
+      var dx = pts[i][0] - c[0], dy = pts[i][1] - c[1], dz = pts[i][2] - c[2];
+      ds.push(Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    ds.sort(function (a, b) { return a - b; });
+    // Robust radius: outlier forecast excursions must not shrink the view.
+    return { c: c, r: ds[Math.floor(ds.length * 0.97)] * 1.04 };
+  }
 
-    var sys = SYSTEMS[Math.floor(Math.random() * SYSTEMS.length)];
-    var s = sys.s0.slice(), a = [], b = [];
-    for (var i = 0; i < sys.n + sys.skip; i++) {
-      s = rk4(sys.f, s, sys.dt);
-      if (!isFinite(s[0]) || Math.abs(s[0]) > 1e6) { sys = SYSTEMS[0]; s = sys.s0.slice(); a = []; b = []; i = -1; continue; }
-      if (i >= sys.skip) { a.push(s[sys.proj[0]]); b.push(s[sys.proj[1]]); }
+  function project(p, geo, yaw) {
+    var x = p[0] - geo.c[0], y = p[1] - geo.c[1], z = p[2] - geo.c[2];
+    var cy = Math.cos(yaw), sy = Math.sin(yaw);
+    var x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
+    var ct = Math.cos(TILT), st = Math.sin(TILT);
+    var y2 = y * ct - z1 * st;
+    var scale = (Math.min(W, H) / 2 - 26) / geo.r;
+    return [W / 2 + x1 * scale, H / 2 - y2 * scale];
+  }
+
+  function drawTail(pts, upto, geo, yaw, color) {
+    var from = Math.max(0, upto - TAIL);
+    var n = upto - from;
+    if (n < 2) return;
+    var CHUNKS = 10, k;
+    for (k = 0; k < CHUNKS; k++) {
+      var a = from + Math.floor(n * k / CHUNKS);
+      var b = Math.min(from + Math.floor(n * (k + 1) / CHUNKS) + 1, upto);
+      if (b - a < 2) continue;
+      ctx.globalAlpha = 0.07 + 0.78 * Math.pow((k + 1) / CHUNKS, 1.6);
+      ctx.beginPath();
+      var p = project(pts[a], geo, yaw);
+      ctx.moveTo(p[0], p[1]);
+      for (var i = a + 1; i < b; i++) {
+        p = project(pts[i], geo, yaw);
+        ctx.lineTo(p[0], p[1]);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.3;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    var tip = project(pts[upto - 1], geo, yaw);
+    ctx.beginPath();
+    ctx.arc(tip[0], tip[1], 7, 0, 6.2832);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function run(data) {
+    var geo = center(data);
+    var total = Math.min(data.true.length, data.pred.length);
+    var t = 12;
+    var t0 = performance.now();
+    if (label) label.textContent = data.name;
+    readColors();
+
+    function tick(now) {
+      var yaw = ((now - t0) / 1000) * YAW_RATE;
+      if (++frame % 40 === 0) readColors();
+      ctx.clearRect(0, 0, W, H);
+      drawTail(data.true, Math.floor(t), geo, yaw, colors.true_);
+      drawTail(data.pred, Math.floor(t), geo, yaw, colors.pred);
+      t += SPEED;
+      if (t >= total) { load(); return; }   // next loop: a new system
+      requestAnimationFrame(tick);
     }
 
-    var W = 460, H = 400, M = 22;
-    var amin = Math.min.apply(null, a), amax = Math.max.apply(null, a);
-    var bmin = Math.min.apply(null, b), bmax = Math.max.apply(null, b);
-    var d = "";
-    for (var j = 0; j < a.length; j++) {
-      var x = (a[j] - amin) / (amax - amin) * (W - 2 * M) + M;
-      var y = H - ((b[j] - bmin) / (bmax - bmin) * (H - 2 * M) + M);
-      d += (j === 0 ? "M" : "L") + x.toFixed(1) + " " + y.toFixed(1);
+    if (reduced) {
+      // Static frame, no motion: show the full pair at a fixed angle.
+      ctx.clearRect(0, 0, W, H);
+      drawTail(data.true, total, geo, 0.8, colors.true_);
+      drawTail(data.pred, total, geo, 0.8, colors.pred);
+      return;
     }
-    path.setAttribute("d", d);
-    if (label) label.textContent = sys.name;
-
-    var len = path.getTotalLength();
-    path.style.strokeDasharray = len;
-    path.style.strokeDashoffset = len;
-    requestAnimationFrame(function () {
-      path.style.transition = "stroke-dashoffset 9s cubic-bezier(0.3, 0, 0.4, 1)";
-      path.style.strokeDashoffset = "0";
-    });
+    requestAnimationFrame(tick);
   }
 
-  draw();
-  if (window.document$ && window.document$.subscribe) {
-    window.document$.subscribe(function () { draw(); });
+  var lastFile = null;
+  function load() {
+    var pick;
+    do { pick = FILES[Math.floor(Math.random() * FILES.length)]; } while (pick === lastFile && FILES.length > 1);
+    lastFile = pick;
+    fetch("assets/forecasts/" + pick + ".json")
+      .then(function (r) { return r.json(); })
+      .then(run)
+      .catch(function () { /* leave the canvas empty rather than break the page */ });
   }
+
+  load();
 })();
 </script>
 {% endblock %}

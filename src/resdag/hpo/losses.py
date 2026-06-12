@@ -187,7 +187,7 @@ def forecast_horizon(
     Returns
     -------
     float
-        Negative log of the valid horizon length. Lower is better.
+        Negative of the valid horizon length. Lower is better.
     """
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
     e_t = np.median(errors, axis=0)  # Robust across batch

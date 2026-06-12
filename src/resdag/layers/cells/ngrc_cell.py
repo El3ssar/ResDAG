@@ -85,7 +85,7 @@ class NGCell(ReservoirCell):
     >>> cell = NGCell(input_dim=3)
     >>> x = torch.randn(4, 3)                          # (batch=4, d=3)
     >>> state = cell.init_state(4, x.device, x.dtype)  # (4, 1, 3)
-    >>> features, new_state = cell(x, state)
+    >>> features, new_state = cell([x], state)
     >>> features.shape
     torch.Size([4, 28])
     >>> new_state.shape
@@ -95,7 +95,7 @@ class NGCell(ReservoirCell):
 
     >>> cell = NGCell(input_dim=3, k=1)
     >>> state = cell.init_state(1, 'cpu', torch.float32)
-    >>> features, new_state = cell(torch.randn(1, 3), state)
+    >>> features, new_state = cell([torch.randn(1, 3)], state)
     >>> features.shape
     torch.Size([1, 10])
 
@@ -136,9 +136,7 @@ class NGCell(ReservoirCell):
         # For j = 1, ..., k-1:  X_{i - j*s} lives at row (k-1-j)*s of the
         # buffer (which holds inputs chronologically oldest-first).
         if k > 1:
-            delay_idx = torch.tensor(
-                [(k - 1 - j) * s for j in range(1, k)], dtype=torch.long
-            )
+            delay_idx = torch.tensor([(k - 1 - j) * s for j in range(1, k)], dtype=torch.long)
         else:
             delay_idx = torch.zeros(0, dtype=torch.long)
         self.register_buffer("delay_indices", delay_idx)
@@ -249,9 +247,7 @@ class NGCell(ReservoirCell):
             # taps[:,1,:] = X_{i-2s}, ..., taps[:,k-2,:] = X_{i-(k-1)s}.
             taps = state[:, self.delay_indices, :]  # (batch, k-1, input_dim)
             # O_lin = [X_i || X_{i-s} || ... || X_{i-(k-1)s}]
-            o_lin = torch.cat([x.unsqueeze(1), taps], dim=1).reshape(
-                batch, self.k * self.input_dim
-            )
+            o_lin = torch.cat([x.unsqueeze(1), taps], dim=1).reshape(batch, self.k * self.input_dim)
         else:
             # k=1: no delay taps, just current input
             o_lin = x  # (batch, input_dim)

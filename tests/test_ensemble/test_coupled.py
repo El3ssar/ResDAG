@@ -31,9 +31,7 @@ def _toy_data(seq_len: int = 60, feature_size: int = 2):
 
 class TestConstruction:
     def test_factory_builds_n_sub_models(self):
-        ens = rd.coupled_ensemble_esn(
-            n_models=4, reservoir_size=20, feedback_size=2, output_size=2
-        )
+        ens = rd.coupled_ensemble_esn(n_models=4, reservoir_size=20, feedback_size=2, output_size=2)
         assert isinstance(ens, CoupledEnsembleESNModel)
         assert ens.n_models == 4
         assert len(ens.models) == 4
@@ -44,8 +42,7 @@ class TestConstruction:
 
     def test_unknown_aggregator_string_raises(self):
         models = [
-            rd.classic_esn(reservoir_size=10, feedback_size=2, output_size=2)
-            for _ in range(2)
+            rd.classic_esn(reservoir_size=10, feedback_size=2, output_size=2) for _ in range(2)
         ]
         with pytest.raises(ValueError, match="aggregator"):
             CoupledEnsembleESNModel(models=models, aggregator="argmin")
@@ -60,12 +57,10 @@ class TestConstruction:
         )
         for m1, m2 in zip(e1.models, e2.models):
             cell1 = next(
-                m for m in m1.modules()
-                if hasattr(m, "weight_hh") and hasattr(m, "reservoir_size")
+                m for m in m1.modules() if hasattr(m, "weight_hh") and hasattr(m, "reservoir_size")
             )
             cell2 = next(
-                m for m in m2.modules()
-                if hasattr(m, "weight_hh") and hasattr(m, "reservoir_size")
+                m for m in m2.modules() if hasattr(m, "weight_hh") and hasattr(m, "reservoir_size")
             )
             assert torch.equal(cell1.weight_hh.data, cell2.weight_hh.data)
 
@@ -81,7 +76,10 @@ class TestFitForecast:
         warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
 
         ens = rd.coupled_ensemble_esn(
-            n_models=3, reservoir_size=30, feedback_size=2, output_size=2,
+            n_models=3,
+            reservoir_size=30,
+            feedback_size=2,
+            output_size=2,
             seed=0,
         )
         ens.fit((warmup,), (train,), {"output": train.clone()})
@@ -132,18 +130,15 @@ class TestFitForecast:
         for m1, m2 in zip(ens_seq.models, ens_par.models):
             for (n1, p1), (n2, p2) in zip(m1.named_parameters(), m2.named_parameters()):
                 assert n1 == n2
-                assert torch.allclose(p1, p2, atol=1e-6, rtol=1e-5), (
-                    f"{n1}: sequential vs parallel diverged"
-                )
+                assert torch.allclose(
+                    p1, p2, atol=1e-6, rtol=1e-5
+                ), f"{n1}: sequential vs parallel diverged"
 
     def test_fit_invalid_n_workers(self):
-        ens = rd.coupled_ensemble_esn(
-            n_models=2, reservoir_size=10, feedback_size=2, output_size=2
-        )
+        ens = rd.coupled_ensemble_esn(n_models=2, reservoir_size=10, feedback_size=2, output_size=2)
         x = _toy_data()
         with pytest.raises(ValueError, match="n_workers"):
-            ens.fit((x[:, :10],), (x[:, 10:30],),
-                    {"output": x[:, 10:30].clone()}, n_workers=0)
+            ens.fit((x[:, :10],), (x[:, 10:30],), {"output": x[:, 10:30].clone()}, n_workers=0)
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +154,12 @@ class TestAggregators:
 
         agg = OutliersFilteredMean(method="z_score", threshold=2.0)
         ens = rd.coupled_ensemble_esn(
-            n_models=4, reservoir_size=20, feedback_size=2, output_size=2,
-            aggregate=agg, seed=0,
+            n_models=4,
+            reservoir_size=20,
+            feedback_size=2,
+            output_size=2,
+            aggregate=agg,
+            seed=0,
         )
         ens.fit((warmup,), (train,), {"output": train.clone()})
         out = ens.forecast(f_warm, horizon=10)
@@ -175,16 +174,16 @@ class TestAggregators:
         # at every (batch, timestep) is an outlier.
         samples = torch.tensor(
             [
-                [[[1.0, 2.0]]],   # sample 0
-                [[[3.0, 4.0]]],   # sample 1
-                [[[5.0, 6.0]]],   # sample 2
+                [[[1.0, 2.0]]],  # sample 0
+                [[[3.0, 4.0]]],  # sample 1
+                [[[5.0, 6.0]]],  # sample 2
             ]
         )  # shape (samples=3, batch=1, T=1, F=2)
         result = layer(samples)
         expected = samples.mean(dim=0)
-        assert torch.allclose(result, expected), (
-            f"all-outlier fallback returned {result}, expected plain mean {expected}"
-        )
+        assert torch.allclose(
+            result, expected
+        ), f"all-outlier fallback returned {result}, expected plain mean {expected}"
 
 
 # ---------------------------------------------------------------------------
@@ -212,9 +211,7 @@ class TestStateAndPersistence:
                 assert torch.equal(s_old[key], s_new[key])
 
     def test_set_reservoir_states_wrong_length_raises(self):
-        ens = rd.coupled_ensemble_esn(
-            n_models=2, reservoir_size=20, feedback_size=2, output_size=2
-        )
+        ens = rd.coupled_ensemble_esn(n_models=2, reservoir_size=20, feedback_size=2, output_size=2)
         with pytest.raises(ValueError, match="state dict"):
             ens.set_reservoir_states([{}])  # only 1 dict for 2 sub-models
 
@@ -242,9 +239,7 @@ class TestStateAndPersistence:
 
             # Weights match
             for m1, m2 in zip(ens.models, ens2.models):
-                for (_, p1), (_, p2) in zip(
-                    m1.named_parameters(), m2.named_parameters()
-                ):
+                for (_, p1), (_, p2) in zip(m1.named_parameters(), m2.named_parameters()):
                     assert torch.equal(p1, p2)
 
             # States restored

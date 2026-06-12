@@ -55,7 +55,8 @@ def esp_index(
     Returns
     -------
     dict or tuple
-        If ``history=False``: dict mapping layer names to ESP index scalars.
+        If ``history=False``: dict mapping layer names to single-element
+        lists containing the ESP index scalar tensor.
         If ``history=True``: tuple of (ESP indices dict, history dict).
         History tensors have shape ``(iterations, timesteps, batch)``.
 

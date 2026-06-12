@@ -1,0 +1,70 @@
+{
+  "_comment": "Single source of truth for ResDAG's visual identity. Edit here, then run: uv run python docs/_tooling/apply_theme.py (add --figures to also regenerate every plot).",
+  "fonts": {
+    "display": "Outfit",
+    "body": "Figtree",
+    "mono": "IBM Plex Mono"
+  },
+  "light": {
+    "bg": "#f2f5fa",
+    "surface": "#fafcfe",
+    "ink": "#22293a",
+    "ink_soft": "#49586f",
+    "muted": "#76859c",
+    "rule": "#dde4ee",
+    "rule_strong": "#c4cfe0",
+    "accent": "#2a63d4",
+    "accent_strong": "#1d4ca8",
+    "accent_wash": "#2a63d414",
+    "code_bg": "#e9eef7",
+    "data_true": "#b06a18",
+    "header_bg": "#151b2a",
+    "footer_bg": "#151b2a"
+  },
+  "dark": {
+    "bg": "#141821",
+    "surface": "#1c212c",
+    "ink": "#d6deea",
+    "ink_soft": "#a4b1c4",
+    "muted": "#75839b",
+    "rule": "#2a3240",
+    "rule_strong": "#3c4859",
+    "accent": "#7da9ef",
+    "accent_strong": "#a3c2f6",
+    "accent_wash": "#7da9ef14",
+    "code_bg": "#171c27",
+    "data_true": "#dfa260",
+    "header_bg": "#10141c",
+    "footer_bg": "#10141c"
+  },
+  "dataviz": {
+    "_comment": "Used by every matplotlib figure. The forecast/accent series uses 'accent'; the true/system series uses 'true' (amber — maximum hue separation from the blue accent).",
+    "paper": "#f2f5fa",
+    "ink": "#22293a",
+    "ink_soft": "#49586f",
+    "muted": "#76859c",
+    "rule": "#c4cfe0",
+    "accent": "#2a63d4",
+    "true": "#b06a18",
+    "accent_deep": "#16306b",
+    "accent_soft": "#9db9e8",
+    "true_soft": "#e2b88a"
+  },
+  "syntax": {
+    "_comment": "Material for MkDocs --md-code-hl-* variables, per scheme.",
+    "light": {
+      "bg": "#e9eef7", "fg": "#24292f",
+      "keyword": "#cf222e", "string": "#0a3069", "number": "#0550ae",
+      "function": "#8250df", "constant": "#0550ae", "name": "#24292f",
+      "operator": "#cf222e", "punctuation": "#57606a", "comment": "#6e7781",
+      "special": "#953800", "variable": "#953800"
+    },
+    "dark": {
+      "bg": "#161b26", "fg": "#c9d3e0",
+      "keyword": "#ff7b72", "string": "#a5d6ff", "number": "#79c0ff",
+      "function": "#d2a8ff", "constant": "#79c0ff", "name": "#e6edf3",
+      "operator": "#ff7b72", "punctuation": "#8b949e", "comment": "#8b949e",
+      "special": "#ffa657", "variable": "#ffa657"
+    }
+  }
+}

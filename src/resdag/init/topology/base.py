@@ -3,8 +3,10 @@ Topology Initializer Base Classes
 =================================
 
 This module provides base classes for topology-based weight initialization
-in reservoir computing networks. Topologies define the connectivity patterns
-of reservoir neurons using graph structures.
+in reservoir computing networks. Topologies define the structure of the
+recurrent weight matrix — via graph connectivity (:class:`GraphTopology`)
+or via any function that builds a matrix directly
+(:class:`MatrixTopology`).
 
 Classes
 -------
@@ -12,10 +14,13 @@ TopologyInitializer
     Abstract base class for topology initializers.
 GraphTopology
     Concrete implementation using NetworkX graphs.
+MatrixTopology
+    Concrete implementation wrapping any matrix-building callable.
 
 See Also
 --------
 resdag.init.graphs : Graph generation functions.
+resdag.init.matrices : Direct matrix-construction functions.
 resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
@@ -25,6 +30,33 @@ from typing import Any, Callable
 import networkx as nx
 import numpy as np
 import torch
+
+
+def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torch.Tensor:
+    """Rescale a square matrix so its spectral radius equals ``target_radius``.
+
+    Returns the matrix unchanged when its current spectral radius is
+    (numerically) zero — e.g. the ``zero`` topology or a nilpotent matrix.
+
+    Parameters
+    ----------
+    matrix : torch.Tensor
+        Square matrix to rescale.
+    target_radius : float
+        Desired largest absolute eigenvalue.
+
+    Returns
+    -------
+    torch.Tensor
+        The rescaled matrix (new tensor).
+    """
+    eigenvalues = torch.linalg.eigvals(matrix)
+    current_radius = torch.max(torch.abs(eigenvalues)).item()
+
+    if current_radius > 1e-8:
+        matrix = matrix * (target_radius / current_radius)
+
+    return matrix
 
 
 class TopologyInitializer(ABC):
@@ -206,15 +238,193 @@ class GraphTopology(TopologyInitializer):
         target_radius: float,
     ) -> torch.Tensor:
         """Scale weight matrix to target spectral radius."""
-        eigenvalues = torch.linalg.eigvals(weight)
-        current_radius = torch.max(torch.abs(eigenvalues)).item()
+        return scale_to_spectral_radius(weight, target_radius)
 
-        if current_radius > 1e-8:
-            scale_factor = target_radius / current_radius
-            weight = weight * scale_factor
+    def __repr__(self) -> str:
+        """Return string representation."""
+        return f"{self.__class__.__name__}(graph_func={self.graph_func.__name__}, kwargs={self.graph_kwargs})"
+
+
+class MatrixTopology(TopologyInitializer):
+    """
+    Topology initializer wrapping any matrix-building callable.
+
+    This is the general-purpose escape hatch of the topology system: any
+    function with logic for constructing a recurrent weight matrix becomes a
+    topology, with full access to spectral-radius scaling, the registry, and
+    the ``ESNLayer(topology=...)`` shorthand. No graph required.
+
+    Two calling conventions are supported, tried in order:
+
+    1. **Build style** — ``fn(n, **kwargs)`` returning an ``(n, n)``
+       array-like: a ``torch.Tensor``, a ``numpy.ndarray``, or even a
+       ``networkx`` graph (converted to its adjacency matrix).
+    2. **In-place style** — ``fn(tensor, **kwargs)`` mutating a tensor
+       in place, e.g. any ``torch.nn.init.*_`` function.
+
+    Parameters
+    ----------
+    matrix_func : callable
+        The matrix-building function (build style or in-place style).
+    matrix_kwargs : dict, optional
+        Keyword arguments bound to the function.
+
+    Examples
+    --------
+    A plain function as a topology:
+
+    >>> import torch
+    >>> def block_diagonal(n, blocks=4):
+    ...     w = torch.zeros(n, n)
+    ...     size = n // blocks
+    ...     for b in range(blocks):
+    ...         s = b * size
+    ...         w[s : s + size, s : s + size] = torch.randn(size, size)
+    ...     return w
+    >>> topology = MatrixTopology(block_diagonal, {"blocks": 5})
+    >>> weight = torch.empty(100, 100)
+    >>> topology.initialize(weight, spectral_radius=0.9)
+
+    Bare callables passed to ``ESNLayer`` are wrapped automatically:
+
+    >>> from resdag.layers import ESNLayer
+    >>> layer = ESNLayer(100, feedback_size=3, topology=block_diagonal)
+    >>> layer = ESNLayer(100, feedback_size=3, topology=(block_diagonal, {"blocks": 2}))
+
+    ``torch.nn.init`` functions work directly (in-place style):
+
+    >>> layer = ESNLayer(100, feedback_size=3, topology=torch.nn.init.orthogonal_)
+
+    See Also
+    --------
+    GraphTopology : Graph-based topologies.
+    resdag.init.topology.register_matrix_topology : Register by name.
+    """
+
+    def __init__(
+        self,
+        matrix_func: Callable,
+        matrix_kwargs: dict[str, Any] | None = None,
+    ):
+        self.matrix_func = matrix_func
+        self.matrix_kwargs = matrix_kwargs or {}
+
+    def initialize(
+        self,
+        weight: torch.Tensor,
+        spectral_radius: float | None = None,
+    ) -> torch.Tensor:
+        """
+        Initialize a square weight tensor from the wrapped callable.
+
+        Parameters
+        ----------
+        weight : torch.Tensor
+            Square tensor to initialize, shape ``(n, n)``. Modified in-place.
+        spectral_radius : float, optional
+            Target spectral radius. If None, no scaling is applied.
+
+        Returns
+        -------
+        torch.Tensor
+            Initialized weight tensor (modified in-place).
+
+        Raises
+        ------
+        ValueError
+            If ``weight`` is not 2-D square, if the callable matches neither
+            calling convention, or if the built matrix has the wrong shape.
+        """
+        if weight.ndim != 2:
+            raise ValueError(f"Weight must be 2D, got shape {weight.shape}")
+        if weight.shape[0] != weight.shape[1]:
+            raise ValueError(f"Weight must be square, got shape {weight.shape}")
+
+        n = weight.shape[0]
+
+        result = _call_matrix_builder(self.matrix_func, weight, (n,), self.matrix_kwargs)
+        matrix = _coerce_to_matrix(result, (n, n), weight.device, weight.dtype)
+
+        if spectral_radius is not None:
+            matrix = scale_to_spectral_radius(matrix, spectral_radius)
+
+        with torch.no_grad():
+            weight.copy_(matrix)
 
         return weight
 
     def __repr__(self) -> str:
         """Return string representation."""
-        return f"{self.__class__.__name__}(graph_func={self.graph_func.__name__}, kwargs={self.graph_kwargs})"
+        name = getattr(self.matrix_func, "__name__", repr(self.matrix_func))
+        return f"{self.__class__.__name__}(matrix_func={name}, kwargs={self.matrix_kwargs})"
+
+
+def _call_matrix_builder(
+    fn: Callable,
+    weight: torch.Tensor,
+    build_args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> Any:
+    """Call ``fn`` in build style, falling back to in-place style.
+
+    Build style passes the dimensions (``build_args``) and expects a matrix
+    back. In-place style passes a scratch tensor of the right shape and uses
+    whatever the function leaves in it (``torch.nn.init.*_`` convention).
+    Functions that take dimensions raise ``TypeError``/``AttributeError``
+    when handed a tensor and vice versa, which is what the fallback keys on.
+    """
+    try:
+        return fn(*build_args, **kwargs)
+    except (TypeError, AttributeError) as build_err:
+        scratch = torch.empty_like(weight, memory_format=torch.contiguous_format)
+        try:
+            with torch.no_grad():
+                out = fn(scratch, **kwargs)
+        except Exception as inplace_err:
+            fn_name = getattr(fn, "__name__", repr(fn))
+            raise ValueError(
+                f"Callable '{fn_name}' matches neither initializer convention. "
+                f"Build style fn({', '.join(map(str, build_args))}, **kwargs) raised: "
+                f"{build_err!r}. In-place style fn(tensor, **kwargs) raised: "
+                f"{inplace_err!r}."
+            ) from inplace_err
+        return out if isinstance(out, torch.Tensor) else scratch
+
+
+def _coerce_to_matrix(
+    result: Any,
+    expected_shape: tuple[int, int],
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Convert a builder's return value into a validated torch matrix.
+
+    Accepts ``torch.Tensor``, ``numpy.ndarray`` (or anything ``np.asarray``
+    understands, e.g. nested lists), and ``networkx`` graphs.
+    """
+    if isinstance(result, (nx.Graph, nx.DiGraph)):
+        adjacency = nx.to_numpy_array(
+            result,
+            nodelist=sorted(result.nodes()),
+            weight="weight",
+            dtype=np.float32,
+        )
+        matrix = torch.from_numpy(adjacency)
+    elif isinstance(result, torch.Tensor):
+        matrix = result
+    else:
+        try:
+            matrix = torch.from_numpy(np.asarray(result, dtype=np.float32))
+        except Exception as err:
+            raise ValueError(
+                f"Matrix builder returned {type(result).__name__}, which cannot "
+                f"be converted to a torch.Tensor. Return a torch.Tensor, a "
+                f"numpy.ndarray, or a networkx graph."
+            ) from err
+
+    if tuple(matrix.shape) != expected_shape:
+        raise ValueError(
+            f"Matrix builder produced shape {tuple(matrix.shape)}, expected {expected_shape}."
+        )
+
+    return matrix.to(device=device, dtype=dtype)

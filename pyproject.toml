@@ -57,13 +57,21 @@ docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.27",
-    "mkdocs-section-index>=0.3",
-    "mkdocs-literate-nav>=0.6",
-    "mkdocs-gen-files>=0.5",
-    "mkdocs-git-revision-date-localized-plugin>=1.2",
     "mkdocs-glightbox>=0.4",
     "pymdown-extensions>=10.7",
     "griffe>=1.0",
+]
+
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.13.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.8.0",
+    "optuna>=4.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -83,6 +91,13 @@ addopts = [
     "--cov=resdag",
     "--cov-report=term-missing",
     "--cov-report=html",
+    "-m",
+    "not benchmark",
+]
+markers = [
+    "gpu: requires a CUDA device (auto-skipped when unavailable)",
+    "slow: long-running test (seconds); always runs, deselect with -m 'not slow'",
+    "benchmark: performance assertion, deselected by default; run with -m benchmark",
 ]
 
 [tool.black]
@@ -96,7 +111,11 @@ lint.select = ["E", "F", "I", "N", "W"]
 lint.ignore = ["E501"]                  # Line too long (handled by black)
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"] # Unused imports in __init__.py are OK
+"__init__.py" = ["F401"]                  # Unused imports in __init__.py are OK
+# Math notation (W, A, G, Lk, ...) is the house style in the scientific code:
+# renaming matrices and graphs to appease N8xx would hurt readability.
+"src/resdag/**" = ["N803", "N806", "N812"]
+"tests/**" = ["N803", "N806"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -117,3 +136,26 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
 ]
+
+# -------------------------------------------------------------------------
+# Release automation — python-semantic-release
+# Version bumps are computed from conventional commit messages on main:
+#   feat: -> minor, fix:/perf: -> patch, "BREAKING CHANGE:" -> major
+# (major_on_zero=false: while 0.x, breaking changes bump the minor instead).
+# The version lives ONLY in src/resdag/__init__.py; PSR rewrites it, commits,
+# tags vX.Y.Z, and creates the GitHub release. CI publishes to PyPI.
+# -------------------------------------------------------------------------
+[tool.semantic_release]
+version_variables = ["src/resdag/__init__.py:__version__"]
+build_command = "python -m pip install build && python -m build"
+commit_message = "chore(release): v{version} [skip ci]"
+tag_format = "v{version}"
+allow_zero_version = true
+major_on_zero = false
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = ""  # release notes live on GitHub Releases, not in-repo
+
+[tool.semantic_release.commit_parser_options]
+parse_squash_commits = true
+ignore_merge_commits = true

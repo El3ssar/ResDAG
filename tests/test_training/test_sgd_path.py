@@ -68,9 +68,9 @@ class TestSGDPath:
     def test_trainable_model_has_grads(self) -> None:
         model = _build_trainable_model()
         trainable_params = [p for p in model.parameters() if p.requires_grad]
-        assert len(trainable_params) > 0, (
-            "trainable=True model exposed no autograd-tracked parameters"
-        )
+        assert (
+            len(trainable_params) > 0
+        ), "trainable=True model exposed no autograd-tracked parameters"
 
     def test_sgd_loop_decreases_loss(self) -> None:
         """Train a small ESN for ~50 steps and require loss to drop ~30%+."""
@@ -81,9 +81,7 @@ class TestSGDPath:
         x = torch.randn(8, 30, 3)
         y = torch.roll(x, shifts=-1, dims=1)  # predict next step
 
-        optim = torch.optim.Adam(
-            (p for p in model.parameters() if p.requires_grad), lr=1e-2
-        )
+        optim = torch.optim.Adam((p for p in model.parameters() if p.requires_grad), lr=1e-2)
         criterion = torch.nn.MSELoss()
 
         losses: list[float] = []
@@ -100,9 +98,9 @@ class TestSGDPath:
         assert all(torch.isfinite(torch.tensor(L)).item() for L in losses)
         # Allow a generous threshold — we just want to prove gradients flow
         # and the optimiser actually moves the parameters.
-        assert losses[-1] < 0.7 * losses[0], (
-            f"loss did not decrease: start={losses[0]:.4f}, end={losses[-1]:.4f}"
-        )
+        assert (
+            losses[-1] < 0.7 * losses[0]
+        ), f"loss did not decrease: start={losses[0]:.4f}, end={losses[-1]:.4f}"
 
 
 class TestFrozenPath:
@@ -111,9 +109,7 @@ class TestFrozenPath:
     def test_frozen_model_has_no_grads(self) -> None:
         model = _build_frozen_model()
         trainable = [name for name, p in model.named_parameters() if p.requires_grad]
-        assert trainable == [], (
-            f"Frozen ESN unexpectedly has trainable parameters: {trainable}"
-        )
+        assert trainable == [], f"Frozen ESN unexpectedly has trainable parameters: {trainable}"
 
     def test_classical_training_still_works_on_frozen(self) -> None:
         """ESNTrainer.fit must still update the frozen readout weights via the
@@ -147,9 +143,7 @@ class TestSGDPathGPU:
         x = torch.randn(4, 25, 3, device=device)
         y = torch.roll(x, shifts=-1, dims=1)
 
-        optim = torch.optim.Adam(
-            (p for p in model.parameters() if p.requires_grad), lr=1e-2
-        )
+        optim = torch.optim.Adam((p for p in model.parameters() if p.requires_grad), lr=1e-2)
         criterion = torch.nn.MSELoss()
 
         loss0: float | None = None
@@ -167,3 +161,26 @@ class TestSGDPathGPU:
 
         assert loss0 is not None and loss1 is not None
         assert loss1 < loss0
+
+
+class TestStatefulSGD:
+    """SGD over consecutive batches must work without manual resets."""
+
+    def test_consecutive_sgd_steps_without_reset(self) -> None:
+        """The stored reservoir state is detached at call boundaries, so a
+        vanilla training loop that never calls reset_reservoirs() must not
+        raise 'backward through the graph a second time'."""
+        torch.manual_seed(0)
+        model = _build_trainable_model()
+        optim = torch.optim.Adam(model.parameters(), lr=1e-3)
+        loss_fn = torch.nn.MSELoss()
+
+        x = torch.randn(2, 25, 3)
+        y = torch.randn(2, 25, 3)
+
+        for _ in range(3):
+            out = model(x)
+            loss = loss_fn(out, y)
+            optim.zero_grad()
+            loss.backward()
+            optim.step()

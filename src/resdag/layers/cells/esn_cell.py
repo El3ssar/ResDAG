@@ -30,17 +30,23 @@ class ESNCell(ReservoirCell):
     Owns all weight matrices and bias.  Sequence iteration is delegated to
     the enclosing :class:`ESNLayer`.
 
-    The state update follows:
+    The state update follows the standard leaky-integrator ESN equation
+    (Jaeger 2001; Lukoševičius 2012):
 
     .. math::
 
-        h_t = f((1 - \\alpha)\\,h_{t-1} + \\alpha\\,g(W_{fb}\\,x_{fb,t}
-               + W_{in}\\,x_{in,t} + W_{rec}\\,h_{t-1} + b))
+        h_t = (1 - \\alpha)\\,h_{t-1} + \\alpha\\,f(W_{fb}\\,x_{fb,t}
+               + W_{in}\\,x_{in,t} + W_{rec}\\,h_{t-1} + b)
 
     where :math:`f` is the activation function, :math:`\\alpha` is the leak
     rate, :math:`W_{fb}` is the feedback weight matrix, :math:`W_{in}` is the
-    (optional) input weight matrix, and :math:`W_{rec}` is the recurrent
-    weight matrix.
+    (optional) input weight matrix, :math:`W_{rec}` is the recurrent
+    weight matrix, and :math:`b` is a fixed random bias drawn from
+    :math:`\\mathcal{U}(-\\beta, \\beta)` with :math:`\\beta` = ``bias_scaling``.
+
+    The bias breaks the odd symmetry of ``tanh`` dynamics: without it,
+    negated inputs produce exactly negated states, which constrains the
+    representations the readout can draw from.
 
     Parameters
     ----------
@@ -56,6 +62,13 @@ class ESNCell(ReservoirCell):
         spectral radius scaling is applied.
     bias : bool, default=True
         Whether to include a bias term.
+    bias_scaling : float, default=1.0
+        Scale of the random bias: entries are drawn from
+        ``uniform(-bias_scaling, bias_scaling)``, matching the default
+        initialization of the feedback/input weights.  Ignored when
+        ``bias=False``.  Set to ``0.0`` to keep a zero bias (the historical
+        pre-0.5 behaviour, where ``bias=True`` was effectively a no-op
+        because the bias was zero-initialized and frozen).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
     leak_rate : float, default=1.0
@@ -64,13 +77,17 @@ class ESNCell(ReservoirCell):
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
-    feedback_initializer : str, tuple, or InputFeedbackInitializer, optional
-        Initializer for the feedback weight matrix.
-    input_initializer : str, tuple, or InputFeedbackInitializer, optional
-        Initializer for the input weight matrix.  Only used when
-        ``input_size`` is provided.
-    topology : str, tuple, or TopologyInitializer, optional
-        Graph topology for recurrent weights.
+    feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Initializer for the feedback weight matrix.  Accepts a registry
+        name, ``(name, params)``, any matrix-building callable, a
+        ``(callable, params)`` tuple, or a configured initializer object.
+    input_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Initializer for the input weight matrix.  Same formats as
+        ``feedback_initializer``.  Only used when ``input_size`` is provided.
+    topology : str, callable, tuple, or TopologyInitializer, optional
+        Structure of the recurrent weight matrix: a registry name (graph or
+        matrix topology), any matrix-building callable, a
+        ``(callable, params)`` tuple, or a configured topology object.
 
     Attributes
     ----------
@@ -98,6 +115,7 @@ class ESNCell(ReservoirCell):
         input_size: int | None = None,
         spectral_radius: float | None = None,
         bias: bool = True,
+        bias_scaling: float = 1.0,
         activation: str = "tanh",
         leak_rate: float = 1.0,
         trainable: bool = False,
@@ -126,8 +144,9 @@ class ESNCell(ReservoirCell):
         self._activation_name = activation
         self.activation_fn = self._get_activation(activation)
 
-        # Store bias flag before initialization
+        # Store bias config before initialization
         self._bias = bias
+        self.bias_scaling = bias_scaling
 
         # Initialize weight matrices
         self._initialize_weights()
@@ -199,40 +218,100 @@ class ESNCell(ReservoirCell):
             ``self.weight_input`` is ``None``, or if the driving input
             feature dimension does not match ``self.input_size``.
         """
-        fb_t = inputs[0]
+        projected = self.project_inputs(inputs)
+        recurrent_contrib = F.linear(state, self.weight_hh)
+        new_state = self.activation_fn(projected + recurrent_contrib)
 
-        if fb_t.shape[-1] != self.feedback_size:
+        if self.leak_rate < 1.0:
+            new_state = torch.lerp(state, new_state, self.leak_rate)
+        return new_state, new_state
+
+    def project_inputs(self, inputs: list[torch.Tensor]) -> torch.Tensor:
+        """
+        Precompute all input-dependent pre-activation terms.
+
+        Computes ``W_fb x_fb + W_in x_in + b`` for every timestep at once.
+        Works on full ``(batch, timesteps, features)`` sequences (the layer's
+        fast path) and on single-step ``(batch, features)`` slices (reused by
+        :meth:`forward`).
+
+        Parameters
+        ----------
+        inputs : list[torch.Tensor]
+            Input streams; ``inputs[0]`` is feedback, ``inputs[1]`` (if
+            present) is the driving input.
+
+        Returns
+        -------
+        torch.Tensor
+            Input projection with the same leading dimensions as the inputs
+            and trailing dimension ``reservoir_size``.
+
+        Raises
+        ------
+        ValueError
+            If feature dimensions do not match the cell configuration, or a
+            driving input is supplied to a cell built without ``input_size``.
+        """
+        fb = inputs[0]
+
+        if fb.shape[-1] != self.feedback_size:
             raise ValueError(
-                f"Feedback size mismatch. Expected {self.feedback_size}, got {fb_t.shape[-1]}"
+                f"Feedback size mismatch. Expected {self.feedback_size}, got {fb.shape[-1]}"
             )
 
-        has_driving = len(inputs) > 1
-        if has_driving:
+        projected = F.linear(fb, self.weight_feedback)
+
+        if len(inputs) > 1:
             if self.weight_input is None:
                 raise ValueError(
                     "Reservoir was initialized without input_size, "
                     "but driving input was provided in forward pass"
                 )
-            x_t = inputs[1]
-            if x_t.shape[-1] != self.input_size:
+            x = inputs[1]
+            if x.shape[-1] != self.input_size:
                 raise ValueError(
-                    f"Driving input size mismatch. Expected {self.input_size}, got {x_t.shape[-1]}"
+                    f"Driving input size mismatch. Expected {self.input_size}, got {x.shape[-1]}"
                 )
-
-        feedback_contrib = F.linear(fb_t, self.weight_feedback)
-        recurrent_contrib = F.linear(state, self.weight_hh)
-        pre_activation = feedback_contrib + recurrent_contrib
-
-        if has_driving:
-            pre_activation = pre_activation + F.linear(inputs[1], self.weight_input)
+            projected = projected + F.linear(x, self.weight_input)
 
         if self.bias_h is not None:
-            pre_activation = pre_activation + self.bias_h
+            projected = projected + self.bias_h
 
+        return projected
+
+    def step(
+        self,
+        projected_t: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Recurrent-only single-step update for the projected fast path.
+
+        ``addmm`` fuses the recurrent matmul with the precomputed input
+        projection into one kernel; with activation and leak that is three
+        kernel launches per timestep instead of six.
+
+        Parameters
+        ----------
+        projected_t : torch.Tensor
+            Slice of :meth:`project_inputs` output, shape
+            ``(batch, reservoir_size)``.
+        state : torch.Tensor
+            Current hidden state, shape ``(batch, reservoir_size)``.
+
+        Returns
+        -------
+        output : torch.Tensor
+            Next hidden state.
+        new_state : torch.Tensor
+            Same tensor as output.
+        """
+        pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
         new_state = self.activation_fn(pre_activation)
 
         if self.leak_rate < 1.0:
-            new_state = (1 - self.leak_rate) * state + self.leak_rate * new_state
+            new_state = torch.lerp(state, new_state, self.leak_rate)
         return new_state, new_state
 
     # ------------------------------------------------------------------
@@ -267,7 +346,14 @@ class ESNCell(ReservoirCell):
         self._initialize_recurrent_weights()
 
         if self._bias:
-            self.bias_h = nn.Parameter(torch.zeros(self.reservoir_size))
+            # Random bias drawn like the feedback/input weights.  A
+            # zero-initialized frozen bias would be a no-op and leave the
+            # tanh dynamics oddly symmetric (f(-x) = -f(x)).
+            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size))
+            if self.bias_scaling != 0.0:
+                nn.init.uniform_(self.bias_h, -self.bias_scaling, self.bias_scaling)
+            else:
+                nn.init.zeros_(self.bias_h)
         else:
             self.register_parameter("bias_h", None)
 

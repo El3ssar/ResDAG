@@ -1,16 +1,33 @@
-# API reference
+---
+description: The complete public API of ResDAG, with a map of where each symbol lives.
+---
 
-Generated from NumPy-style docstrings in `src/resdag/`.
+<span class="nb-kicker">Reference</span>
 
-**Models and training** — [Top-level exports](top-level.md), [`ESNModel`](core.md),
-[premade factories](models.md), [`ESNTrainer`](training.md),
-[ensembles](ensemble.md).
+# Reference
 
-**Layers** — [Reservoir layers](layers/reservoirs.md), [cells](layers/cells.md),
-[readouts](layers/readouts.md), [transforms](layers/transforms.md).
+The complete public API, one page per area. This reference documents
+ResDAG {{ resdag_version }}; if a signature here disagrees with your installed version,
+trust your installed version.
 
-**Initialization** — [Topology](init/topology.md), [input/feedback](init/input-feedback.md),
-[graph generators](init/graphs.md), [resolvers](init/resolvers.md).
+## Where do I find X
 
-**Tooling** — [HPO](hpo/run.md), [losses](hpo/losses.md), [HPO internals](hpo/internals.md),
-[HPO utils](hpo/utils.md), [data I/O and splits](utils/data.md), [`esp_index`](utils/states.md).
+| You are looking for | Page |
+| ------------------- | ---- |
+| Everything importable straight from `resdag` | [Top level](top-level.md) |
+| `ESNModel`, `Input`, `reservoir_input` | [Core](core.md) |
+| Reservoir layers, cells, readouts, transforms | [Layers](layers.md) |
+| Topologies, input/feedback initializers, spec resolvers | [Initialization](init.md) |
+| `ESNTrainer` | [Training](training.md) |
+| Premade architectures, coupled ensembles, aggregators | [Models & ensembles](models.md) |
+| `run_hpo`, loss functions, study utilities | [HPO](hpo.md) |
+| Data loading, splitting, RNG, ESP index | [Utilities](utils.md) |
+
+---
+
+## Scope
+
+This reference covers the public API only; names with a leading underscore
+are private and not documented. For prose-first treatments of the same
+components, start from [Build](../build/index.md) and
+[Work](../workflows/index.md).

@@ -379,9 +379,7 @@ class TestESNTrainerInternals:
 
         class _Forbidden:
             def __get__(self, *_args, **_kwargs):
-                raise AssertionError(
-                    "ESNTrainer reached into a private pytorch_symbolic attribute"
-                )
+                raise AssertionError("ESNTrainer reached into a private pytorch_symbolic attribute")
 
         feedback = Input(shape=(10, 1))
         reservoir = rd.ESNLayer(40, 1)(feedback)
@@ -462,7 +460,5 @@ class TestESNTrainerInternals:
         for readout_layer in (head_a_layer, head_b_layer, out_layer):
             assert readout_layer.is_fitted
 
-        fitted_readouts = [
-            m for _, m in model.named_modules() if isinstance(m, CGReadoutLayer)
-        ]
+        fitted_readouts = [m for _, m in model.named_modules() if isinstance(m, CGReadoutLayer)]
         assert len(fitted_readouts) == 3

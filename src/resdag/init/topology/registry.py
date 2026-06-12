@@ -34,10 +34,12 @@ Examples
 import inspect
 from typing import Any, Callable, get_args, get_origin
 
-from .base import GraphTopology
+from .base import GraphTopology, MatrixTopology, TopologyInitializer
 
-# Registry of topology names to (graph_func, default_kwargs)
-_TOPOLOGY_REGISTRY: dict[str, tuple[Callable, dict[str, Any]]] = {}
+# Registry of topology names to (builder_func, default_kwargs, wrapper_class).
+# wrapper_class is GraphTopology for NetworkX-based builders and
+# MatrixTopology for direct matrix builders.
+_TOPOLOGY_REGISTRY: dict[str, tuple[Callable, dict[str, Any], type[TopologyInitializer]]] = {}
 
 
 def register_graph_topology(
@@ -86,8 +88,66 @@ def register_graph_topology(
     def decorator(graph_func: Callable) -> Callable:
         if name in _TOPOLOGY_REGISTRY:
             raise ValueError(f"Topology '{name}' is already registered")
-        _TOPOLOGY_REGISTRY[name] = (graph_func, default_kwargs)
+        _TOPOLOGY_REGISTRY[name] = (graph_func, default_kwargs, GraphTopology)
         return graph_func
+
+    return decorator
+
+
+def register_matrix_topology(
+    name: str,
+    **default_kwargs: Any,
+) -> Callable[[Callable], Callable]:
+    """
+    Decorator to register a matrix-building function as a topology.
+
+    The complement of :func:`register_graph_topology` for builders that
+    construct the recurrent weight matrix directly — no graph involved.
+    Any logic that produces a square matrix qualifies.
+
+    Parameters
+    ----------
+    name : str
+        Unique name for the topology.
+    **default_kwargs
+        Default keyword arguments for the matrix function.
+
+    Returns
+    -------
+    callable
+        Decorator function that registers and returns the matrix function.
+
+    Raises
+    ------
+    ValueError
+        If a topology with the same name is already registered.
+
+    Examples
+    --------
+    >>> @register_matrix_topology("block_diagonal", blocks=4)
+    ... def block_diagonal(n, blocks=4, seed=None):
+    ...     w = torch.zeros(n, n)
+    ...     size = n // blocks
+    ...     for b in range(blocks):
+    ...         s = b * size
+    ...         w[s : s + size, s : s + size] = torch.randn(size, size)
+    ...     return w
+
+    >>> reservoir = ESNLayer(500, feedback_size=3, topology="block_diagonal")
+
+    Notes
+    -----
+    - Matrix functions must accept ``n`` (matrix size) as first parameter and
+      return an ``(n, n)`` ``torch.Tensor`` or ``numpy.ndarray``.
+    - Registered topologies are accessed via :func:`get_topology` or by name
+      in ``ESNLayer(topology="...")``, identically to graph topologies.
+    """
+
+    def decorator(matrix_func: Callable) -> Callable:
+        if name in _TOPOLOGY_REGISTRY:
+            raise ValueError(f"Topology '{name}' is already registered")
+        _TOPOLOGY_REGISTRY[name] = (matrix_func, default_kwargs, MatrixTopology)
+        return matrix_func
 
     return decorator
 
@@ -95,7 +155,7 @@ def register_graph_topology(
 def get_topology(
     name: str,
     **override_kwargs: Any,
-) -> GraphTopology:
+) -> TopologyInitializer:
     """
     Get a pre-configured topology initializer by name.
 
@@ -108,8 +168,9 @@ def get_topology(
 
     Returns
     -------
-    GraphTopology
-        Configured topology initializer.
+    TopologyInitializer
+        Configured topology initializer (:class:`GraphTopology` or
+        :class:`MatrixTopology`, depending on how the name was registered).
 
     Raises
     ------
@@ -143,12 +204,12 @@ def get_topology(
         available = ", ".join(_TOPOLOGY_REGISTRY.keys())
         raise ValueError(f"Unknown topology '{name}'. Available topologies: {available}")
 
-    graph_func, default_kwargs = _TOPOLOGY_REGISTRY[name]
+    builder_func, default_kwargs, wrapper_class = _TOPOLOGY_REGISTRY[name]
 
     # Merge default kwargs with overrides
     kwargs = {**default_kwargs, **override_kwargs}
 
-    return GraphTopology(graph_func, kwargs)
+    return wrapper_class(builder_func, kwargs)
 
 
 def show_topologies(name: str | None = None) -> list[str] | None:
@@ -185,11 +246,11 @@ def show_topologies(name: str | None = None) -> list[str] | None:
         available = "\n".join(sorted(_TOPOLOGY_REGISTRY.keys()))
         raise ValueError(f"Unknown topology '{name}'.\nAvailable:\n{available}")
 
-    graph_func, default_kwargs = _TOPOLOGY_REGISTRY[name]
+    builder_func, default_kwargs, wrapper_class = _TOPOLOGY_REGISTRY[name]
 
-    sig = inspect.signature(graph_func)
+    sig = inspect.signature(builder_func)
 
-    print(f"\nTopology: {name}\n")
+    print(f"\nTopology: {name} ({'graph' if wrapper_class is GraphTopology else 'matrix'})\n")
     print("Parameters:\n")
 
     for param_name, param in sig.parameters.items():

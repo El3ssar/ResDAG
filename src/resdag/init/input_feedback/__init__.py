@@ -77,6 +77,7 @@ from .chain_of_neurons_input import ChainOfNeuronsInputInitializer
 from .chebyshev import ChebyshevInitializer
 from .chessboard import ChessboardInitializer
 from .dendrocycle_input import DendrocycleInputInitializer
+from .function import FunctionInitializer
 from .opposite_anchors import OppositeAnchorsInitializer
 from .pseudo_diagonal import PseudoDiagonalInitializer
 from .random import RandomInputInitializer
@@ -95,6 +96,7 @@ __all__ = [
     "ChebyshevInitializer",
     "ChessboardInitializer",
     "DendrocycleInputInitializer",
+    "FunctionInitializer",
     "InputFeedbackInitializer",
     "OppositeAnchorsInitializer",
     "PseudoDiagonalInitializer",

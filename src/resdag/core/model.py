@@ -41,11 +41,13 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 from __future__ import annotations
 
 import colorsys
+import copy
 from pathlib import Path
 from typing import Any
 
 import pytorch_symbolic as ps
 import torch
+from pytorch_symbolic.symbolic_data import SymbolicData
 
 from resdag.layers.reservoirs import BaseReservoirLayer
 
@@ -113,6 +115,79 @@ class ESNModel(ps.SymbolicModel):
     BaseReservoirLayer : Reservoir layer component.
     ESNTrainer : Trainer for fitting readout layers.
     """
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "ESNModel":
+        """
+        Deep copy preserving the model subclass and its symbolic graph.
+
+        ``pytorch_symbolic.SymbolicModel.__deepcopy__`` rebuilds the copy as a
+        ``DetachedSymbolicModel``, silently dropping every subclass method
+        (``forecast``, ``reset_reservoirs``, ``save``, ...).  This override
+        instead produces a faithful, fully independent :class:`ESNModel`:
+        parameters, buffers and reservoir states are copied, and the symbolic
+        graph (inputs, outputs, execution order) is duplicated so that
+        ``summary()`` and ``plot_model()`` keep working on the copy.
+
+        Returns
+        -------
+        ESNModel
+            An independent copy sharing no tensors or graph nodes with
+            ``self``.  Subclasses of :class:`ESNModel` are preserved as well.
+
+        Notes
+        -----
+        ``SymbolicData.__getattr__`` traces a ``GetAttr`` layer into the graph
+        for any unknown attribute whose underlying value supports it —
+        including the ``__deepcopy__`` probe :func:`copy.deepcopy` performs on
+        every instance.  Every graph node is therefore pre-seeded into
+        ``memo`` as an empty shell whose ``__dict__`` is filled by hand, so
+        the copy machinery never looks up attributes on a live node.
+
+        Examples
+        --------
+        >>> import copy
+        >>> clone = copy.deepcopy(model)
+        >>> type(clone) is type(model)
+        True
+        >>> clone.reset_reservoirs()  # ESN API intact on the copy
+        """
+        cls = self.__class__
+        obj = cls.__new__(cls)
+        memo[id(self)] = obj
+
+        shells = [(node, object.__new__(type(node))) for node in self._graph_nodes()]
+        for node, shell in shells:
+            memo[id(node)] = shell
+
+        input_ids = {id(node) for node in self.inputs}
+        for node, shell in shells:
+            node_dict = dict(node.__dict__)
+            if id(node) not in input_ids:
+                # Non-input values are lazy caches (possibly autograd-tracked,
+                # hence not deep-copyable); they are recomputed on demand from
+                # the retained input placeholders.
+                node_dict["_value"] = None
+            shell.__dict__.update(copy.deepcopy(node_dict, memo))
+
+        for key, value in self.__dict__.items():
+            obj.__dict__[key] = copy.deepcopy(value, memo)
+        return obj
+
+    def _graph_nodes(self) -> list[SymbolicData]:
+        """Collect every symbolic graph node reachable from inputs/outputs."""
+        seen: set[int] = set()
+        nodes: list[SymbolicData] = []
+        stack: list[SymbolicData] = [*self.inputs, *self.outputs]
+        while stack:
+            node = stack.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            nodes.append(node)
+            stack.extend(node._parents)
+            stack.extend(node._children)
+            stack.extend(node._layer_full_siblings)
+        return nodes
 
     def reset_reservoirs(self) -> None:
         """
@@ -212,9 +287,7 @@ class ESNModel(ps.SymbolicModel):
         >>> model.set_reservoir_states(states)  # Restore states
         """
         reservoir_names = {
-            name
-            for name, module in self.named_modules()
-            if isinstance(module, BaseReservoirLayer)
+            name for name, module in self.named_modules() if isinstance(module, BaseReservoirLayer)
         }
         provided = set(states.keys())
 
@@ -227,9 +300,7 @@ class ESNModel(ps.SymbolicModel):
                     parts.append(f"missing keys for reservoirs: {sorted(missing)}")
                 if extra:
                     parts.append(f"unexpected keys not matching any reservoir: {sorted(extra)}")
-                raise KeyError(
-                    "set_reservoir_states(strict=True): " + "; ".join(parts)
-                )
+                raise KeyError("set_reservoir_states(strict=True): " + "; ".join(parts))
 
         for name, module in self.named_modules():
             if isinstance(module, BaseReservoirLayer) and name in states:
@@ -396,7 +467,7 @@ class ESNModel(ps.SymbolicModel):
 
         Parameters
         ----------
-        show_shapes : bool, default=True
+        show_shapes : bool, default=False
             Show tensor shapes on edges.
         show_trainable : bool, default=False
             Show a padlock indicator (🔒 frozen / 🔓 trainable) on nodes
@@ -539,6 +610,13 @@ class ESNModel(ps.SymbolicModel):
             return "\n".join(lines)
 
         # ── Rendering ─────────────────────────────────────────────────────────
+        def _print_dot_fallback(reason: str) -> str:
+            print(reason)
+            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
+            dot_src = _build_dot()
+            print(dot_src)
+            return dot_src
+
         try:
             import graphviz
 
@@ -547,7 +625,13 @@ class ESNModel(ps.SymbolicModel):
 
             if save_path is not None:
                 save_path = Path(save_path)
-                src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
+                try:
+                    src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
+                except graphviz.ExecutableNotFound:
+                    return _print_dot_fallback(
+                        "graphviz system binary not found: install it "
+                        "(e.g. apt install graphviz) or render the DOT source below."
+                    )
                 print(f"Saved to {save_path.with_suffix('.' + format)}")
                 return src
 
@@ -555,7 +639,14 @@ class ESNModel(ps.SymbolicModel):
                 from IPython.display import SVG
                 from IPython.display import display as ipy_display
 
-                ipy_display(SVG(src.pipe(format="svg").decode("utf-8")))
+                try:
+                    svg = src.pipe(format="svg").decode("utf-8")
+                except graphviz.ExecutableNotFound:
+                    return _print_dot_fallback(
+                        "graphviz system binary not found: install it "
+                        "(e.g. apt install graphviz) or render the DOT source below."
+                    )
+                ipy_display(SVG(svg))
                 return None  # prevent double-display from cell output
 
             try:
@@ -565,11 +656,9 @@ class ESNModel(ps.SymbolicModel):
             return src
 
         except ImportError:
-            print("graphviz not installed: pip install graphviz && apt install graphviz")
-            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
-            dot_src = _build_dot()
-            print(dot_src)
-            return dot_src
+            return _print_dot_fallback(
+                "graphviz not installed: pip install graphviz && apt install graphviz"
+            )
 
     @torch.no_grad()
     def warmup(
@@ -673,8 +762,14 @@ class ESNModel(ps.SymbolicModel):
         forecast_inputs : tuple of torch.Tensor, optional
             Driver inputs for the autoregressive phase (feedback is provided
             by the model's own output, so it is not part of this tuple).
-            Each tensor must have shape ``(batch, horizon, driver_features)``.
-            Required when the model has driver inputs.
+            ``forecast_inputs[i][:, t, :]`` is the driver value at the
+            ``t``-th timestep *after* the warmup window — i.e. pass the
+            driver series sliced over the forecast window, continuing
+            exactly where the warmup drivers ended.  Each tensor must have
+            ``horizon - 1`` timesteps (or ``horizon``; the last step is then
+            unused, which lets you slice drivers over the same window as
+            your validation targets).  Required when the model has driver
+            inputs.
         horizon : int, keyword-only
             Number of autoregressive steps to generate.
         initial_feedback : torch.Tensor, optional
@@ -707,6 +802,15 @@ class ESNModel(ps.SymbolicModel):
         - Convention: first warmup element is always feedback (used for autoregression).
         - For multi-output models, first output is used as feedback.
         - Feedback output dimension must match feedback input dimension.
+
+        **Driver time alignment.** Training pairs ``(feedback_t, driver_t)``
+        with target ``feedback_{t+1}``.  The forecast loop keeps that pairing:
+        prediction ``i`` (for the ``(i+1)``-th step after warmup) is produced
+        from the previous prediction together with ``forecast_inputs[:, i-1]``,
+        the driver at that same timestep.  Prediction ``0`` is produced during
+        warmup from the last warmup feedback/driver pair, so the forecast
+        drivers start at the first step *after* the warmup window — no overlap
+        with the warmup drivers.
 
         Examples
         --------
@@ -765,9 +869,12 @@ class ESNModel(ps.SymbolicModel):
                     f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}"
                 )
             for i, driver in enumerate(forecast_inputs):
-                if driver.shape[1] != horizon:
+                if driver.shape[1] not in (horizon - 1, horizon):
                     raise ValueError(
-                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected {horizon}"
+                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected "
+                        f"{horizon - 1} (or {horizon}; the last step is unused). "
+                        f"forecast_inputs must hold the driver series for the "
+                        f"forecast window, starting right after the warmup window."
                     )
 
         batch_size = warmup_inputs[0].shape[0]
@@ -796,9 +903,7 @@ class ESNModel(ps.SymbolicModel):
                 if hasattr(module, "out_features") and hasattr(module, "_is_fitted"):
                     label = getattr(module, "_name", None) or name
                     readout_names.append(f"{label} (out_features={module.out_features})")
-            readouts_hint = (
-                f" Model readouts: {readout_names}." if readout_names else ""
-            )
+            readouts_hint = f" Model readouts: {readout_names}." if readout_names else ""
             raise ValueError(
                 f"forecast(): feedback dimension mismatch. "
                 f"Feedback input has {feedback_dim} features but the model output "
@@ -837,7 +942,11 @@ class ESNModel(ps.SymbolicModel):
         # Phase 2: Autoregressive forecast
         for t in range(1, horizon):
             if has_drivers:
-                driver_inputs_t = tuple(driver[:, t : t + 1, :] for driver in forecast_inputs)
+                # Prediction t pairs the previous prediction (feedback at the
+                # t-th step after warmup) with the driver at that same step,
+                # which is forecast_inputs[:, t-1] (drivers start right after
+                # the warmup window; the step-0 driver was consumed in warmup).
+                driver_inputs_t = tuple(driver[:, t - 1 : t, :] for driver in forecast_inputs)
                 step_inputs = (current_feedback,) + driver_inputs_t
             else:
                 step_inputs = (current_feedback,)

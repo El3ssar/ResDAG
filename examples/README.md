@@ -1,52 +1,49 @@
-# resdag Examples
+# ResDAG Examples
 
-This directory contains runnable scripts demonstrating every major feature of
-the library. They are numbered roughly by progression: registry primitives →
-single models → training → forecasting → HPO → ensembles → pipeline
-integration.
-
-All examples target the **pytorch_symbolic-based 0.4.0 API**. The legacy
-`ModelBuilder` / `model_scope` APIs from pre-0.3 are gone.
-
-## Quick reference
-
-| #  | File                                    | What it teaches                                                                       |
-| -- | --------------------------------------- | ------------------------------------------------------------------------------------- |
-| 00 | `00_registry_system.py`                 | The topology + input/feedback registries; `show_topologies()`, `get_topology()`        |
-| 01 | `01_reservoir_with_topology.py`         | Plugging graph topologies into a single `ESNLayer`                                     |
-| 02 | `02_input_feedback_initializers.py`     | Input / feedback weight initialisers                                                  |
-| 03 | `03_model_composition.py`               | Building `ESNModel`s by hand with `pytorch_symbolic.Input`                            |
-| 04 | `04_model_visualization.py`             | `model.summary()` and graphviz-backed `model.plot_model()`                            |
-| 05 | `05_functional_api.py`                  | Functional building idioms with `pytorch_symbolic`                                    |
-| 06 | `06_premade_models.py`                  | The premade factories: `classic_esn`, `ott_esn`, `headless_esn`, `linear_esn`        |
-| 07 | `07_save_load_models.py`                | `ESNModel.save / load`, checkpoints, cross-device loading                              |
-| 08 | `08_forecasting.py`                     | Algebraic training + `forecast()` with the unified driver passing                      |
-| 09 | `09_training.py`                        | `ESNTrainer` workflows: single / multi-readout, driving inputs                         |
-| 10 | `10_hpo.py`                             | Optuna-based hyperparameter optimisation via `run_hpo`                                |
-| 11 | `11_ensemble_forecasting.py`            | `CoupledEnsembleESNModel`: mean / median / outlier-filtered aggregation                |
-| 12 | `12_pipeline_integration.py`            | ESN as a torch sub-module: frozen-feature + SGD head, fully trainable, `nn.Sequential` |
-| 13 | `13_model_visualization.py`             | Alternative visualisation pipeline (was `09_model_visualization_new.py`)              |
-
-## Running examples
+Eleven self-contained, runnable scripts covering the whole library. Every
+script is deterministic (fixed seeds), prints what it is doing in numbered
+sections, and finishes in well under a minute on CPU — except the GPU
+benchmark, which takes a couple of minutes.
 
 ```bash
-# A single example
-uv run --extra dev python examples/06_premade_models.py
+# Run any example
+uv run python examples/01_quickstart.py
 
-# All of them in order
-for f in examples/[0-9][0-9]_*.py; do
-    echo "=== $f ==="
-    uv run --extra dev python "$f"
-done
+# Optional plots in 01 and 06 (only if matplotlib is installed)
+uv run python examples/01_quickstart.py --plot
 ```
 
-## Companion docs
+## Map
 
-- `../docs/training-paths.md` — when to pick algebraic vs mixed vs full-BPTT.
-- Releases: <https://github.com/El3ssar/resdag/releases>.
-- `../CLAUDE.md` — full developer reference.
+| # | Script | What it teaches | Runtime (CPU) |
+|---|--------|-----------------|---------------|
+| 01 | `01_quickstart.py` | Smallest end-to-end flow: data → `classic_esn` → `ESNTrainer` → `forecast` → MSE | ~5 s |
+| 02 | `02_premade_models.py` | All six factories incl. `coupled_ensemble_esn`; one comparison table on a shared Lorenz task | ~5 s |
+| 03 | `03_functional_api.py` | Building DAGs by hand: minimal, input-driven, ott-style augmentation, parallel reservoirs, multi-readout | ~3 s |
+| 04 | `04_topologies_and_initializers.py` | Topology/initializer registries; bare-callable topologies, `(fn, params)`, `torch.nn.init.*`, `register_matrix_topology`, the `"orthogonal"` matrix topology | ~5 s |
+| 05 | `05_training_paths.py` | Three training styles compared: algebraic ridge, frozen reservoir + SGD head, full BPTT | ~10 s |
+| 06 | `06_forecasting.py` | Two-phase forecasting, driver time alignment (the #1 silent bug), `return_warmup`, multi-output | ~3 s |
+| 07 | `07_ensembles.py` | Coupled ensembles: fit/forecast, single-vs-ensemble accuracy, aggregators, per-member spread | ~10 s |
+| 08 | `08_save_load.py` | Persistence: weight roundtrips, checkpoints with states + metadata, forecast continuity, cross-device | ~5 s |
+| 09 | `09_visualization.py` | `summary()` and graphviz `plot_model()` (shapes, trainable markers, layouts, file output) | ~3 s |
+| 10 | `10_hpo.py` | Minimal Optuna study via `run_hpo` (needs `pip install resdag[hpo]`; skips cleanly otherwise) | ~10 s |
+| 11 | `11_gpu_benchmark.py` | CPU vs GPU timing of forward/fit/forecast at three scales; skips cleanly without CUDA | ~30 s – 2 min |
 
-## Need help?
+## Suggested order
 
-- Top-level README: `../README.md`
-- API reference (in source): `src/resdag/`
+Start with **01** to see the complete workflow in fifty lines, then **02**
+to learn which premade architecture fits your problem. When the factories
+are not enough, **03** shows how to compose arbitrary DAGs and **04** how to
+shape the weight matrices that go inside them. **05** and **06** are the
+core skills — how models are trained and how forecasting actually works
+(read 06 carefully if you use exogenous drivers). After that, the rest are
+independent: **07** (ensembles) and **10** (hyperparameter search) when you
+want better forecasts, **08** and **09** when you need persistence and
+architecture inspection, and **11** when deciding whether your workload
+belongs on a GPU.
+
+## More
+
+- Full documentation: <https://el3ssar.github.io/resdag/>
+- Developer reference: [`../CLAUDE.md`](../CLAUDE.md)
+- Releases: <https://github.com/El3ssar/resdag/releases>

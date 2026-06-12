@@ -1,0 +1,26 @@
+"""
+Matrix-Builder Topologies
+=========================
+
+Direct matrix-construction functions registered as topologies — the
+non-graph counterpart of :mod:`resdag.init.graphs`. Each function takes the
+matrix size ``n`` first, returns an ``(n, n)`` matrix, and is registered via
+:func:`~resdag.init.topology.register_matrix_topology`, making it available
+by name in ``ESNLayer(topology="...")``.
+
+Functions
+---------
+orthogonal_matrix
+    Haar-random orthogonal matrix via QR decomposition (``"orthogonal"``).
+
+See Also
+--------
+resdag.init.graphs : Graph-based topology generators.
+resdag.init.topology : Registry and initializer classes.
+"""
+
+from .orthogonal import orthogonal_matrix
+
+__all__ = [
+    "orthogonal_matrix",
+]

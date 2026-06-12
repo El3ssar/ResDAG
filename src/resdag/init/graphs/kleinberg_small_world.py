@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 from networkx import DiGraph, Graph
 
@@ -36,7 +38,8 @@ def kleinberg_small_world_graph(
     Parameters
     ----------
     n : int
-        Dimension of the grid; total nodes = n^2.
+        Total number of nodes. Must be a perfect square — the graph lives
+        on a sqrt(n) x sqrt(n) toroidal grid.
     q : float, optional
         Exponent controlling the probability of long-range connections. Default: 2.
     k : int, optional
@@ -56,6 +59,14 @@ def kleinberg_small_world_graph(
     networkx.Graph or networkx.DiGraph
         A Kleinberg small-world graph on an ``n x n`` toroidal grid.
     """
+    side = math.isqrt(n)
+    if side * side != n:
+        raise ValueError(
+            f"kleinberg_small_world requires a perfect-square number of nodes "
+            f"(got n={n}); the graph lives on a sqrt(n) x sqrt(n) toroidal grid."
+        )
+    n = side
+
     rng = create_rng(seed)
     G = DiGraph() if directed else Graph()
 

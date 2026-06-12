@@ -23,7 +23,6 @@ import torch
 
 from resdag.layers import NGCell, NGReservoir
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -312,7 +311,9 @@ class TestNGCellMonomials:
         features, _ = cell([x], state)
         x_vals = x[0]
 
-        expected_vals = [x_vals[i] * x_vals[j] for i, j in itertools.combinations_with_replacement(range(d), 2)]
+        expected_vals = [
+            x_vals[i] * x_vals[j] for i, j in itertools.combinations_with_replacement(range(d), 2)
+        ]
         expected = torch.tensor([expected_vals])
         assert torch.allclose(features, expected, atol=1e-6)
 
@@ -540,8 +541,7 @@ class TestNGReservoirStateManagement:
         x2 = torch.randn(1, 3, 2)
 
         layer.reset_state()
-        out1 = layer(x1)
-        state_mid = layer.get_state()
+        layer(x1)
         out2_continued = layer(x2)
 
         # Re-run with fresh state for x2 — should differ from continued

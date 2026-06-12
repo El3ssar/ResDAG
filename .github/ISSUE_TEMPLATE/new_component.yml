@@ -1,0 +1,37 @@
+name: New component
+description: Propose a topology, initializer, readout, reservoir family, or premade architecture
+title: "feat: add <component name>"
+labels: [enhancement, component]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Component type
+      options:
+        - Topology (graph)
+        - Topology (matrix)
+        - Input/feedback initializer
+        - Readout
+        - Reservoir family
+        - Premade architecture
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What it is
+      description: The construction or update rule, ideally with the defining equation.
+    validations:
+      required: true
+  - type: input
+    id: reference
+    attributes:
+      label: Academic reference
+      description: Paper (authors, venue, year) if one exists — say "none" otherwise.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Parameters, defaults, anything tricky. Registered topologies and initializers document themselves; the registration decorators are listed in CONTRIBUTING.md.

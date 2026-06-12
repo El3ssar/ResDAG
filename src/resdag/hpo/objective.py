@@ -318,9 +318,7 @@ def _validate_data_keys(
     for key in keys_to_check:
         value = data[key]
         if not isinstance(value, torch.Tensor):
-            raise ValueError(
-                f"data['{key}'] must be a torch.Tensor, got {type(value).__name__}."
-            )
+            raise ValueError(f"data['{key}'] must be a torch.Tensor, got {type(value).__name__}.")
         if value.dim() != 3:
             raise ValueError(
                 f"data['{key}'] must be a 3-D tensor (batch, timesteps, features); "

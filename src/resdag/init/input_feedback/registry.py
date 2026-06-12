@@ -5,29 +5,35 @@ used in reservoir input and feedback connections.
 """
 
 import inspect
-from typing import Any, Callable, Type, get_args, get_origin
+from typing import Any, Callable, get_args, get_origin
 
 from .base import InputFeedbackInitializer
+from .function import FunctionInitializer
 
-# Registry of initializer names to (class, default_kwargs)
-_INPUT_FEEDBACK_REGISTRY: dict[str, tuple[Type[InputFeedbackInitializer], dict[str, Any]]] = {}
+# Registry of initializer names to (class_or_function, default_kwargs).
+# Entries are either InputFeedbackInitializer subclasses (instantiated with
+# the merged kwargs) or plain matrix-building functions (wrapped in
+# FunctionInitializer with the merged kwargs).
+_INPUT_FEEDBACK_REGISTRY: dict[str, tuple[Callable, dict[str, Any]]] = {}
 
 
 def register_input_feedback(
     name: str,
     **default_kwargs: Any,
-) -> Callable[[Type[InputFeedbackInitializer]], Type[InputFeedbackInitializer]]:
-    """Decorator to register an input/feedback initializer class.
+) -> Callable[[Callable], Callable]:
+    """Decorator to register an input/feedback initializer.
 
-    This decorator registers an initializer class in the registry at definition time,
-    making it available for use with ESNLayer and other components.
+    Registers either an :class:`InputFeedbackInitializer` subclass **or a
+    plain matrix-building function** in the registry at definition time,
+    making it available by name to ``ESNLayer`` and other components.
 
     Parameters
     ----------
     name : str
         Name for the initializer (must be unique)
     **default_kwargs
-        Default keyword arguments for the initializer constructor
+        Default keyword arguments for the initializer constructor (classes)
+        or for the function call (plain functions)
 
     Returns
     -------
@@ -36,6 +42,8 @@ def register_input_feedback(
 
     Examples
     --------
+    Registering a class:
+
     >>> @register_input_feedback("my_init", scaling=0.5)
     ... class MyInitializer(InputFeedbackInitializer):
     ...     def __init__(self, scaling=1.0):
@@ -45,18 +53,28 @@ def register_input_feedback(
     ...         # ... initialization logic
     ...         return weight
 
+    Registering a plain function (build style — return the matrix):
+
+    >>> @register_input_feedback("first_neuron", scale=1.0)
+    ... def first_neuron(rows, cols, scale=1.0):
+    ...     w = torch.zeros(rows, cols)
+    ...     w[0, :] = scale
+    ...     return w
+
     Notes
     -----
-    - Initializer classes must inherit from ``InputFeedbackInitializer``
-    - Initializer classes must implement ``initialize(weight, **kwargs)`` method
-    - Registered initializers can be accessed via ``get_input_feedback(name)``
+    - Classes must inherit from ``InputFeedbackInitializer`` and implement
+      ``initialize(weight, **kwargs)``.
+    - Functions follow the :class:`FunctionInitializer` conventions:
+      ``fn(rows, cols, **kwargs) -> matrix`` or in-place ``fn(tensor, **kwargs)``.
+    - Registered initializers can be accessed via ``get_input_feedback(name)``.
     """
 
-    def decorator(init_class: Type[InputFeedbackInitializer]) -> Type[InputFeedbackInitializer]:
+    def decorator(obj: Callable) -> Callable:
         if name in _INPUT_FEEDBACK_REGISTRY:
             raise ValueError(f"Input/feedback initializer '{name}' is already registered")
-        _INPUT_FEEDBACK_REGISTRY[name] = (init_class, default_kwargs)
-        return init_class
+        _INPUT_FEEDBACK_REGISTRY[name] = (obj, default_kwargs)
+        return obj
 
     return decorator
 
@@ -94,12 +112,14 @@ def get_input_feedback(
         available = ", ".join(_INPUT_FEEDBACK_REGISTRY.keys())
         raise ValueError(f"Unknown initializer '{name}'. Available initializers: {available}")
 
-    init_class, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
+    entry, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
 
     # Merge default kwargs with overrides
     kwargs = {**default_kwargs, **override_kwargs}
 
-    return init_class(**kwargs)
+    if inspect.isclass(entry) and issubclass(entry, InputFeedbackInitializer):
+        return entry(**kwargs)
+    return FunctionInitializer(entry, **kwargs)
 
 
 def show_input_initializers(name: str | None = None) -> list[str] | None:
@@ -140,14 +160,18 @@ def show_input_initializers(name: str | None = None) -> list[str] | None:
         available = "\n".join(sorted(_INPUT_FEEDBACK_REGISTRY.keys()))
         raise ValueError(f"Unknown initializer '{name}'.\nAvailable:\n{available}")
 
-    init_class, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
-    sig = inspect.signature(init_class.__init__)
+    entry, default_kwargs = _INPUT_FEEDBACK_REGISTRY[name]
+    is_class = inspect.isclass(entry)
+    sig = inspect.signature(entry.__init__) if is_class else inspect.signature(entry)
 
-    print(f"\nInitializer: {name}\n")
+    print(f"\nInitializer: {name} ({'class' if is_class else 'function'})\n")
     print("Parameters:\n")
 
+    # Skip non-hyperparameter params: self (classes) and the matrix
+    # dimensions / target tensor (functions).
+    skip = {"self"} if is_class else {"rows", "cols", "tensor", "weight"}
     for param_name, param in sig.parameters.items():
-        if param_name == "self":
+        if param_name in skip:
             continue
 
         # Type extraction

@@ -32,18 +32,18 @@
 
 /* ----- Light: paper ----------------------------------------------------- */
 [data-md-color-scheme="default"] {
-  --nb-paper: #faf7f1;
-  --nb-surface: #fffdf8;
-  --nb-ink: #211d18;
-  --nb-ink-soft: #575047;
-  --nb-muted: #8a8178;
-  --nb-rule: #e6dfd4;
-  --nb-rule-strong: #cfc6b8;
-  --nb-accent: #c2410c;        /* vermilion — links, active, the one color */
-  --nb-accent-strong: #9a3412;
-  --nb-accent-wash: #c2410c14;
-  --nb-code-bg: #f3efe6;
-  --nb-code-ink: #3d3833;
+  --nb-paper: #f5f7f3;
+  --nb-surface: #fcfdfa;
+  --nb-ink: #19201b;
+  --nb-ink-soft: #4c5750;
+  --nb-muted: #79857c;
+  --nb-rule: #dde4dc;
+  --nb-rule-strong: #c2cdc2;
+  --nb-accent: #0e7a5a;        /* vermilion — links, active, the one color */
+  --nb-accent-strong: #0a5c44;
+  --nb-accent-wash: #0e7a5a14;
+  --nb-code-bg: #ecf1ea;
+  --nb-code-ink: #35403a;
 
   --md-default-bg-color: var(--nb-paper);
   --md-default-fg-color: var(--nb-ink);
@@ -52,28 +52,28 @@
   --md-typeset-color: var(--nb-ink);
   --md-typeset-a-color: var(--nb-accent-strong);
   --md-accent-fg-color: var(--nb-accent);
-  --md-primary-fg-color: #211d18;
-  --md-primary-bg-color: #faf7f1;
+  --md-primary-fg-color: #19201b;
+  --md-primary-bg-color: #f5f7f3;
   --md-code-bg-color: var(--nb-code-bg);
   --md-code-fg-color: var(--nb-code-ink);
-  --md-footer-bg-color: #211d18;
-  --md-footer-bg-color--dark: #18140f;
+  --md-footer-bg-color: #19201b;
+  --md-footer-bg-color--dark: #0d1813;
 }
 
 /* ----- Dark: midnight desk ---------------------------------------------- */
 [data-md-color-scheme="slate"] {
-  --nb-paper: #161210;
-  --nb-surface: #1e1916;
-  --nb-ink: #eae4da;
-  --nb-ink-soft: #b3aa9e;
-  --nb-muted: #847b70;
-  --nb-rule: #322b24;
-  --nb-rule-strong: #4a4138;
-  --nb-accent: #ff7847;
-  --nb-accent-strong: #ff8c61;
-  --nb-accent-wash: #ff784714;
-  --nb-code-bg: #1d1814;
-  --nb-code-ink: #ddd4c8;
+  --nb-paper: #0e1411;
+  --nb-surface: #16201a;
+  --nb-ink: #e3e9e2;
+  --nb-ink-soft: #a8b5aa;
+  --nb-muted: #75817a;
+  --nb-rule: #27332b;
+  --nb-rule-strong: #3b4a40;
+  --nb-accent: #46d3a0;
+  --nb-accent-strong: #6fe0b9;
+  --nb-accent-wash: #46d3a014;
+  --nb-code-bg: #131c16;
+  --nb-code-ink: #cdd9cf;
 
   --md-default-bg-color: var(--nb-paper);
   --md-default-fg-color: var(--nb-ink);
@@ -82,11 +82,11 @@
   --md-typeset-color: var(--nb-ink);
   --md-typeset-a-color: var(--nb-accent);
   --md-accent-fg-color: var(--nb-accent);
-  --md-primary-fg-color: #14110e;
+  --md-primary-fg-color: #0b1410;
   --md-code-bg-color: var(--nb-code-bg);
   --md-code-fg-color: var(--nb-code-ink);
-  --md-footer-bg-color: #110e0b;
-  --md-footer-bg-color--dark: #0c0a08;
+  --md-footer-bg-color: #0a120e;
+  --md-footer-bg-color--dark: #070d0a;
 }
 
 /* =========================================================================
@@ -195,7 +195,7 @@
   margin: 2.6em auto;
   max-width: 14rem;
   background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='12' viewBox='0 0 224 12'%3E%3Cpath d='M0 6 C 7 6 9 2 14 2 S 21 10 28 10 35 2 42 2 49 10 56 10 63 6 70 6 77 6 84 6 91 1 98 1 105 11 112 11 119 1 126 1 133 11 140 11 147 6 154 6 161 6 168 6 175 3 182 3 189 9 196 9 203 3 210 3 217 6 224 6' fill='none' stroke='%23c2410c' stroke-opacity='0.55' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='12' viewBox='0 0 224 12'%3E%3Cpath d='M0 6 C 7 6 9 2 14 2 S 21 10 28 10 35 2 42 2 49 10 56 10 63 6 70 6 77 6 84 6 91 1 98 1 105 11 112 11 119 1 126 1 133 11 140 11 147 6 154 6 161 6 168 6 175 3 182 3 189 9 196 9 203 3 210 3 217 6 224 6' fill='none' stroke='%230e7a5a' stroke-opacity='0.55' stroke-width='1.4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
 }
@@ -397,3 +397,8 @@
 
 /* API reference: calmer headings */
 .md-typeset .doc-heading { font-family: var(--nb-mono); letter-spacing: 0; }
+
+/* Jade primary surfaces in dark mode need dark text, not white */
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  color: #07120d !important;
+}

@@ -56,7 +56,9 @@
   }
   .md-typeset .nb-home a.nb-btn:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 0 var(--nb-rule-strong); color: var(--nb-accent-strong); }
   .md-typeset .nb-home a.nb-btn--primary { background: var(--nb-accent); border-color: var(--nb-accent-strong); color: #fff; }
+  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary { color: #07120d; }
   .md-typeset .nb-home a.nb-btn--primary:hover { background: var(--nb-accent-strong); color: #fff; }
+  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary:hover { color: #07120d; }
 
   .md-typeset .nb-home figure.nb-attractor {
     margin: 0; padding: 0; border: none; background: transparent; box-shadow: none;
@@ -98,14 +100,14 @@
     display: grid; grid-template-columns: 2fr 3fr; gap: 2.5rem; align-items: center;
   }
   @media (max-width: 960px) { .nb-band-inner { grid-template-columns: 1fr; } }
-  .nb-band h2 { font-family: var(--nb-display); font-weight: 500; font-size: 1.7rem; line-height: 1.2; color: #f1ece3; margin: 0 0 0.8rem; }
-  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: #b3aa9e; }
+  .nb-band h2 { font-family: var(--nb-display); font-weight: 500; font-size: 1.7rem; line-height: 1.2; color: #e6ece5; margin: 0 0 0.8rem; }
+  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: #a8b5aa; }
   .nb-band pre {
     margin: 0; padding: 1.2rem 1.4rem; overflow-x: auto;
-    background: #211c17; border: 1px solid #3a332b; border-left: 3px solid var(--nb-accent);
+    background: #14211a; border: 1px solid #2c3a31; border-left: 3px solid var(--nb-accent);
     border-radius: 3px; font-family: var(--nb-mono); font-size: 0.72rem; line-height: 1.75; color: #ddd4c8;
   }
-  .nb-band .c { color: #847b70; } .nb-band .k { color: #ff9b73; } .nb-band .s { color: #c8b694; }
+  .nb-band .c { color: #75817a; } .nb-band .k { color: #5fdcae; } .nb-band .s { color: #b8c79a; }
 
   /* ---- Principles: numbered, journal-style ---- */
   .nb-principles { padding-top: 3.4rem; padding-bottom: 0.8rem; }
@@ -257,9 +259,9 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <sp
   // curve is a genuine 500-unit ESN running autoregressively. Systems
   // ported from TSDynamics (github.com/El3ssar/TSDynamics).
   var FILES = ["lorenz", "thomas", "halvorsen", "arneodo", "rucklidge", "sprott_b"];
-  var TAIL = 420;          // samples kept on screen — the "medium tail"
-  var SPEED = 2.4;         // samples advanced per frame
-  var YAW_RATE = 0.10;     // rad/s — the slow rotation
+  var TAIL = 1050;         // samples kept on screen — enough to read the attractor
+  var SPEED = 1.1;         // samples advanced per frame — unhurried
+  var YAW_RATE = 0.07;     // rad/s — the slow rotation
   var TILT = -0.42;        // fixed pitch for the 3D feel
 
   var canvas = document.getElementById("nb-attractor-canvas");
@@ -270,17 +272,17 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <sp
   var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   var W = canvas.width, H = canvas.height;
-  var colors = { true_: "#575047", pred: "#c2410c" };
+  var colors = { true_: "#4c5750", pred: "#0e7a5a" };
   var frame = 0;
 
   function readColors() {
     var cs = getComputedStyle(document.body);
-    colors.true_ = (cs.getPropertyValue("--nb-ink-soft") || "#575047").trim();
-    colors.pred = (cs.getPropertyValue("--nb-accent") || "#c2410c").trim();
+    colors.true_ = (cs.getPropertyValue("--nb-ink-soft") || "#4c5750").trim();
+    colors.pred = (cs.getPropertyValue("--nb-accent") || "#0e7a5a").trim();
   }
 
   function center(data) {
-    var pts = data.true.concat(data.pred);
+    var pts = data.true.concat(data.pred, data.context || []);
     var c = [0, 0, 0], i, j;
     for (i = 0; i < pts.length; i++) for (j = 0; j < 3; j++) c[j] += pts[i][j];
     for (j = 0; j < 3; j++) c[j] /= pts.length;
@@ -336,7 +338,14 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <sp
 
   function run(data) {
     var geo = center(data);
-    var total = Math.min(data.true.length, data.pred.length);
+    // The true system runs from the start; the forecast is born at the
+    // handoff, where teacher forcing ends — it takes off from the ink
+    // curve, tracks it, then diverges. That split is the story.
+    var ctxPts = data.context || [];
+    var trueSeq = ctxPts.concat(data.true);
+    var predSeq = data.pred;
+    var birth = ctxPts.length;
+    var total = Math.min(trueSeq.length, birth + predSeq.length);
     var t = 12;
     var t0 = performance.now();
     if (label) label.textContent = data.name;
@@ -346,18 +355,18 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <sp
       var yaw = ((now - t0) / 1000) * YAW_RATE;
       if (++frame % 40 === 0) readColors();
       ctx.clearRect(0, 0, W, H);
-      drawTail(data.true, Math.floor(t), geo, yaw, colors.true_);
-      drawTail(data.pred, Math.floor(t), geo, yaw, colors.pred);
+      drawTail(trueSeq, Math.floor(t), geo, yaw, colors.true_);
+      if (t > birth) drawTail(predSeq, Math.floor(t) - birth, geo, yaw, colors.pred);
       t += SPEED;
-      if (t >= total) { load(); return; }   // next loop: a new system
+      if (t >= total) t = 12;   // loop the same system; new one on reload
       requestAnimationFrame(tick);
     }
 
     if (reduced) {
       // Static frame, no motion: show the full pair at a fixed angle.
       ctx.clearRect(0, 0, W, H);
-      drawTail(data.true, total, geo, 0.8, colors.true_);
-      drawTail(data.pred, total, geo, 0.8, colors.pred);
+      drawTail(trueSeq, total, geo, 0.8, colors.true_);
+      drawTail(predSeq, total - birth, geo, 0.8, colors.pred);
       return;
     }
     requestAnimationFrame(tick);

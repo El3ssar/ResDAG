@@ -104,8 +104,13 @@ def main() -> None:
         true_pts = val[0, :keep].tolist()
         pred_pts = pred[0, :keep].tolist()
 
+        # Shared teacher-forced context before the forecast handoff: the
+        # animation plays it identically on both curves, so the split is
+        # visible exactly where autoregression begins.
+        context = data[0, WARMUP + TRAIN - 400 : WARMUP + TRAIN].tolist()
         payload = {
             "name": DISPLAY[name],
+            "context": [[round(v, 4) for v in p] for p in context],
             "true": [[round(v, 4) for v in p] for p in true_pts],
             "pred": [[round(v, 4) for v in p] for p in pred_pts],
         }

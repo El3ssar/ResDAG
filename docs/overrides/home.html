@@ -56,9 +56,9 @@
   }
   .md-typeset .nb-home a.nb-btn:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 0 var(--nb-rule-strong); color: var(--nb-accent-strong); }
   .md-typeset .nb-home a.nb-btn--primary { background: var(--nb-accent); border-color: var(--nb-accent-strong); color: #fff; }
-  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary { color: #07120d; }
+  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary { color: #0e1f19; }
   .md-typeset .nb-home a.nb-btn--primary:hover { background: var(--nb-accent-strong); color: #fff; }
-  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary:hover { color: #07120d; }
+  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary:hover { color: #0e1f19; }
 
   .md-typeset .nb-home figure.nb-attractor {
     margin: 0; padding: 0; border: none; background: transparent; box-shadow: none;
@@ -100,14 +100,14 @@
     display: grid; grid-template-columns: 2fr 3fr; gap: 2.5rem; align-items: center;
   }
   @media (max-width: 960px) { .nb-band-inner { grid-template-columns: 1fr; } }
-  .nb-band h2 { font-family: var(--nb-display); font-weight: 500; font-size: 1.7rem; line-height: 1.2; color: #e6ece5; margin: 0 0 0.8rem; }
-  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: #a8b5aa; }
+  .nb-band h2 { font-family: var(--nb-display); font-weight: 500; font-size: 1.7rem; line-height: 1.2; color: #e3e8e4; margin: 0 0 0.8rem; }
+  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: #a4afa9; }
   .nb-band pre {
     margin: 0; padding: 1.2rem 1.4rem; overflow-x: auto;
-    background: #14211a; border: 1px solid #2c3a31; border-left: 3px solid var(--nb-accent);
+    background: #191e20; border: 1px solid #2e3634; border-left: 3px solid var(--nb-accent);
     border-radius: 3px; font-family: var(--nb-mono); font-size: 0.72rem; line-height: 1.75; color: #ddd4c8;
   }
-  .nb-band .c { color: #75817a; } .nb-band .k { color: #5fdcae; } .nb-band .s { color: #b8c79a; }
+  .nb-band .c { color: #717c76; } .nb-band .k { color: #8fd3b8; } .nb-band .s { color: #c0c69a; }
 
   /* ---- Principles: numbered, journal-style ---- */
   .nb-principles { padding-top: 3.4rem; padding-bottom: 0.8rem; }
@@ -145,8 +145,9 @@
       <span class="nb-hero-kicker">Reservoir computing for PyTorch</span>
       <h1>Train the readout.<br><em>Design</em> the dynamics.</h1>
       <p class="nb-hero-sub">
-        ResDAG turns Echo State Networks and next-generation reservoir
-        computers into composable PyTorch layers. Wire them into any DAG,
+        ResDAG turns reservoir computers — echo-state networks,
+        next-generation RC, and the families to come — into composable
+        PyTorch layers. Wire them into any DAG,
         fit readouts algebraically in one pass, and forecast chaotic systems
         on the GPU — no epochs, no backprop through time.
       </p>
@@ -272,13 +273,13 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <sp
   var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   var W = canvas.width, H = canvas.height;
-  var colors = { true_: "#4c5750", pred: "#0e7a5a" };
+  var colors = { true_: "#4e5955", pred: "#1d6f54" };
   var frame = 0;
 
   function readColors() {
     var cs = getComputedStyle(document.body);
-    colors.true_ = (cs.getPropertyValue("--nb-ink-soft") || "#4c5750").trim();
-    colors.pred = (cs.getPropertyValue("--nb-accent") || "#0e7a5a").trim();
+    colors.true_ = (cs.getPropertyValue("--nb-ink-soft") || "#4e5955").trim();
+    colors.pred = (cs.getPropertyValue("--nb-accent") || "#1d6f54").trim();
   }
 
   function center(data) {

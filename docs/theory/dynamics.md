@@ -6,10 +6,11 @@ description: The leaky-ESN update equation, spectral radius scaling, the echo st
 
 # Reservoir dynamics
 
-One equation drives every ESN in the library; one feature map drives every
-NG-RC. This page states both exactly as the code computes them, then walks
-the knobs — spectral radius, leak rate, bias — back to the dynamical
-properties they control.
+Every reservoir family in the library reduces to one compact rule — one
+equation drives every ESN, one feature map drives every NG-RC, and future
+families will earn their own. This page states the current two exactly as
+the code computes them, then walks the knobs — spectral radius, leak rate,
+bias — back to the dynamical properties they control.
 
 ## The leaky-ESN update
 

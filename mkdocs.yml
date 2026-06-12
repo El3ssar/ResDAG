@@ -27,6 +27,9 @@ copyright: >-
 
 docs_dir: docs
 
+hooks:
+  - hooks/docs_autogen.py
+
 theme:
   name: material
   custom_dir: docs/overrides
@@ -167,9 +170,16 @@ nav:
       - The mental model: start/concepts.md
   - Build:
       - build/index.md
-      - Layers: build/layers.md
-      - Architectures: build/architectures.md
-      - Initialization: build/initialization.md
+      - Layers:
+          - build/layers/index.md
+      - Architectures:
+          - build/architectures/index.md
+      - Initialization:
+          - build/initialization/index.md
+          - Topologies:
+              - build/initialization/topologies/index.md
+          - Initializers:
+              - build/initialization/initializers/index.md
   - Work:
       - workflows/index.md
       - Train: workflows/train.md

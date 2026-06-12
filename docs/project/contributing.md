@@ -47,13 +47,13 @@ The library is built to be extended without touching its internals:
 - **Topologies** — register a graph generator with
   `@register_graph_topology("name", **defaults)` or a matrix builder with
   `@register_matrix_topology("name", **defaults)`, and it becomes available
-  as `ESNLayer(topology="name")`. See [Initialization](../build/initialization.md).
+  as `ESNLayer(topology="name")`. See [Initialization](../build/initialization/index.md).
 - **Input/feedback initializers** — register a function or
   `InputFeedbackInitializer` subclass with
   `@register_input_feedback("name")`.
 - **Reservoir cells and layers** — subclass `ReservoirCell` for the
   single-step update, wrap it in a `BaseReservoirLayer` subclass for the
-  sequence loop. See [Layers](../build/layers.md).
+  sequence loop. See [Layers](../build/layers/index.md).
 - **Readouts** — subclass `ReadoutLayer` and implement its fitting
   interface; `ESNTrainer` picks it up automatically.
 

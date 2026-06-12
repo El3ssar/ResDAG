@@ -131,5 +131,5 @@ way, one sub-model per thread.
 
 ## See also
 
-- [Build · Architectures](../build/architectures.md) — the factories worth scaling
+- [Build · Architectures](../build/architectures/index.md) — the factories worth scaling
 - [Reference · Core](../reference/core.md) — `save`, `load`, `load_from_file` in full

@@ -141,9 +141,11 @@ attractor: the forecast stays statistically right after it stops being
 pointwise right.
 
 <figure markdown>
-![Lorenz forecast in phase space](../assets/figures/predict_lorenz_phase.png)
-<figcaption>After pointwise divergence the forecast keeps reproducing the
-attractor's geometry — the climate outlives the weather.</figcaption>
+![True Lorenz attractor beside the attractor traced by the autonomous ESN forecast](../assets/figures/lorenz_phase.png)
+<figcaption>Side by side: the true attractor and the one traced by four
+thousand autonomous forecast steps. Past the valid horizon the forecast
+decorrelates from the true trajectory but keeps reconstructing the
+attractor — the climate outlives the weather.</figcaption>
 </figure>
 
 If the forecast dies far earlier than that, tune before you scale.

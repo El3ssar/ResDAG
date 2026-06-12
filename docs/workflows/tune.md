@@ -145,11 +145,43 @@ sampler seed per worker (`seed + i·7919`), but trial numbers are claimed
 in arrival order — so per-trial seeds, and hence the exact trial
 sequence, vary run to run even with a fixed `seed`.
 
+---
+
+## Reading a study
+
+`run_hpo` returns a plain optuna study, so optuna's visualization module
+works on it out of the box: `optuna.visualization` for interactive plotly
+figures, `optuna.visualization.matplotlib` for static ones like the four
+below — drawn from a real 70-trial study maximizing valid horizon on
+Lorenz (`scripts/generate_docs_figures.py`).
+
+```python
+from optuna.visualization import plot_optimization_history   # plotly, interactive
+from optuna.visualization.matplotlib import plot_contour     # static
+
+plot_optimization_history(study)
+```
+
 <figure markdown>
-![HPO study scatter](../assets/figures/hpo_scatter.png)
-<figcaption>A study's trials scattered over two hyperparameters — the
-basin around the optimum is broad, which is typical: reservoirs are
-forgiving once the big three are in range.</figcaption>
+![Optimization history of a 70-trial study](../assets/figures/hpo_history.png)
+<figcaption>Per-trial objective with the running best.</figcaption>
+</figure>
+
+<figure markdown>
+![Hyperparameter importances](../assets/figures/hpo_importances.png)
+<figcaption>Importances: which knobs actually matter.</figcaption>
+</figure>
+
+<figure markdown>
+![Parallel-coordinate plot of trial parameters](../assets/figures/hpo_parallel.png)
+<figcaption>Parallel coordinates: the parameter corridors the good
+trials share.</figcaption>
+</figure>
+
+<figure markdown>
+![Contour of the objective over spectral radius and leak rate](../assets/figures/hpo_contour.png)
+<figcaption>The spectral-radius × leak-rate landscape around the
+optimum.</figcaption>
 </figure>
 
 ## Next

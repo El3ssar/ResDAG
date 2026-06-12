@@ -13,7 +13,7 @@ clothes.
 
 A reservoir is a recurrent network whose weights are *chosen* and then
 frozen: a connectivity structure (random, a graph, any
-[matrix-building function](../build/initialization.md)), scaled to a target
+[matrix-building function](../build/initialization/index.md)), scaled to a target
 spectral radius, driven by your signal. It is a fixed nonlinear dynamical
 system that unfolds your input's history into hundreds of feature
 trajectories. Because nothing inside is learned, everything inside is an
@@ -22,12 +22,13 @@ discipline, and why ResDAG treats structure as a first-class, pluggable
 function.
 
 The same slot also holds reservoirs with no randomness at all:
-[`NGReservoir`](../build/layers.md) builds features from delayed inputs and
+[`NGReservoir`](../build/layers/ng-reservoir.md) builds features from delayed inputs and
 polynomial combinations — next-generation reservoir computing.
 
 ## 2 — The state is yours
 
-Reservoir layers are stateful. The hidden state `(batch, reservoir_size)`
+Reservoir layers are stateful. The hidden state — each family defines its
+own shape, such as `(batch, reservoir_size)` for an `ESNLayer` —
 persists across `forward` calls; that persistence is what lets a warmup
 pass hand a synchronized reservoir to a forecast loop. The full API:
 

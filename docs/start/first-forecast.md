@@ -50,9 +50,12 @@ prediction = model.forecast(f_warmup, horizon=2000)    # (1, 2000, 3)
 </div>
 
 <figure markdown>
-![Lorenz forecast](../assets/figures/predict_lorenz.png)
-<figcaption>The forecast tracks the true trajectory for several Lyapunov
-times, then diverges — that divergence is the chaos, not the model.</figcaption>
+![All three Lorenz components, true system versus ESN forecast, with the valid-horizon marker](../assets/figures/first_forecast.png)
+<figcaption>All three Lorenz components, system against autonomous ESN
+forecast. The dashed line marks the valid horizon — about 8–9 Lyapunov
+times here, from a 900-unit model after a small grid over spectral radius
+and ridge alpha (scripts/generate_docs_figures.py). The divergence past
+the line is the chaos, not the model.</figcaption>
 </figure>
 
 ---

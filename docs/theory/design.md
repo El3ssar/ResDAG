@@ -17,8 +17,8 @@ callable. This page records the decisions and why they won.
 resdag/
 ├── core/             ESNModel — symbolic DAG + forecast, state, persistence
 ├── layers/
-│   ├── cells/          single-step updates: ESNCell, NGCell
-│   ├── reservoirs/     sequence loop + state API: ESNLayer, NGReservoir
+│   ├── cells/          single-step updates, one per family: ESNCell, NGCell, …
+│   ├── reservoirs/     sequence loop + state API: ESNLayer, NGReservoir, …
 │   ├── readouts/       ReadoutLayer (an nn.Linear) + CGReadoutLayer solver
 │   └── transforms/     Concatenate, Power, SelectiveExponentiation, …
 ├── init/
@@ -36,7 +36,8 @@ resdag/
 ## The cell/layer split
 
 Reservoirs follow PyTorch's own `LSTMCell`/`LSTM` pattern. The **cell**
-(`ESNCell`, `NGCell`) owns all parameters and defines one timestep:
+— every reservoir family implements one, such as `ESNCell` — owns all
+parameters and defines one timestep:
 `forward(inputs, state) -> (output, new_state)`. The **layer**
 (`BaseReservoirLayer` and its subclasses) owns the time loop and the
 entire state-management API — lazy init, reset, get/set, detach

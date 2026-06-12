@@ -113,7 +113,7 @@ def gen_forecast():
 
     fig, axes = plt.subplots(3, 1, figsize=(8.6, 4.6), sharex=True)
     for i, (ax, comp) in enumerate(zip(axes, "xyz")):
-        ax.plot(t[show], val[0, show, i], color=INK_SOFT, lw=1.3, label="system")
+        ax.plot(t[show], val[0, show, i], color=SLATE, lw=1.3, label="system")
         ax.plot(t[show], pred[0, show, i], color=PINE, lw=1.3, label="ESN forecast")
         ax.axvline(vh * 0.01 * lyap, color=MUTED, lw=0.8, ls=(0, (4, 3)))
         ax.set_ylabel(comp, rotation=0, va="center", style="italic")
@@ -132,7 +132,7 @@ def gen_phase():
     vh, pred, val = train_best_lorenz(horizon=4000)
     fig = plt.figure(figsize=(8.6, 4.0))
     for k, (title, dat, color) in enumerate([
-            ("system", val[0].numpy(), INK_SOFT),
+            ("system", val[0].numpy(), SLATE),
             ("ESN forecast (autonomous)", pred[0].numpy(), PINE)]):
         ax = fig.add_subplot(1, 2, k + 1, projection="3d")
         ax.plot(dat[:, 0], dat[:, 1], dat[:, 2], color=color, lw=0.45, alpha=0.85)

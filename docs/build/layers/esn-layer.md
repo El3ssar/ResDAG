@@ -1,5 +1,5 @@
 ---
-description: The echo-state family's layer — the leaky update knob by knob, from spectral radius to random bias, plus the state API and the projected fast path.
+description: The echo-state reservoir layer — the leaky update equation, its constructor parameters, the state API, and the projected fast path.
 ---
 
 <span class="nb-kicker">Build · Layers</span>
@@ -14,7 +14,7 @@ h_t = (1-\alpha)\,h_{t-1} + \alpha\, f\!\left(W_{fb}\,x_t + W_{in}\,u_t + W\,h_{
 $$
 
 and returns the full state trajectory `(batch, time, reservoir_size)`.
-The constructor is the experiment panel:
+Every parameter is set in the constructor:
 
 <div class="nb-specimen" data-label="esn_layer.py" markdown>
 
@@ -39,7 +39,7 @@ reservoir = ESNLayer(
 
 </div>
 
-## The knobs that decide experiments
+## Key parameters
 
 `spectral_radius` rescales `W` to a target largest eigenvalue — the bare
 layer defaults to `None` (unscaled), while every premade factory passes
@@ -60,11 +60,11 @@ The three structural arguments — `topology`, `feedback_initializer`,
 
 ## State
 
-The state persists across `forward` calls — that is the point. It
-silently re-initializes to zeros when the incoming batch size, device, or
-dtype changes, and it is detached between calls, so gradients never cross
-a `forward`-call boundary. The full contract lives in
-[the mental model](../../start/concepts.md); the API in brief:
+The state persists across `forward` calls. It silently re-initializes to
+zeros when the incoming batch size, device, or dtype changes, and it is
+detached between calls, so gradients never cross a `forward`-call
+boundary. The full contract is described in
+[the concepts page](../../start/concepts.md); the API in brief:
 
 ```python
 reservoir.reset_state()              # forget; lazily re-initialized next forward
@@ -80,13 +80,14 @@ Like every reservoir family, `ESNLayer` splits the work in two: an
 `ESNCell` owns the weights and the single-step update, while the layer
 owns the sequence loop and the state. The loop's fast path calls
 `project_inputs` once to precompute $W_{fb}x + W_{in}u + b$ for every
-timestep, then a fused `step` per timestep — three kernel launches
-instead of six, which is most of the GPU speed. Attribute access
+timestep, then a fused `step` per timestep — three kernel launches per
+step instead of six, which accounts for most of the GPU speedup over a
+naive loop. Attribute access
 delegates to the cell, so `reservoir.weight_hh` and
 `reservoir.spectral_radius` work directly.
 
 ## See also
 
 - [Initialization](../initialization/index.md) — topologies and weight builders
-- [Reservoir dynamics](../../theory/dynamics.md) — what the update equation actually does
+- [Reservoir dynamics](../../theory/dynamics.md) — analysis of the update equation
 - [Layers reference](../../reference/layers.md) — full signatures

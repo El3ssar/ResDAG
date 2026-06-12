@@ -28,16 +28,16 @@ python -c "import resdag; print(resdag.__version__)"
 
 ## On GPUs
 
-Everything runs on CUDA with a single `.to("cuda")` — models, data, training,
-forecasting. Two honest expectations:
+Models, data, training, and forecasting all run on CUDA via `.to("cuda")`.
+Performance depends on scale:
 
-- **GPUs win at scale.** Reservoirs of ~2 000+ units or batches of multiple
-  trajectories train and forecast up to an order of magnitude faster than
-  CPU. Run `examples/11_gpu_benchmark.py` to see the crossover on your
-  hardware.
-- **Tiny models don't benefit.** A single trajectory through a few hundred
-  neurons is bound by kernel-launch overhead, not arithmetic — expect rough
-  parity with the CPU there, and don't read it as a defect.
+- **Large reservoirs and batches.** Reservoirs of ~2,000+ units or batches of
+  multiple trajectories train and forecast up to an order of magnitude faster
+  than on CPU. Run `examples/11_gpu_benchmark.py` to measure the crossover
+  point on your hardware.
+- **Small models.** A single trajectory through a few hundred neurons is
+  bound by kernel-launch overhead rather than arithmetic, so expect
+  performance comparable to CPU.
 
 [Scale & deploy](../workflows/deploy.md) covers device placement patterns in
 detail.
@@ -52,5 +52,5 @@ uv run pytest --no-cov -q
 
 ## Next
 
-[**02 · First forecast**](first-forecast.md) — a trained chaotic-attractor
-forecaster in five minutes.
+[**02 · First forecast**](first-forecast.md) — train a forecaster on a
+chaotic attractor and run an autoregressive forecast.

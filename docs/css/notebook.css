@@ -35,11 +35,12 @@
   --nb-paper: #f8f8f6;
   --nb-surface: #ffffff;
   --nb-ink: #222826;
-  --nb-ink-soft: #4e5955;
+  --nb-ink-soft: #44504a;
   --nb-muted: #79847f;
   --nb-rule: #e4e7e4;
   --nb-rule-strong: #cbd2cc;
-  --nb-accent: #1d6f54;        /* vermilion — links, active, the one color */
+  --nb-accent: #1d6f54;        /* deep pine — links, active, the brand color */
+  --nb-data-true: #5a6b9e;     /* slate — the "system/true" series in every plot */
   --nb-accent-strong: #155340;
   --nb-accent-wash: #1d6f5414;
   --nb-code-bg: #eef1ee;
@@ -64,12 +65,12 @@
 [data-md-color-scheme="slate"] {
   --nb-paper: #16191b;
   --nb-surface: #1d2123;
-  --nb-ink: #dce2de;
-  --nb-ink-soft: #a4afa9;
+  --nb-ink: #e4e9e5;
+  --nb-ink-soft: #b3bdb7;
   --nb-muted: #717c76;
   --nb-rule: #2b3130;
   --nb-rule-strong: #3e4644;
-  --nb-accent: #79c4a8;
+  --nb-accent: #7fd0b0;
   --nb-accent-strong: #97d6bf;
   --nb-accent-wash: #79c4a814;
   --nb-code-bg: #1a1e1f;
@@ -402,3 +403,35 @@
 [data-md-color-scheme="slate"] .md-typeset .md-button--primary {
   color: #0e1f19 !important;
 }
+
+
+/* =========================================================================
+   Code blocks — GitHub Dark in both schemes
+   ========================================================================= */
+.md-typeset .highlight {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-left: 3px solid var(--nb-accent);
+}
+
+.md-typeset .highlight pre > code,
+.md-typeset pre code {
+  background: #0d1117;
+  color: #c9d1d9;
+}
+
+.md-typeset .highlight :is(.k, .kn, .kd, .kc, .ow, .cp) { color: #ff7b72; }
+.md-typeset .highlight :is(.s, .s1, .s2, .sa, .sd, .se, .sb) { color: #a5d6ff; }
+.md-typeset .highlight :is(.c, .c1, .cm, .ch, .cs) { color: #8b949e; font-style: italic; }
+.md-typeset .highlight :is(.nf, .fm, .nd) { color: #d2a8ff; }
+.md-typeset .highlight :is(.nc, .ne, .nn) { color: #ffa657; }
+.md-typeset .highlight :is(.mi, .mf, .mh, .mo, .kt, .bp) { color: #79c0ff; }
+.md-typeset .highlight :is(.n, .p, .o, .nb, .nv) { color: #c9d1d9; }
+.md-typeset .highlight .gp { color: #8b949e; }
+.md-typeset .highlight .hll { background: #1f2937; }
+
+.md-typeset .highlight button.md-clipboard { color: #8b949e; }
+.md-typeset .highlight button.md-clipboard:hover { color: #c9d1d9; }
+
+/* Legend colors for the data pair, site-wide */
+.nb-legend .nb-leg-true i { background: var(--nb-data-true); }

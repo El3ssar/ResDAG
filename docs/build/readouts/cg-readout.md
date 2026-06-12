@@ -2,21 +2,22 @@
 description: Family-agnostic trainable maps — the name contract, ridge regression by conjugate gradient, bias and precision semantics, and the _fit_impl hook for custom solvers.
 ---
 
-<span class="nb-kicker">Build · Layers</span>
+<span class="nb-kicker">Build · Readouts</span>
 
-# Readouts
+# CGReadoutLayer
 
 A readout is the trainable map from features to predictions, and it is
 deliberately family-agnostic: it sees `(batch, time, features)` and never
 asks which reservoir produced them. Any reservoir's states — or any
 transform of them — feed any readout.
 
-`ReadoutLayer` is the base: an `nn.Linear` applied independently per
+`ReadoutLayer` is the base class: an `nn.Linear` applied independently per
 timestep (3-D input is flattened to `(batch*time, features)` and back),
 carrying a `name` for multi-readout DAGs, frozen by default, and exposing
-a `fit(states, targets)` interface for algebraic training. The shipped
-solver is `CGReadoutLayer` — ridge regression by conjugate gradient on
-the normal equations, not gradient descent:
+a `fit(states, targets)` interface for algebraic training.
+`CGReadoutLayer`, the current concrete solver, performs ridge regression
+by conjugate gradient on the normal equations rather than gradient
+descent:
 
 <div class="nb-specimen" data-label="cg_readout.py" markdown>
 
@@ -36,28 +37,29 @@ readout = CGReadoutLayer(
 
 </div>
 
-`alpha` is the single most consequential training knob in the library —
-sweep it logarithmically (1e-8 to 1e-2) before touching anything else.
-The `name` is a contract: `ESNTrainer.fit(targets={"output": y})` finds
-this layer by that string, nothing more.
+In practice `alpha` has the largest effect on fit quality of any training
+parameter; sweep it logarithmically (1e-8 to 1e-2) before tuning anything
+else. `ESNTrainer.fit(targets={"output": y})` matches targets to readouts
+by `name`: the key in the targets dict must equal the layer's `name`.
 
 ## Bias semantics
 
 With `bias=True` the solver centers states and targets and recovers an
-unpenalized intercept afterwards — textbook ridge-with-intercept. With
-`bias=False` it solves the raw, uncentered normal equations, because
-centering without an intercept at predict time would shift every
-prediction.
+unpenalized intercept afterwards — the standard ridge-with-intercept
+formulation. With `bias=False` it solves the raw, uncentered normal
+equations, because centering without an intercept at predict time would
+shift every prediction.
 
 ## Precision
 
-Two knobs, briefly: `use_float64=True` (default) runs the small CG
-iterations in float64, while `gram_dtype` controls the heavy Gram-matrix
-matmuls — automatically float64 on CPU and the input dtype on CUDA, where
-float64 throughput on consumer GPUs is the classic reason ESN training
-measures slower on GPU than CPU. Pass `gram_dtype=torch.float64` to force
-full precision everywhere; the numerics are dissected in
-[Readout solvers](../../theory/readout.md).
+Two parameters control numerical precision. `use_float64=True` (the
+default) runs the CG iterations in float64. `gram_dtype` controls the
+Gram-matrix products, which dominate the cost: it defaults to float64 on
+CPU and to the input dtype on CUDA, because consumer GPUs execute float64
+at a fraction of float32 throughput — forcing full precision there can
+make ESN training slower on GPU than on CPU. Pass
+`gram_dtype=torch.float64` to force float64 everywhere; the numerics are
+covered in [Readout solvers](../../theory/readout.md).
 
 ---
 
@@ -80,9 +82,9 @@ class LstsqReadout(ReadoutLayer):
 
 Return a coefficient matrix of shape `(in_features, out_features)` and an
 optional intercept; the base class transposes into the `(out, in)` layout
-`nn.Linear` expects and flips `is_fitted`. Because every readout is an
-ordinary `nn.Linear` underneath, the gradient world stays open — pass
-`trainable=True` and train it with any optimizer instead.
+`nn.Linear` expects and sets `is_fitted`. Because every readout is an
+ordinary `nn.Linear` underneath, gradient training remains available:
+pass `trainable=True` and fit it with any optimizer instead.
 
 ## See also
 

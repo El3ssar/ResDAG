@@ -6,8 +6,8 @@ description: Every symbol importable directly from the resdag namespace, mapped 
 
 # Top level
 
-`import resdag as rd` puts the working API in one namespace; every symbol
-below is a re-export, documented in full on its canonical page.
+Every symbol below is importable directly from the `resdag` namespace. Each
+is a re-export; the canonical page listed alongside it documents it in full.
 
 ```python
 import resdag as rd
@@ -59,8 +59,11 @@ trainer = rd.ESNTrainer(model)
 | [`CoupledEnsembleESNModel`][resdag.ensemble.CoupledEnsembleESNModel] | `resdag.ensemble` |
 | [`OutliersFilteredMean`][resdag.ensemble.aggregators.OutliersFilteredMean] | `resdag.ensemble.aggregators` |
 
-Training exposes a single class:
-[`ESNTrainer`][resdag.training.ESNTrainer] in `resdag.training`.
+## Training
+
+| Symbol | Canonical home |
+| ------ | -------------- |
+| [`ESNTrainer`][resdag.training.ESNTrainer] | `resdag.training` |
 
 ---
 
@@ -68,9 +71,9 @@ Training exposes a single class:
 
 [`run_hpo`][resdag.hpo.run_hpo], [`LOSSES`][resdag.hpo.losses.LOSSES], and
 [`get_study_summary`][resdag.hpo.utils.get_study_summary] are also reachable
-as `rd.run_hpo`, `rd.LOSSES`, and `rd.get_study_summary` — resolved lazily
-via module `__getattr__` so that `optuna` stays an optional dependency until
-the moment you actually tune something.
+as `rd.run_hpo`, `rd.LOSSES`, and `rd.get_study_summary`. They are resolved
+lazily via module `__getattr__`, so `optuna` remains an optional dependency
+until one of these attributes is first accessed.
 
 ## Submodules
 

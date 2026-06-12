@@ -6,8 +6,9 @@ description: Every registered input/feedback initializer with a portrait of the 
 
 # Initializer catalog
 
-Generated from the live registry at build time — new initializers document
-themselves. Each page shows the matrix the initializer draws, its
-parameters, and the one-liner to use it.
+Input and feedback initializers fill the weight matrices that project
+external signals into the reservoir. Each page below shows the matrix an
+initializer draws, lists its parameters, and gives the code to select it
+in `ESNLayer`.
 
 <!-- nb-cards: build/initialization/initializers -->

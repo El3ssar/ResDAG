@@ -1,15 +1,15 @@
 ---
-description: Train an Echo State Network on the Lorenz attractor and forecast it autoregressively — the complete workflow, explained.
+description: Train an Echo State Network on the Lorenz attractor and forecast it autoregressively.
 ---
 
 <span class="nb-kicker">Start · 02</span>
 
 # First forecast
 
-One script: a 500-neuron reservoir learns the Lorenz attractor from five
-thousand samples, then runs free for two thousand steps on its own
-predictions. Training is a single algebraic solve — there is no epoch loop
-to babysit.
+The script below trains a 500-neuron reservoir on five thousand samples of
+the Lorenz attractor, then forecasts two thousand steps autoregressively,
+feeding each prediction back as the next input. Training is a single
+algebraic solve; there is no gradient-descent loop.
 
 <div class="nb-specimen" data-label="first_forecast.py" markdown>
 
@@ -30,7 +30,7 @@ def lorenz(n, dt=0.01):
 data = lorenz(7500)
 data = (data - data.mean(1, keepdim=True)) / data.std(1, keepdim=True)
 
-# --- Split the timeline the ESN way ---
+# --- Split the timeline into warmup / train / validation segments ---
 warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
     data, warmup_steps=300, train_steps=5000, val_steps=2000
 )
@@ -51,11 +51,11 @@ prediction = model.forecast(f_warmup, horizon=2000)    # (1, 2000, 3)
 
 <figure markdown>
 ![All three Lorenz components, true system versus ESN forecast, with the valid-horizon marker](../assets/figures/first_forecast.png)
-<figcaption>All three Lorenz components, system against autonomous ESN
+<figcaption>All three Lorenz components, true system against autonomous ESN
 forecast. The dashed line marks the valid horizon — about 8–9 Lyapunov
-times here, from a 900-unit model after a small grid over spectral radius
-and ridge alpha (scripts/generate_docs_figures.py). The divergence past
-the line is the chaos, not the model.</figcaption>
+times here, from a 900-unit model after a small grid search over spectral
+radius and ridge alpha. Divergence past that point reflects the chaotic
+sensitivity of the system, not a defect in the model.</figcaption>
 </figure>
 
 ---
@@ -73,27 +73,29 @@ workflow needs:
 `target` is `train` shifted forward one step — the model learns *given the
 signal now, emit the signal one step ahead*. `f_warmup` is the tail of
 `train`, used to re-synchronize the reservoir immediately before the
-held-out window. Normalization matters: reservoirs like inputs of order one.
+held-out window. Normalization is important: the tanh activation saturates
+when inputs are far from order one.
 
 **The model.** `ott_esn` wires the architecture Pathak et al. used for
 chaotic systems: a frozen random reservoir, a quadratic state augmentation,
-and a ridge-regression readout named `"output"`. Frozen means frozen — the
-only thing training changes is the readout's linear map.
+and a ridge-regression readout named `"output"`. The reservoir weights stay
+fixed; training changes only the readout's linear map.
 
 **The fit.** One teacher-forced pass over `warmup` synchronizes the state;
 one pass over `train` collects states and solves the ridge problem against
-`target` by conjugate gradient. The `"output"` key matches the readout's
-`name` — that is the entire wiring between your data and the model's heads.
+`target` by conjugate gradient. The `"output"` key in `targets` matches the
+readout's `name` parameter; this is how target tensors are routed to
+readout layers.
 
 **The forecast.** Two phases: teacher-forced warmup on `f_warmup`, then
 `horizon` autoregressive steps where each output becomes the next input.
-The returned tensor aligns one-to-one with `val`, so scoring is a
-subtraction.
+The returned tensor aligns one-to-one with `val`, so the forecast error can
+be computed directly.
 
-!!! note "If the forecast misbehaves"
-    Reach for `spectral_radius` (0.8–1.2) and the readout's `alpha`
-    (log-scale, 1e-8–1e-2) first. The full panel is in
-    [Tune](../workflows/tune.md).
+!!! note "If the forecast diverges early"
+    Adjust `spectral_radius` (0.8–1.2) and the readout's `alpha`
+    (log-scale, 1e-8–1e-2) first. The full set of tuning parameters is
+    covered in [Tune](../workflows/tune.md).
 
 ## Next
 

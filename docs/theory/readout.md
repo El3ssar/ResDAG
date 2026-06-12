@@ -6,10 +6,12 @@ description: The ridge objective with unpenalized intercept, centered vs. uncent
 
 # Readout solvers
 
-Training a readout is one linear-algebra problem: ridge regression of
-collected states onto targets. This page states the objective
-`CGReadoutLayer` actually solves, the normal equations it forms, and the
-precision choices that make the solve fast on a GPU without going wrong.
+ResDAG fits readouts algebraically. For the current readout,
+`CGReadoutLayer`, training reduces to one linear-algebra problem: ridge
+regression of collected states onto targets. This page states the
+objective the layer solves, the normal equations it forms, and the
+precision choices that keep the solve fast on a GPU without compromising
+accuracy.
 
 ## The objective
 
@@ -40,10 +42,10 @@ $$
 = X^\top Y - N\,\bar x\,\bar y^\top
 $$
 
-— in `_solve_ridge_cg`: `XtX = X.T @ X - n * (X_mean.T @ X_mean)` and
-`rhs = X.T @ y - n * (X_mean.T @ y_mean)`, the rank-one mean corrections
-applied to the raw products. After the solve the intercept is recovered
-exactly:
+In `_solve_ridge_cg` this is `XtX = X.T @ X - n * (X_mean.T @ X_mean)`
+and `rhs = X.T @ y - n * (X_mean.T @ y_mean)`: the rank-one mean
+corrections applied to the raw products. After the solve the intercept is
+recovered exactly:
 
 $$
 c = \bar y - W^\top \bar x
@@ -69,9 +71,10 @@ system, independent of $N$. CG exploits both facts:
 
 - **Memory.** Only the $F \times F$ Gram matrix is ever materialized. The
   $N \times F$ state matrix is read exactly twice (once for $X^\top X$,
-  once for $X^\top Y$) and never decomposed or augmented — for $N$ in
-  the hundreds of thousands, a direct solver on the design matrix would
-  not fit where this does.
+  once for $X^\top Y$) and never decomposed or augmented, so the solver's
+  working memory is independent of $N$. A direct factorization of the
+  design matrix scales with $N$ and becomes impractical when $N$ reaches
+  the hundreds of thousands.
 - **GPU-friendly iterations.** Each CG step is one matvec
   `XtX @ w + alpha * w` plus a handful of vector ops — exactly what a GPU
   pipelines well. All $M$ output columns are solved simultaneously
@@ -92,8 +95,9 @@ orders of magnitude:
 - **Gram formation** — the heavy $(N, F)$ matmuls — runs in `gram_dtype`.
   Default `None` resolves automatically: `float64` on CPU, where it is
   nearly free, and the **input dtype on CUDA**, because float64 matmuls
-  run at 1/32–1/64 throughput on consumer GPUs — the classic reason ESN
-  training used to measure *slower* on GPU than CPU. Pass
+  run at 1/32–1/64 throughput on consumer GPUs. This is why a naive
+  float64 implementation can make ESN training slower on GPU than on
+  CPU. Pass
   `gram_dtype=torch.float64` to force full precision everywhere (only
   worth it for badly scaled states; prefer normalizing the data).
 - **CG iterations** — on the small $(F, F)$ system — run in `float64`
@@ -106,16 +110,17 @@ orders of magnitude:
 The base `ReadoutLayer.fit` (a subclass of `torch.nn.Linear`) owns
 everything except the algebra: it flattens `(B, T, F)` inputs to
 `(B·T, F)`, validates that states and targets agree on $N$ and that the
-target width matches `out_features`, delegates to `_fit_impl`, then copies
-the solution into the standard linear-layer parameters — `weight.copy_(coefs.T)`,
-`bias.copy_(intercept)`. A fitted readout **is** a regular
-`nn.Linear`: same forward, same `state_dict`, nothing bespoke left behind.
+target width matches `out_features`, delegates the solve to the
+subclass's `_fit_impl`, then copies the solution into the standard
+linear-layer parameters — `weight.copy_(coefs.T)`,
+`bias.copy_(intercept)`. A fitted readout is a regular `nn.Linear`: same
+forward pass, same `state_dict`.
 
-That is what makes the algebraic and gradient worlds interchangeable. The
-same layer can be fitted in one CG solve today and trained with Adam
-tomorrow (`trainable=True` flips `requires_grad`); a checkpoint does not
-record which path produced the weights, because there is nothing to
-record.
+This makes algebraic fitting and gradient training interchangeable. The
+same layer can be fitted with a single CG solve or trained with an
+optimizer such as Adam (`trainable=True` flips `requires_grad`), and a
+checkpoint does not record which path produced the weights, because the
+layer carries no solver-specific state.
 
 ## Next
 

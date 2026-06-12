@@ -1,10 +1,10 @@
 ---
-description: Structure is a function — every weight matrix in a reservoir is built by a swappable function, named in a registry or passed as a bare callable.
+description: Every weight matrix in a reservoir is built by a swappable function — the recurrent matrix by a topology, the input and feedback matrices by initializers.
 ---
 
 <span class="nb-kicker">Build</span>
 
-# Structure is a function
+# Initialization
 
 Every weight matrix in a reservoir is built by a function you can swap: the
 recurrent matrix by a *topology*, the input and feedback matrices by
@@ -43,7 +43,7 @@ layer = ESNLayer(200, feedback_size=3, input_size=5,
 
 ## Any function is a topology
 
-The escape hatch that keeps the system open: a bare callable is a valid spec, no registration required.
+A bare callable is a valid spec; no registration is required.
 
 <div class="nb-specimen" data-label="block_diagonal.py" markdown>
 
@@ -71,7 +71,8 @@ layer = ESNLayer(200, feedback_size=3, spectral_radius=1.0,
 
 !!! note "Scale is separate from structure"
     However the matrix is built — graph, registry, bare callable, `torch.nn.init` —
-    `spectral_radius` rescales the result *afterwards*. A topology never needs to worry about its own eigenvalues.
+    `spectral_radius` rescales the result *afterwards*. A topology function does not
+    need to normalize its own spectrum.
 
 ---
 
@@ -83,24 +84,22 @@ layer = ESNLayer(200, feedback_size=3, spectral_radius=1.0,
 
     ---
 
-    Every registered recurrent-matrix builder with its connectivity
-    portrait — generated from the live registry at build time, so
-    registering a topology adds its page on the next build.
+    Every registered recurrent-matrix builder, with its connectivity
+    portrait and parameters.
 
 - **[Initializer catalog](initializers/index.md)**
 
     ---
 
-    Every registered input/feedback initializer with a portrait of the
-    matrix it draws — generated from the live registry, so new
-    initializers document themselves.
+    Every registered input/feedback initializer, with a portrait of the
+    matrix it draws and its parameters.
 
 </div>
 
-## Naming your own
+## Registering your own
 
-Registration makes a builder usable by string in every layer and factory —
-and therefore sweepable by name in HPO. Matrix builders return the matrix
+Registration makes a builder usable by name in every layer and factory, and
+therefore sweepable by name in an HPO study. Matrix builders return the matrix
 directly (the built-in `"orthogonal"` Haar-random matrix is one); graph builders
 return a NetworkX graph whose edge weights become matrix entries (unweighted edges count as 1):
 
@@ -122,7 +121,7 @@ def double_ring(n: int, offset: int = 2) -> nx.DiGraph:
 
 Input/feedback initializers register the same way — a plain
 `fn(rows, cols, **kw)` is enough; `register_input_feedback` also accepts
-an `InputFeedbackInitializer` subclass when state or validation earns a class:
+an `InputFeedbackInitializer` subclass when the initializer needs state or validation:
 
 ```python
 from resdag.init.input_feedback import register_input_feedback

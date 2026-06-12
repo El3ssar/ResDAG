@@ -29,6 +29,7 @@ DOCS = Path(__file__).resolve().parent.parent / "docs"
 # Sections whose nav children are discovered, not listed.
 AUTOSECTIONS = {
     "Layers": "build/layers",
+    "Readouts": "build/readouts",
     "Architectures": "build/architectures",
     "Topologies": "build/initialization/topologies",
     "Initializers": "build/initialization/initializers",

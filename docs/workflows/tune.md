@@ -1,16 +1,16 @@
 ---
-description: The knobs that move forecast quality — what each controls, where to start, and complete hyperparameter studies with run_hpo.
+description: The hyperparameters that control forecast quality, manual starting points for each, and complete hyperparameter studies with run_hpo.
 ---
 
 <span class="nb-kicker">Work · Tune</span>
 
 # Tune
 
-Eight knobs account for nearly all forecast-quality variance. Move them
-by hand first — each has a direction you can reason about — then hand the
-interactions to `run_hpo`.
+Eight parameters account for most of the variance in forecast quality.
+Tune them by hand first, since each has a direction you can reason
+about, then use `run_hpo` to search over their interactions.
 
-| Knob | Controls | Range | First move |
+| Parameter | Controls | Range | First move |
 | --- | --- | --- | --- |
 | `reservoir_size` | model capacity | 100–2000 | double it until gains stall |
 | `spectral_radius` | memory horizon, stability | 0.8–1.2 | sweep ±0.1 around 0.9 |
@@ -26,7 +26,7 @@ magnitude hits the target, which sets how long an input echoes through
 the state. Small values forget fast and stay stable; values near one
 remember longer and produce richer transients at the edge of instability
 — for driven, leaky reservoirs the best value often sits slightly above
-1.0. This is the single most effective knob for forecast horizon.
+1.0. This is the single most effective parameter for forecast horizon.
 Factories default to 0.9; a bare `ESNLayer` leaves the matrix unscaled
 unless you pass a value.
 
@@ -34,14 +34,14 @@ unless you pass a value.
 $x_t = (1-a)\,x_{t-1} + a\,\tilde{x}_t$. At `1.0` the state is fully
 replaced each step (the standard ESN); smaller values integrate slowly,
 matching the reservoir's timescale to the signal's. Slow, smooth signals
-want small leaks — pairing `leak_rate=0.1` with a radius near 1.0 is the
-classic recipe for long oscillations.
+call for small leak rates; `leak_rate=0.1` with a spectral radius near
+1.0 is a standard configuration for long-period oscillations.
 
-**Alpha** is the bias–variance dial on the only part that trains. Too
-small and the readout amplifies state noise — forecasts blow up within a
-few steps; too large and everything over-smooths toward the mean. The
-optimum shifts with reservoir size and training length, which is why it
-belongs in every search space.
+**Alpha** sets the bias–variance tradeoff of a ridge readout such as
+`CGReadoutLayer`. Too small, and the readout amplifies state noise and
+forecasts diverge within a few steps; too large, and predictions
+over-smooth toward the mean. The optimum shifts with reservoir size and
+training length, which is why it belongs in every search space.
 
 ---
 
@@ -107,9 +107,9 @@ last one sliced with the [pinned alignment](forecast.md).
 !!! warning "Silent failures by design"
     `catch_exceptions=True` (the default) converts any per-trial error
     into `penalty_value` (1e10) and stashes the message in the trial's
-    `"error"` attribute, so one bad configuration cannot kill a
-    night-long study. A study full of 1e10s is a study full of unread
-    exceptions — pass `catch_exceptions=False` while debugging.
+    `"error"` attribute, so a single bad configuration cannot abort a
+    long-running study. If most trials report 1e10, the exceptions are
+    going unread — pass `catch_exceptions=False` while debugging.
 
 ### Losses
 
@@ -126,17 +126,17 @@ study values mean longer usable forecasts. `loss_params` passes kwargs
 (thresholds, metrics) to the chosen loss; `monitor_losses=["standard"]`
 logs extra metrics on every trial without optimizing on them.
 
-### Many workers, one study
+### Multi-worker studies
 
 ```python
 study = run_hpo(..., n_trials=200, n_workers=8, storage="study.log", seed=42)
 ```
 
-Workers are real OS processes coordinating through the storage file —
-journal (`"study.log"`) is append-only and built for this; a `.db` path
-gets SQLite with WAL mode. BLAS threads are throttled to one per worker
-before forking, and re-running with the same storage and study name
-resumes where the study stopped.
+Workers are separate OS processes coordinating through the storage file.
+Journal storage (`"study.log"`) is append-only and handles concurrent
+writers; a `.db` path uses SQLite with WAL mode. BLAS threads are
+throttled to one per worker before forking, and re-running with the same
+storage and study name resumes where the study stopped.
 
 Seed semantics differ by mode. Single-worker runs are fully
 reproducible: `seed` seeds the sampler, and each trial reseeds
@@ -150,10 +150,9 @@ sequence, vary run to run even with a fixed `seed`.
 ## Reading a study
 
 `run_hpo` returns a plain optuna study, so optuna's visualization module
-works on it out of the box: `optuna.visualization` for interactive plotly
+works on it directly: `optuna.visualization` for interactive plotly
 figures, `optuna.visualization.matplotlib` for static ones like the four
-below — drawn from a real 70-trial study maximizing valid horizon on
-Lorenz (`scripts/generate_docs_figures.py`).
+below, drawn from a 70-trial study maximizing valid horizon on Lorenz.
 
 ```python
 from optuna.visualization import plot_optimization_history   # plotly, interactive
@@ -169,13 +168,14 @@ plot_optimization_history(study)
 
 <figure markdown>
 ![Hyperparameter importances](../assets/figures/hpo_importances.png)
-<figcaption>Importances: which knobs actually matter.</figcaption>
+<figcaption>Relative importance of each hyperparameter for the
+objective.</figcaption>
 </figure>
 
 <figure markdown>
-![Parallel-coordinate plot of trial parameters](../assets/figures/hpo_parallel.png)
-<figcaption>Parallel coordinates: the parameter corridors the good
-trials share.</figcaption>
+![Per-parameter slice plots of the objective](../assets/figures/hpo_slice.png)
+<figcaption>Slice plots: the objective against each parameter
+individually.</figcaption>
 </figure>
 
 <figure markdown>
@@ -186,5 +186,5 @@ optimum.</figcaption>
 
 ## Next
 
-- [**Scale & deploy**](deploy.md) — run the winning configuration at size
+- [**Scale & deploy**](deploy.md) — run the best configuration at scale
 - [Reference · HPO](../reference/hpo.md) — every `run_hpo` parameter

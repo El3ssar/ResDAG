@@ -1,22 +1,21 @@
 ---
-description: The leaky-ESN update equation, spectral radius scaling, the echo state property, why the bias exists, and the NG-RC feature map — each cross-checked against the code.
+description: The leaky-ESN update equation, spectral radius scaling, the echo state property, the role of the bias, and the NG-RC feature map, as implemented in the code.
 ---
 
 <span class="nb-kicker">Theory · Dynamics</span>
 
 # Reservoir dynamics
 
-Every reservoir family in the library reduces to one compact rule — one
-equation drives every ESN, one feature map drives every NG-RC, and future
-families will earn their own. This page states the current two exactly as
-the code computes them, then walks the knobs — spectral radius, leak rate,
-bias — back to the dynamical properties they control.
+Each reservoir family is defined by a single rule: an update equation for
+ESN layers, a feature map for NG-RC layers. This page states both rules
+exactly as the code computes them, then explains how spectral radius, leak
+rate, and bias relate to the dynamical properties they control.
 
 ## The leaky-ESN update
 
 `ESNCell` implements the standard leaky-integrator update (Jaeger 2001;
-Lukoševičius 2012) in two lines — a nonlinear pre-activation, then a
-linear leak:
+Lukoševičius 2012) as a nonlinear pre-activation followed by a linear
+leak:
 
 $$
 \tilde h_t = f\!\left(W_{rec}\,h_{t-1} + W_{fb}\,u_t + W_{in}\,d_t + b\right)
@@ -69,19 +68,20 @@ heuristic for this, and a good default — but it is neither necessary nor
 sufficient. It guarantees only local stability of the zero-input
 linearization; a strongly driven `tanh` reservoir can keep the ESP well
 above $\rho = 1$, because the input pushes units into their saturating
-region where the effective gain drops. Measure instead of guessing:
-`resdag.utils.states.esp_index` runs one orbit from the zero state and
-`iterations` orbits from random states $\mathcal U(-1,1)$ under the same
-input, and reports $\overline{\lVert h^{\text{base}}_t -
+region where the effective gain drops. The property can be measured
+directly: `resdag.utils.states.esp_index` runs one orbit from the zero
+state and `iterations` orbits from random states $\mathcal U(-1,1)$ under
+the same input, and reports $\overline{\lVert h^{\text{base}}_t -
 h^{\text{rand}}_t \rVert}$ averaged over time, batch, and restarts. An
-index near zero means the trajectories merged — the ESP holds for *your*
-signal; a plateau means the reservoir still remembers where it started.
+index near zero means the trajectories merged and the ESP holds for that
+input signal; a plateau means the reservoir still remembers where it
+started.
 
 **Leak rate as timescale.** The leak makes forgetting explicit: the
 $h_{t-1}$ contribution decays by $(1-\alpha)$ per step, a relaxation time
 of $\tau = -1/\ln(1-\alpha) \approx 1/\alpha$ steps. `leak_rate=0.1` gives
-the reservoir an intrinsic memory of roughly ten steps — the knob to reach
-for when the input evolves much slower than the sampling rate.
+the reservoir an intrinsic memory of roughly ten steps, appropriate when
+the input evolves much more slowly than the sampling rate.
 
 ---
 
@@ -95,12 +95,12 @@ $$
 
 so the entire input-to-state operator satisfies $H(-x) = -H(x)$ — negate
 the input sequence and every state trajectory negates exactly. The
-reservoir is then structurally blind to the sign of your data: any system
+reservoir is then structurally blind to the sign of the data: any system
 with a mirror symmetry (Lorenz under $(x,y,z) \mapsto (-x,-y,z)$ is the
 classic case) gets two attractors mapped onto perfectly antisymmetric
 state sets, and forecasts can slip onto the mirror copy. A fixed random
-bias $b \sim \mathcal U(-\beta, \beta)$ breaks the identity at every unit,
-for free.
+bias $b \sim \mathcal U(-\beta, \beta)$ breaks the identity at every
+unit.
 
 !!! warning "Changed in 0.5"
     Before 0.5, `bias=True` allocated a bias that was zero-initialized and
@@ -143,10 +143,11 @@ $$
 
 with the first two blocks present iff `include_constant` /
 `include_linear`. The delay buffer holds $(k-1)\,s$ rows and starts
-zero-filled, so the first $(k-1)\,s$ outputs mix real data with zeros —
-discard them (that is the NG-RC warmup; compare it to the hundreds of
-steps an ESN needs). The monomial count explodes combinatorially in $k$,
-$p$, and $d$; the cell warns when $\dim O_{\text{total}} > 10{,}000$.
+zero-filled, so the first $(k-1)\,s$ outputs mix real data with zeros and
+should be discarded. This is the NG-RC warmup; it is typically much
+shorter than the hundreds of steps an ESN needs. The monomial count grows
+combinatorially in $k$, $p$, and $d$; the cell warns when
+$\dim O_{\text{total}} > 10{,}000$.
 
 ## References
 
@@ -156,5 +157,5 @@ $p$, and $d$; the cell warns when $\dim O_{\text{total}} > 10{,}000$.
 
 ## Next
 
-[**Readout solvers**](readout.md) — what happens to these states once the
-ridge regression sees them.
+[**Readout solvers**](readout.md) — how a readout layer maps these states
+to outputs.

@@ -172,6 +172,8 @@ nav:
       - build/index.md
       - Layers:
           - build/layers/index.md
+      - Readouts:
+          - build/readouts/index.md
       - Architectures:
           - build/architectures/index.md
       - Initialization:
@@ -205,6 +207,7 @@ nav:
   - Project:
       - project/index.md
       - Citation: project/citation.md
+      - Ecosystem: project/ecosystem.md
       - Related work: project/related-work.md
       - Contributing: project/contributing.md
       - Changelog: project/changelog.md

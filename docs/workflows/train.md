@@ -7,14 +7,15 @@ description: Three ways to train a reservoir model — the one-pass algebraic so
 # Train
 
 Three training paths coexist because ResDAG models are ordinary
-`torch.nn.Module`s. Start with the algebraic solve — it fits in
-milliseconds and is the reservoir-computing classic; reach for gradients
-only when the problem stops being least-squares.
+`torch.nn.Module`s. The algebraic solve is the standard
+reservoir-computing approach and the usual starting point; use
+gradient-based training when the problem is not a least-squares fit.
 
 ## Path 1 — the algebraic solve
 
-`ESNTrainer.fit` trains every readout in the model, each with one ridge
-regression, all inside a single forward pass:
+`ESNTrainer.fit` fits every readout in the model algebraically, all
+inside a single forward pass; for a `CGReadoutLayer` each fit is one
+ridge regression:
 
 <div class="nb-specimen" data-label="train_algebraic.py" markdown>
 
@@ -52,12 +53,13 @@ rd.ESNTrainer(model).fit(
 2. Resets all reservoir states, then runs one teacher-forced pass over
    `warmup_inputs` to synchronize them.
 3. Registers a pre-hook on every readout in the model.
-4. Runs one forward pass over `train_inputs`. The moment each readout
-   executes, its hook fits it by conjugate gradient on the exact tensor
-   entering it — so in multi-readout DAGs, downstream layers receive
-   outputs from already-fitted readouts, in dependency order, for free.
+4. Runs one forward pass over `train_inputs`. When each readout
+   executes, its hook fits it on the tensor entering it (by conjugate
+   gradient, for `CGReadoutLayer`). In multi-readout DAGs, downstream
+   layers therefore receive outputs from already-fitted readouts, in
+   dependency order.
 
-**Multi-readout models** just need more keys, one per readout `name`:
+**Multi-readout models** need one key per readout `name`:
 
 ```python
 rd.ESNTrainer(model).fit(
@@ -67,12 +69,12 @@ rd.ESNTrainer(model).fit(
 )
 ```
 
-**What `alpha` does.** Each readout solves
+**What `alpha` does.** Each `CGReadoutLayer` solves
 $\min_W \lVert XW - Y \rVert^2 + \alpha \lVert W \rVert^2$; `alpha` is
-the only fitting hyperparameter and it lives on the layer, not the
-trainer. Larger values shrink the weights — smoother, more stable
-forecasts at the cost of one-step accuracy. It works on a log scale:
-sweep $10^{-8}$ to $10^{-2}$ in decade steps, never linearly.
+its only fitting hyperparameter and it lives on the layer, not the
+trainer. Larger values shrink the weights, giving smoother, more stable
+forecasts at the cost of one-step accuracy. It acts on a log scale:
+sweep $10^{-8}$ to $10^{-2}$ in decade steps, not linearly.
 
 ### Preparing the data
 
@@ -89,8 +91,8 @@ The contract is *target equals train shifted forward one step*: each pair
 prediction, which is exactly what the forecast loop replays. `f_warmup`
 is the tail of `train` (last `warmup_steps` samples), ready to
 re-synchronize the reservoir right before forecasting over `val`. If you
-slice by hand, keep the shift — an off-by-one here trains without
-complaint and quietly ruins forecasts.
+slice by hand, keep the shift: an off-by-one here raises no error during
+training but degrades forecasts.
 
 ---
 
@@ -120,12 +122,13 @@ for step in range(300):
     opt.step()
 ```
 
-Precomputing `feats` once is the big speed win of a frozen base. But
-streaming works too: push fresh batches through the reservoir inside the
-loop and consecutive `backward()` calls just work, without resets — the
-stored state is detached at every forward-call boundary
-(`detach_state_between_calls=True`), so no autograd graph survives to
-trigger "backward through the graph a second time".
+Precomputing `feats` once avoids re-running the reservoir on every
+optimization step; this is the main efficiency advantage of a frozen
+base. Streaming also works: push fresh batches through the reservoir
+inside the loop and consecutive `backward()` calls succeed without
+resets, because the stored state is detached at every forward-call
+boundary (`detach_state_between_calls=True`) and no autograd graph
+survives to trigger "backward through the graph a second time".
 
 ## Path 3 — full BPTT
 
@@ -147,21 +150,21 @@ for epoch in range(30):
     opt.step()
 ```
 
-Clip gradients — backprop through hundreds of recurrent steps is exactly
-where they explode — and keep the windows short. This path is worth it
-only when a frozen random reservoir demonstrably is not good enough: it
-runs orders of magnitude slower than path 1 on the same task, and
-training can drag the recurrent matrix away from the spectral radius you
-designed.
+Clip gradients (backpropagation through hundreds of recurrent steps is
+prone to exploding gradients) and keep the windows short. Use this path
+only when a frozen random reservoir is demonstrably insufficient: it is
+orders of magnitude slower than path 1 on the same task, and training
+can move the recurrent matrix away from the spectral radius you
+configured.
 
 !!! note "Combining paths"
     The paths compose. Build the readout with `trainable=True`, run
-    `ESNTrainer.fit` to land on the ridge solution (the solve writes the
+    `ESNTrainer.fit` to obtain the ridge solution (the solve writes the
     weights directly, regardless of `trainable`), then fine-tune from
-    there with a small learning rate. The algebraic answer is a far
-    better initialization than random.
+    there with a small learning rate. The algebraic solution is a better
+    initialization than random weights.
 
 ## Next
 
-- [**Forecast**](forecast.md) — close the loop on what you just trained
-- [Theory · Readout solvers](../theory/readout.md) — the ridge solve, derived
+- [**Forecast**](forecast.md) — autoregressive prediction with the trained model
+- [Theory · Readout solvers](../theory/readout.md) — derivation of the ridge regression solve

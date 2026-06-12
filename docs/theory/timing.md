@@ -41,8 +41,8 @@ beyond the training window, which is why `prepare_esn_data` rejects
 
 **Training alignment.** `ESNTrainer.fit` runs the warmup, then one
 forward pass over `train`. The reservoir emits state row $t$ from input
-row $t$; the readout's `fit` hook regresses state row $t$ onto target row
-$t$. Row for row, no internal re-shifting — the shift lives entirely in
+row $t$; each readout's `fit` hook regresses state row $t$ onto target
+row $t$. Row for row, no internal re-shifting — the shift lives entirely in
 the data preparation above.
 
 ---
@@ -72,7 +72,8 @@ driver `forecast_inputs[:, t-1]`. Worked out for `horizon=4`:
 With the `prepare_esn_data` splits, the forecast warmup ends at data
 index $W{+}L{-}1$, so $T = W{+}L{-}1$ and `predictions[:, i]` estimates
 `data[:, W+L+i]` $=$ `val[:, i]` — the forecast aligns one-to-one with
-the validation split, and scoring is a subtraction.
+the validation split, so errors can be computed directly as
+`predictions - val` with no re-indexing.
 
 **Driver alignment.** `forecast_inputs` is the driver series for the
 forecast window, continuing *exactly where the warmup drivers ended*:
@@ -96,11 +97,11 @@ targets.
 
 ## Statefulness across calls
 
-Reservoir layers carry their state between `forward` calls — that is what
-makes the warmup-then-forecast split work, and it is also the easiest
-thing to trip on.
+Reservoir layers carry their state between `forward` calls. This
+persistence is what makes the warmup-then-forecast split work; it is also
+a common source of errors.
 
-- **Resets are explicit, mostly.** `warmup()` and `forecast()` reset all
+- **Reset behavior.** `warmup()` and `forecast()` reset all
   reservoirs by default (`reset=True`); `ESNTrainer.fit` always resets
   before its warmup. A bare `model(x)` or `layer(x)` never resets —
   consecutive calls continue the trajectory unless you call
@@ -121,5 +122,5 @@ thing to trip on.
 
 ## Next
 
-[**Design of the library**](design.md) — why the code that enforces these
-conventions is shaped the way it is.
+[**Design of the library**](design.md) — the architecture decisions
+behind the code that enforces these conventions.

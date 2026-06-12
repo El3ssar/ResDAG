@@ -1,14 +1,14 @@
 ---
-description: Install ResDAG, train your first forecaster, and build the mental model — productive in ten minutes.
+description: Install ResDAG, train a first forecaster, and learn the four concepts the library is built on.
 ---
 
 <span class="nb-kicker">Start</span>
 
 # Start here
 
-Three short pages. After them you can build, train, and forecast with any
-model in the library — everything else in these docs is depth, not
-prerequisites.
+Three pages: installation, a complete worked example, and the concepts the
+rest of the documentation builds on. They are the only prerequisites for the
+other sections.
 
 <div class="grid cards" markdown>
 
@@ -16,15 +16,15 @@ prerequisites.
 
     ---
 
-    One command, two if you want hyperparameter optimization. A note on
-    GPUs and what to expect from them.
+    Installation with pip or uv, the optional HPO extra, and notes on
+    GPU support.
 
 - **02 · [First forecast](first-forecast.md)**
 
     ---
 
-    Train an Echo State Network on a chaotic attractor and forecast it —
-    complete, explained, under five minutes.
+    A complete worked example: train an Echo State Network on a chaotic
+    attractor, then forecast it autoregressively.
 
 - **03 · [The mental model](concepts.md)**
 

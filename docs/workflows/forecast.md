@@ -1,5 +1,5 @@
 ---
-description: Two-phase autoregressive forecasting — warmup, feedback, the pinned driver alignment, coupled ensembles, and Lyapunov-time expectations.
+description: Two-phase autoregressive forecasting — warmup, feedback, driver alignment, coupled ensembles, and Lyapunov-time expectations.
 ---
 
 <span class="nb-kicker">Work · Forecast</span>
@@ -8,9 +8,9 @@ description: Two-phase autoregressive forecasting — warmup, feedback, the pinn
 
 `forecast()` runs two phases: a teacher-forced warmup that synchronizes
 the reservoir on real data, then `horizon` steps in which each output
-becomes the next feedback input. Everything on this page is bookkeeping
-around that loop — and the bookkeeping is where forecasts quietly go
-wrong.
+becomes the next feedback input. The rest of this page covers the
+indexing and alignment around that loop, which is where most forecast
+errors originate.
 
 ## Anatomy
 
@@ -24,9 +24,10 @@ keeps the outputs. Prediction 0 *is* the last warmup output — the model's
 one-step prediction from the final real sample — so phase 2 makes
 `horizon − 1` model calls, each feeding the previous output back in. The
 returned tensor aligns one-to-one with the `val` split from
-`prepare_esn_data`: scoring is a subtraction.
+`prepare_esn_data`, so error metrics can be computed element-wise with
+no further index arithmetic.
 
-Two switches:
+Two optional arguments:
 
 ```python
 full = model.forecast(f_warmup, horizon=2000, return_warmup=True)
@@ -41,11 +42,12 @@ preds = model.forecast(f_warmup, horizon=2000, initial_feedback=seed)
 **Multi-output models** return a tuple with the same structure. The
 *first* output is the one fed back, so its dimension must equal the
 feedback input's — a mismatch raises immediately, listing the model's
-readouts. Other outputs ride along without entering the loop.
+readouts. The remaining outputs are computed at each step but do not
+enter the loop.
 
 ---
 
-## Drivers: the pinned alignment
+## Driver alignment
 
 Training pairs `(feedback_t, driver_t) → feedback_{t+1}`. The forecast
 loop keeps that pairing, which pins where the forecast drivers must start
@@ -81,8 +83,8 @@ truth = x[:, T : T + horizon]                       # preds align with this
 Passing `horizon` steps instead of `horizon − 1` is also accepted — the
 last one is unused — so you may slice drivers over the same window as
 your validation targets. Any other length raises. The validator is strict
-because misaligned drivers are the canonical silent bug: shifted by one
-step, the model trains fine and the forecast merely degrades.
+because misaligned drivers fail silently: shifted by one step, the model
+trains without error and only the forecast quality degrades.
 [Theory · Timing](../theory/timing.md) derives the alignment index by
 index.
 
@@ -90,12 +92,12 @@ index.
 
 ## Coupled ensembles
 
-N independently initialized models, trained separately, forecast better
-together: at every autoregressive step each member receives the *same*
-aggregated output (mean, median, or a custom module) as its next
-feedback. The shared signal couples the members and suppresses any single
-member's error growth — and the spread between members is a free
-uncertainty estimate.
+A coupled ensemble runs N independently initialized models, trained
+separately, in a single forecast loop: at every autoregressive step each
+member receives the *same* aggregated output (mean, median, or a custom
+module) as its next feedback. The shared signal couples the members and
+suppresses any single member's error growth, and the spread between
+members provides an uncertainty estimate.
 
 ```python
 import torch
@@ -118,8 +120,8 @@ spread = torch.stack(members).std(dim=0)                # (batch, 400, 3)
 
 `fit` trains each member independently on the same data — diversity comes
 purely from the random initializations (`n_workers > 1` fits members in a
-thread pool). Against the occasional member that diverges mid-forecast,
-swap the aggregator:
+thread pool). If a member diverges mid-forecast, an outlier-filtering
+aggregator excludes it from the shared signal:
 
 ```python
 from resdag.ensemble.aggregators import OutliersFilteredMean
@@ -136,21 +138,23 @@ ensemble = rd.coupled_ensemble_esn(
 For chaotic systems the ceiling is the system's, not the model's: any
 initial error grows like $e^{\lambda t}$, so even a near-perfect one-step
 predictor diverges after a few Lyapunov times. A well-tuned ESN tracks
-the truth for several Lyapunov times and then falls onto — not off — the
-attractor: the forecast stays statistically right after it stops being
-pointwise right.
+the true trajectory for several Lyapunov times; after that the pointwise
+forecast decorrelates, but the trajectory remains on the attractor, so
+the forecast stays statistically consistent with the system after it
+stops being pointwise accurate.
 
 <figure markdown>
 ![True Lorenz attractor beside the attractor traced by the autonomous ESN forecast](../assets/figures/lorenz_phase.png)
-<figcaption>Side by side: the true attractor and the one traced by four
-thousand autonomous forecast steps. Past the valid horizon the forecast
-decorrelates from the true trajectory but keeps reconstructing the
-attractor — the climate outlives the weather.</figcaption>
+<figcaption>The true Lorenz attractor and the attractor traced by 4,000
+autonomous forecast steps. Past the valid horizon the forecast
+decorrelates from the true trajectory but continues to reconstruct the
+attractor's geometry.</figcaption>
 </figure>
 
-If the forecast dies far earlier than that, tune before you scale.
+If forecasts diverge well before this point, tune the hyperparameters
+before increasing reservoir size.
 
 ## Next
 
-- [**Tune**](tune.md) — the knobs that buy you Lyapunov times
-- [Theory · Timing](../theory/timing.md) — every index in the loop, derived
+- [**Tune**](tune.md) — hyperparameter optimization for forecast quality
+- [Theory · Timing](../theory/timing.md) — derivation of every index in the forecast loop

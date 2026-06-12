@@ -6,8 +6,8 @@ description: GPU regimes, model persistence, and embedding frozen reservoirs in 
 
 # Scale & deploy
 
-A ResDAG model is a `torch.nn.Module` to the end: it moves to the GPU
-like one, checkpoints like one, and drops into a larger network like one.
+A ResDAG model is a standard `torch.nn.Module`: it moves to the GPU,
+checkpoints, and embeds in a larger network like any other module.
 The reservoir-specific part is knowing when each of those is worth doing.
 
 ## GPU
@@ -25,10 +25,10 @@ preds = model.forecast(f_warmup.cuda(), horizon=1000)   # stays on cuda
 `.to("cuda")` moves parameters and buffers as usual. The live reservoir
 state needs no handling of its own — it follows the data, re-initializing
 on the next forward pass whenever the incoming batch's size, device, or
-dtype changes. The flip side: a warmed-up state does not survive a device
-hop, so move the model first, warm up after.
+dtype changes. One consequence: a warmed-up state does not survive a
+device change, so move the model first and warm up afterward.
 
-**When it pays.** The reservoir loop is sequential in time, so each
+**When the GPU helps.** The reservoir loop is sequential in time, so each
 timestep is one small kernel launch; the GPU only wins once those kernels
 carry real work. In practice:
 
@@ -38,15 +38,15 @@ carry real work. In practice:
   GPU work.
 - **Tiny configs are launch-bound.** A single trajectory through a
   1000-unit reservoir runs at CPU parity or slower; the GPU mostly waits.
-- Rule of thumb: big batches, big reservoirs, or many models → GPU; one
-  small model → CPU. Measure your own pair with
-  `examples/11_gpu_benchmark.py`.
+- As a rule of thumb, large batches, large reservoirs, or many models
+  favor the GPU; a single small model runs as fast or faster on CPU.
+  Measure your own configuration with `examples/11_gpu_benchmark.py`.
 
 !!! note "Why fit() stays fast on CUDA"
     `CGReadoutLayer`'s `gram_dtype` is automatic: the heavy Gram-matrix
     matmuls run in float64 on CPU (cheap there) but in the input dtype on
-    CUDA — consumer GPUs run float64 at 1/32–1/64 throughput, the classic
-    reason ESN training used to measure *slower* on GPU. Pass
+    CUDA — consumer GPUs run float64 at 1/32–1/64 throughput, which is
+    why ESN training has often measured slower on GPU. Pass
     `gram_dtype=torch.float64` only for badly scaled states (e.g.
     unnormalized inputs concatenated into the readout); the better fix is
     normalizing the data.
@@ -81,7 +81,7 @@ the model.
 A frozen reservoir is a feature extractor with zero trainable parameters
 — `sum(p.numel() for p in model.parameters() if p.requires_grad)` is 0 by
 design — so optimizers, gradient bookkeeping, and checkpoint diffs all
-treat it as the constant it is. Wrap it like any frozen backbone:
+treat it as a constant. Wrap it like any frozen backbone:
 
 <div class="nb-specimen" data-label="reservoir_classifier.py" markdown>
 
@@ -120,7 +120,7 @@ for xb, yb in loader:                                      # (B, T, 3), (B,)
 Gradients flow *through* the reservoir to anything upstream; nothing
 inside it moves. Between forward calls the stored state is detached, so
 this loop needs no special handling for autograd. To fine-tune a readout
-instead of bolting on a head, use the combination pattern from
+instead of adding a separate head, use the combination pattern from
 [Train](train.md): build it with `trainable=True`, solve algebraically,
 then continue with a small learning rate.
 
@@ -131,5 +131,5 @@ way, one sub-model per thread.
 
 ## See also
 
-- [Build · Architectures](../build/architectures/index.md) — the factories worth scaling
+- [Build · Architectures](../build/architectures/index.md) — premade model factories
 - [Reference · Core](../reference/core.md) — `save`, `load`, `load_from_file` in full

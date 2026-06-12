@@ -1,17 +1,18 @@
 ---
-description: Project meta — how to cite ResDAG, how it compares to other reservoir computing libraries, how to contribute, and where releases live.
+description: How to cite ResDAG, the projects it builds on, how it compares to other reservoir computing libraries, how to contribute, and the release history.
 ---
 
 <span class="nb-kicker">Project</span>
 
 # Project
 
-Everything about the project that isn't the library itself.
+Information about the project rather than the API: citation, dependencies and companion projects, comparisons with other libraries, contribution guidelines, and release history.
 
 | Page | What it covers |
 | ---- | -------------- |
 | [Citation](citation.md) | BibTeX for the software and the papers behind each method |
-| [Related work](related-work.md) | Where ResDAG sits among reservoir computing libraries — and when to use something else |
+| [Ecosystem](ecosystem.md) | The projects ResDAG builds on and pairs with: pytorch_symbolic and TSDynamics |
+| [Related work](related-work.md) | How ResDAG compares to other reservoir computing libraries, and when another tool is a better fit |
 | [Contributing](contributing.md) | Dev setup, the quality gate, and where new components plug in |
 | [Changelog](changelog.md) | Release history |
 

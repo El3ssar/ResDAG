@@ -1,56 +1,41 @@
 ---
-description: An honest map of the reservoir computing library landscape — what ReservoirPy and others do well, and where ResDAG differs.
+description: Where ResDAG sits in the reservoir-computing software landscape.
 ---
 
 <span class="nb-kicker">Project</span>
 
 # Related work
 
-ResDAG is not the first reservoir computing library, and for plenty of work
-it should not be your first choice. Here is the landscape, stated plainly.
+Reservoir computing has a healthy software landscape: NumPy-based libraries
+with broad method coverage and long histories, research codebases attached
+to individual papers, and general sequence-modeling frameworks that include
+echo-state baselines. ResDAG takes a different set of trade-offs rather
+than competing feature-for-feature.
 
-## ReservoirPy
+## What ResDAG optimizes for
 
-[ReservoirPy](https://github.com/reservoirpy/reservoirpy) is the reference
-open-source RC library: NumPy/SciPy-based, actively maintained by Inria,
-with a rich ecosystem — extensive tutorials, many node types, hyperparameter
-search helpers, and years of accumulated community knowledge. If you want
-classical ESNs on CPU with the broadest documentation and the most worked
-examples, use ReservoirPy.
+**Composition over configuration.** Most reservoir software exposes a
+configurable pipeline: one reservoir, one readout, options on each. ResDAG
+exposes parts — reservoirs, readouts, transforms as PyTorch modules — and a
+functional API to wire them into arbitrary DAGs. Architectures from the
+literature (state augmentation, parallel reservoirs, multiple heads) are a
+few lines of composition instead of framework features.
 
-What it is not is PyTorch-native. Models are not `nn.Module`s, there is no
-device story beyond NumPy, and combining reservoirs with trained deep
-learning components means leaving its world.
+**PyTorch citizenship.** Models are ordinary `nn.Module`s: they move with
+`.to(device)`, serialize with `state_dict()`, embed in larger networks, and
+train with any optimizer. The algebraic one-pass fit and gradient descent
+are interchangeable paths over the same parameters, not separate systems.
 
-## The wider landscape
+**GPU throughput.** The sequence loop, the solver's precision strategy,
+and the training pass are engineered for CUDA; at research scale the GPU
+is an order of magnitude faster than the CPU path, and the regime is
+[measured and documented](../workflows/deploy.md), not assumed.
 
-Most other RC codebases fall into two groups: research code published with a
-paper (single architecture, rarely maintained) and PyTorch ports of the
-classic ESN that wrap one reservoir and one readout in a fixed pipeline.
-Both serve their purpose; neither treats model *composition* — multiple
-reservoirs, multiple readouts, arbitrary wiring — as the primary object.
+**Documented mathematics.** Every update equation, solver decision, and
+timing convention is [written down](../theory/index.md) against the code
+that implements it.
 
----
+## See also
 
-## Where ResDAG differs
-
-- **DAG composition.** Architectures are built with the `pytorch_symbolic`
-  functional API — any directed acyclic graph of reservoirs, transforms, and
-  readouts, not a fixed reservoir→readout pipeline.
-- **PyTorch citizenship.** Every component is an `nn.Module`: `.to("cuda")`,
-  dtype control, `state_dict` persistence, and SGD interop — frozen
-  reservoirs and algebraic readouts coexist with gradient-trained layers in
-  the same graph.
-- **One-pass multi-readout training.** `ESNTrainer` fits every readout in a
-  model in topological order during a single forward pass, each against its
-  own targets.
-- **GPU performance.** Batched trajectories and large reservoirs run on
-  CUDA throughout, with a dedicated fast path for the per-step update.
-
-## When to use something else
-
-Choose ReservoirPy (or plain NumPy) when your reservoirs are small, your
-data is a single CPU-sized trajectory, and you value worked examples over
-composability — a few hundred neurons gain nothing from a GPU. Choose a
-deep-learning RNN (LSTM/GRU) when you have abundant data and no need for
-the one-shot training that makes reservoirs attractive in the first place.
+- [Ecosystem](ecosystem.md) — the projects ResDAG builds on and pairs with
+- [Citation](citation.md) — the methods' original papers

@@ -6,10 +6,9 @@ description: API reference for resdag.layers — reservoir cells and layers, rea
 
 # Layers
 
-Every `nn.Module` you compose models from: single-step cells, the stateful
-sequence layers that wrap them, algebraically-fitted readouts, and the
-transform layers in between. All are importable from `resdag.layers`
-directly.
+The `nn.Module` components used to build models: single-step reservoir
+cells, the stateful sequence layers that wrap them, readout layers, and
+transform layers. All are importable directly from `resdag.layers`.
 
 ::: resdag.layers.cells
     options:

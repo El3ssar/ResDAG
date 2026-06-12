@@ -1,5 +1,5 @@
 ---
-description: Dev environment setup, the local quality gate, test-suite layout, and where new components plug into ResDAG.
+description: Dev environment setup, the local quality gate, test-suite layout, and where new components and their documentation plug into ResDAG.
 ---
 
 <span class="nb-kicker">Project</span>
@@ -7,8 +7,8 @@ description: Dev environment setup, the local quality gate, test-suite layout, a
 # Contributing
 
 Issues and pull requests are welcome at
-[github.com/El3ssar/resdag](https://github.com/El3ssar/resdag). The loop
-below is everything a change needs before it ships.
+[github.com/El3ssar/resdag](https://github.com/El3ssar/resdag). The workflow
+below covers everything a change needs before it is merged.
 
 ## Setup
 
@@ -30,8 +30,8 @@ uv run black --check src/ tests/
 uv run mypy src/
 ```
 
-Run all of it locally — CI currently gates only the docs build, so the test
-and lint gate is on you, not the robot.
+Run all of it locally before opening a pull request — CI currently builds
+only the docs, so tests and lint are not enforced remotely.
 
 The suite in `tests/` mirrors `src/resdag/` (`test_layers/`, `test_models/`,
 …), shares fixtures through `tests/conftest.py`, and uses three markers:
@@ -55,9 +55,30 @@ The library is built to be extended without touching its internals:
   single-step update, wrap it in a `BaseReservoirLayer` subclass for the
   sequence loop. See [Layers](../build/layers/index.md).
 - **Readouts** — subclass `ReadoutLayer` and implement its fitting
-  interface; `ESNTrainer` picks it up automatically.
+  interface; `ESNTrainer` picks it up automatically. See
+  [Readouts](../build/readouts/index.md).
 
 New public symbols go in both the subpackage `__init__.py` and — if they
 belong in the top-level namespace — `src/resdag/__init__.py` plus its
 `__all__`. Docstrings are NumPy-style; the [Reference](../reference/index.md)
 is generated from them.
+
+---
+
+## Documentation
+
+The site is built with MkDocs (`mkdocs serve` for a live preview,
+`mkdocs build --strict` for the production build). It is modular, so most
+component additions need no nav or index edits:
+
+- **Topology and initializer pages** are generated at build time from the
+  live registries by `hooks/docs_autogen.py` — docstring summary, parameter
+  table, and gallery figure. Registering a new component is all it takes
+  for its page to appear under Topologies or Initializers.
+- **Layer, readout, and architecture pages** are handwritten, one Markdown
+  file per component. Drop the file into the matching folder under
+  `docs/build/` and it is picked up by the nav and by the section index's
+  card grid; the card text comes from the page's `description` frontmatter.
+- **Figures** under `docs/assets/figures/` are regenerated with
+  `uv run python scripts/generate_docs_figures.py` (use `--only` to rebuild
+  a subset). Do not edit the images by hand.

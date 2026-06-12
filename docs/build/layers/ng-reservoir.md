@@ -1,16 +1,16 @@
 ---
-description: The next-generation family's layer — designed dynamics from delay taps and polynomial monomials; k, s, p semantics, the feature-count formula, and the warmup the buffer needs.
+description: NG-RC reservoir layer with deterministic dynamics built from delay taps and polynomial monomials. Covers the k, s, p parameters, the feature-count formula, and warmup requirements.
 ---
 
 <span class="nb-kicker">Build · Layers</span>
 
 # NGReservoir
 
-The next-generation family's layer — a reservoir with designed, not
-random, dynamics (Gauthier et al. 2021). There are no recurrent weights
-and no randomness: features are built from time-delayed inputs and their
-polynomial products, so two constructions with the same `k`, `s`, `p` are
-bit-identical.
+`NGReservoir` implements the next-generation reservoir computing family
+(Gauthier et al. 2021): a reservoir with designed rather than random
+dynamics. It has no recurrent weights and no randomness. Features are
+built from time-delayed inputs and their polynomial products, so two
+constructions with the same `k`, `s`, `p` produce identical features.
 
 <figure markdown>
 ![NG-RC architecture](../../assets/figures/arch_ngrc.svg)
@@ -39,7 +39,7 @@ layer.warmup_length         # (k-1)*s = 1
 
 </div>
 
-## What k, s, p buy
+## What k, s, p control
 
 `k` taps spaced `s` steps apart give the layer a memory window of
 `(k-1)*s + 1` timesteps; `p` sets the degree of the monomials formed from
@@ -50,35 +50,37 @@ $$
 \text{feature\_dim} = \mathbb{1}[\text{constant}] + \mathbb{1}[\text{linear}]\,D + \binom{D+p-1}{p}
 $$
 
-— a constant 1, the delay-embedded inputs, and every degree-`p` monomial
-(`include_constant` and `include_linear` toggle the first two terms).
+The three terms are the constant 1, the delay-embedded inputs, and every
+degree-`p` monomial; `include_constant` and `include_linear` toggle the
+first two.
 
-!!! warning "Combinatorial budget"
+!!! warning "Combinatorial growth"
     The binomial term grows fast in `k`, `p`, and `input_dim`; the layer
-    warns when `feature_dim` exceeds 10,000. Treat that warning as a
-    design review, not a formality.
+    warns when `feature_dim` exceeds 10,000. If the warning fires,
+    reduce `k`, `p`, or the input dimension before training.
 
 ## State and warmup
 
 The state is not a hidden vector but a FIFO delay buffer of shape
-`(batch, (k-1)*s, input_dim)` — the standard state API applies, with
+`(batch, (k-1)*s, input_dim)`. The standard state API applies, with
 `set_state` validating that 3-D layout. The buffer needs `(k-1)*s` steps
 to fill, and outputs before that contain zeros from empty slots: discard
-the first `warmup_length` steps when accuracy matters. That is the whole
-warmup — a handful of steps, versus the hundreds an echo-state reservoir
-needs to wash out its initial condition.
+the first `warmup_length` steps when accuracy matters. The full warmup is
+those `(k-1)*s` steps, compared to the hundreds an echo-state reservoir
+typically needs to wash out its initial condition.
 
 ## When to prefer it
 
-Reach for this family when the data is short (the tiny warmup is a real
-budget win), when the underlying system is low-dimensional with smooth
-polynomial structure, or when you need exact reproducibility with no seed
-in sight. The hyperparameters are three small integers you can grid
-exhaustively — no spectral radius, no leak rate, no topology. The cost is
-the formula above: `feature_dim` explodes with `input_dim`, so
-high-dimensional signals favor reservoirs that compress into a fixed
-state instead. The layer has no learnable parameters, and gradients flow
-through it to upstream modules when you need them to.
+This family suits short datasets, where the `(k-1)*s`-step warmup
+consumes little data; systems that are low-dimensional with smooth
+polynomial structure; and settings that require exact reproducibility,
+since the construction is deterministic and needs no seed. The
+hyperparameters are three small integers that can be grid-searched
+exhaustively, with no spectral radius, leak rate, or topology to tune.
+The trade-off is the formula above: `feature_dim` grows combinatorially
+with `input_dim`, so high-dimensional signals favor reservoirs that
+compress into a fixed-size state. The layer has no learnable parameters,
+and gradients flow through it to upstream modules.
 
 ## See also
 

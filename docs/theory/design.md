@@ -6,10 +6,11 @@ description: The architecture of the library and its rationale — the cell/laye
 
 # Design of the library
 
-ResDAG is a small number of deliberate decisions repeated everywhere: a
-two-level reservoir stack, frozen weights that are still `Parameter`s, a
-trainer that is mostly a hook, and an init system that accepts any
-callable. This page records the decisions and why they won.
+ResDAG's architecture rests on a few decisions applied consistently
+throughout the library: a two-level reservoir stack, frozen weights
+stored as `Parameter`s, a trainer built on forward pre-hooks, and an
+init system that accepts any callable. This page records those
+decisions and the reasoning behind them.
 
 ## The package map
 
@@ -19,7 +20,7 @@ resdag/
 ├── layers/
 │   ├── cells/          single-step updates, one per family: ESNCell, NGCell, …
 │   ├── reservoirs/     sequence loop + state API: ESNLayer, NGReservoir, …
-│   ├── readouts/       ReadoutLayer (an nn.Linear) + CGReadoutLayer solver
+│   ├── readouts/       ReadoutLayer (an nn.Linear) + CGReadoutLayer, …
 │   └── transforms/     Concatenate, Power, SelectiveExponentiation, …
 ├── init/
 │   ├── topology/       registry + GraphTopology / MatrixTopology
@@ -50,10 +51,10 @@ part and a state-dependent part, and only the latter must live inside the
 loop. The layer asks the cell to precompute $W_{fb}\,u_t + W_{in}\,d_t +
 b$ for the *whole sequence* in one batched matmul, then iterates with
 `step`, where `torch.addmm` fuses the recurrent matmul with the
-precomputed slice. The loop body drops to roughly **three kernel launches
-per step (addmm, activation, lerp) instead of about six** — on typical
-reservoir sizes, the difference between the GPU losing to the CPU and
-beating it. Cells that cannot split (NG-RC's buffer update) return `None`
+precomputed slice. The loop body then issues roughly three kernel
+launches per step (addmm, activation, lerp) instead of about six; at
+typical reservoir sizes this determines whether GPU execution
+outperforms the CPU. Cells that cannot split (NG-RC's buffer update) return `None`
 from `project_inputs` and the layer falls back to per-step `forward`.
 
 ## Frozen weights are still `Parameter`s
@@ -63,27 +64,25 @@ buffers? Three reasons:
 
 - **`state_dict` parity.** A frozen and a trainable reservoir serialize
   identically; checkpoints do not care which experiment produced them.
-- **`trainable` is a flag flip.** Construction is one code path;
-  `trainable=False` just calls `requires_grad_(False)` on everything.
-  Unfreezing later is the same call in reverse, not a re-architecting.
-- **Failure is loud.** Run SGD against a fully frozen model and
-  `loss.backward()` raises immediately — no tensor in the graph requires
-  grad — instead of an optimizer silently no-op'ing over buffers for a
-  hundred epochs.
+- **`trainable` is a single flag.** Construction is one code path;
+  `trainable=False` calls `requires_grad_(False)` on every parameter,
+  and unfreezing is the same call in reverse.
+- **Errors surface immediately.** Running SGD against a fully frozen
+  model makes `loss.backward()` raise, because no tensor in the graph
+  requires grad. With buffers, the optimizer would silently do nothing.
 
 ## The trainer is a hook
 
 `ESNTrainer.fit` does three things: reset, teacher-forced warmup, one
-forward pass over the training inputs. The interesting part is what it
-does *not* do — it never computes a topological order. Each readout gets
-a `forward_pre_hook` that fits it on the exact tensor about to enter its
-`forward`; since the symbolic model executes the DAG in dependency order
-anyway, every readout is fitted at the only moment that matters, and
-downstream layers automatically consume already-fitted outputs.
-Multi-readout DAGs — including readouts feeding other readouts — train
-correctly with zero graph analysis. The entire mechanism is about a
-hundred lines of code, and it works for any future readout because
-`fit(states, targets)` is the only contract.
+forward pass over the training inputs. Notably, it never computes a
+topological order. Each readout gets a `forward_pre_hook` that fits it
+on the exact tensor about to enter its `forward`; since the symbolic
+model executes the DAG in dependency order, every readout is fitted at
+the point where its input states become available, and downstream
+layers consume already-fitted outputs. Multi-readout DAGs, including
+readouts feeding other readouts, train correctly without explicit
+graph analysis. The mechanism applies to any readout type that
+implements `fit(states, targets)`.
 
 ## Registries, but callables first
 
@@ -92,23 +91,23 @@ a registry name (`"erdos_renyi"`), a `(name, params)` tuple, **any bare
 callable** — `fn(n) -> matrix | graph`, `fn(rows, cols) -> matrix`, or an
 in-place `torch.nn.init.*_` function — a `(callable, params)` tuple, or a
 configured initializer object. The registry exists for discoverability
-and HPO string-friendliness; the callable path exists because reservoir
-research is the business of trying weight structures that do not have
-names yet. A new idea should cost a function definition, not a
-registration ceremony — `register_matrix_topology` /
-`register_input_feedback` are there for when the idea earns a name.
+and for string-based specification in HPO search spaces; the callable
+path exists because reservoir research routinely involves weight
+structures that have no registry name yet. A new structure requires
+only a function definition; `register_matrix_topology` /
+`register_input_feedback` promote it to a named, reusable component.
 
 !!! note "Convention"
     Resolution happens eagerly at layer construction
     (`resolve_topology` / `resolve_initializer` inside
-    `ESNCell.__init__`), so a bad spec fails at build time with the
-    build halted — never mid-experiment.
+    `ESNCell.__init__`), so an invalid spec raises at construction
+    time rather than partway through an experiment.
 
 ---
 
-## Where this is going
+## Future directions
 
-Directions under consideration, not promises: an `integrations` namespace
+These are under consideration, not commitments: an `integrations` namespace
 for third-party couplings; per-layer seeding so a single model can pin
 each reservoir's randomness independently; a public `step()` streaming
 API for online/real-time inference without sequence tensors; and
@@ -117,6 +116,6 @@ behind the same `_fit_impl` contract.
 
 ## See also
 
-- [Build](../build/index.md) — the composition handbook these pieces serve
+- [Build](../build/index.md) — composing these components into models
 - [Contributing](../project/contributing.md) — how to add a topology, cell, or solver
-- [Reservoir dynamics](dynamics.md) — the equations the architecture exists to compute
+- [Reservoir dynamics](dynamics.md) — the equations these components implement

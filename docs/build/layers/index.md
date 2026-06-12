@@ -1,36 +1,36 @@
 ---
-description: The layer taxonomy — stateful reservoirs split into cell and layer, readouts fitted algebraically or by gradient, and the parameterless transforms that glue a DAG together.
+description: Stateful reservoirs split into a cell and a layer, readouts trained algebraically or by gradient, and parameterless transforms that connect them into a DAG.
 ---
 
 <span class="nb-kicker">Build</span>
 
-# The parts catalog
+# Layers
 
-Three kinds of part build every architecture in the library, and all of
-them speak `(batch, time, features)`. **Reservoirs** hold the stateful
-dynamics; every reservoir family splits the work the same way — a cell
-that owns the single-step update and its parameters, and a layer that
-owns the sequence loop and the full state-management API. **Readouts**
-are the trainable maps from features to predictions, fitted algebraically
-in one solve or by gradient descent when you choose to unfreeze them.
-**Transforms** are parameterless feature operations that wire everything
-else into a DAG.
+Every architecture in the library is built from three kinds of component,
+all of which operate on `(batch, time, features)` tensors. **Reservoirs**
+hold the stateful dynamics; every reservoir family splits the work the
+same way: a cell that owns the single-step update and its parameters, and
+a layer that owns the sequence loop and the full state-management API.
+**[Readouts](../readouts/index.md)** are the trainable maps from features
+to predictions, fitted algebraically in one solve or by gradient descent
+when unfrozen. **Transforms** are parameterless feature operations that
+connect everything else into a DAG.
 
-The taxonomy is deliberately wider than its current residents. The
-echo-state and next-generation families ship today; further families —
-continuous-time reservoirs among them — drop into the same cell/layer
-contract without touching anything downstream. A readout never learns
-which dynamics produced the features it reads, and a transform cares only
-about the feature axis, so every page below describes a slot, not a
-closed list.
+None of these categories is closed. The echo-state and next-generation
+families are the current reservoir implementations; further families,
+continuous-time reservoirs among them, fit the same cell/layer contract
+without changes anywhere downstream. A readout is independent of the
+dynamics that produced the features it reads, and a transform operates
+only on the feature axis, so new implementations in any category compose
+with the existing ones.
 
 <!-- nb-cards: build/layers -->
 
 ## Adding a layer
 
 A new reservoir family is one `ReservoirCell` implementation wrapped in a
-`BaseReservoirLayer` subclass that inherits the sequence loop and state
-API for free. The cell contract, in full:
+`BaseReservoirLayer` subclass, which inherits the sequence loop and state
+API. The cell contract, in full:
 
 ```python
 class MyCell(ReservoirCell):
@@ -41,11 +41,9 @@ class MyCell(ReservoirCell):
     def forward(self, inputs, state): ...   # -> (output, new_state)
 ```
 
-Its documentation is one file dropped in this folder — the page appears
-in the navigation and in the cards above automatically.
-
 ## See also
 
-- [Architectures](../architectures/index.md) — these parts assembled into DAGs
+- [Readouts](../readouts/index.md) — the trainable maps from features to predictions
+- [Architectures](../architectures/index.md) — these components assembled into DAGs
 - [Initialization](../initialization/index.md) — what builds the weights inside a reservoir
-- [The mental model](../../start/concepts.md) — why the parts divide this way
+- [The mental model](../../start/concepts.md) — why the components divide this way

@@ -1,5 +1,5 @@
 ---
-description: Parameterless glue for any DAG — concatenation, augmentation powers, deterministic dropout, and feature partitioning, plus the augmentation pattern composed end to end.
+description: Parameterless feature operations — concatenation, augmentation powers, deterministic dropout, and feature partitioning — with the augmentation pattern as a worked example.
 ---
 
 <span class="nb-kicker">Build · Layers</span>
@@ -7,9 +7,9 @@ description: Parameterless glue for any DAG — concatenation, augmentation powe
 # Transforms
 
 Transforms are the parameterless feature operations that wire reservoirs,
-readouts, and everything between them into a DAG. They act only on the
-feature axis of `(batch, time, features)`, so they compose with any
-reservoir family's outputs — and with each other — without knowing what
+readouts, and the layers between them into a DAG. They act only on the
+feature axis of `(batch, time, features)`, so they compose with the
+outputs of any reservoir family, and with each other, regardless of what
 produced the tensor.
 
 | Layer | Signature | What it does |
@@ -20,7 +20,7 @@ produced the tensor.
 | `SelectiveDropout` | `(mask)` | Zeros a fixed boolean mask of features — deterministic, for ablations |
 | `FeaturePartitioner` | `(partitions, overlap)` | Splits features into overlapping circular slices, returns a list — feeds parallel reservoirs |
 
-All five import from `resdag` directly. Two fine points: `Concatenate`
+All five import from `resdag` directly. Two details: `Concatenate`
 takes any number of inputs that agree on every dimension but the last,
 and `FeaturePartitioner` requires the feature count to divide evenly by
 `partitions`, returning slices of width `features // partitions +
@@ -32,9 +32,8 @@ and `FeaturePartitioner` requires the feature count to divide evenly by
 
 The most common composition: enrich a reservoir's states with a nonlinear
 copy, then let the readout see both the raw input and the augmented
-features. This is exactly what the `ott_esn` factory wires — squaring the
-even-indexed states — but the pattern accepts any reservoir in the middle
-slot:
+features. The `ott_esn` factory wires this pattern, squaring the
+even-indexed states, but any reservoir can take the middle position:
 
 <div class="nb-specimen" data-label="augmentation.py" markdown>
 
@@ -54,18 +53,19 @@ model = ESNModel(inp, out)
 
 </div>
 
-Swap `SelectiveExponentiation` for `Power(2.0)` and you have
+Swap `SelectiveExponentiation` for `Power(2.0)` and the result is
 `power_augmented`; drop the `Concatenate` and the readout sees only the
-augmented states. The arithmetic to keep straight is the readout's
-`in_features` — concatenation adds feature dimensions, and the readout
-must be told the sum.
+augmented states. One thing to track is the readout's `in_features`:
+concatenation adds feature dimensions, and the readout must be
+constructed with the sum.
 
-Nothing here is a closed set. Any `nn.Module` that maps
-`(batch, time, features)` to the same layout composes identically; these
-five are simply the ones the premade factories needed first.
+These five layers are not a closed set. Any `nn.Module` that maps
+`(batch, time, features)` to the same layout composes the same way;
+these are the ones the premade factories use.
 
 ## See also
 
-- [Architectures](../architectures/index.md) — full pattern gallery, factories included
-- [The Build hub](../index.md) — the composition thesis in one page
+- [Architectures](../architectures/index.md) — premade model factories and the patterns they implement
+- [Readouts](../readouts/index.md) — trainable output layers, including `CGReadoutLayer`
+- [Build overview](../index.md) — how layers compose into models
 - [Layers reference](../../reference/layers.md) — full signatures

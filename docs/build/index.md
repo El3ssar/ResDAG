@@ -1,22 +1,23 @@
 ---
-description: The composition handbook — reservoir architectures are DAGs, and ResDAG gives you the parts and a functional API to wire them.
+description: Reservoir architectures as directed acyclic graphs - composition patterns, plus the layer, readout, architecture, and initialization references.
 ---
 
 <span class="nb-kicker">Build</span>
 
-# The composition handbook
+# Composing models
 
-The library's thesis in one sentence: modern reservoir architectures are
-directed acyclic graphs — reservoirs, augmentations, concatenations,
-readouts, wired in whatever order the problem demands — so ResDAG ships
-parts and a functional API rather than a zoo of monolithic model classes.
-Declare symbolic inputs, call layers on them, wrap the graph in `ESNModel`.
-Everything on this track is that move, repeated.
+ResDAG treats reservoir architectures as directed acyclic graphs:
+reservoirs, augmentations, concatenations, and readouts, composed in
+whatever order the problem requires. Instead of monolithic model classes,
+the library provides individual layers and a functional API. You declare
+symbolic inputs, call layers on them, and wrap the resulting graph in
+`ESNModel`. Every page in this section builds on that pattern.
 
-## Pattern gallery
+## Composition patterns
 
-Five wirings cover most of published reservoir computing. All five share
-one import line and run as written:
+The five patterns below cover the most common architectures in the
+reservoir computing literature. All use the same imports and run as
+written:
 
 ```python
 from resdag import (
@@ -25,7 +26,7 @@ from resdag import (
 )
 ```
 
-**Minimal ESN** — the architecture every other one extends.
+**Minimal ESN** — the base architecture that the other patterns extend.
 
 ```python
 inp = reservoir_input(3)
@@ -56,7 +57,7 @@ model = ESNModel([feedback, driver], out)
 </figure>
 
 **State augmentation, Ott-style** — square the even-indexed states and let
-the readout see the raw input; this is exactly what `ott_esn` builds.
+the readout see the raw input; this is what the `ott_esn` factory builds.
 
 ```python
 inp = reservoir_input(3)
@@ -69,7 +70,7 @@ model = ESNModel(inp, out)
 
 <figure markdown>
 ![Ott ESN architecture](../assets/figures/arch_ott_esn.svg)
-<figcaption>The chaotic-systems workhorse, spelled out.</figcaption>
+<figcaption>The <code>ott_esn</code> architecture, built layer by layer.</figcaption>
 </figure>
 
 **Parallel two-timescale reservoirs** — a fast and a slow reservoir read
@@ -107,7 +108,7 @@ model = ESNModel(inp, outputs=[coords, energy])
 
 ---
 
-## The track
+## In this section
 
 <div class="grid cards" markdown>
 
@@ -115,24 +116,32 @@ model = ESNModel(inp, outputs=[coords, energy])
 
     ---
 
-    The parts catalog: every reservoir family knob by knob — `ESNLayer`
-    first among them — the conjugate-gradient readout, and the transform
-    glue.
+    Reservoir layers such as `ESNLayer` and `NGReservoir`, their
+    parameters, and the transform layers used to connect them.
+
+- **[Readouts](readouts/index.md)**
+
+    ---
+
+    Output layers fitted algebraically rather than by gradient descent.
+    Currently `CGReadoutLayer`, a ridge regression readout solved by
+    conjugate gradient.
 
 - **[Architectures](architectures/index.md)**
 
     ---
 
-    Six premade factories, what each one actually wires, and the
-    hand-built DAGs you graduate to — stacked reservoirs, drivers,
-    multiple heads.
+    The premade model factories, the graph each one builds, and patterns
+    for hand-built DAGs: stacked reservoirs, driving inputs, multiple
+    readouts.
 
 - **[Initialization](initialization/index.md)**
 
     ---
 
-    Structure is a function: graph topologies, matrix builders, bare
-    callables, `torch.nn.init`, the registries that name them all — and
-    the generated catalogs of every registered component.
+    Weight initialization for reservoirs: graph topologies, input and
+    feedback initializers, plain callables, `torch.nn.init` functions,
+    and the registry system that resolves names. Includes a catalog of
+    every registered topology and initializer.
 
 </div>

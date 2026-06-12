@@ -1,22 +1,21 @@
 ---
-description: N independently trained sub-models coupled through a shared aggregated feedback signal during autoregression — ensemble forecasting with one fit/forecast call.
+description: N independently trained sub-models coupled through a shared aggregated feedback signal during autoregression, trained and run through a single fit/forecast interface.
 ---
 
 <span class="nb-kicker">Build · Architecture</span>
 
 # coupled_ensemble_esn
 
-N independently trained ESN models that forecast as one: at every
-autoregressive step, each sub-model receives the *same* aggregated output —
-the ensemble mean, by default — as its next feedback input. Diversity comes
-from the independent random initializations; stability comes from the
-shared signal.
+N independently trained ESN models that forecast jointly: at every
+autoregressive step, each sub-model receives the same aggregated output
+(the ensemble mean, by default) as its next feedback input. The sub-models
+differ only in their random initializations; the shared feedback signal
+keeps their trajectories synchronized during forecasting.
 
 ## Wiring
 
-There is no static `plot_model` figure here — the architecture is N
-replicas of a sub-model plus an aggregator, and the interesting part, the
-shared feedback loop, only exists at forecast time:
+The architecture is N replicas of a sub-model plus an aggregator. The
+shared feedback loop exists only at forecast time:
 
 ```
               ┌─→ sub-model 1 ─┐
@@ -28,10 +27,11 @@ feedback ──→──┼─→     ...     ─┼─→ aggregate ─→ ŷ_t
 
 The factory builds the sub-models by calling `model_factory(**model_kwargs)`
 N times (default factory: [ott_esn](ott-esn.md)) and returns a
-`CoupledEnsembleESNModel` — not an `ESNModel`, but with `fit` and
-`forecast` of the same shape: warmup/train tuples, a targets dict keyed by
-readout name, `forecast(warmup, horizon=...)`. It also carries `save`/
-`load`, `warmup`, and `reset_reservoirs` across all sub-models.
+`CoupledEnsembleESNModel`. It is not an `ESNModel`, but its `fit` and
+`forecast` follow the same conventions: warmup/train tuples, a targets dict
+keyed by readout name, `forecast(warmup, horizon=...)`. It also provides
+`save`, `load`, `warmup`, and `reset_reservoirs`, applied across all
+sub-models.
 
 ## Use
 
@@ -52,12 +52,12 @@ ensemble.fit(
 )
 preds = ensemble.forecast(series[:, 1200:1400], horizon=100)   # (1, 100, 3)
 
-preds, runs = ensemble.forecast(                # per-sub-model trajectories too
+preds, runs = ensemble.forecast(                # per-sub-model trajectories
     series[:, 1200:1400], horizon=100, return_individuals=True,
 )
 ```
 
-Sub-models train independently on the same data — coupling exists only in
+Sub-models train independently on the same data; coupling exists only in
 the forecast loop. `seed` makes construction deterministic: sub-model *i*
 is built under `torch.manual_seed(seed + i)`, and `seed + i` is forwarded
 to the factory when it accepts a `seed` argument.
@@ -89,11 +89,12 @@ ensemble = rd.coupled_ensemble_esn(
 
 ## Reference
 
-Related in spirit to the parallel-reservoirs scheme of J. Pathak et al.,
-Phys. Rev. Lett. **120**, 024102 (2018), where multiple reservoirs jointly
-forecast one system through shared signals. This factory couples complete
-models through one aggregated feedback rather than spatially overlapping
-reservoirs — kinship, not a direct implementation of that paper.
+The design is related to the parallel-reservoirs scheme of J. Pathak et
+al., Phys. Rev. Lett. **120**, 024102 (2018), in which multiple reservoirs
+jointly forecast one system through shared signals. This factory couples
+complete models through one aggregated feedback signal rather than through
+spatially overlapping reservoirs; it is not an implementation of that
+paper.
 
 ## See also
 

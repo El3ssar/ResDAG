@@ -22,8 +22,8 @@ If ResDAG contributes to published work, cite the software:
 
 ## Citing the methods
 
-The library implements published methods; credit belongs to their authors.
-Cite alongside the software whichever of these your work actually uses.
+ResDAG implements published methods. Alongside the software entry, cite the
+original papers for the methods your work uses.
 
 | You used | Cite |
 | -------- | ---- |

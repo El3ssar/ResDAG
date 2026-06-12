@@ -1,4 +1,10 @@
-"""Unit tests for custom layers."""
+"""Transform-layer contracts.
+
+Pins down the deterministic tensor transforms used inside premade models:
+``FeaturePartitioner`` (circular feature grouping), ``SelectiveDropout``
+(per-feature masking), ``SelectiveExponentiation`` (even/odd-index state
+augmentation), and the ``OutliersFilteredMean`` ensemble aggregator.
+"""
 
 import numpy as np
 import pytest
@@ -15,7 +21,7 @@ from resdag.layers.transforms import (
 class TestFeaturePartitioner:
     """Tests for FeaturePartitioner layer."""
 
-    def test_single_partition_returns_input(self):
+    def test_single_partition_returns_input(self) -> None:
         """Test that single partition returns input unchanged."""
         layer = FeaturePartitioner(partitions=1, overlap=0)
         x = torch.randn(2, 10, 12)
@@ -25,7 +31,7 @@ class TestFeaturePartitioner:
         assert len(output) == 1
         assert torch.allclose(output[0], x)
 
-    def test_two_partitions_no_overlap(self):
+    def test_two_partitions_no_overlap(self) -> None:
         """Test partitioning into two with no overlap."""
         layer = FeaturePartitioner(partitions=2, overlap=0)
         x = torch.randn(2, 10, 12)
@@ -36,7 +42,7 @@ class TestFeaturePartitioner:
         assert output[0].shape == (2, 10, 6)  # 12 // 2 = 6
         assert output[1].shape == (2, 10, 6)
 
-    def test_two_partitions_with_overlap(self):
+    def test_two_partitions_with_overlap(self) -> None:
         """Test partitioning into two with overlap."""
         layer = FeaturePartitioner(partitions=2, overlap=2)
         x = torch.randn(2, 10, 12)
@@ -48,7 +54,7 @@ class TestFeaturePartitioner:
         assert output[0].shape == (2, 10, 10)
         assert output[1].shape == (2, 10, 10)
 
-    def test_circular_wrapping(self):
+    def test_circular_wrapping(self) -> None:
         """Test that circular wrapping works correctly."""
         layer = FeaturePartitioner(partitions=2, overlap=1)
         # Create simple tensor to verify wrapping
@@ -62,7 +68,7 @@ class TestFeaturePartitioner:
         # Last partition should end with first feature (0) due to wrapping
         assert output[1][0, 0, -1] == 0.0
 
-    def test_invalid_partition_size_raises_error(self):
+    def test_invalid_partition_size_raises_error(self) -> None:
         """Test that invalid partition size raises error."""
         layer = FeaturePartitioner(partitions=3, overlap=0)
         x = torch.randn(2, 10, 13)  # 13 not divisible by 3
@@ -70,7 +76,7 @@ class TestFeaturePartitioner:
         with pytest.raises(ValueError, match="must be divisible"):
             layer(x)
 
-    def test_invalid_overlap_size_raises_error(self):
+    def test_invalid_overlap_size_raises_error(self) -> None:
         """Test that overlap too large raises error."""
         layer = FeaturePartitioner(partitions=2, overlap=10)
         x = torch.randn(2, 10, 12)  # overlap=10 >= 12//2=6
@@ -78,7 +84,7 @@ class TestFeaturePartitioner:
         with pytest.raises(ValueError, match="must be smaller"):
             layer(x)
 
-    def test_multiple_partitions(self):
+    def test_multiple_partitions(self) -> None:
         """Test partitioning into multiple groups."""
         layer = FeaturePartitioner(partitions=4, overlap=1)
         x = torch.randn(3, 5, 16)
@@ -90,7 +96,7 @@ class TestFeaturePartitioner:
         for partition in output:
             assert partition.shape == (3, 5, 6)
 
-    def test_extra_repr(self):
+    def test_extra_repr(self) -> None:
         """Test string representation."""
         layer = FeaturePartitioner(partitions=3, overlap=2)
         repr_str = layer.extra_repr()
@@ -102,7 +108,7 @@ class TestFeaturePartitioner:
 class TestOutliersFilteredMean:
     """Tests for OutliersFilteredMean layer."""
 
-    def test_z_score_method_basic(self):
+    def test_z_score_method_basic(self) -> None:
         """Test Z-score outlier filtering."""
         layer = OutliersFilteredMean(method="z_score", threshold=2.0)
         # Create data with several samples and one obvious outlier
@@ -119,7 +125,7 @@ class TestOutliersFilteredMean:
         # Output should be close to 1.0 (outlier filtered out)
         assert torch.all(torch.abs(output - 1.0) < 2.0)
 
-    def test_iqr_method_basic(self):
+    def test_iqr_method_basic(self) -> None:
         """Test IQR outlier filtering."""
         layer = OutliersFilteredMean(method="iqr", threshold=1.5)
         samples = [
@@ -134,7 +140,7 @@ class TestOutliersFilteredMean:
 
         assert output.shape == (2, 5, 4)
 
-    def test_list_input(self):
+    def test_list_input(self) -> None:
         """Test that list of tensors works."""
         layer = OutliersFilteredMean(method="z_score", threshold=2.0)
         samples = [
@@ -147,7 +153,7 @@ class TestOutliersFilteredMean:
 
         assert output.shape == (2, 5, 4)
 
-    def test_single_tensor_3d_input(self):
+    def test_single_tensor_3d_input(self) -> None:
         """Test that single 3D tensor gets samples dimension added."""
         layer = OutliersFilteredMean(method="z_score", threshold=2.0)
         x = torch.randn(2, 5, 4)
@@ -156,7 +162,7 @@ class TestOutliersFilteredMean:
 
         assert output.shape == (2, 5, 4)
 
-    def test_no_outliers_returns_mean(self):
+    def test_no_outliers_returns_mean(self) -> None:
         """Test that with no outliers, returns regular mean."""
         layer = OutliersFilteredMean(method="z_score", threshold=10.0)  # High threshold
         samples = [
@@ -171,12 +177,12 @@ class TestOutliersFilteredMean:
         # Should be mean: (1 + 2 + 3) / 3 = 2.0
         assert torch.allclose(output, torch.ones(2, 5, 4) * 2.0)
 
-    def test_invalid_method_raises_error(self):
+    def test_invalid_method_raises_error(self) -> None:
         """Test that invalid method raises error."""
         with pytest.raises(ValueError, match="Unsupported method"):
             OutliersFilteredMean(method="invalid", threshold=2.0)
 
-    def test_extra_repr(self):
+    def test_extra_repr(self) -> None:
         """Test string representation."""
         layer = OutliersFilteredMean(method="iqr", threshold=1.5)
         repr_str = layer.extra_repr()
@@ -188,7 +194,7 @@ class TestOutliersFilteredMean:
 class TestSelectiveDropout:
     """Tests for SelectiveDropout layer."""
 
-    def test_basic_dropout(self):
+    def test_basic_dropout(self) -> None:
         """Test basic selective dropout."""
         mask = [False, True, False, True]  # Drop indices 1 and 3
         layer = SelectiveDropout(mask)
@@ -204,7 +210,7 @@ class TestSelectiveDropout:
         assert torch.all(output[..., 0] == 1)
         assert torch.all(output[..., 2] == 1)
 
-    def test_numpy_mask(self):
+    def test_numpy_mask(self) -> None:
         """Test with numpy array mask."""
         mask = np.array([True, False, False, True])
         layer = SelectiveDropout(mask)
@@ -215,7 +221,7 @@ class TestSelectiveDropout:
         assert torch.all(output[..., 0] == 0)
         assert torch.all(output[..., 3] == 0)
 
-    def test_torch_tensor_mask(self):
+    def test_torch_tensor_mask(self) -> None:
         """Test with torch tensor mask."""
         mask = torch.tensor([False, False, True, False])
         layer = SelectiveDropout(mask)
@@ -225,7 +231,7 @@ class TestSelectiveDropout:
 
         assert torch.all(output[..., 2] == 0)
 
-    def test_all_dropped(self):
+    def test_all_dropped(self) -> None:
         """Test dropping all features."""
         mask = [True, True, True, True]
         layer = SelectiveDropout(mask)
@@ -235,7 +241,7 @@ class TestSelectiveDropout:
 
         assert torch.all(output == 0)
 
-    def test_none_dropped(self):
+    def test_none_dropped(self) -> None:
         """Test dropping no features."""
         mask = [False, False, False, False]
         layer = SelectiveDropout(mask)
@@ -245,7 +251,7 @@ class TestSelectiveDropout:
 
         assert torch.allclose(output, x)
 
-    def test_invalid_input_shape_raises_error(self):
+    def test_invalid_input_shape_raises_error(self) -> None:
         """Test that invalid input shape raises error."""
         mask = [False, True, False, True]
         layer = SelectiveDropout(mask)
@@ -254,7 +260,7 @@ class TestSelectiveDropout:
         with pytest.raises(ValueError, match="Expected input shape"):
             layer(x)
 
-    def test_mismatched_feature_dim_raises_error(self):
+    def test_mismatched_feature_dim_raises_error(self) -> None:
         """Test that mismatched feature dim raises error."""
         mask = [False, True, False, True]  # Length 4
         layer = SelectiveDropout(mask)
@@ -263,13 +269,13 @@ class TestSelectiveDropout:
         with pytest.raises(ValueError, match="does not match"):
             layer(x)
 
-    def test_invalid_mask_shape_raises_error(self):
+    def test_invalid_mask_shape_raises_error(self) -> None:
         """Test that 2D mask raises error."""
         mask = [[False, True], [False, True]]  # 2D mask
         with pytest.raises(ValueError, match="must be 1D"):
             SelectiveDropout(mask)
 
-    def test_state_dict_includes_mask(self):
+    def test_state_dict_includes_mask(self) -> None:
         """Test that mask is saved in state_dict."""
         mask = [False, True, False, True]
         layer = SelectiveDropout(mask)
@@ -279,7 +285,7 @@ class TestSelectiveDropout:
         assert "mask" in state_dict
         assert torch.equal(state_dict["mask"], torch.tensor(mask))
 
-    def test_extra_repr(self):
+    def test_extra_repr(self) -> None:
         """Test string representation."""
         mask = [False, True, True, False]  # 2 dropped out of 4
         layer = SelectiveDropout(mask)
@@ -292,7 +298,7 @@ class TestSelectiveDropout:
 class TestSelectiveExponentiation:
     """Tests for SelectiveExponentiation layer."""
 
-    def test_even_index_exponentiates_even_positions(self):
+    def test_even_index_exponentiates_even_positions(self) -> None:
         """Test that even index exponentiates even positions."""
         layer = SelectiveExponentiation(index=2, exponent=2.0)
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
@@ -303,7 +309,7 @@ class TestSelectiveExponentiation:
         expected = torch.tensor([[1.0, 2.0, 9.0, 4.0]])  # 3^2 = 9
         assert torch.allclose(output, expected)
 
-    def test_odd_index_exponentiates_odd_positions(self):
+    def test_odd_index_exponentiates_odd_positions(self) -> None:
         """Test that odd index exponentiates odd positions."""
         layer = SelectiveExponentiation(index=1, exponent=2.0)
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
@@ -314,7 +320,7 @@ class TestSelectiveExponentiation:
         expected = torch.tensor([[1.0, 4.0, 3.0, 16.0]])
         assert torch.allclose(output, expected)
 
-    def test_different_exponents(self):
+    def test_different_exponents(self) -> None:
         """Test with different exponent values."""
         layer = SelectiveExponentiation(index=0, exponent=3.0)
         x = torch.tensor([[2.0, 2.0, 2.0, 2.0]])
@@ -325,7 +331,7 @@ class TestSelectiveExponentiation:
         expected = torch.tensor([[8.0, 2.0, 8.0, 2.0]])
         assert torch.allclose(output, expected)
 
-    def test_3d_input(self):
+    def test_3d_input(self) -> None:
         """Test with 3D tensor input."""
         layer = SelectiveExponentiation(index=0, exponent=2.0)
         x = torch.ones(2, 3, 4) * 2.0
@@ -337,7 +343,7 @@ class TestSelectiveExponentiation:
         assert torch.allclose(output[..., 1], torch.ones(2, 3) * 2.0)  # Odd
         assert torch.allclose(output[..., 2], torch.ones(2, 3) * 4.0)  # Even
 
-    def test_negative_values(self):
+    def test_negative_values(self) -> None:
         """Test with negative values."""
         layer = SelectiveExponentiation(index=0, exponent=2.0)
         x = torch.tensor([[-2.0, -2.0, -2.0, -2.0]])
@@ -348,7 +354,7 @@ class TestSelectiveExponentiation:
         expected = torch.tensor([[4.0, -2.0, 4.0, -2.0]])
         assert torch.allclose(output, expected)
 
-    def test_fractional_exponent(self):
+    def test_fractional_exponent(self) -> None:
         """Test with fractional exponent."""
         layer = SelectiveExponentiation(index=2, exponent=0.5)
         x = torch.tensor([[4.0, 4.0, 9.0, 16.0]])
@@ -360,7 +366,7 @@ class TestSelectiveExponentiation:
         expected = torch.tensor([[2.0, 4.0, 3.0, 16.0]])
         assert torch.allclose(output, expected)
 
-    def test_extra_repr(self):
+    def test_extra_repr(self) -> None:
         """Test string representation."""
         layer = SelectiveExponentiation(index=3, exponent=2.5)
         repr_str = layer.extra_repr()
@@ -368,7 +374,3 @@ class TestSelectiveExponentiation:
         assert "index=3" in repr_str
         assert "exponent=2.5" in repr_str
         assert "applies_to=odd_indices" in repr_str  # 3 % 2 == 1 (odd)
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

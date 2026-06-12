@@ -24,9 +24,7 @@ def test_target_is_one_step_ahead_of_train() -> None:
 def test_forecast_warmup_is_train_suffix() -> None:
     data = torch.randn(1, 500, 2)
     warmup_steps, train_steps = 50, 200
-    _, train, _, f_warmup, _ = prepare_esn_data(
-        data, warmup_steps, train_steps, val_steps=100
-    )
+    _, train, _, f_warmup, _ = prepare_esn_data(data, warmup_steps, train_steps, val_steps=100)
 
     assert f_warmup.shape[1] == warmup_steps
     assert torch.equal(f_warmup, train[:, -warmup_steps:, :])

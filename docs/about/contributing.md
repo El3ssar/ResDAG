@@ -1,15 +1,27 @@
+---
+description: Development setup, the quality gate, and what a good ResDAG pull request looks like.
+---
+
+<span class="rd-eyebrow">About</span>
+
 # Contributing
+
+Two commands to a working dev environment, four to a green quality gate.
+Contributions of all sizes are welcome — topologies and initializers
+especially, since that's where reservoir research happens.
 
 ## Development setup
 
 ```bash
 git clone https://github.com/El3ssar/resdag.git
 cd resdag
-uv sync --dev
+uv sync --extra dev
 # or: pip install -e ".[dev]"
 ```
 
 ## Quality checks
+
+Run all four before opening a PR (CI currently gates only the docs build):
 
 ```bash
 pytest
@@ -26,17 +38,13 @@ mkdocs serve
 mkdocs build --strict
 ```
 
-## Adding extensions
+## Adding components
 
-| Contribution | Guide |
-|--------------|-------|
-| Graph topology | [Custom topology](../extending/custom-topology.md) |
-| Input initializer | [Custom initializer](../extending/custom-initializer.md) |
-| Reservoir cell | [Custom cell](../extending/custom-cell.md) |
-| Readout | [Custom readout](../extending/custom-readout.md) |
-
-Register new graph/initializer modules in the corresponding `__init__.py` so
-imports run at package load time.
+New topologies, initializers, cells, and readouts each slot into one
+directory — and, for topologies and initializers, one registry — the
+[custom components](../cookbook/custom-components.md) recipe walks through
+all four. One rule to remember: register new graph/initializer modules in
+the corresponding `__init__.py` so registration runs at package load time.
 
 ## Pull requests
 
@@ -46,4 +54,4 @@ imports run at package load time.
 4. Ensure `pytest` and `mkdocs build --strict` pass.
 5. Open a PR with a short summary and test plan.
 
-Report bugs via [GitHub Issues](https://github.com/El3ssar/resdag/issues).
+Bugs go to [GitHub Issues](https://github.com/El3ssar/resdag/issues).

@@ -1,303 +1,376 @@
 /* =========================================================================
-   ResDAG — restrained, professional theme on top of MkDocs Material
+   ResDAG — visual identity
    -------------------------------------------------------------------------
-   Design intent: an academic-grade reference site that reads as scientific
-   software, not a marketing page. Subtle palette, no gradient text, no
-   transform-hover gimmicks, no neon code blocks. The visual identity comes
-   from typography rhythm, generous whitespace, and small accent dots — not
-   from chrome.
+   Concept: "deep water". Reservoirs are pools of dynamics — the palette is
+   deep navy with luminous cyan→teal→indigo accents, the typography is a
+   geometric display face (Space Grotesk) over Inter, and the chrome glows
+   instead of shouting. Dark-first; light mode is the derived theme.
    ========================================================================= */
 
-/* ----- Color tokens (override Material's defaults) ------------------- */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+/* ----- Design tokens -------------------------------------------------- */
 :root {
-  /* Light theme primary: a calm indigo */
-  --md-primary-fg-color:        #3d4f87;
-  --md-primary-fg-color--light: #5a6db0;
-  --md-primary-fg-color--dark:  #2a376e;
+  --rd-font-display: "Space Grotesk", "Inter", -apple-system, sans-serif;
 
-  /* Accent: deep amber, kept small */
-  --md-accent-fg-color:         #c2410c;
+  /* Brand gradient — used for hero text, active tabs, card hovers */
+  --rd-grad: linear-gradient(120deg, #2dd4bf 0%, #22d3ee 45%, #818cf8 100%);
+  --rd-grad-soft: linear-gradient(120deg, rgba(45, 212, 191, 0.14), rgba(34, 211, 238, 0.10) 45%, rgba(129, 140, 248, 0.14));
 
-  /* Custom tokens used by the rules below */
-  --resdag-rule:   #e4e7ec;
-  --resdag-muted:  #6b7280;
-  --resdag-soft:   #f7f7fb;
-  --resdag-code-bg: #f5f6fa;
-  --resdag-shadow:
-        0 1px 1px rgba(15, 23, 42, 0.03),
-        0 6px 18px rgba(15, 23, 42, 0.04);
-
-  /* Brand stripe (only used on the hero accent line, not on text) */
-  --resdag-stripe-from: #3d4f87;
-  --resdag-stripe-to:   #c2410c;
+  --rd-teal: #14b8a6;
+  --rd-cyan: #0891b2;
+  --rd-indigo: #6366f1;
 }
 
+/* ----- Light scheme ---------------------------------------------------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #0e7d74;
+  --md-primary-fg-color--light: #14b8a6;
+  --md-primary-fg-color--dark: #0b5f5a;
+  --md-accent-fg-color: #4f46e5;
+  --md-typeset-a-color: #0c7a8a;
+
+  --md-default-bg-color: #fbfcfe;
+  --md-code-bg-color: #f2f5f9;
+
+  --rd-surface: #ffffff;
+  --rd-border: #e2e8f0;
+  --rd-border-strong: #cbd5e1;
+  --rd-muted: #64748b;
+  --rd-glow: 0 12px 32px rgba(13, 148, 136, 0.10);
+  --rd-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.05);
+  --rd-code-window: #0f172a;
+}
+
+/* ----- Dark scheme (primary identity) ---------------------------------- */
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color:        #6b7ec8;
-  --md-primary-fg-color--light: #8593d4;
-  --md-primary-fg-color--dark:  #4f63b0;
-  --md-accent-fg-color:         #f59e0b;
+  --md-hue: 222;
 
-  --resdag-rule:   #2e3140;
-  --resdag-muted:  #9aa0aa;
-  --resdag-soft:   #1f2230;
-  --resdag-code-bg: #1d2030;
-  --resdag-shadow:
-        0 1px 1px rgba(0, 0, 0, 0.3),
-        0 6px 18px rgba(0, 0, 0, 0.35);
+  --md-primary-fg-color: #0d1322;
+  --md-primary-fg-color--light: #2dd4bf;
+  --md-primary-fg-color--dark: #0a0f1b;
+  --md-accent-fg-color: #5eead4;
+  --md-typeset-a-color: #4cc9e8;
 
-  --resdag-stripe-from: #6b7ec8;
-  --resdag-stripe-to:   #f59e0b;
+  --md-default-bg-color: #0c1019;
+  --md-default-fg-color: rgba(226, 232, 240, 0.92);
+  --md-default-fg-color--light: rgba(203, 213, 225, 0.76);
+  --md-code-bg-color: #131a2b;
+  --md-code-fg-color: #d6e2f3;
+  --md-footer-bg-color: #0a0e17;
+  --md-footer-bg-color--dark: #070a11;
+
+  --rd-surface: #11182a;
+  --rd-border: #1f2a40;
+  --rd-border-strong: #2c3a57;
+  --rd-muted: #8a98b3;
+  --rd-glow: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 14px 42px rgba(34, 211, 238, 0.10);
+  --rd-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --rd-code-window: #0f1626;
 }
 
-/* ----- Typography rhythm -------------------------------------------- */
-.md-typeset {
-  font-feature-settings: "kern", "liga", "calt", "ss01";
+/* Header: translucent deep navy with blur */
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: rgba(10, 14, 23, 0.82);
+  backdrop-filter: blur(12px);
+}
+[data-md-color-scheme="default"] .md-header,
+[data-md-color-scheme="default"] .md-tabs {
+  background: rgba(13, 19, 34, 0.97);
+}
+
+/* =========================================================================
+   Typography
+   ========================================================================= */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-header__topic,
+.md-tabs__link {
+  font-family: var(--rd-font-display);
 }
 
 .md-typeset h1 {
   font-weight: 700;
-  font-size: 2.05rem;
-  letter-spacing: -0.015em;
-  line-height: 1.18;
-  margin-top: 0.25rem;
-  /* No gradient text — keep it readable and theme-aware. */
+  letter-spacing: -0.02em;
   color: var(--md-default-fg-color);
 }
 
 .md-typeset h2 {
-  margin-top: 2.4rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--resdag-rule);
-  font-weight: 650;
-  font-size: 1.45rem;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-top: 2.2em;
 }
 
 .md-typeset h3 {
-  margin-top: 1.6rem;
-  font-weight: 620;
-  font-size: 1.15rem;
+  font-weight: 600;
 }
 
-.md-typeset p,
-.md-typeset li {
-  font-size: 0.92rem;
-  line-height: 1.65;
+/* Section eyebrow — small gradient label above page titles */
+.rd-eyebrow {
+  display: inline-block;
+  font-family: var(--rd-font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--rd-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 0.2rem;
 }
 
-.md-typeset a {
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: border-color 120ms ease, color 120ms ease;
-}
-
-.md-typeset a:hover {
-  border-bottom-color: currentColor;
-}
-
-/* ----- Landing-page hero (restrained version) ----------------------- */
-.resdag-hero {
-  margin: 1.25rem 0 2.5rem;
-  padding: 0 0 1.5rem;
-  border-bottom: 1px solid var(--resdag-rule);
-  background: none;
-  box-shadow: none;
+/* =========================================================================
+   Hero (landing page)
+   ========================================================================= */
+.rd-hero {
+  padding: 2.4rem 0 1.2rem;
   text-align: left;
 }
 
-.resdag-hero h1 {
-  font-size: 2.4rem;
+.rd-hero h1 {
+  font-family: var(--rd-font-display);
+  font-size: clamp(2.2rem, 6vw, 3.4rem);
   font-weight: 700;
-  margin-bottom: 0.35rem;
-  letter-spacing: -0.02em;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  margin: 0.4rem 0 0.9rem;
 }
 
-.resdag-hero h1::after {
-  content: "";
-  display: block;
-  width: 64px;
-  height: 3px;
-  margin-top: 0.6rem;
-  border-radius: 2px;
-  background: linear-gradient(
-    90deg,
-    var(--resdag-stripe-from),
-    var(--resdag-stripe-to)
-  );
+.rd-hero h1 .rd-gradient {
+  background: var(--rd-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.resdag-hero .tagline {
-  max-width: 44rem;
-  margin: 1rem 0 1.4rem;
-  font-size: 1.02rem;
-  color: var(--resdag-muted);
+.rd-hero p.rd-tagline {
+  font-size: 0.95rem;
+  max-width: 36rem;
+  color: var(--rd-muted);
+  line-height: 1.65;
+  margin-bottom: 1.4rem;
 }
 
-.resdag-hero .cta-row {
+/* Badge pills */
+.rd-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
+  gap: 0.45rem;
+  margin: 0 0 1.6rem;
+  padding: 0;
+  list-style: none;
 }
 
-.resdag-hero .md-button {
-  border-radius: 6px;
-  padding: 0.45rem 1rem;
-  font-size: 0.85rem;
+.rd-pills li {
+  font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.005em;
-  border: 1px solid var(--md-default-fg-color--lightest);
-  background: var(--md-default-bg-color);
-  color: var(--md-default-fg-color);
-  transition: background 120ms ease, border-color 120ms ease;
+  font-family: var(--rd-font-display);
+  letter-spacing: 0.06em;
+  padding: 0.28rem 0.7rem;
+  border-radius: 100px;
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-grad-soft);
+  margin: 0 !important;
 }
 
-.resdag-hero .md-button:hover {
-  border-color: var(--md-primary-fg-color);
-  background: var(--md-default-bg-color);
+/* Buttons */
+.md-typeset .md-button {
+  border-radius: 10px;
+  font-family: var(--rd-font-display);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.resdag-hero .md-button--primary {
-  background: var(--md-primary-fg-color);
-  border-color: var(--md-primary-fg-color);
-  color: white;
+.md-typeset .md-button--primary {
+  background: var(--rd-grad);
+  border: none;
+  color: #07121d !important;
 }
 
-.resdag-hero .md-button--primary:hover {
-  background: var(--md-primary-fg-color--dark);
-  border-color: var(--md-primary-fg-color--dark);
+.md-typeset .md-button:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--rd-glow);
 }
 
-/* ----- Code blocks: clean, subdued ---------------------------------- */
-.md-typeset code {
-  border-radius: 4px;
-  padding: 0.1em 0.35em;
-  background: var(--resdag-code-bg);
-  font-size: 0.84em;
+/* =========================================================================
+   Code blocks — terminal-window chrome
+   ========================================================================= */
+.md-typeset pre > code {
+  border-radius: 12px;
+  padding: 0.9em 1.1em;
 }
 
-.md-typeset .highlight pre {
-  border-radius: 6px;
-  border: 1px solid var(--resdag-rule);
+.md-typeset .highlight {
+  border-radius: 12px;
+  border: 1px solid var(--rd-border);
+  overflow: hidden;
+}
+
+/* Code window with traffic-light dots: wrap a fence in
+   <div class="rd-window" data-title="..."> ... </div> */
+.rd-window {
+  border-radius: 14px;
+  border: 1px solid var(--rd-border);
+  background: var(--rd-code-window);
+  box-shadow: var(--rd-card-shadow);
+  margin: 1.2em 0;
+  overflow: hidden;
+}
+
+.rd-window::before {
+  content: attr(data-title);
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.9rem 0.55rem 3.6rem;
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: #7c8db0;
+  border-bottom: 1px solid var(--rd-border);
+  background:
+    radial-gradient(circle 5px at 1.05rem 50%, #ff5f57 99%, transparent),
+    radial-gradient(circle 5px at 2.0rem 50%, #febc2e 99%, transparent),
+    radial-gradient(circle 5px at 2.95rem 50%, #28c840 99%, transparent);
+}
+
+.rd-window .highlight {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.rd-window pre > code {
+  border-radius: 0;
+}
+
+[data-md-color-scheme="default"] .rd-window .highlight code {
+  background: var(--rd-code-window);
+  color: #d6e2f3;
+}
+
+/* =========================================================================
+   Cards (material grid cards, restyled)
+   ========================================================================= */
+.md-typeset .grid.cards > ol > li,
+.md-typeset .grid.cards > ul > li {
+  border-radius: 14px;
+  border: 1px solid var(--rd-border);
+  background: var(--rd-surface);
+  box-shadow: var(--rd-card-shadow);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.md-typeset .grid.cards > ol > li:hover,
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-3px);
+  border-color: transparent;
+  box-shadow: var(--rd-glow);
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.6em 0;
+  border-bottom: 1px solid var(--rd-border);
+}
+
+.md-typeset .grid.cards strong {
+  font-family: var(--rd-font-display);
+}
+
+/* =========================================================================
+   Admonitions — flat tinted panels, no heavy borders
+   ========================================================================= */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 12px;
+  border: 1px solid var(--rd-border);
+  border-left-width: 3px;
   box-shadow: none;
+  font-size: 0.72rem;
 }
 
-.md-typeset .codehilite > .filename,
-.md-typeset .highlight .filename {
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-  font-size: 0.78rem;
+.md-typeset .admonition-title,
+.md-typeset summary {
+  font-family: var(--rd-font-display);
   font-weight: 600;
-  background: var(--resdag-soft);
-  color: var(--resdag-muted);
 }
 
-/* ----- Tables ------------------------------------------------------- */
+/* =========================================================================
+   Tables
+   ========================================================================= */
 .md-typeset table:not([class]) {
-  border: 1px solid var(--resdag-rule);
-  font-size: 0.86rem;
+  border-radius: 12px;
+  border: 1px solid var(--rd-border);
+  overflow: hidden;
   box-shadow: none;
+  font-size: 0.7rem;
 }
 
 .md-typeset table:not([class]) th {
-  background: var(--resdag-soft);
-  border-bottom: 1px solid var(--resdag-rule);
-  font-weight: 650;
-  letter-spacing: 0.005em;
-}
-
-/* ----- Admonitions: low-noise --------------------------------------- */
-.md-typeset .admonition,
-.md-typeset details {
-  border-radius: 6px;
-  border: 1px solid var(--resdag-rule);
-  border-left-width: 3px;
-  box-shadow: none;
-}
-
-/* ----- Figures: bordered, captioned --------------------------------- */
-.md-typeset figure {
-  margin: 1.5rem 0;
-}
-
-.md-typeset figure img {
-  border: 1px solid var(--resdag-rule);
-  border-radius: 6px;
-  background: white;
-}
-
-[data-md-color-scheme="slate"] .md-typeset figure img {
-  background: #f3f3f5;
-}
-
-.md-typeset figcaption {
-  font-size: 0.82rem;
-  color: var(--resdag-muted);
-  text-align: center;
-  margin-top: 0.55rem;
-}
-
-/* ----- Cards (kept available, but subtle) --------------------------- */
-.md-typeset .grid.cards > ul > li,
-.md-typeset .grid > .card {
-  border-radius: 8px;
-  border: 1px solid var(--resdag-rule);
-  box-shadow: none;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.md-typeset .grid.cards > ul > li:hover {
-  border-color: var(--md-primary-fg-color--light);
-  background: var(--resdag-soft);
-  transform: none;
-}
-
-/* ----- API reference signatures ------------------------------------- */
-.doc-class .doc-heading,
-.doc-function .doc-heading {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 1rem;
-}
-
-.doc-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.12em 0.5em;
-  border-radius: 999px;
-  background: var(--resdag-soft);
-  color: var(--resdag-muted);
-  border: 1px solid var(--resdag-rule);
-}
-
-/* ----- Top tabs: subdued, no shadow --------------------------------- */
-.md-tabs {
-  border-bottom: 1px solid var(--resdag-rule);
-  box-shadow: none;
-}
-
-.md-tabs__link {
+  font-family: var(--rd-font-display);
   font-weight: 600;
-  font-size: 0.85rem;
-  opacity: 0.78;
+  letter-spacing: 0.02em;
+  background: var(--rd-grad-soft);
 }
 
+/* =========================================================================
+   Navigation polish
+   ========================================================================= */
 .md-tabs__link--active {
-  opacity: 1;
+  position: relative;
+  font-weight: 700;
 }
 
-/* ----- Math overflow ------------------------------------------------ */
-.md-typeset .arithmatex {
+.md-tabs__link--active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.45rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rd-grad);
+}
+
+.md-nav__item .md-nav__link--active {
+  font-weight: 700;
+  color: var(--md-accent-fg-color);
+}
+
+/* =========================================================================
+   Math + figures
+   ========================================================================= */
+.md-typeset .katex-display {
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: var(--rd-grad-soft);
+  border: 1px solid var(--rd-border);
   overflow-x: auto;
 }
 
-/* ----- Footer ------------------------------------------------------- */
-.md-footer-meta {
-  background: var(--resdag-soft);
-  color: var(--resdag-muted);
+.md-typeset figure {
+  border-radius: 14px;
+  padding: 0.6rem;
+  border: 1px solid var(--rd-border);
+  background: var(--rd-surface);
 }
 
-[data-md-color-scheme="slate"] .md-footer-meta {
-  background: var(--resdag-soft);
+.md-typeset figcaption {
+  font-size: 0.66rem;
+  color: var(--rd-muted);
+}
+
+/* Keep auto-generated API pages calmer: smaller heading scale */
+.md-typeset .doc-heading {
+  letter-spacing: 0;
+}
+
+/* =========================================================================
+   Footer
+   ========================================================================= */
+.md-footer-meta {
+  border-top: 1px solid var(--rd-border);
 }

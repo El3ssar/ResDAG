@@ -7,8 +7,8 @@
 #   - Extensible: API reference is auto-generated from NumPy-style docstrings
 #   - Deployable: `mkdocs gh-deploy` (or the GitHub Actions workflow under
 #     .github/workflows/docs.yml) publishes a static site to GitHub Pages
-#   - Story-rich: Learn (concepts) and Guides (tasks) sit side by side with
-#     a dense Reference track
+#   - Story-rich: Learn (concepts) and Cookbook (task recipes) sit side by
+#     side with a dense Reference track
 #
 # Local preview:    mkdocs serve
 # Production build: mkdocs build --strict
@@ -61,22 +61,20 @@ theme:
     text: Inter
     code: JetBrains Mono
   palette:
-    # Light scheme — calm indigo, restrained amber accent
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: deep orange
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    # Dark scheme
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      accent: amber
+    # Dark-first identity — "deep water": navy base, cyan→teal→indigo accents.
+    # Colors are defined in stylesheets/extra.css (primary/accent: custom).
+    - scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
   features:
     - announce.dismiss
     - content.action.edit
@@ -267,49 +265,44 @@ markdown_extensions:
   - pymdownx.tilde
 
 # -------------------------------------------------------------------------
-# Navigation — mirrors reservoirpy's layout: Get started → User guide →
-# Examples gallery → API reference → Developer guide.  The Examples section
-# is the "Read me, copy me, run me" track; User guide is the conceptual
-# walk-through; Developer guide covers contribution + every extension point.
+# Navigation — lean, narrative-first layout:
+#   Learn         — a numbered course: read it once, top to bottom
+#   Cookbook      — task recipes: one problem, one page, copy-paste ready
+#   Under the hood — the equations and conventions the code implements
+#   Reference     — auto-generated API docs (mkdocstrings)
 # -------------------------------------------------------------------------
 nav:
   - Home: index.md
-  - Get started:
-      - getting-started/index.md
-      - Installation: getting-started/installation.md
-      - Mental model: getting-started/mental-model.md
-      - Your first ESN: getting-started/your-first-esn.md
-      - Lorenz walkthrough: getting-started/lorenz-walkthrough.md
-  - User guide:
-      - guides/index.md
-      - Built-in models: guides/builtin-models.md
-      - Functional API (custom architectures): guides/functional-api.md
-      - Graph topologies: guides/topologies.md
-      - Input & feedback initializers: guides/initializers.md
-      - Data preparation: guides/data-preparation.md
-      - Forecasting chaotic systems: guides/chaotic-systems.md
-      - Input-driven systems: guides/input-driven-systems.md
-      - Multi-readout models: guides/multi-readout.md
-      - Coupled ensembles: guides/coupled-ensembles.md
-      - Hyperparameter optimization: guides/hyperparameter-optimization.md
-      - Save, load, checkpoint: guides/save-and-load.md
-      - Visualizing architectures: guides/visualizing-architectures.md
-      - GPU & performance: guides/gpu-and-performance.md
-  - Examples:
-      - examples/index.md
-      - Sine forecasting: examples/sine.md
-      - Lorenz-63: examples/lorenz.md
-      - Mackey–Glass: examples/mackey-glass.md
-      - Coupled ensemble: examples/ensemble.md
-      - Custom initializer: examples/custom-initializer.md
-      - Custom architecture: examples/custom-model.md
-      - Pipeline integration: examples/pipeline-integration.md
+  - Learn:
+      - learn/index.md
+      - Reservoir computing, in five minutes: learn/reservoir-computing.md
+      - "Quickstart: forecast in sixty seconds": learn/quickstart.md
+      - Anatomy of an ESN: learn/anatomy.md
+      - Building models: learn/building-models.md
+      - Training: learn/training.md
+      - Forecasting: learn/forecasting.md
+      - Tuning: learn/tuning.md
+  - Cookbook:
+      - cookbook/index.md
+      - Topologies: cookbook/topologies.md
+      - Input & feedback initializers: cookbook/initializers.md
+      - Data preparation: cookbook/data.md
+      - Multi-readout models: cookbook/multi-readout.md
+      - Coupled ensembles: cookbook/ensembles.md
+      - Next-Generation RC: cookbook/ngrc.md
+      - Save, load, checkpoint: cookbook/save-load.md
+      - PyTorch pipelines & SGD: cookbook/pipelines.md
+      - GPU & performance: cookbook/gpu.md
+      - Hyperparameter optimization: cookbook/hpo.md
+      - Visualizing architectures: cookbook/visualization.md
+      - Custom components: cookbook/custom-components.md
   - Under the hood:
       - under-the-hood/index.md
       - Reservoir equations: under-the-hood/reservoir-equations.md
       - Readout fitting: under-the-hood/readout-fitting.md
       - Timing & alignment: under-the-hood/timing-and-alignment.md
-  - API reference:
+      - Architecture & design: under-the-hood/architecture.md
+  - Reference:
       - reference/index.md
       - Top-level API: reference/top-level.md
       - Core (ESNModel): reference/core.md
@@ -334,23 +327,12 @@ nav:
       - Utilities:
           - Data I/O: reference/utils/data.md
           - States: reference/utils/states.md
-  - Developer guide:
-      - extending/index.md
-      - Add a graph topology: extending/custom-topology.md
-      - Add an input/feedback initializer: extending/custom-initializer.md
-      - Add a reservoir cell: extending/custom-cell.md
-      - Add a readout: extending/custom-readout.md
-      - Add an HPO loss: extending/custom-loss.md
-      - Add a premade model: extending/custom-model.md
-      - Add an ensemble aggregator: extending/custom-aggregator.md
-      - Contributing: about/contributing.md
   - About:
       - about/index.md
-      - Architecture & design: about/architecture.md
-      - Training paths: about/training-paths.md
-      - Changelog: about/changelog.md
       - Citation: about/citation.md
       - Related work: about/related-work.md
+      - Changelog: about/changelog.md
+      - Contributing: about/contributing.md
 
 # -------------------------------------------------------------------------
 # Validation — strict mode catches broken links during build

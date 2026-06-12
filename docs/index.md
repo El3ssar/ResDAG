@@ -1,145 +1,188 @@
 ---
 title: ResDAG
-description: PyTorch-native reservoir computing — composable layers, algebraic readouts, GPU-accelerated forecasting.
+description: >-
+  PyTorch-native reservoir computing — wire reservoirs into DAGs like Keras
+  layers, train readouts in one pass, and drop the result into any PyTorch
+  pipeline.
 hide:
   - navigation
   - toc
 ---
 
-<div class="resdag-hero" markdown>
+<div class="rd-hero" markdown>
 
-# ResDAG
+<span class="rd-eyebrow">Reservoir computing · PyTorch-native</span>
 
-<p class="tagline">
-A PyTorch library for reservoir computing. Composable recurrent layers,
-algebraic readout fitting, autoregressive forecasting, and graph-driven
-reservoir topologies — all on GPU.
+# Build reservoir networks<br><span class="rd-gradient">like you build Keras models</span>
+
+<p class="rd-tagline">
+ResDAG turns Echo State Networks and Next-Generation Reservoir Computers
+into composable PyTorch layers. Wire them into arbitrary DAGs with a
+functional API, fit readouts algebraically in a single pass — no epochs —
+and drop the trained model into any PyTorch pipeline, optimizer included.
 </p>
 
-<div class="cta-row" markdown>
-[Get started](getting-started/index.md){ .md-button .md-button--primary }
-[User guide](guides/index.md){ .md-button }
-[Examples](examples/index.md){ .md-button }
-[API reference](reference/index.md){ .md-button }
-</div>
+<ul class="rd-pills">
+<li>PyTorch ≥ 2.10</li>
+<li>GPU-accelerated</li>
+<li>17 graph topologies</li>
+<li>One-pass training</li>
+<li>Optuna HPO</li>
+<li>MIT</li>
+</ul>
+
+[Forecast in sixty seconds](learn/quickstart.md){ .md-button .md-button--primary }
+[Start the course](learn/index.md){ .md-button }
+[Reference](reference/index.md){ .md-button }
 
 </div>
+
+---
+
+## Chaos, forecast, eleven lines
+
+A 500-neuron reservoir learning the Lorenz attractor — built, trained, and
+forecasting in the time a single SGD epoch takes elsewhere:
+
+<div class="rd-window" data-title="lorenz.py" markdown>
+
+```python
+import resdag as rd
+
+data = rd.utils.load_file("lorenz.npy")          # (1, time, 3)
+warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
+    data, warmup_steps=200, train_steps=5000, val_steps=2000
+)
+
+model = rd.models.ott_esn(reservoir_size=500, feedback_size=3, output_size=3)
+rd.ESNTrainer(model).fit((warmup,), (train,), targets={"output": target})
+
+prediction = model.forecast(f_warmup, horizon=2000)   # autoregressive
+```
+
+</div>
+
+<figure markdown>
+![Lorenz forecast](assets/figures/predict_lorenz.png)
+<figcaption>Trained in one pass — ridge regression on reservoir states, no
+backprop, no epochs. Divergence after several Lyapunov times is the chaos,
+not the model.</figcaption>
+</figure>
+
+---
+
+## Why ResDAG
+
+<div class="grid cards" markdown>
+
+- :material-graph-outline: **DAGs, not pipelines**
+
+    ---
+
+    Reservoirs, readouts, and transforms are symbolic building blocks —
+    call them on tensors like the Keras functional API. Parallel
+    reservoirs, multiple readouts, state augmentation: if you can draw it,
+    you can wire it.
+
+    [:octicons-arrow-right-24: Building models](learn/building-models.md)
+
+- :material-flash-outline: **One-pass training**
+
+    ---
+
+    Readouts are fitted by conjugate-gradient ridge regression during a
+    single forward pass — hooks fit each readout exactly when it executes,
+    so multi-readout DAGs train in topological order for free.
+
+    [:octicons-arrow-right-24: Training](learn/training.md)
+
+- :material-puzzle-outline: **A real `nn.Module`**
+
+    ---
+
+    Trained reservoirs move with `.to(device)`, save with `state_dict()`,
+    and embed in larger networks. Freeze them as feature extractors, or
+    flip `trainable=True` and hand everything to Adam.
+
+    [:octicons-arrow-right-24: PyTorch pipelines](cookbook/pipelines.md)
+
+- :material-shape-plus: **Structure is a function**
+
+    ---
+
+    Seventeen graph topologies and eleven input initializers ship in the
+    registry — and any function that builds a matrix plugs in directly:
+    `ESNLayer(topology=my_fn)`. Even `torch.nn.init.*` works.
+
+    [:octicons-arrow-right-24: Topologies](cookbook/topologies.md)
+
+- :material-sine-wave: **Built for dynamics**
+
+    ---
+
+    Two-phase forecasting (teacher-forced warmup → autoregression),
+    exogenous drivers with pinned time alignment, coupled ensembles, and
+    chaos-aware HPO losses like Expected Forecast Horizon.
+
+    [:octicons-arrow-right-24: Forecasting](learn/forecasting.md)
+
+- :material-function-variant: **Math you can audit**
+
+    ---
+
+    Every equation the code implements — the leaky-ESN update, the ridge
+    solve, the timing conventions — is written down, index by index, with
+    pointers to the classes that implement it.
+
+    [:octicons-arrow-right-24: Under the hood](under-the-hood/index.md)
+
+</div>
+
+---
 
 ## Install
 
 ```bash
-pip install resdag           # core library
-pip install "resdag[hpo]"    # + Optuna hyperparameter search
+pip install resdag            # core
+pip install "resdag[hpo]"     # + Optuna hyperparameter optimization
 ```
 
-Requires Python 3.11–3.14 and PyTorch 2.x. Verify with:
+Python ≥ 3.11, PyTorch ≥ 2.10. GPU optional but encouraged.
 
-```bash
-python -c "import resdag; print(resdag.__version__)"
-```
+---
 
-## A complete model in one figure
+## Choose your track
 
-`classic_esn`, `ott_esn`, `power_augmented`, and a hand-built NG-RC graph all
-return a `torch.nn.Module` you can train and forecast in three calls. The
-architecture below is generated by the library's own
-`model.plot_model()`:
+<div class="grid cards" markdown>
 
-<figure markdown>
-  ![Classic ESN architecture](assets/figures/arch_classic_esn.svg){ width="640" }
-  <figcaption>
-    <code>classic_esn</code>: the input feeds the reservoir and bypasses it
-    via a concatenation, then a single linear readout produces the
-    prediction. The reservoir's recurrent weights are frozen; only the
-    readout is fitted.
-  </figcaption>
-</figure>
+- **New to reservoir computing?**
 
-## Train and forecast in three calls
+    ---
 
-```python
-import torch
-from resdag import classic_esn
-from resdag.training import ESNTrainer
-from resdag.utils.data import prepare_esn_data
+    Start with [why reservoirs work](learn/reservoir-computing.md) — five
+    minutes, no equations — then follow the course in order.
 
-# Generate or load a series of shape (B, T, D).
-torch.manual_seed(0)
-t = torch.linspace(0, 60 * 2 * torch.pi, 6_000).view(1, -1, 1)
-data = torch.sin(t)
+- **Know ESNs, new to ResDAG?**
 
-warmup, train, target, f_warmup, val = prepare_esn_data(
-    data, warmup_steps=500, train_steps=4_500, val_steps=800, normalize=False,
-)
+    ---
 
-model = classic_esn(
-    reservoir_size=300, feedback_size=1, output_size=1,
-    spectral_radius=0.99, leak_rate=0.3, readout_alpha=1e-8,
-)
-ESNTrainer(model).fit(
-    warmup_inputs=(warmup,),
-    train_inputs=(train,),
-    targets={"output": target},
-)
-model.reset_reservoirs()
-pred = model.forecast(f_warmup, horizon=val.shape[1])    # val MSE ≈ 6e-11
-```
+    The [quickstart](learn/quickstart.md) and
+    [anatomy](learn/anatomy.md) pages map your mental model onto the API
+    in two short reads.
 
-The autoregressive forecast on the validation segment overlays the truth
-exactly:
+- **Migrating research code?**
 
-<figure markdown>
-  ![Sine forecast overlay](assets/figures/predict_sine.png){ width="720" }
-  <figcaption>800-step autoregressive forecast (no teacher forcing after
-  <code>f_warmup</code>). Truth and prediction are visually
-  indistinguishable; MSE ≈ 6×10⁻¹¹.</figcaption>
-</figure>
+    ---
 
-For a chaotic system, "indistinguishable" is impossible in principle —
-but learning the *attractor* is not. With one factory swap (`classic_esn`
-→ `ott_esn`) and a larger reservoir, the same workflow predicts the
-Lorenz butterfly for ~5 Lyapunov times before phase drift dominates:
+    [Under the hood](under-the-hood/index.md) pins down every convention —
+    index origins, shift directions, what gets centered — so you can
+    validate against your own derivations.
 
-<figure markdown>
-  ![Lorenz phase portrait — truth vs prediction](assets/figures/predict_lorenz_phase.png){ width="720" }
-  <figcaption>First 372 autoregressive steps of a Lorenz-63 forecast.
-  The 1 500-unit Ott ESN traces the correct attractor from feedback
-  alone. See the <a href="getting-started/lorenz-walkthrough/">Lorenz
-  walkthrough</a>.</figcaption>
-</figure>
+- **Just need a recipe?**
 
-## What's inside
+    ---
 
-| Section | Contents |
-|---------|----------|
-| [Get started](getting-started/index.md) | Installation, mental model, first model, Lorenz walkthrough |
-| [User guide](guides/index.md) | Data prep, forecasting, ensembles, HPO, persistence, performance |
-| [Examples](examples/index.md) | Runnable end-to-end scripts with embedded figures |
-| [Under the hood](under-the-hood/index.md) | The equations and timing conventions behind every call |
-| [API reference](reference/index.md) | Auto-generated from NumPy-style docstrings in `src/resdag/` |
-| [Developer guide](extending/index.md) | Register custom topologies, initializers, cells, readouts, losses |
-| [About](about/index.md) | Changelog, citation, related libraries, training-path discussion |
+    The [cookbook](cookbook/index.md) solves one problem per page,
+    copy-paste ready: drivers, ensembles, persistence, GPU, HPO.
 
-## Highlights
-
-- **Pure `torch.nn.Module`** components. Train on GPU, save with
-  `torch.save`, drop into any pipeline.
-- **17 graph topologies** plus 11 input/feedback initializers, every one
-  swappable by name.
-- **Algebraic ridge regression** (Conjugate Gradient on GPU) — no SGD on
-  the readout, no learning rate to tune.
-- **Two-phase forecasting** for chaotic and input-driven systems, with
-  multi-output support.
-- **Coupled ensembles** with `mean`, `median`, or
-  `OutliersFilteredMean` aggregators.
-- **First-class HPO** through Optuna with five loss functions designed for
-  chaotic series (`efh`, `forecast_horizon`, `lyapunov`, `standard`,
-  `soft_horizon`).
-
-## Status
-
-Version 0.4.0 (alpha). Public symbols are listed in
-[`resdag.__init__.py`](https://github.com/El3ssar/resdag/blob/main/src/resdag/__init__.py).
-Until v1.0 minor releases may rename internals but not the public surface.
-
-— [GitHub](https://github.com/El3ssar/resdag) · [PyPI](https://pypi.org/project/resdag) · [Issues](https://github.com/El3ssar/resdag/issues)
+</div>

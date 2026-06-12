@@ -392,7 +392,7 @@ class ESNModel(ps.SymbolicModel):
 
         Parameters
         ----------
-        show_shapes : bool, default=True
+        show_shapes : bool, default=False
             Show tensor shapes on edges.
         show_trainable : bool, default=False
             Show a padlock indicator (🔒 frozen / 🔓 trainable) on nodes
@@ -535,6 +535,13 @@ class ESNModel(ps.SymbolicModel):
             return "\n".join(lines)
 
         # ── Rendering ─────────────────────────────────────────────────────────
+        def _print_dot_fallback(reason: str) -> str:
+            print(reason)
+            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
+            dot_src = _build_dot()
+            print(dot_src)
+            return dot_src
+
         try:
             import graphviz
 
@@ -543,7 +550,13 @@ class ESNModel(ps.SymbolicModel):
 
             if save_path is not None:
                 save_path = Path(save_path)
-                src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
+                try:
+                    src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
+                except graphviz.ExecutableNotFound:
+                    return _print_dot_fallback(
+                        "graphviz system binary not found: install it "
+                        "(e.g. apt install graphviz) or render the DOT source below."
+                    )
                 print(f"Saved to {save_path.with_suffix('.' + format)}")
                 return src
 
@@ -551,7 +564,14 @@ class ESNModel(ps.SymbolicModel):
                 from IPython.display import SVG
                 from IPython.display import display as ipy_display
 
-                ipy_display(SVG(src.pipe(format="svg").decode("utf-8")))
+                try:
+                    svg = src.pipe(format="svg").decode("utf-8")
+                except graphviz.ExecutableNotFound:
+                    return _print_dot_fallback(
+                        "graphviz system binary not found: install it "
+                        "(e.g. apt install graphviz) or render the DOT source below."
+                    )
+                ipy_display(SVG(svg))
                 return None  # prevent double-display from cell output
 
             try:
@@ -561,11 +581,9 @@ class ESNModel(ps.SymbolicModel):
             return src
 
         except ImportError:
-            print("graphviz not installed: pip install graphviz && apt install graphviz")
-            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
-            dot_src = _build_dot()
-            print(dot_src)
-            return dot_src
+            return _print_dot_fallback(
+                "graphviz not installed: pip install graphviz && apt install graphviz"
+            )
 
     @torch.no_grad()
     def warmup(

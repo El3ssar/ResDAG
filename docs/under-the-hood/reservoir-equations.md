@@ -1,3 +1,5 @@
+<span class="rd-eyebrow">Under the hood</span>
+
 # Reservoir equations
 
 ## The leaky-ESN state update
@@ -16,9 +18,9 @@ $$
 | Symbol | Code | Shape | Notes |
 | --- | --- | --- | --- |
 | $h_t$ | `layer.state` | `(batch, reservoir_size)` | Carried across `forward` calls |
-| $W_{fb}$ | `weight_feedback` | `(reservoir_size, feedback_size)` | Default $\mathcal{U}(-1, 1)$, or any [initializer](../guides/initializers.md) |
+| $W_{fb}$ | `weight_feedback` | `(reservoir_size, feedback_size)` | Default $\mathcal{U}(-1, 1)$, or any [initializer](../cookbook/initializers.md) |
 | $W_{in}$ | `weight_input` | `(reservoir_size, input_size)` | Only when `input_size` is set (driving inputs) |
-| $W_{rec}$ | `weight_hh` | `(reservoir_size, reservoir_size)` | Default $\mathcal{U}(-1, 1)$, or any [graph topology](../guides/topologies.md) |
+| $W_{rec}$ | `weight_hh` | `(reservoir_size, reservoir_size)` | Default $\mathcal{U}(-1, 1)$, or any [graph topology](../cookbook/topologies.md) |
 | $b$ | `bias_h` | `(reservoir_size,)` | $\mathcal{U}(-\beta, \beta)$ with $\beta$ = `bias_scaling` |
 | $f$ | `activation` | — | `tanh` (default), `relu`, `sigmoid`, `identity` |
 | $\alpha$ | `leak_rate` | — | $1.0$ = no leaking (plain RNN update) |

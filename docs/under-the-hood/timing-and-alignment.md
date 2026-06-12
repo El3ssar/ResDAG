@@ -1,3 +1,5 @@
+<span class="rd-eyebrow">Under the hood</span>
+
 # Timing & alignment
 
 Every off-by-one bug in reservoir computing is a disagreement about which

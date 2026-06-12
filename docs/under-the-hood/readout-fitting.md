@@ -1,3 +1,5 @@
+<span class="rd-eyebrow">Under the hood</span>
+
 # Readout fitting
 
 ## The objective
@@ -46,7 +48,7 @@ method on the $F \times F$ system:
 
 - **Memory** — only the Gram matrix ($F \times F$) is materialized; $X$ is
   touched once. For a 5 000-unit reservoir over 100 000 timesteps that is
-  100 MB instead of a 4 GB design-matrix factorization.
+  200 MB instead of a 4 GB design-matrix factorization (float64).
 - **GPU** — the inner loop is matrix–vector products, which is exactly what
   the GPU is good at. No host round-trips.
 - **Precision** — the solve runs in `float64` by default
@@ -72,12 +74,12 @@ Because the result lands in standard `nn.Linear` parameters, a fitted
 readout behaves identically under `state_dict()`, `to(device)`, ONNX export,
 or any downstream PyTorch code. Writing a custom solver means subclassing
 `ReadoutLayer` and overriding `_fit_impl` — see
-[Add a readout](../extending/custom-readout.md).
+[Add a readout](../cookbook/custom-components.md).
 
 ## Algebraic fit vs. SGD
 
 `trainable=False` (default) freezes the readout for autograd and relies on
 `fit()`; `trainable=True` leaves the same parameters open to any PyTorch
-optimizer instead — see [Training paths](../about/training-paths.md). The two
+optimizer instead — see [Training](../learn/training.md). The two
 are interchangeable because the readout is a plain linear map either way; you
 can even `fit()` first and fine-tune with SGD afterwards.

@@ -1,7 +1,13 @@
+---
+description: BibTeX for ResDAG and the reservoir-computing papers behind each method.
+---
+
+<span class="rd-eyebrow">About</span>
+
 # Citation
 
-If you use ResDAG in academic work, please cite the software and the underlying
-reservoir-computing literature relevant to your method (ESN, NG-RC, etc.).
+Using ResDAG in a paper? Cite the software once, then cite the method you
+actually used — ESN, NG-RC, Ott-style augmentation — from the table below.
 
 ## Software
 
@@ -15,13 +21,13 @@ reservoir-computing literature relevant to your method (ESN, NG-RC, etc.).
 }
 ```
 
-## Suggested references by feature
+Set `version` and `year` to the release you actually used.
+
+## References by method
 
 | Feature in ResDAG | Reference |
 |-------------------|-----------|
 | Echo State Networks | Jaeger, *The “echo state” approach to analysing and training recurrent neural networks* (2001) |
 | Reservoir computing survey | Lukoševičius & Jaeger, *Reservoir computing approaches to recurrent neural network training* (2009) |
 | NG-RC | Gauthier et al., *Next Generation Reservoir Computing* (2021) |
-| Ott ESN / chaos | Ott et al., *Model-Free Prediction of Large Spatiotemporally Chaotic Systems* (2018) |
-
-Replace `version` and `year` with the release you actually used.
+| Ott ESN / chaos | Pathak et al., *Model-Free Prediction of Large Spatiotemporally Chaotic Systems from Data: A Reservoir Computing Approach* (2018) |

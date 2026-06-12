@@ -4,6 +4,7 @@
     options:
       members:
         - InputFeedbackInitializer
+        - FunctionInitializer
         - get_input_feedback
         - show_input_initializers
         - register_input_feedback

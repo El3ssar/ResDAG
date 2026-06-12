@@ -1,27 +1,38 @@
 """Resolver utilities for topology and initializer specifications.
 
 This module provides helper functions to resolve flexible specification formats
-(strings, tuples, or objects) into concrete initializer/topology objects.
+(strings, tuples, callables, or objects) into concrete initializer/topology
+objects.
 """
 
-from typing import Any
+from typing import Any, Callable
 
-from resdag.init.input_feedback import InputFeedbackInitializer, get_input_feedback
-from resdag.init.topology import GraphTopology, get_topology
+from resdag.init.input_feedback import (
+    FunctionInitializer,
+    InputFeedbackInitializer,
+    get_input_feedback,
+)
+from resdag.init.topology import MatrixTopology, TopologyInitializer, get_topology
 
 # Type aliases for specification formats
-TopologySpec = None | str | tuple[str, dict[str, Any]] | GraphTopology
-InitializerSpec = None | str | tuple[str, dict[str, Any]] | InputFeedbackInitializer
+TopologySpec = None | str | Callable | tuple[str | Callable, dict[str, Any]] | TopologyInitializer
+InitializerSpec = (
+    None | str | Callable | tuple[str | Callable, dict[str, Any]] | InputFeedbackInitializer
+)
 
 
-def resolve_topology(spec: TopologySpec) -> GraphTopology | None:
-    """Resolve topology specification to GraphTopology object.
+def resolve_topology(spec: TopologySpec) -> TopologyInitializer | None:
+    """Resolve a topology specification to a TopologyInitializer object.
 
-    Accepts three formats:
-    - None: Returns None (use default or no topology)
-    - str: Registry name, uses default parameters
-    - tuple[str, dict]: (name, params) for custom parameters
-    - GraphTopology: Already resolved, returned as-is
+    Accepts five formats:
+
+    - ``None`` — returns None (use default random initialization)
+    - ``str`` — registry name, uses registered default parameters
+    - ``tuple[str, dict]`` — registry name with parameter overrides
+    - ``callable`` — any matrix builder ``fn(n, **kw) -> matrix | graph`` or
+      in-place ``fn(tensor, **kw)``; wrapped in :class:`MatrixTopology`
+    - ``tuple[callable, dict]`` — matrix builder with bound parameters
+    - ``TopologyInitializer`` — already resolved, returned as-is
 
     Parameters
     ----------
@@ -30,7 +41,7 @@ def resolve_topology(spec: TopologySpec) -> GraphTopology | None:
 
     Returns
     -------
-    GraphTopology or None
+    TopologyInitializer or None
         Resolved topology object, or None if spec was None.
 
     Raises
@@ -46,32 +57,46 @@ def resolve_topology(spec: TopologySpec) -> GraphTopology | None:
     >>> resolve_topology(("watts_strogatz", {"k": 6, "p": 0.1}))
     GraphTopology(...)
 
+    >>> resolve_topology(my_matrix_fn)
+    MatrixTopology(...)
+
+    >>> resolve_topology((my_matrix_fn, {"blocks": 4}))
+    MatrixTopology(...)
+
     >>> resolve_topology(get_topology("ring_chord"))
     GraphTopology(...)
     """
     if spec is None:
         return None
-    if isinstance(spec, GraphTopology):
+    if isinstance(spec, TopologyInitializer):
         return spec
     if isinstance(spec, str):
         return get_topology(spec)
     if isinstance(spec, tuple):
         name, params = spec
+        if callable(name):
+            return MatrixTopology(name, dict(params))
         return get_topology(name, **params)
+    if callable(spec):
+        return MatrixTopology(spec)
     raise TypeError(
         f"Invalid topology spec type: {type(spec).__name__}. "
-        f"Expected str, tuple[str, dict], or GraphTopology."
+        f"Expected str, callable, tuple[str | callable, dict], or TopologyInitializer."
     )
 
 
 def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | None:
-    """Resolve initializer specification to InputFeedbackInitializer object.
+    """Resolve an initializer specification to an InputFeedbackInitializer object.
 
-    Accepts three formats:
-    - None: Returns None (use default initializer)
-    - str: Registry name, uses default parameters
-    - tuple[str, dict]: (name, params) for custom parameters
-    - InputFeedbackInitializer: Already resolved, returned as-is
+    Accepts five formats:
+
+    - ``None`` — returns None (use default random initialization)
+    - ``str`` — registry name, uses registered default parameters
+    - ``tuple[str, dict]`` — registry name with parameter overrides
+    - ``callable`` — any matrix builder ``fn(rows, cols, **kw) -> matrix`` or
+      in-place ``fn(tensor, **kw)``; wrapped in :class:`FunctionInitializer`
+    - ``tuple[callable, dict]`` — matrix builder with bound parameters
+    - ``InputFeedbackInitializer`` — already resolved, returned as-is
 
     Parameters
     ----------
@@ -96,8 +121,14 @@ def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | Non
     >>> resolve_initializer(("chebyshev", {"p": 0.5, "q": 3.0}))
     ChebyshevInitializer(...)
 
-    >>> resolve_initializer(get_input_feedback("random_input"))
-    RandomInputInitializer(...)
+    >>> resolve_initializer(torch.nn.init.xavier_uniform_)
+    FunctionInitializer(...)
+
+    >>> resolve_initializer((my_matrix_fn, {"scale": 0.5}))
+    FunctionInitializer(...)
+
+    >>> resolve_initializer(get_input_feedback("random"))
+    RandomInitializer(...)
     """
     if spec is None:
         return None
@@ -107,8 +138,12 @@ def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | Non
         return get_input_feedback(spec)
     if isinstance(spec, tuple):
         name, params = spec
+        if callable(name):
+            return FunctionInitializer(name, **dict(params))
         return get_input_feedback(name, **params)
+    if callable(spec):
+        return FunctionInitializer(spec)
     raise TypeError(
         f"Invalid initializer spec type: {type(spec).__name__}. "
-        f"Expected str, tuple[str, dict], or InputFeedbackInitializer."
+        f"Expected str, callable, tuple[str | callable, dict], or InputFeedbackInitializer."
     )

@@ -11,8 +11,10 @@ graphs
     NetworkX-based graph generation functions.
 input_feedback
     Initializers for input and feedback weight matrices.
+matrices
+    Direct matrix-builder topologies (non-graph).
 topology
-    Graph topology initializers for recurrent weights.
+    Topology initializers for recurrent weights (graph- or matrix-based).
 utils
     Utility functions for initialization.
 
@@ -33,11 +35,12 @@ See Also
 resdag.layers.ESNLayer : Uses these initializers for weight matrices.
 """
 
-from . import graphs, input_feedback, topology, utils
+from . import graphs, input_feedback, matrices, topology, utils
 
 __all__ = [
     "graphs",
     "input_feedback",
+    "matrices",
     "topology",
     "utils",
 ]

@@ -2,8 +2,9 @@
 Topology Initialization System
 ==============================
 
-This module provides the interface between graph implementations and
-PyTorch tensor initialization for reservoir recurrent weights.
+This module provides the interface between structure generators — NetworkX
+graphs or direct matrix builders — and PyTorch tensor initialization for
+reservoir recurrent weights.
 
 Classes
 -------
@@ -11,6 +12,8 @@ TopologyInitializer
     Abstract base class for topology initializers.
 GraphTopology
     Concrete implementation using NetworkX graphs.
+MatrixTopology
+    Concrete implementation wrapping any matrix-building callable.
 
 Functions
 ---------
@@ -19,7 +22,11 @@ get_topology
 show_topologies
     List available topologies or get details.
 register_graph_topology
-    Decorator to register new topologies.
+    Decorator to register graph-based topologies.
+register_matrix_topology
+    Decorator to register matrix-builder topologies.
+scale_to_spectral_radius
+    Rescale a square matrix to a target spectral radius.
 
 Examples
 --------
@@ -30,42 +37,48 @@ Using pre-registered topologies:
 >>> weight = torch.empty(100, 100)
 >>> topology.initialize(weight, spectral_radius=0.9)
 
-Creating custom topologies:
+Any function that builds a matrix is a topology:
 
->>> from resdag.init.topology import GraphTopology
->>> from resdag.init.graphs import watts_strogatz_graph
->>> topology = GraphTopology(
-...     watts_strogatz_graph,
-...     {"k": 6, "p": 0.2, "directed": True}
-... )
->>> topology.initialize(weight, spectral_radius=0.95)
+>>> def block_diagonal(n, blocks=4):
+...     ...  # return an (n, n) tensor
+>>> reservoir = ESNLayer(500, feedback_size=3, topology=block_diagonal)
 
 Registering custom topologies:
 
->>> from resdag.init.topology import register_graph_topology
+>>> from resdag.init.topology import register_graph_topology, register_matrix_topology
 >>> @register_graph_topology("custom", param=1.0)
 ... def my_custom_graph(n, param=1.0, seed=None):
 ...     G = nx.DiGraph()
 ...     # ... graph generation logic
 ...     return G
 
+>>> @register_matrix_topology("block_diagonal", blocks=4)
+... def block_diagonal(n, blocks=4, seed=None):
+...     # ... matrix construction logic
+...     return w
+
 See Also
 --------
 resdag.init.graphs : Graph generation functions.
+resdag.init.matrices : Direct matrix-construction functions.
 resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
-from .base import GraphTopology, TopologyInitializer
+from .base import GraphTopology, MatrixTopology, TopologyInitializer, scale_to_spectral_radius
 from .registry import (
     get_topology,
     register_graph_topology,
+    register_matrix_topology,
     show_topologies,
 )
 
 __all__ = [
     "GraphTopology",
+    "MatrixTopology",
     "TopologyInitializer",
     "get_topology",
     "register_graph_topology",
+    "register_matrix_topology",
+    "scale_to_spectral_radius",
     "show_topologies",
 ]

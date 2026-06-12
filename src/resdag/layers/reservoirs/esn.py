@@ -55,13 +55,21 @@ class ESNLayer(BaseReservoirLayer):
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
-    feedback_initializer : str, tuple, or InputFeedbackInitializer, optional
-        Initializer for the feedback weight matrix.
-    input_initializer : str, tuple, or InputFeedbackInitializer, optional
-        Initializer for the input weight matrix.  Only used when
-        ``input_size`` is provided.
-    topology : str, tuple, or TopologyInitializer, optional
-        Graph topology for recurrent weights.
+    feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Initializer for the feedback weight matrix.  Accepts a registry
+        name, ``(name, params)``, any matrix-building callable
+        ``fn(rows, cols, **kw) -> matrix`` (or in-place ``fn(tensor)``,
+        e.g. ``torch.nn.init.xavier_uniform_``), ``(callable, params)``,
+        or a configured initializer object.
+    input_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Initializer for the input weight matrix.  Same formats as
+        ``feedback_initializer``.  Only used when ``input_size`` is provided.
+    topology : str, callable, tuple, or TopologyInitializer, optional
+        Structure of the recurrent weight matrix.  Accepts a registry name
+        (graph or matrix topology), ``(name, params)``, any matrix-building
+        callable ``fn(n, **kw) -> matrix | nx.Graph`` (or in-place
+        ``fn(tensor)``), ``(callable, params)``, or a configured topology
+        object.
 
     Attributes
     ----------

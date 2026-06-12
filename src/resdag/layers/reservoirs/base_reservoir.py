@@ -125,13 +125,23 @@ class BaseReservoirLayer(nn.Module, ABC):
             dtype=feedback.dtype,
         )
 
-        for t in range(seq_len):
-            inputs_t: list[torch.Tensor] = [feedback[:, t, :]]
-            for di in driving_inputs:  # This is at most a list of one tensor, or an empty list
-                inputs_t.append(di[:, t, :])
+        # Fast path: cells that split their update into input-dependent and
+        # state-dependent parts precompute the former for the whole sequence
+        # in one batched matmul, leaving only the recurrent term in the loop.
+        projected = self.cell.project_inputs([feedback, *driving_inputs])
 
-            output, self.state = self.cell(inputs_t, self.state)
-            outputs[:, t, :] = output
+        if projected is not None:
+            for t in range(seq_len):
+                output, self.state = self.cell.step(projected[:, t, :], self.state)
+                outputs[:, t, :] = output
+        else:
+            for t in range(seq_len):
+                inputs_t: list[torch.Tensor] = [feedback[:, t, :]]
+                for di in driving_inputs:  # at most one tensor
+                    inputs_t.append(di[:, t, :])
+
+                output, self.state = self.cell(inputs_t, self.state)
+                outputs[:, t, :] = output
 
         # Truncated BPTT at call boundaries: gradients flow through the
         # returned states within this call, but the *stored* state must not

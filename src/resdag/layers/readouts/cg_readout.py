@@ -60,12 +60,20 @@ class CGReadoutLayer(ReadoutLayer):
         Convergence tolerance for CG solver. Iterations stop when
         residual norm squared is below ``tol**2``.
     use_float64 : bool, default=True
-        If ``True`` (default), CG runs in ``float64`` for numerical
-        stability and the result is cast back to the layer's parameter
-        dtype.  Set to ``False`` to stay in the input dtype (typically
-        ``float32``) when the doubled memory footprint matters and the
-        inputs are already well-scaled — for example, very large reservoirs
-        on GPU.
+        If ``True`` (default), the CG iterations on the small
+        ``(in_features, in_features)`` system run in ``float64`` and the
+        result is cast back to the layer's parameter dtype.  Cheap on every
+        device — the expensive ``(N, F)`` Gram-formation matmuls stay in
+        the input dtype regardless (see ``gram_dtype``).
+    gram_dtype : torch.dtype, optional
+        Dtype for forming the Gram matrix and right-hand side (the heavy
+        ``(N, F)`` matmuls).  Default ``None`` is automatic: ``float64`` on
+        CPU (cheap there), the input dtype on CUDA — float64 matmuls run at
+        1/32–1/64 speed on consumer GPUs and are the classic reason ESN
+        training measures *slower* on GPU than CPU.  Pass
+        ``torch.float64`` to force full-precision Gram formation on any
+        device (needed only for badly scaled states, e.g. unnormalized
+        inputs concatenated into the readout; prefer normalizing the data).
 
     Attributes
     ----------
@@ -114,12 +122,14 @@ class CGReadoutLayer(ReadoutLayer):
         tol: float = 1e-5,
         alpha: float = 1e-6,
         use_float64: bool = True,
+        gram_dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__(in_features, out_features, bias, name, trainable)
         self.max_iter = max_iter
         self.tol = tol
         self.alpha = alpha
         self.use_float64 = use_float64
+        self.gram_dtype = gram_dtype
 
     def _fit_impl(
         self,
@@ -159,6 +169,14 @@ class CGReadoutLayer(ReadoutLayer):
         When built with ``bias=False`` the raw, uncentered normal equations
         are solved instead — centering without applying the intercept at
         predict time would systematically shift every prediction.
+
+        Precision strategy: the heavy ``(N, F)`` matmuls that form the Gram
+        matrix and right-hand side run in ``gram_dtype`` (default: the input
+        dtype — float64 here is catastrophically slow on consumer GPUs),
+        while the CG iterations on the small ``(F, F)`` system run in
+        float64 when ``use_float64=True``. Pass ``gram_dtype=torch.float64``
+        to also form the Gram in full precision (legacy behaviour; only
+        matters for severely ill-conditioned state matrices).
         """
         if alpha < 0:
             raise ValueError(f"Alpha must be non-negative, got {alpha}")
@@ -166,12 +184,15 @@ class CGReadoutLayer(ReadoutLayer):
         fit_intercept = self.bias is not None
 
         original_dtype = X.dtype
-        # Upcast to float64 for numerical stability unless the caller opted out.
-        # For very large reservoirs the doubled memory footprint can be the
-        # bottleneck and the inputs are often already well-scaled.
-        if self.use_float64:
-            X = X.to(torch.float64)
-            y = y.to(torch.float64)
+        solve_dtype = torch.float64 if self.use_float64 else X.dtype
+        # Auto gram dtype: full precision where it's cheap (CPU), input
+        # dtype where float64 throughput is crippled (consumer CUDA).
+        gram_dtype = self.gram_dtype
+        if gram_dtype is None:
+            gram_dtype = solve_dtype if X.device.type == "cpu" else X.dtype
+        if gram_dtype != X.dtype:
+            X = X.to(gram_dtype)
+            y = y.to(gram_dtype)
 
         if fit_intercept:
             # Center the data; the intercept is recovered after the solve.
@@ -182,6 +203,7 @@ class CGReadoutLayer(ReadoutLayer):
             XtX = X.T @ X - n * (X_mean.T @ X_mean)
         else:
             XtX = X.T @ X
+        XtX = XtX.to(solve_dtype)
 
         def matvec(w: torch.Tensor) -> torch.Tensor:
             """Matrix-vector product: (X^T X + alpha * I) @ w."""
@@ -199,8 +221,11 @@ class CGReadoutLayer(ReadoutLayer):
             P = R.clone()
             Rs_old = (R * R).sum(dim=0)
 
-            for _ in range(max_iter):
-                if torch.all(Rs_old < tol**2):
+            for it in range(max_iter):
+                # The convergence test forces a device->host sync; checking
+                # every iteration serializes the GPU. Every 10 is plenty —
+                # at most 9 extra cheap (F, F) matvecs past convergence.
+                if it % 10 == 0 and bool(torch.all(Rs_old < tol**2)):
                     break
 
                 AP = A_func(P)
@@ -219,12 +244,13 @@ class CGReadoutLayer(ReadoutLayer):
             rhs = X.T @ y - n * (X_mean.T @ y_mean)
         else:
             rhs = X.T @ y
+        rhs = rhs.to(solve_dtype)
 
         # Solve using CG
         coefs = conjugate_gradient(matvec, rhs, self.max_iter, self.tol)
 
         if fit_intercept:
-            intercept = (y_mean - X_mean @ coefs).squeeze(0)
+            intercept = (y_mean.to(solve_dtype) - X_mean.to(solve_dtype) @ coefs).squeeze(0)
             return coefs.to(original_dtype), intercept.to(original_dtype)
         return coefs.to(original_dtype), None
 

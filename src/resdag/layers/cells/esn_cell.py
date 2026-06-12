@@ -218,40 +218,100 @@ class ESNCell(ReservoirCell):
             ``self.weight_input`` is ``None``, or if the driving input
             feature dimension does not match ``self.input_size``.
         """
-        fb_t = inputs[0]
+        projected = self.project_inputs(inputs)
+        recurrent_contrib = F.linear(state, self.weight_hh)
+        new_state = self.activation_fn(projected + recurrent_contrib)
 
-        if fb_t.shape[-1] != self.feedback_size:
+        if self.leak_rate < 1.0:
+            new_state = torch.lerp(state, new_state, self.leak_rate)
+        return new_state, new_state
+
+    def project_inputs(self, inputs: list[torch.Tensor]) -> torch.Tensor:
+        """
+        Precompute all input-dependent pre-activation terms.
+
+        Computes ``W_fb x_fb + W_in x_in + b`` for every timestep at once.
+        Works on full ``(batch, timesteps, features)`` sequences (the layer's
+        fast path) and on single-step ``(batch, features)`` slices (reused by
+        :meth:`forward`).
+
+        Parameters
+        ----------
+        inputs : list[torch.Tensor]
+            Input streams; ``inputs[0]`` is feedback, ``inputs[1]`` (if
+            present) is the driving input.
+
+        Returns
+        -------
+        torch.Tensor
+            Input projection with the same leading dimensions as the inputs
+            and trailing dimension ``reservoir_size``.
+
+        Raises
+        ------
+        ValueError
+            If feature dimensions do not match the cell configuration, or a
+            driving input is supplied to a cell built without ``input_size``.
+        """
+        fb = inputs[0]
+
+        if fb.shape[-1] != self.feedback_size:
             raise ValueError(
-                f"Feedback size mismatch. Expected {self.feedback_size}, got {fb_t.shape[-1]}"
+                f"Feedback size mismatch. Expected {self.feedback_size}, got {fb.shape[-1]}"
             )
 
-        has_driving = len(inputs) > 1
-        if has_driving:
+        projected = F.linear(fb, self.weight_feedback)
+
+        if len(inputs) > 1:
             if self.weight_input is None:
                 raise ValueError(
                     "Reservoir was initialized without input_size, "
                     "but driving input was provided in forward pass"
                 )
-            x_t = inputs[1]
-            if x_t.shape[-1] != self.input_size:
+            x = inputs[1]
+            if x.shape[-1] != self.input_size:
                 raise ValueError(
-                    f"Driving input size mismatch. Expected {self.input_size}, got {x_t.shape[-1]}"
+                    f"Driving input size mismatch. Expected {self.input_size}, got {x.shape[-1]}"
                 )
-
-        feedback_contrib = F.linear(fb_t, self.weight_feedback)
-        recurrent_contrib = F.linear(state, self.weight_hh)
-        pre_activation = feedback_contrib + recurrent_contrib
-
-        if has_driving:
-            pre_activation = pre_activation + F.linear(inputs[1], self.weight_input)
+            projected = projected + F.linear(x, self.weight_input)
 
         if self.bias_h is not None:
-            pre_activation = pre_activation + self.bias_h
+            projected = projected + self.bias_h
 
+        return projected
+
+    def step(
+        self,
+        projected_t: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Recurrent-only single-step update for the projected fast path.
+
+        ``addmm`` fuses the recurrent matmul with the precomputed input
+        projection into one kernel; with activation and leak that is three
+        kernel launches per timestep instead of six.
+
+        Parameters
+        ----------
+        projected_t : torch.Tensor
+            Slice of :meth:`project_inputs` output, shape
+            ``(batch, reservoir_size)``.
+        state : torch.Tensor
+            Current hidden state, shape ``(batch, reservoir_size)``.
+
+        Returns
+        -------
+        output : torch.Tensor
+            Next hidden state.
+        new_state : torch.Tensor
+            Same tensor as output.
+        """
+        pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
         new_state = self.activation_fn(pre_activation)
 
         if self.leak_rate < 1.0:
-            new_state = (1 - self.leak_rate) * state + self.leak_rate * new_state
+            new_state = torch.lerp(state, new_state, self.leak_rate)
         return new_state, new_state
 
     # ------------------------------------------------------------------

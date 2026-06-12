@@ -154,9 +154,6 @@ tag_format = "v{version}"
 allow_zero_version = true
 major_on_zero = false
 
-[tool.semantic_release.changelog.default_templates]
-changelog_file = ""  # release notes live on GitHub Releases, not in-repo
-
 [tool.semantic_release.commit_parser_options]
 parse_squash_commits = true
 ignore_merge_commits = true

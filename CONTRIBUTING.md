@@ -3,7 +3,7 @@
 ResDAG is a PyTorch-native reservoir computing library. Contributions are
 welcome — components, fixes, docs, benchmarks. This guide covers the
 mechanics; the design rationale lives in the
-[documentation](https://el3ssar.github.io/resdag/).
+[documentation](https://el3ssar.github.io/ResDAG/).
 
 ## Development setup
 

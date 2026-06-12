@@ -16,7 +16,7 @@ site_name: ResDAG
 site_description: >-
   Reservoir computing for PyTorch — composable Echo State Networks and
   next-generation reservoir computers, trained in one pass, on the GPU.
-site_url: https://el3ssar.github.io/resdag/
+site_url: https://el3ssar.github.io/ResDAG/
 site_author: Daniel Estevez-Moya
 
 repo_name: El3ssar/resdag

@@ -6,7 +6,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPTS = ["forecast.py", "phase.py", "topologies.py", "initializers.py",
-           "architectures.py", "hpo.py"]
+           "architectures.py", "hpo.py", "readme.py"]
 
 if __name__ == "__main__":
     for script in SCRIPTS:

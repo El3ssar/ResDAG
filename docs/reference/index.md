@@ -1,5 +1,5 @@
 ---
-description: The complete public API of ResDAG 0.5.0, with a map of where each symbol lives.
+description: The complete public API of ResDAG, with a map of where each symbol lives.
 ---
 
 <span class="nb-kicker">Reference</span>
@@ -7,7 +7,7 @@ description: The complete public API of ResDAG 0.5.0, with a map of where each s
 # Reference
 
 The complete public API, one page per area. This reference documents
-ResDAG 0.5.0; if a signature here disagrees with your installed version,
+ResDAG {{ resdag_version }}; if a signature here disagrees with your installed version,
 trust your installed version.
 
 ## Where do I find X

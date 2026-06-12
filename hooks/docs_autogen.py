@@ -245,6 +245,11 @@ def _page_meta(uri: str) -> tuple[str, str]:
 
 
 def on_page_markdown(markdown, page, config, files):
+    if "{{ resdag_version }}" in markdown:
+        import resdag
+
+        markdown = markdown.replace("{{ resdag_version }}", resdag.__version__)
+
     def expand(match):
         directory = match.group(1).rstrip("/")
         page_dir = Path(page.file.src_uri).parent

@@ -62,6 +62,18 @@ docs = [
     "griffe>=1.0",
 ]
 
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.13.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.8.0",
+    "optuna>=4.0.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/resdag"]
 
@@ -121,3 +133,26 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
 ]
+
+# -------------------------------------------------------------------------
+# Release automation — python-semantic-release
+# Version bumps are computed from conventional commit messages on main:
+#   feat: -> minor, fix:/perf: -> patch, "BREAKING CHANGE:" -> major
+# (major_on_zero=false: while 0.x, breaking changes bump the minor instead).
+# The version lives ONLY in src/resdag/__init__.py; PSR rewrites it, commits,
+# tags vX.Y.Z, and creates the GitHub release. CI publishes to PyPI.
+# -------------------------------------------------------------------------
+[tool.semantic_release]
+version_variables = ["src/resdag/__init__.py:__version__"]
+build_command = "python -m pip install build && python -m build"
+commit_message = "chore(release): v{version} [skip ci]"
+tag_format = "v{version}"
+allow_zero_version = true
+major_on_zero = false
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = ""  # release notes live on GitHub Releases, not in-repo
+
+[tool.semantic_release.commit_parser_options]
+parse_squash_commits = true
+ignore_merge_commits = true

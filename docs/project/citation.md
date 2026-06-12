@@ -14,7 +14,7 @@ If ResDAG contributes to published work, cite the software:
   title   = {ResDAG: Reservoir computing for PyTorch},
   year    = {2026},
   url     = {https://github.com/El3ssar/resdag},
-  version = {0.5.0},
+  version = {{{ resdag_version }}},
 }
 ```
 

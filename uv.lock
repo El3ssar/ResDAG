@@ -1325,6 +1325,17 @@ hpo = [
     { name = "optuna" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "basedpyright" },
+    { name = "black" },
+    { name = "mypy" },
+    { name = "optuna" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.37.1" },
@@ -1349,6 +1360,17 @@ requires-dist = [
     { name = "torch", specifier = ">=2.10.0" },
 ]
 provides-extras = ["dev", "docs", "hpo"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "basedpyright", specifier = ">=1.13.0" },
+    { name = "black", specifier = ">=24.0.0" },
+    { name = "mypy", specifier = ">=1.8.0" },
+    { name = "optuna", specifier = ">=4.0.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "ruff", specifier = ">=0.6.0" },
+]
 
 [[package]]
 name = "ruff"

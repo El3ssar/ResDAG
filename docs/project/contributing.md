@@ -82,3 +82,26 @@ component additions need no nav or index edits:
 - **Figures** under `docs/assets/figures/` are regenerated with
   `uv run python scripts/generate_docs_figures.py` (use `--only` to rebuild
   a subset). Do not edit the images by hand.
+
+## Releases
+
+Releases are fully automated — no manual tags, no manual version edits.
+Every push to `main` runs the test gate, then
+[python-semantic-release](https://python-semantic-release.readthedocs.io/)
+reads the commit messages since the last release and acts accordingly:
+
+| commit message starts with | effect |
+| --- | --- |
+| `feat: ...` | minor bump (0.5.0 → 0.6.0), release |
+| `fix: ...` or `perf: ...` | patch bump (0.5.0 → 0.5.1), release |
+| `feat!: ...` or a `BREAKING CHANGE:` footer | minor bump while 0.x, major from 1.0 |
+| `docs:`, `chore:`, `ci:`, `refactor:`, `test:`, `style:`, `build:` | no release |
+
+A release rewrites `__version__` in `src/resdag/__init__.py` (the only
+place the version lives), commits, tags `vX.Y.Z`, publishes a GitHub
+release with generated notes, and uploads the build to PyPI via trusted
+publishing. The documentation deploys on the same push through the docs
+workflow, and version strings on these pages substitute automatically.
+
+Practical rule: merge pull requests with **squash merge** and give the
+squash commit a conventional title — that title alone decides the bump.

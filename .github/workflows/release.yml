@@ -1,35 +1,78 @@
+# Release automation.
+#
+# Every push to main: tests gate, then python-semantic-release inspects the
+# conventional commits since the last tag. If they warrant a release it
+# bumps src/resdag/__init__.py, commits, tags vX.Y.Z, creates the GitHub
+# release with generated notes, builds the package, and publishes to PyPI
+# via trusted publishing. Commits that don't warrant a release (docs:,
+# chore:, ci:, ...) make this workflow a no-op after the tests.
+#
+# NOTE: PyPI trusted publishing is bound to this workflow filename
+# (release.yml) — do not rename the file.
+
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU torch (slim CI)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install package with dev extras
+        run: pip install -e ".[dev,hpo]"
+
+      - name: Lint
+        run: |
+          ruff check src/ tests/
+          black --check src/ tests/
+
+      - name: Tests
+        run: pytest --no-cov -q
+
   release:
+    needs: test
+    if: github.repository == 'El3ssar/resdag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
-    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install build
-      
-      - name: Build package
-        run: python -m build
-      
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Semantic release (version, tag, GitHub release, build)
+        id: semrel
+        uses: python-semantic-release/python-semantic-release@v10
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach build artifacts to the GitHub release
+        if: steps.semrel.outputs.released == 'true'
+        uses: python-semantic-release/publish-action@v10
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.semrel.outputs.tag }}
+
       - name: Publish to PyPI
+        if: steps.semrel.outputs.released == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
-      
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          generate_release_notes: true

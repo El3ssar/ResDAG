@@ -96,13 +96,13 @@ def main() -> None:
         search_space=search_space,
         data_loader=data_loader,
         n_trials=8,  # scale up (100+) for real searches
-        loss="efh",  # also: "horizon", "lyap", "standard", "discounted"
+        loss="efh",  # also: "forecast_horizon", "lyapunov", "standard", "soft_horizon"
         seed=42,  # seeds the sampler and per-trial RNG
         verbosity=0,  # 1 prints per-trial progress
         # For real runs:
         #   n_workers=4,           parallel OS processes
         #   storage="study.log",   journal file -> resumable + multi-worker
-        #   monitor_losses=["horizon"],  log extra metrics without optimizing them
+        #   monitor_losses=["forecast_horizon"],  log extra metrics without optimizing them
     )
 
     # ------------------------------------------------------------------

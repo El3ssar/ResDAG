@@ -24,7 +24,7 @@ class SelectiveExponentiation(nn.Module):
     >>> layer = SelectiveExponentiation(index=2, exponent=2.0)
     >>> x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
     >>> layer(x)
-    tensor([[ 1.,  4.,  3., 16.]])
+    tensor([[1., 2., 9., 4.]])
     """
 
     def __init__(self, index: int, exponent: float) -> None:

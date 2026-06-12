@@ -1,0 +1,399 @@
+/* =========================================================================
+   ResDAG — "laboratory notebook, set in type"
+   -------------------------------------------------------------------------
+   A scientific-journal reading surface: warm paper, warm ink, one vermilion
+   accent, Fraunces display serif over Figtree body, IBM Plex Mono code.
+   Signature motif: the signal line — a thin waveform that draws itself
+   across the hero and recurs as the horizontal-rule divider.
+   Light is the primary theme (long-form reading); dark is a warm-tinted
+   derivative, not an inversion.
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Figtree:ital,wght@0,300..700;1,300..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+
+/* =========================================================================
+   Design tokens
+   ========================================================================= */
+:root {
+  --nb-display: "Fraunces", Georgia, serif;
+  --nb-body: "Figtree", -apple-system, sans-serif;
+  --nb-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Type scale — dramatic contrast, fluid display sizes */
+  --nb-text-xs: 0.72rem;
+  --nb-text-sm: 0.8rem;
+  --nb-text-md: 0.9rem;
+  --nb-h1: clamp(2.1rem, 4.5vw, 3rem);
+  --nb-h2: 1.5rem;
+  --nb-h3: 1.1rem;
+
+  --nb-radius: 3px; /* notebook = near-square corners, not pill-rounded */
+}
+
+/* ----- Light: paper ----------------------------------------------------- */
+[data-md-color-scheme="default"] {
+  --nb-paper: #faf7f1;
+  --nb-surface: #fffdf8;
+  --nb-ink: #211d18;
+  --nb-ink-soft: #575047;
+  --nb-muted: #8a8178;
+  --nb-rule: #e6dfd4;
+  --nb-rule-strong: #cfc6b8;
+  --nb-accent: #c2410c;        /* vermilion — links, active, the one color */
+  --nb-accent-strong: #9a3412;
+  --nb-accent-wash: #c2410c14;
+  --nb-code-bg: #f3efe6;
+  --nb-code-ink: #3d3833;
+
+  --md-default-bg-color: var(--nb-paper);
+  --md-default-fg-color: var(--nb-ink);
+  --md-default-fg-color--light: var(--nb-ink-soft);
+  --md-default-fg-color--lighter: var(--nb-muted);
+  --md-typeset-color: var(--nb-ink);
+  --md-typeset-a-color: var(--nb-accent-strong);
+  --md-accent-fg-color: var(--nb-accent);
+  --md-primary-fg-color: #211d18;
+  --md-primary-bg-color: #faf7f1;
+  --md-code-bg-color: var(--nb-code-bg);
+  --md-code-fg-color: var(--nb-code-ink);
+  --md-footer-bg-color: #211d18;
+  --md-footer-bg-color--dark: #18140f;
+}
+
+/* ----- Dark: midnight desk ---------------------------------------------- */
+[data-md-color-scheme="slate"] {
+  --nb-paper: #161210;
+  --nb-surface: #1e1916;
+  --nb-ink: #eae4da;
+  --nb-ink-soft: #b3aa9e;
+  --nb-muted: #847b70;
+  --nb-rule: #322b24;
+  --nb-rule-strong: #4a4138;
+  --nb-accent: #ff7847;
+  --nb-accent-strong: #ff8c61;
+  --nb-accent-wash: #ff784714;
+  --nb-code-bg: #1d1814;
+  --nb-code-ink: #ddd4c8;
+
+  --md-default-bg-color: var(--nb-paper);
+  --md-default-fg-color: var(--nb-ink);
+  --md-default-fg-color--light: var(--nb-ink-soft);
+  --md-default-fg-color--lighter: var(--nb-muted);
+  --md-typeset-color: var(--nb-ink);
+  --md-typeset-a-color: var(--nb-accent);
+  --md-accent-fg-color: var(--nb-accent);
+  --md-primary-fg-color: #14110e;
+  --md-code-bg-color: var(--nb-code-bg);
+  --md-code-fg-color: var(--nb-code-ink);
+  --md-footer-bg-color: #110e0b;
+  --md-footer-bg-color--dark: #0c0a08;
+}
+
+/* =========================================================================
+   Header & navigation — quiet ink bar, small-caps tabs
+   ========================================================================= */
+.md-header {
+  background: var(--md-primary-fg-color);
+  box-shadow: none;
+  border-bottom: 1px solid var(--nb-rule);
+}
+
+.md-header__topic .md-ellipsis {
+  font-family: var(--nb-display);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.md-tabs {
+  background: var(--md-primary-fg-color);
+  border-bottom: 1px solid var(--nb-rule);
+}
+
+.md-tabs__link {
+  font-family: var(--nb-body);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.md-tabs__link--active {
+  opacity: 1;
+  color: var(--nb-accent);
+}
+
+.md-nav__title { font-family: var(--nb-body); letter-spacing: 0.06em; }
+
+.md-nav__link--active {
+  color: var(--nb-accent-strong) !important;
+  font-weight: 700;
+}
+
+/* =========================================================================
+   Typeset — the reading surface
+   ========================================================================= */
+.md-typeset {
+  font-family: var(--nb-body);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+
+.md-typeset h1 {
+  font-family: var(--nb-display);
+  font-size: var(--nb-h1);
+  font-weight: 550;
+  font-variation-settings: "opsz" 60;
+  letter-spacing: -0.015em;
+  line-height: 1.12;
+  color: var(--nb-ink);
+  margin-bottom: 0.9em;
+}
+
+.md-typeset h2 {
+  font-family: var(--nb-display);
+  font-size: var(--nb-h2);
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--nb-ink);
+  margin-top: 2.4em;
+}
+
+.md-typeset h3 {
+  font-family: var(--nb-body);
+  font-size: var(--nb-h3);
+  font-weight: 700;
+}
+
+.md-typeset a {
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--nb-accent) 45%, transparent);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.md-typeset a:hover {
+  color: var(--nb-accent);
+  border-bottom-color: var(--nb-accent);
+}
+
+/* Kicker — small-caps section label above page titles */
+.nb-kicker {
+  display: block;
+  font-family: var(--nb-body);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--nb-accent);
+  margin-bottom: 0.4rem;
+}
+
+/* The signal line — waveform divider (signature motif) */
+.md-typeset hr {
+  border: none;
+  height: 12px;
+  margin: 2.6em auto;
+  max-width: 14rem;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='12' viewBox='0 0 224 12'%3E%3Cpath d='M0 6 C 7 6 9 2 14 2 S 21 10 28 10 35 2 42 2 49 10 56 10 63 6 70 6 77 6 84 6 91 1 98 1 105 11 112 11 119 1 126 1 133 11 140 11 147 6 154 6 161 6 168 6 175 3 182 3 189 9 196 9 203 3 210 3 217 6 224 6' fill='none' stroke='%23c2410c' stroke-opacity='0.55' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* =========================================================================
+   Code — inset specimen blocks with an accent spine
+   ========================================================================= */
+.md-typeset code {
+  font-family: var(--nb-mono);
+  font-size: 0.85em;
+  border-radius: var(--nb-radius);
+  background: var(--nb-code-bg);
+  padding: 0.1em 0.35em;
+}
+
+.md-typeset pre > code {
+  padding: 0.95em 1.15em;
+  line-height: 1.65;
+}
+
+.md-typeset .highlight {
+  border: 1px solid var(--nb-rule);
+  border-left: 3px solid var(--nb-accent);
+  border-radius: var(--nb-radius);
+  background: var(--nb-code-bg);
+}
+
+/* Named specimen: <div class="nb-specimen" data-label="..."> around a fence */
+.nb-specimen {
+  margin: 1.4em 0;
+}
+
+.nb-specimen::before {
+  content: attr(data-label);
+  display: inline-block;
+  font-family: var(--nb-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--nb-muted);
+  border: 1px solid var(--nb-rule);
+  border-bottom: none;
+  border-radius: var(--nb-radius) var(--nb-radius) 0 0;
+  padding: 0.3em 0.8em;
+  background: var(--nb-surface);
+}
+
+.nb-specimen .highlight { margin-top: 0; border-top-left-radius: 0; }
+
+/* =========================================================================
+   Admonitions — margin notes, not alert boxes
+   ========================================================================= */
+.md-typeset .admonition,
+.md-typeset details {
+  border: none;
+  border-left: 2px solid var(--nb-rule-strong);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.74rem;
+  padding-left: 1rem;
+  color: var(--nb-ink-soft);
+}
+
+.md-typeset .admonition-title,
+.md-typeset summary {
+  background: transparent !important;
+  padding-left: 0 !important;
+  font-family: var(--nb-body);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--nb-ink);
+}
+
+.md-typeset .admonition-title::before,
+.md-typeset summary::before { display: none; }
+
+.md-typeset .admonition.warning,
+.md-typeset .admonition.danger { border-left-color: var(--nb-accent); }
+
+.md-typeset .admonition.warning .admonition-title,
+.md-typeset .admonition.danger .admonition-title { color: var(--nb-accent-strong); }
+
+/* =========================================================================
+   Tables — journal rules: horizontal only
+   ========================================================================= */
+.md-typeset table:not([class]) {
+  border: none;
+  border-top: 2px solid var(--nb-ink);
+  border-bottom: 1px solid var(--nb-rule-strong);
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 0.72rem;
+  background: transparent;
+}
+
+.md-typeset table:not([class]) th {
+  font-family: var(--nb-body);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: transparent;
+  border-bottom: 1px solid var(--nb-rule-strong);
+  color: var(--nb-ink-soft);
+}
+
+.md-typeset table:not([class]) td { border-top: 1px solid var(--nb-rule); }
+
+/* =========================================================================
+   Cards — flat plates with a hard offset shadow (no hover-lift cliché)
+   ========================================================================= */
+.md-typeset .grid.cards > ol > li,
+.md-typeset .grid.cards > ul > li {
+  border: 1px solid var(--nb-rule-strong);
+  border-radius: var(--nb-radius);
+  background: var(--nb-surface);
+  box-shadow: 3px 3px 0 0 var(--nb-rule);
+  transition: box-shadow 0.14s ease, border-color 0.14s ease;
+}
+
+.md-typeset .grid.cards > ol > li:hover,
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--nb-accent);
+  box-shadow: 3px 3px 0 0 var(--nb-accent-wash), 3px 3px 0 1px var(--nb-accent);
+}
+
+.md-typeset .grid.cards strong { font-family: var(--nb-display); font-weight: 600; }
+
+.md-typeset .grid.cards > ul > li > hr {
+  background: none;
+  height: 1px;
+  max-width: none;
+  margin: 0.7em 0;
+  border-bottom: 1px solid var(--nb-rule);
+}
+
+/* =========================================================================
+   Buttons
+   ========================================================================= */
+.md-typeset .md-button {
+  font-family: var(--nb-body);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--nb-ink);
+  border-radius: var(--nb-radius);
+  color: var(--nb-ink);
+  box-shadow: 3px 3px 0 0 var(--nb-rule-strong);
+  transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.md-typeset .md-button--primary {
+  background: var(--nb-accent);
+  border-color: var(--nb-accent-strong);
+  color: #fff;
+}
+
+.md-typeset .md-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 var(--nb-rule-strong);
+  border-color: var(--nb-accent);
+  color: var(--nb-accent-strong);
+}
+
+.md-typeset .md-button--primary:hover { color: #fff; background: var(--nb-accent-strong); }
+
+/* =========================================================================
+   Math — numbered-plate equations
+   ========================================================================= */
+.md-typeset .katex-display {
+  padding: 1rem 1.2rem;
+  border-top: 1px solid var(--nb-rule-strong);
+  border-bottom: 1px solid var(--nb-rule-strong);
+  background: var(--nb-surface);
+  overflow-x: auto;
+}
+
+/* =========================================================================
+   Figures
+   ========================================================================= */
+.md-typeset figure {
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius);
+  background: var(--nb-surface);
+  padding: 0.7rem;
+}
+
+.md-typeset figcaption {
+  font-size: 0.66rem;
+  font-style: italic;
+  font-family: var(--nb-display);
+  color: var(--nb-muted);
+  max-width: none;
+}
+
+/* API reference: calmer headings */
+.md-typeset .doc-heading { font-family: var(--nb-mono); letter-spacing: 0; }

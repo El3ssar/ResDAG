@@ -127,8 +127,8 @@ class ESNLayer(BaseReservoirLayer):
 
     See Also
     --------
-    resdag.layers.esn.ESNCell : Underlying single-step cell.
-    resdag.layers.base.BaseReservoirLayer : Base providing state management.
+    resdag.layers.cells.esn_cell.ESNCell : Underlying single-step cell.
+    resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer : Base providing state management.
     resdag.init.topology.TopologyInitializer : Base class for topology init.
     resdag.init.input_feedback.InputFeedbackInitializer : Input init base.
     resdag.core.ESNModel : Model composition using reservoir layers.

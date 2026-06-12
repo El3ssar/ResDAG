@@ -1,0 +1,229 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+{{ super() }}
+{% endblock %}
+
+{% block content %}
+<style>
+  .md-main__inner { margin: 0; }
+  .md-content__inner { margin: 0 auto; padding: 0; max-width: none; }
+  .md-content__inner::before { display: none; }
+  .md-sidebar { display: none; }
+
+  .nb-home { font-family: var(--nb-body); color: var(--nb-ink); }
+  .nb-wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.2rem; }
+
+  /* ---- Hero: asymmetric, oversized serif, drawn attractor ---- */
+  .nb-hero {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    gap: 2.5rem;
+    align-items: center;
+    padding: 4.5rem 0 3rem;
+  }
+  @media (max-width: 960px) { .nb-hero { grid-template-columns: 1fr; } }
+
+  .nb-hero-kicker {
+    font-size: 0.66rem; font-weight: 700; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--nb-accent);
+    animation: nb-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .nb-hero h1 {
+    font-family: var(--nb-display);
+    font-size: clamp(2.6rem, 6vw, 4.2rem);
+    font-weight: 480; font-variation-settings: "opsz" 110;
+    line-height: 1.04; letter-spacing: -0.02em;
+    margin: 0.5rem 0 1.1rem;
+    animation: nb-rise 0.5s 0.07s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .nb-hero h1 em { font-style: italic; color: var(--nb-accent); }
+  .nb-hero-sub {
+    font-size: 0.92rem; line-height: 1.7; color: var(--nb-ink-soft);
+    max-width: 30rem; margin-bottom: 1.6rem;
+    animation: nb-rise 0.5s 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .nb-hero-cta { display: flex; gap: 0.7rem; flex-wrap: wrap;
+    animation: nb-rise 0.5s 0.21s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .nb-btn {
+    display: inline-block; padding: 0.62rem 1.2rem;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+    border: 1px solid var(--nb-ink); border-radius: 3px; color: var(--nb-ink);
+    box-shadow: 3px 3px 0 0 var(--nb-rule-strong);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+  }
+  .nb-btn:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 0 var(--nb-rule-strong); color: var(--nb-accent-strong); }
+  .nb-btn--primary { background: var(--nb-accent); border-color: var(--nb-accent-strong); color: #fff; }
+  .nb-btn--primary:hover { background: var(--nb-accent-strong); color: #fff; }
+
+  .nb-attractor { position: relative; animation: nb-fade 0.9s 0.3s both; }
+  .nb-attractor svg { width: 100%; height: auto; display: block; }
+  .nb-attractor path {
+    fill: none; stroke: var(--nb-accent); stroke-width: 1.1; opacity: 0.85;
+    stroke-dasharray: 26000; stroke-dashoffset: 26000;
+    animation: nb-draw 9s 0.5s cubic-bezier(0.3, 0, 0.4, 1) forwards;
+  }
+  .nb-attractor figcaption {
+    position: absolute; bottom: -0.4rem; right: 0;
+    font-family: var(--nb-display); font-style: italic;
+    font-size: 0.66rem; color: var(--nb-muted);
+  }
+
+  @keyframes nb-draw { to { stroke-dashoffset: 0; } }
+  @keyframes nb-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes nb-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---- Full-bleed code band ---- */
+  .nb-band { background: var(--md-footer-bg-color); padding: 3rem 0; }
+  .nb-band .nb-wrap { display: grid; grid-template-columns: 2fr 3fr; gap: 2.5rem; align-items: center; }
+  @media (max-width: 960px) { .nb-band .nb-wrap { grid-template-columns: 1fr; } }
+  .nb-band h2 { font-family: var(--nb-display); font-weight: 500; font-size: 1.7rem; line-height: 1.2; color: #f1ece3; margin: 0 0 0.8rem; }
+  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: #b3aa9e; }
+  .nb-band pre {
+    margin: 0; padding: 1.2rem 1.4rem; overflow-x: auto;
+    background: #211c17; border: 1px solid #3a332b; border-left: 3px solid var(--nb-accent);
+    border-radius: 3px; font-family: var(--nb-mono); font-size: 0.72rem; line-height: 1.75; color: #ddd4c8;
+  }
+  .nb-band .c { color: #847b70; } .nb-band .k { color: #ff9b73; } .nb-band .s { color: #c8b694; }
+
+  /* ---- Principles: numbered, journal-style ---- */
+  .nb-principles { padding: 3.5rem 0 1rem; }
+  .nb-principles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.2rem; }
+  @media (max-width: 960px) { .nb-principles-grid { grid-template-columns: 1fr; } }
+  .nb-principle { border-top: 2px solid var(--nb-ink); padding-top: 0.9rem; }
+  .nb-principle .no { font-family: var(--nb-display); font-style: italic; font-size: 0.78rem; color: var(--nb-accent); }
+  .nb-principle h3 { font-family: var(--nb-display); font-size: 1.15rem; font-weight: 600; margin: 0.25rem 0 0.45rem; }
+  .nb-principle p { font-size: 0.76rem; line-height: 1.65; color: var(--nb-ink-soft); margin: 0; }
+  .nb-principle a { color: var(--nb-accent-strong); border-bottom: 1px solid transparent; }
+  .nb-principle a:hover { border-bottom-color: var(--nb-accent); }
+
+  /* ---- Tracks ---- */
+  .nb-tracks { padding: 2.5rem 0 4.5rem; }
+  .nb-tracks-head { font-family: var(--nb-body); font-size: 0.66rem; font-weight: 700;
+    letter-spacing: 0.22em; text-transform: uppercase; color: var(--nb-muted); margin-bottom: 1.2rem; }
+  .nb-tracks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  @media (max-width: 960px) { .nb-tracks-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .nb-tracks-grid { grid-template-columns: 1fr; } }
+  .nb-track {
+    display: block; padding: 1.1rem 1.1rem 1.2rem;
+    border: 1px solid var(--nb-rule-strong); border-radius: 3px;
+    background: var(--nb-surface); box-shadow: 3px 3px 0 0 var(--nb-rule);
+    transition: box-shadow 0.14s ease, border-color 0.14s ease;
+  }
+  .nb-track:hover { border-color: var(--nb-accent); box-shadow: 3px 3px 0 1px var(--nb-accent); }
+  .nb-track b { font-family: var(--nb-display); font-size: 0.95rem; font-weight: 600; display: block; margin-bottom: 0.3rem; color: var(--nb-ink); }
+  .nb-track span { font-size: 0.72rem; line-height: 1.55; color: var(--nb-ink-soft); }
+</style>
+
+<div class="nb-home">
+
+  <section class="nb-hero nb-wrap">
+    <div>
+      <span class="nb-hero-kicker">Reservoir computing for PyTorch</span>
+      <h1>Train the readout.<br><em>Design</em> the dynamics.</h1>
+      <p class="nb-hero-sub">
+        ResDAG turns Echo State Networks and next-generation reservoir
+        computers into composable PyTorch layers. Wire them into any DAG,
+        fit readouts algebraically in one pass, and forecast chaotic systems
+        on the GPU — no epochs, no backprop through time.
+      </p>
+      <div class="nb-hero-cta">
+        <a class="nb-btn nb-btn--primary" href="start/first-forecast/">First forecast — 5 min</a>
+        <a class="nb-btn" href="build/">Composition handbook</a>
+        <a class="nb-btn" href="reference/">API</a>
+      </div>
+    </div>
+    <figure class="nb-attractor">
+      <svg viewBox="0 0 460 400" xmlns="http://www.w3.org/2000/svg" aria-label="Lorenz attractor traced by an ESN forecast">
+        <path d="M238 209L238 237L240 261L244 281L251 298L262 309L280 313L308 301L347 258L390 174L405 89L367 80L304 126L254 173L225 208L210 236L199 258L188 274L173 282L151 279L121 254L87 200L65 132L79 99L122 120L166 159L196 196L212 227L219 253L221 276L221 295L220 312L216 326L210 337L200 345L183 347L154 336L110 292L54 190L28 70L73 54L155 115L218 166L253 198L272 220L286 233L301 237L319 229L338 208L354 176L358 149L345 141L323 154L301 177L286 201L280 222L281 239L289 249L305 249L325 235L349 203L365 161L363 132L341 133L311 156L286 185L272 213L267 236L270 254L280 266L296 268L320 254L350 218L374 162L376 118L349 117L309 146L277 181L258 213L250 240L249 263L253 281L262 295L278 301L303 294L338 262L378 192L399 110L375 84L320 119L270 165L239 202L223 232L214 257L206 277L197 293L184 303L163 302L131 282L91 227L57 141L61 83L109 99L166 146L205 187L227 220L239 246L247 268L256 285L269 296L289 297L319 280L357 231L391 152L392 91L350 98L295 142L255 183L233 217L221 245L214 268L207 287L198 301L184 310L162 308L129 285L86 224L51 132L60 76L114 99L173 149L212 190L234 222L246 247L256 267L268 281L285 286L310 277L343 243L377 179L390 113L364 98L316 130L274 171L248 206L235 236L229 261L227 282L225 301L224 317L223 330L221 342L218 352L212 360L201 365L183 364L152 349L102 295L42 174L20 45L83 51L173 121L236 168L270 194L288 210L301 217L314 216L327 206L339 189L345 171L342 160L331 161L317 172L305 188L298 204L297 217L302 224L312 225L325 215L339 196L349 172L348 156L336 154L319 166L303 184L294 203L291 219L294 230L304 234L319 227L337 208L351 179L355 153L345 144L325 155L304 176L290 198L283 219L285 235L293 244L307 243L327 229L348 199L362 161L359 136L339 138L312 159L289 186L276 212L273 234L276 250L287 260L304 258L328 240L355 201L373 151L367 121L338 128L303 158L277 190L262 219L257 244L259 264L268 278L282 285L305 279L337 250L372 190L390 122L370 97L324 124L280 165L252 201L237 231L231 257L228 279L227 298L227 314L227 328L228 340L229 351L230 360L232 367L237 373L244 378L258 379L282 371L324 339L386 246L439 89L413 20L317 86L234 148L187 179L163 195L149 202L139 204L130 200L123 192L119 182L119 174L123 173L131 177L138 185L143 195L145 203L143 208L137 209L129 204L121 194L116 181L116 172L121 169L130 174L139 184L146 195L148 205L146 212L139 213L130 208L121 196L114 181L112 169L118 165L129 170L140 181L148 195L152 207L150 216L143 219L133 214L121 201L111 183L108 166L114 159L127 164L141 178L151 194L156 209L155 220L148 225L137 222L123 209L110 188L104 165L108 153L123 157L140 172L154 191L161 209L162 223L156 232L144 233L128 222L111 199L99 169L100 148L114 146L136 162L155 184L166 206L170 225L166 238L156 245L139 240L119 220L99 186L90 150L100 134L124 144L150 169L169 196L179 220L180 240L173 254L160 260L140 253L115 227L90 182L80 136L95 120L128 138L161 170L183 201L193 228L195 251L191 269L180 281L162 284L135 269L101 228L71 161L67 105L100 105L148 141L186 181L207 214L218 242L222 266L224 287L223 305L222 320L220 333L217 344L210 353L199 358L179 357L146 339L95 280L38 157L26 43L93 61L179 128L237 173L267 200L285 216L299 224L313 222L328 211L342 190L349 167L346 154L332 156L315 170L300 189L292 207L291 222L296 232L307 233L323 224L341 202L353 172L354 149L341 145L320 159L300 181L287 203L283 223L286 238L295 245L311 241L332 223L352 190L363 153L356 134L332 142L306 166L285 193L275 217L273 238L278 253L290 260L309 256L335 232L361 189L374 141L362 119L329 134L296 165L272 197L260 225L257 249L261 268L270 281L287 285L312 275L346 238L379 173L389 111L361 100L313 134L272 174L248 209L235 238L230 263L228 284L227 302L227 318L227 331L228 343L229 353L230 361L232 369L237 375L244 379L258 380L283 372L325 339L387 245L440 87L412 20L315 87L232 148L186 179L162 194L148 202L139 203L130 199L123 191L119 182L119 175L124 174L131 178L138 186L142 195L144 203L142 207L136 208L129 203L122 193L117 181L117 173L122 170L130 175L139 184L145 195L147 205L145 211L139 212L130 207L121 195L115 181L114 170L119 166L129 171L140 182L147 195L150 207L148 215L142 217L132 212L121 199L112 182L110 167L116 161L128 166L141 179L150 194L154 208L153 219L146 223L135 219L122 206L110 186L105 166L111 155L124 160L140 174L153 192L159 209L159 222L153 230L141 229L126 217L110 194L100 167L103 150L118 150L138 165L155 186L165 207L167 225L162 237L151 241L135 233L115 211L98 178L93 148L105 138L129 151L153 175L169 200L176 223L175 240L167 252L152 254L131 241L107 210L87 166L86 131L107 128L139 151L166 181L183 210L189 235L188 255L180 269L165 275L143 267L113 237L83 182L70 124L90 107L132 132L170 170L195 204L207 233L211 258L210 279L205 296L196 309L181 315L156 309L119 278L74 205L46 109L68 72L130 109L187 159L222 198L241 227L253 250L264 268L278 278L299 276L327 256L360 208L384 143L377 104L339 116L295 154L263 191L246 222L239 249L237 272L238 291L242 308L250 320L263 328L284 327L318 306L365 244L408 138L406 62L346 85L277 141L231 184L206 215L191 237L178 253L162 259L141 253L115 228L90 183L80 137L95 120L128 138L160 169L182 201L193 228L195 251L190 269L179 281L162 283L135 268L101 227L71 160L68 106L101 106L148 142L185 181L207 214L217 243L221 267L223 287L222 305L220 320L217 333L211 343L201 350L183 352L153 339L107 292L51 185L25 62L76 53L161 117L223 167L257 198L277 217L291 229L305 231L322 222L340 201L352 173L353 151L340 147L320 160L301 181L289 203L284 222L287 236L297 243L312 239L333 221L352 189L362 153L354 136L331 144L305 167L286 193L276 218L275 238L280 252L293 258L312 252L338 227L362 183L372 138L358 122L326 139L294 169L272 200L262 227L260 250L265 267L276 279L294 280L321 263L355 220L382 154L382 106L347 110L302 146L267 184L247 217L238 245L235 268L235 288L238 306L243 320L252 330L266 336L291 330L330 299L381 220L418 104L396 54L323 99L257 154L217 193L195 219L181 238L167 249L149 249L127 235L104 202L87 159L90 131L113 133L143 157L168 186L182 214L187 237L184 255L174 267L157 269L133 256L103 219L78 162L76 117L104 116L144 146L177 181L196 213L204 240L205 263L202 282L193 296L178 303L154 298L120 270L79 204L53 118L71 81L126 112L179 159L213 198L231 228L241 253L249 274L259 289L273 298L295 296L327 272L367 214L396 131L386 85L336 107L283 153L248 193L228 224L218 251L211 273L204 290L193 303L177 309L151 301L114 266L71 191L49 103L77 79L137 118L189 165L220 203L237 232L248 255L257 274L270 286L288 289L316 275L351 234L384 163L390 102L355 100L305 138L265 179L242 213L230 242L225 266L221 287L218 304L214 319L206 331L194 338L174 338L141 319L93 261L44 150L38 57L99 74L174 134L225 179L253 209L270 230L284 243L299 246L319 237L342 211L360 172L364 139L347 133L319 151L294 178L278 205L271 229L272 248L280 260L296 263L318 252L346 220L370 169L374 125L352 119L315 144L283 178L264 209L255 236L255 258L260 276L270 288L289 290L316 276L352 234L385 162L390 100L355 99L304 138L264 180L240 214L229 242L223 266L219 287L215 304L209 318L199 329L183 333L157 325L116 288L65 202L35 91L67 59L140 109L202 162L238 198L258 224L272 242L286 253L304 252L327 236L352 201L369 156L365 127L339 131L307 157L282 188L268 216L263 240L266 259L275 272L291 275L316 264L347 228L375 169L382 116L356 109L313 139L277 177L255 210L244 238L241 262L243 283L248 299L257 312L273 318L298 311L336 277L382 201L409 104L383 70L319 111L262 161L228 199L209 228L197 250L186 267L170 275L149 271L120 246L88 195L70 134L83 106L123 124L163 162L191 197L206 227L211 253L212 275L208 293L201 307L188 317L168 316L135 297L92 241L51 144L51 72L104 88L168 140L213 184L238 216L252 241L263 260L276 272L295 274L321 259L352 219L378 158L379 112L348 113L306 146L272 183L253 215L244 243L242 266L244 286L250 301L261 312L279 316L308 303L349 259L392 172L406 85L366 79L301 127L251 174L223 209L207 236L196 257L184 272L168 278L144 271L114 241L82 184L68 123L88 104L131 130L171 168L197 203L210 233L215 258L215 279L212 297L206 312L196 323L178 326L150 315L109 273L61 184L40 84L79 68L149 120L205 169L237 204L254 230L267 249L281 261L299 262L323 247L351 211L373 158L372 121L345 122L308 151L279 184L262 215L255 240L255 262L262 279L274 289L294 289L323 269L360 220L389 145L385 95L344 107L294 148L258 188L238 220L228 248L223 271L219 291L215 307L209 321L199 331L182 335L155 325L113 286L62 195L34 84L71 60"/>
+      </svg>
+      <figcaption>Lorenz-63, x–z projection — the house benchmark</figcaption>
+    </figure>
+  </section>
+
+  <section class="nb-band">
+    <div class="nb-wrap">
+      <div>
+        <h2>Ten lines to a trained forecaster</h2>
+        <p>
+          One teacher-forced pass collects reservoir states; one
+          conjugate-gradient ridge solve fits the readout. Training a
+          500-neuron forecaster takes well under a second — model selection
+          over thousands of candidates is a for-loop, not a cluster job.
+        </p>
+      </div>
+      <pre><span class="k">import</span> resdag <span class="k">as</span> rd
+
+data = rd.utils.load_file(<span class="s">"lorenz.npy"</span>)          <span class="c"># (batch, time, 3)</span>
+warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
+    data, warmup_steps=<span class="k">200</span>, train_steps=<span class="k">5000</span>, val_steps=<span class="k">2000</span>)
+
+model = rd.models.ott_esn(reservoir_size=<span class="k">500</span>, feedback_size=<span class="k">3</span>, output_size=<span class="k">3</span>)
+rd.ESNTrainer(model).fit((warmup,), (train,), targets={<span class="s">"output"</span>: target})
+
+prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <span class="c"># autoregressive</span></pre>
+    </div>
+  </section>
+
+  <section class="nb-principles nb-wrap">
+    <div class="nb-principles-grid">
+      <div class="nb-principle">
+        <span class="no">No. 1</span>
+        <h3>Layers, not frameworks</h3>
+        <p>Reservoirs, readouts and transforms are ordinary PyTorch modules
+        composed with a Keras-style functional API. Parallel reservoirs,
+        multiple heads, state augmentation — <a href="build/">draw it, wire it</a>.</p>
+      </div>
+      <div class="nb-principle">
+        <span class="no">No. 2</span>
+        <h3>Structure is a function</h3>
+        <p>A full registry of graph topologies and input initializers ships
+        in the box, and any function that builds a matrix plugs in directly —
+        <a href="build/initialization/">even <code>torch.nn.init</code></a>.</p>
+      </div>
+      <div class="nb-principle">
+        <span class="no">No. 3</span>
+        <h3>Honest mathematics</h3>
+        <p>Every update equation, solver decision and timing convention is
+        <a href="theory/">written down index-by-index</a> — validate the
+        implementation against your own derivations.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="nb-tracks nb-wrap">
+    <div class="nb-tracks-head">Choose a track</div>
+    <div class="nb-tracks-grid">
+      <a class="nb-track" href="start/">
+        <b>Start</b>
+        <span>Install, train your first forecaster, and build the mental model — productive in ten minutes.</span>
+      </a>
+      <a class="nb-track" href="build/">
+        <b>Build</b>
+        <span>The composition handbook: layers, architectures, topologies and initializers.</span>
+      </a>
+      <a class="nb-track" href="workflows/">
+        <b>Work</b>
+        <span>Training paths, forecasting with drivers, tuning with Optuna, GPU and deployment.</span>
+      </a>
+      <a class="nb-track" href="theory/">
+        <b>Theory</b>
+        <span>The equations behind every call — ESN dynamics, ridge solvers, timing conventions.</span>
+      </a>
+      <a class="nb-track" href="reference/">
+        <b>Reference</b>
+        <span>The full public API, generated from the docstrings the code actually ships.</span>
+      </a>
+      <a class="nb-track" href="project/">
+        <b>Project</b>
+        <span>Citation, related work, contributing, and the changelog.</span>
+      </a>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block footer %}
+{{ super() }}
+{% endblock %}

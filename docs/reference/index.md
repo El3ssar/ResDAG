@@ -1,30 +1,35 @@
 ---
-description: Auto-generated API reference for every public class and function in resdag, mapped by task.
+description: The complete public API of ResDAG 0.5.0, generated from source — a quick map of where every symbol lives.
 ---
 
-<span class="rd-eyebrow">Reference</span>
+<span class="nb-kicker">Reference</span>
 
-# API reference
+# Reference
 
-Every page in this section is generated straight from the NumPy-style
-docstrings in `src/resdag/` — signatures, parameters, shapes, and examples
-come from the source, so they can't drift from the code. Use the map below
-to land on the right page first try.
+The complete public API, one page per area, generated from the source at
+v0.5.0 — if a signature here disagrees with your installed version, trust
+your installed version.
 
 ## Where do I find X
 
-| I want… | Go to |
-|---------|-------|
-| The layer classes (`ESNLayer`, `NGReservoir`, `CGReadoutLayer`, transforms) | [Reservoirs](layers/reservoirs.md) · [Cells](layers/cells.md) · [Readouts](layers/readouts.md) · [Transforms](layers/transforms.md) |
-| Model building, `warmup()`, `forecast()`, save/load | [Core — `ESNModel`](core.md) |
-| Topology and initializer registries | [Topology](init/topology.md) · [Input/feedback](init/input-feedback.md) · [Graphs](init/graphs.md) · [Resolvers](init/resolvers.md) |
-| The trainer (`ESNTrainer.fit`) | [Training](training.md) |
-| Premade factories (`ott_esn`, `classic_esn`, …) | [Premade models](models.md) |
-| Hyperparameter optimization (`run_hpo`, losses) | [HPO](hpo/run.md) · [Losses](hpo/losses.md) · [Internals](hpo/internals.md) · [Utils](hpo/utils.md) |
-| Coupled ensemble forecasting | [Ensemble](ensemble.md) |
-| Data loading and splits, ESP diagnostics | [Data](utils/data.md) · [States](utils/states.md) |
-| What `import resdag` actually exports | [Top-level exports](top-level.md) |
+| You are looking for | Page |
+| ------------------- | ---- |
+| Everything importable straight from `resdag` | [Top level](top-level.md) |
+| `ESNModel`, `Input`, `reservoir_input` | [Core](core.md) |
+| Reservoir layers, cells, readouts, transforms | [Layers](layers.md) |
+| Topologies, input/feedback initializers, spec resolvers | [Initialization](init.md) |
+| `ESNTrainer` | [Training](training.md) |
+| Premade architectures, coupled ensembles, aggregators | [Models & ensembles](models.md) |
+| `run_hpo`, loss functions, study utilities | [HPO](hpo.md) |
+| Data loading, splitting, RNG, ESP index | [Utilities](utils.md) |
 
-Looking for *how* rather than *what*? The [course](../learn/index.md) teaches
-the workflow and the [cookbook](../cookbook/index.md) solves one problem per
-page — the reference is for when you know the name and need the signature.
+---
+
+## How this reference is built
+
+Every entry is rendered by [mkdocstrings](https://mkdocstrings.github.io/)
+from the NumPy-style docstrings in `src/resdag` at build time — signatures,
+defaults, and type annotations come straight from the code, not from a
+hand-maintained copy. Names with a leading underscore are private and
+excluded. For prose-first treatments of the same machinery, start from
+[Build](../build/index.md) and [Work](../workflows/index.md).

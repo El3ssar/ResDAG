@@ -85,7 +85,7 @@ class NGCell(ReservoirCell):
     >>> cell = NGCell(input_dim=3)
     >>> x = torch.randn(4, 3)                          # (batch=4, d=3)
     >>> state = cell.init_state(4, x.device, x.dtype)  # (4, 1, 3)
-    >>> features, new_state = cell(x, state)
+    >>> features, new_state = cell([x], state)
     >>> features.shape
     torch.Size([4, 28])
     >>> new_state.shape
@@ -95,7 +95,7 @@ class NGCell(ReservoirCell):
 
     >>> cell = NGCell(input_dim=3, k=1)
     >>> state = cell.init_state(1, 'cpu', torch.float32)
-    >>> features, new_state = cell(torch.randn(1, 3), state)
+    >>> features, new_state = cell([torch.randn(1, 3)], state)
     >>> features.shape
     torch.Size([1, 10])
 

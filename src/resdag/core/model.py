@@ -41,11 +41,13 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 from __future__ import annotations
 
 import colorsys
+import copy
 from pathlib import Path
 from typing import Any
 
 import pytorch_symbolic as ps
 import torch
+from pytorch_symbolic.symbolic_data import SymbolicData
 
 from resdag.layers.reservoirs import BaseReservoirLayer
 
@@ -113,6 +115,79 @@ class ESNModel(ps.SymbolicModel):
     BaseReservoirLayer : Reservoir layer component.
     ESNTrainer : Trainer for fitting readout layers.
     """
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "ESNModel":
+        """
+        Deep copy preserving the model subclass and its symbolic graph.
+
+        ``pytorch_symbolic.SymbolicModel.__deepcopy__`` rebuilds the copy as a
+        ``DetachedSymbolicModel``, silently dropping every subclass method
+        (``forecast``, ``reset_reservoirs``, ``save``, ...).  This override
+        instead produces a faithful, fully independent :class:`ESNModel`:
+        parameters, buffers and reservoir states are copied, and the symbolic
+        graph (inputs, outputs, execution order) is duplicated so that
+        ``summary()`` and ``plot_model()`` keep working on the copy.
+
+        Returns
+        -------
+        ESNModel
+            An independent copy sharing no tensors or graph nodes with
+            ``self``.  Subclasses of :class:`ESNModel` are preserved as well.
+
+        Notes
+        -----
+        ``SymbolicData.__getattr__`` traces a ``GetAttr`` layer into the graph
+        for any unknown attribute whose underlying value supports it —
+        including the ``__deepcopy__`` probe :func:`copy.deepcopy` performs on
+        every instance.  Every graph node is therefore pre-seeded into
+        ``memo`` as an empty shell whose ``__dict__`` is filled by hand, so
+        the copy machinery never looks up attributes on a live node.
+
+        Examples
+        --------
+        >>> import copy
+        >>> clone = copy.deepcopy(model)
+        >>> type(clone) is type(model)
+        True
+        >>> clone.reset_reservoirs()  # ESN API intact on the copy
+        """
+        cls = self.__class__
+        obj = cls.__new__(cls)
+        memo[id(self)] = obj
+
+        shells = [(node, object.__new__(type(node))) for node in self._graph_nodes()]
+        for node, shell in shells:
+            memo[id(node)] = shell
+
+        input_ids = {id(node) for node in self.inputs}
+        for node, shell in shells:
+            node_dict = dict(node.__dict__)
+            if id(node) not in input_ids:
+                # Non-input values are lazy caches (possibly autograd-tracked,
+                # hence not deep-copyable); they are recomputed on demand from
+                # the retained input placeholders.
+                node_dict["_value"] = None
+            shell.__dict__.update(copy.deepcopy(node_dict, memo))
+
+        for key, value in self.__dict__.items():
+            obj.__dict__[key] = copy.deepcopy(value, memo)
+        return obj
+
+    def _graph_nodes(self) -> list[SymbolicData]:
+        """Collect every symbolic graph node reachable from inputs/outputs."""
+        seen: set[int] = set()
+        nodes: list[SymbolicData] = []
+        stack: list[SymbolicData] = [*self.inputs, *self.outputs]
+        while stack:
+            node = stack.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            nodes.append(node)
+            stack.extend(node._parents)
+            stack.extend(node._children)
+            stack.extend(node._layer_full_siblings)
+        return nodes
 
     def reset_reservoirs(self) -> None:
         """

@@ -3,14 +3,18 @@
 Pins down the model-level API layered on top of pytorch_symbolic:
 forward shape/determinism, ``reset_reservoirs``, ``get/set_reservoir_states``
 (clone semantics, strict key checking), ``set_random_reservoir_states``,
-and teacher-forced ``warmup``.
+teacher-forced ``warmup``, and ``copy.deepcopy`` subclass preservation.
 
 Persistence is covered in ``test_save_load.py``; autoregressive generation
 in ``test_forecast.py``.
 """
 
+import copy
+
 import pytest
 import torch
+
+from resdag.core import ESNModel
 
 
 class TestESNModelForward:
@@ -184,3 +188,72 @@ class TestESNModelWarmup:
 
         with pytest.raises(ValueError, match="At least one input"):
             model.warmup()
+
+
+class TestESNModelDeepcopy:
+    """copy.deepcopy must preserve the ESNModel subclass (regression).
+
+    Without an override, ``SymbolicModel.__deepcopy__`` degrades the copy to
+    a ``DetachedSymbolicModel``, silently losing ``forecast``,
+    ``reset_reservoirs``, ``save`` and the rest of the ESN API.
+    """
+
+    def test_deepcopy_preserves_class(self, make_tiny_model) -> None:
+        """The copy is an ESNModel of the exact same class, not detached."""
+        model = make_tiny_model()
+
+        clone = copy.deepcopy(model)
+
+        assert type(clone) is type(model)
+        assert isinstance(clone, ESNModel)
+
+    def test_deepcopy_copies_weights_without_sharing(self, make_tiny_model) -> None:
+        """All tensors are equal in value but independent in storage."""
+        model = make_tiny_model()
+
+        clone = copy.deepcopy(model)
+
+        original = dict(model.state_dict())
+        copied = dict(clone.state_dict())
+        assert original.keys() == copied.keys()
+        for name, tensor in original.items():
+            assert torch.equal(tensor, copied[name]), name
+            assert tensor is not copied[name], name
+
+        # Mutating the clone must leave the original untouched.
+        with torch.no_grad():
+            next(iter(clone.parameters())).add_(1.0)
+        assert torch.equal(next(iter(model.parameters())), next(iter(original.values())))
+
+    def test_deepcopy_forward_matches_original(self, make_tiny_model, seeded: None) -> None:
+        """From a reset state, original and copy produce identical outputs."""
+        model = make_tiny_model()
+        clone = copy.deepcopy(model)
+        x = torch.randn(2, 20, 3)
+
+        model.reset_reservoirs()
+        clone.reset_reservoirs()
+
+        assert torch.allclose(model(x), clone(x), rtol=1e-6, atol=1e-7)
+
+    def test_deepcopy_states_are_independent(self, make_tiny_model, seeded: None) -> None:
+        """Running the original does not touch the copy's reservoir states."""
+        model = make_tiny_model()
+        clone = copy.deepcopy(model)
+        model.reset_reservoirs()
+        clone.reset_reservoirs()
+
+        model.warmup(torch.randn(1, 15, 3))
+
+        assert len(model.get_reservoir_states()) > 0
+        assert clone.get_reservoir_states() == {}
+
+    def test_deepcopy_esn_api_works_on_copy(self, make_tiny_model, seeded: None) -> None:
+        """reset_reservoirs and forecast run on the copy and produce output."""
+        model = make_tiny_model()
+
+        clone = copy.deepcopy(model)
+        clone.reset_reservoirs()
+        predictions = clone.forecast(torch.randn(1, 30, 3), horizon=10)
+
+        assert predictions.shape == (1, 10, 3)

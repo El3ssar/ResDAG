@@ -1,0 +1,25 @@
+# The PR title becomes the squash commit, which decides the release bump —
+# so it must be a conventional commit. No third-party action: one grep.
+
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Title must be a conventional commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Title: $TITLE"
+          if echo "$TITLE" | grep -qE '^(feat|fix|perf|docs|chore|ci|refactor|test|style|build)(\([a-z0-9_-]+\))?!?: .+'; then
+            echo "OK"
+          else
+            echo "::error::PR title must be a conventional commit, e.g. 'feat: add Rössler topology'."
+            echo "::error::Allowed prefixes: feat fix perf docs chore ci refactor test style build (optionally with (scope) and ! for breaking)."
+            exit 1
+          fi

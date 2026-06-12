@@ -1,0 +1,3793 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Reservoir computing for PyTorch — composable Echo State Networks and next-generation reservoir computers, trained in one pass, on the GPU.">
+      
+      
+        <meta name="author" content="Daniel Estevez-Moya">
+      
+      
+        <link rel="canonical" href="https://el3ssar.github.io/ResDAG/">
+      
+      
+      
+        <link rel="next" href="start/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>ResDAG — reservoir computing for PyTorch - ResDAG</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Figtree:300,300i,400,400i,700,700i%7CIBM+Plex+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Figtree";--md-code-font:"IBM Plex Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="css/notebook.css">
+    
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="ResDAG" class="md-header__button md-logo" aria-label="ResDAG" data-md-component="logo">
+      
+  <img src="assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResDAG
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ResDAG — reservoir computing for PyTorch
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/El3ssar/resdag" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    El3ssar/resdag
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="start/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="build/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Build
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="workflows/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Work
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="theory/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Theory
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="project/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden="">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="ResDAG" class="md-nav__button md-logo" aria-label="ResDAG" data-md-component="logo">
+      
+  <img src="assets/logo.svg" alt="logo">
+
+    </a>
+    ResDAG
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/El3ssar/resdag" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    El3ssar/resdag
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="start/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="start/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="start/first-forecast/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First forecast
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="start/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The mental model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Build
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/layers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Layers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/layers/esn-layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Esn layer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/layers/ng-reservoir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ng reservoir
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/layers/transforms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/readouts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Readouts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Readouts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/readouts/cg-readout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cg readout
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/architectures/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architectures
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architectures
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/architectures/classic-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Classic esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/architectures/coupled-ensemble/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coupled ensemble
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/architectures/headless-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Headless esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/architectures/linear-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linear esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/architectures/ott-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ott esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/architectures/power-augmented/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Power augmented
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/initialization/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initialization
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Initialization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/initialization/topologies/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topologies
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_5_2" id="__nav_3_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Topologies
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/barabasi_albert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Barabasi albert
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/chord_dendrocycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chord dendrocycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/complete/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Complete
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/connected_erdos_renyi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connected erdos renyi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/connected_watts_strogatz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connected watts strogatz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/dendrocycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dendrocycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/erdos_renyi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Erdos renyi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/kleinberg_small_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kleinberg small world
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/multi_cycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi cycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/newman_watts_strogatz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Newman watts strogatz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/orthogonal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orthogonal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Random
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/regular/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Regular
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/ring_chord/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ring chord
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/simple_cycle_jumps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simple cycle jumps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/spectral_cascade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spectral cascade
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/watts_strogatz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watts strogatz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/topologies/zeros/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zeros
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="build/initialization/initializers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initializers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_5_3" id="__nav_3_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Initializers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/binary_balanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Binary balanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/chain_of_neurons_input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chain of neurons input
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/chebyshev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chebyshev
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/chessboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chessboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/dendrocycle_input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dendrocycle input
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/opposite_anchors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opposite anchors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/pseudo_diagonal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pseudo diagonal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Random
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/random_binary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Random binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/ring_window/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ring window
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="build/initialization/initializers/zeros/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zeros
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Work
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="workflows/train/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="workflows/forecast/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecast
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="workflows/tune/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tune
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="workflows/deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scale &amp; deploy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="theory/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theory
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Theory
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="theory/dynamics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reservoir dynamics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="theory/readout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Readout solvers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="theory/timing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Timing conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="theory/design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design of the library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/top-level/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Top level
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/init/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initialization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models &amp; ensembles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/hpo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="project/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="project/citation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Citation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="project/ecosystem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ecosystem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="project/related-work/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Related work
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="project/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="project/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" hidden="">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+<style>
+  .md-content__inner { padding: 0; max-width: none; }
+  .md-content__inner::before { display: none; }
+  .md-sidebar { display: none; }
+  .md-footer__inner { display: none !important; } /* no prev/next on the landing */
+
+  .nb-home { font-family: var(--nb-body); color: var(--nb-ink); }
+  .md-typeset .nb-home a { border-bottom: none; }
+  .nb-wrap { padding: 0 0.6rem; }
+
+  /* ---- Hero: asymmetric, oversized serif, live-drawn attractor ---- */
+  .nb-hero {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    gap: 2.5rem;
+    align-items: center;
+    padding-top: 3.6rem;
+    padding-bottom: 2.6rem;
+  }
+  @media (max-width: 960px) { .nb-hero { grid-template-columns: 1fr; } }
+
+  .nb-hero-title {
+    display: flex; align-items: center; gap: 1.1rem;
+    animation: nb-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .md-typeset .nb-wordmark, .nb-wordmark {
+    font-family: var(--nb-display);
+    font-size: clamp(3rem, 6.5vw, 4.6rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    margin: 0 !important;
+  }
+  .nb-wm-res { color: var(--nb-ink); }
+  .nb-wm-dag { color: var(--nb-accent); }
+  .nb-hero-mark {
+    width: clamp(52px, 5.2vw, 72px); height: auto; display: block;
+    flex: 0 0 auto;
+  }
+  .nb-hero-tagline {
+    font-family: var(--nb-mono);
+    font-size: 0.66rem; font-weight: 500; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--nb-muted);
+    margin: 0.9rem 0 0.9rem;
+    animation: nb-rise 0.5s 0.07s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .nb-hero-sub {
+    font-size: 0.92rem; line-height: 1.7; color: var(--nb-ink-soft);
+    max-width: 30rem; margin-bottom: 1.6rem;
+    animation: nb-rise 0.5s 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .nb-hero-cta { display: flex; gap: 0.7rem; flex-wrap: wrap;
+    animation: nb-rise 0.5s 0.21s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .md-typeset .nb-home a.nb-btn {
+    display: inline-block; padding: 0.64rem 1.2rem;
+    font-family: var(--nb-mono);
+    font-size: 0.62rem; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase;
+    border: 1px solid var(--nb-rule-strong); border-radius: 6px;
+    color: var(--nb-ink); background: var(--nb-surface);
+    transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+  }
+  .md-typeset .nb-home a.nb-btn:hover { border-color: var(--nb-accent); color: var(--nb-accent-strong); transform: translateY(-1px); }
+  .md-typeset .nb-home a.nb-btn--primary { background: var(--nb-accent); border-color: var(--nb-accent); color: #fff; }
+  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary { color: #07120d; }
+  .md-typeset .nb-home a.nb-btn--primary:hover { background: var(--nb-accent-strong); border-color: var(--nb-accent-strong); color: #fff; }
+  [data-md-color-scheme="slate"] .md-typeset .nb-home a.nb-btn--primary:hover { color: #07120d; }
+
+  .md-typeset .nb-home figure.nb-attractor {
+    margin: 0; padding: 0; border: none; background: transparent; box-shadow: none;
+    animation: nb-fade 0.9s 0.3s both;
+  }
+  .nb-attractor canvas { width: 100%; height: auto; display: block; }
+  .nb-legend {
+    display: flex; gap: 1.1rem; justify-content: flex-end;
+    margin-top: 0.45rem;
+    font-family: var(--nb-mono);
+    font-size: 0.58rem; font-weight: 500; letter-spacing: 0.05em;
+    color: var(--nb-ink-soft);
+  }
+  .nb-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .nb-legend i {
+    width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+  }
+  .nb-legend .nb-leg-true i { background: var(--nb-data-true); }
+  .nb-legend .nb-leg-pred i { background: var(--nb-accent); }
+  .nb-attractor figcaption {
+    margin-top: 0.35rem; text-align: right;
+    font-family: var(--nb-mono);
+    font-size: 0.58rem; color: var(--nb-muted);
+  }
+  .nb-attractor figcaption a { color: inherit; border-bottom: 1px dotted var(--nb-muted); }
+  .nb-attractor figcaption a:hover { color: var(--nb-accent); }
+
+  @keyframes nb-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes nb-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---- Full-bleed code band (escapes the centered grid) ---- */
+  .nb-band {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    background: var(--nb-surface);
+    border-top: 1px solid var(--nb-rule);
+    border-bottom: 1px solid var(--nb-rule);
+    padding: 3rem 0;
+  }
+  .nb-band-inner {
+    max-width: 58rem; margin: 0 auto; padding: 0 1.2rem;
+    display: grid; grid-template-columns: 2fr 3fr; gap: 2.5rem; align-items: center;
+  }
+  @media (max-width: 960px) { .nb-band-inner { grid-template-columns: 1fr; } }
+  .nb-band h2 { font-family: var(--nb-display); font-weight: 650; font-size: 1.6rem; line-height: 1.2; color: var(--nb-ink); margin: 0 0 0.8rem; }
+  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: var(--nb-ink-soft); }
+  .nb-band pre {
+    margin: 0; padding: 1.2rem 1.4rem; overflow-x: auto;
+    background: var(--md-code-bg-color); border: 1px solid var(--nb-rule);
+    border-left: 3px solid var(--nb-accent);
+    border-radius: 8px; font-family: var(--nb-mono); font-size: 0.72rem;
+    line-height: 1.75; color: var(--md-code-fg-color);
+  }
+  .nb-band .c { color: var(--md-code-hl-comment-color); }
+  .nb-band .k { color: var(--md-code-hl-keyword-color); }
+  .nb-band .s { color: var(--md-code-hl-string-color); }
+
+  /* ---- Principles: numbered, journal-style ---- */
+  .nb-principles { padding-top: 3.4rem; padding-bottom: 0.8rem; }
+  .nb-principles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.2rem; }
+  @media (max-width: 960px) { .nb-principles-grid { grid-template-columns: 1fr; } }
+  .nb-principle { border-top: 2px solid var(--nb-ink); padding-top: 0.9rem; }
+  .nb-principle .no { font-family: var(--nb-mono); font-size: 0.62rem; letter-spacing: 0.08em; color: var(--nb-accent); }
+  .nb-principle h3 { font-family: var(--nb-display); font-size: 1.1rem; font-weight: 650; margin: 0.3rem 0 0.45rem; }
+  .nb-principle p { font-size: 0.76rem; line-height: 1.65; color: var(--nb-ink-soft); margin: 0; }
+  .nb-principle a { color: var(--nb-accent-strong); border-bottom: 1px solid transparent; }
+  .nb-principle a:hover { border-bottom-color: var(--nb-accent); }
+
+  /* ---- Tracks ---- */
+  .nb-tracks { padding-top: 2.4rem; padding-bottom: 4rem; }
+  .nb-tracks-head { font-family: var(--nb-mono); font-size: 0.6rem; font-weight: 600;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--nb-muted); margin-bottom: 1.2rem; }
+  .nb-tracks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  @media (max-width: 960px) { .nb-tracks-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .nb-tracks-grid { grid-template-columns: 1fr; } }
+  .md-typeset .nb-home a.nb-track {
+    display: block; padding: 1.1rem 1.1rem 1.2rem;
+    border: 1px solid var(--nb-rule); border-radius: 8px;
+    background: var(--nb-surface); box-shadow: var(--nb-shadow);
+    transition: border-color 0.14s ease, transform 0.14s ease;
+  }
+  .md-typeset .nb-home a.nb-track:hover { border-color: var(--nb-accent); transform: translateY(-2px); }
+  .nb-track b { font-family: var(--nb-display); font-size: 0.95rem; font-weight: 600; display: block; margin-bottom: 0.3rem; color: var(--nb-ink); }
+  .nb-track span { font-size: 0.72rem; line-height: 1.55; color: var(--nb-ink-soft); }
+</style>
+
+<div class="nb-home">
+
+  <section class="nb-hero nb-wrap">
+    <div>
+      <div class="nb-hero-title">
+        <h1 class="nb-wordmark"><span class="nb-wm-res">Res</span><span class="nb-wm-dag">DAG</span></h1>
+        <svg class="nb-hero-mark" viewBox="4.14 5.42 55.72 55.72" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="nbg" x1="0" y1="1" x2="1" y2="0">
+              <stop offset="0" style="stop-color: var(--nb-accent-strong)"></stop>
+              <stop offset="1" style="stop-color: var(--nb-accent)"></stop>
+            </linearGradient>
+          </defs>
+          <path d="M44.13 36.57L44.03 36.29L44.03 36.07L44.03 35.86L44.05 35.67L44.07 35.48L44.09 35.29L44.11 35.10L44.13 34.92L44.15 34.73L44.16 34.55L44.18 34.37L44.20 34.20L44.21 34.02L44.23 33.84L44.24 33.67L44.25 33.49L44.25 33.32L44.26 33.14L44.26 32.97L44.26 32.80L44.26 32.62L44.26 32.45L44.26 32.28L44.25 32.11L44.24 31.94L44.23 31.77L44.22 31.60L44.20 31.43L44.18 31.26L44.16 31.10L44.14 30.93L44.12 30.76L44.09 30.60L44.06 30.43L44.03 30.27L44.00 30.10L43.96 29.94L43.92 29.77L43.88 29.61L43.84 29.45L43.80 29.29L43.75 29.13L43.70 28.97L43.65 28.81L43.59 28.65L43.54 28.49L43.48 28.34L43.42 28.18L43.36 28.03L43.29 27.87L43.23 27.72L43.16 27.57L43.08 27.42L43.01 27.27L42.94 27.12L42.86 26.97L42.78 26.82L42.69 26.67L42.61 26.53L42.52 26.38L42.44 26.24L42.34 26.10L42.25 25.96L42.16 25.82L42.06 25.68L41.96 25.54L41.86 25.41L41.76 25.27L41.65 25.14L41.54 25.01L41.44 24.88L41.33 24.75L41.21 24.63L41.10 24.50L40.98 24.38L40.86 24.25L40.74 24.13L40.62 24.01L40.50 23.90L40.37 23.78L40.24 23.67L40.11 23.55L39.98 23.44L39.85 23.33L39.72 23.23L39.58 23.12L39.44 23.02L39.30 22.92L39.16 22.82L39.02 22.72L38.88 22.63L38.73 22.53L38.59 22.44L38.44 22.35L38.29 22.26L38.14 22.18L37.99 22.10L37.83 22.02L37.68 21.94L37.52 21.86L37.37 21.79L37.21 21.71L37.05 21.64L36.89 21.58L36.73 21.51L36.57 21.45L36.40 21.39L36.24 21.33L36.08 21.27L35.91 21.22L35.75 21.17L35.58 21.12L35.41 21.08L35.24 21.03L35.07 20.99L34.91 20.95L34.74 20.92L34.57 20.88L34.39 20.85L34.22 20.82L34.05 20.80L33.88 20.77L33.71 20.75L33.54 20.73L33.36 20.72L33.19 20.70L33.02 20.69L32.85 20.69L32.67 20.68L32.50 20.68L32.33 20.68L32.15 20.68L31.98 20.68L31.81 20.69L31.64 20.70L31.47 20.71L31.30 20.73L31.12 20.75L30.95 20.77L30.78 20.79L30.61 20.81L30.45 20.84L30.28 20.87L30.11 20.91L29.94 20.94L29.78 20.98L29.61 21.02L29.44 21.07L29.28 21.11L29.12 21.16L28.95 21.21L28.79 21.26L28.63 21.32L28.47 21.38L28.32 21.44L28.16 21.50L28.00 21.57L27.85 21.64L27.69 21.71L27.54 21.78L27.39 21.85L27.24 21.93L27.09 22.01L26.94 22.09L26.80 22.18L26.65 22.26L26.51 22.35L26.37 22.44L26.23 22.54L26.09 22.63L25.95 22.73L25.82 22.83L25.69 22.93L25.55 23.04L25.42 23.14L25.30 23.25L25.17 23.36L25.04 23.48L24.92 23.59L24.80 23.71L24.68 23.82L24.56 23.95L24.45 24.07L24.34 24.19L24.23 24.32L24.12 24.45L24.01 24.58L23.90 24.71L23.80 24.84L23.70 24.98L23.60 25.11L23.51 25.25L23.41 25.39L23.32 25.54L23.23 25.68L23.14 25.83L23.06 25.97L22.98 26.12L22.90 26.27L22.82 26.42L22.74 26.58L22.67 26.73L22.60 26.89L22.53 27.05L22.46 27.21L22.40 27.37L22.34 27.53L22.28 27.69L22.23 27.86L22.18 28.02L22.12 28.19L22.08 28.36L22.03 28.53L21.99 28.70L21.95 28.87L21.91 29.04L21.88 29.21L21.85 29.39L21.82 29.56L21.80 29.74L21.77 29.92L21.75 30.10L21.74 30.27L21.72 30.45L21.71 30.63L21.70 30.82L21.70 31.00L21.70 31.18L21.70 31.36L21.70 31.55L21.71 31.73L21.72 31.92L21.73 32.10L21.75 32.29L21.76 32.47L21.79 32.66L21.81 32.84L21.84 33.03L21.87 33.22L21.91 33.40L21.94 33.59L21.98 33.78L22.03 33.96L22.07 34.15L22.12 34.34L22.18 34.52L22.23 34.71L22.29 34.89L22.35 35.08L22.42 35.26L22.49 35.45L22.56 35.63L22.64 35.81L22.71 36.00L22.80 36.18L22.88 36.36L22.97 36.54L23.06 36.72L23.15 36.90L23.25 37.08L23.35 37.25L23.45 37.43L23.56 37.61L23.67 37.78L23.78 37.95L23.89 38.12L24.01 38.29L24.13 38.46L24.26 38.63L24.38 38.79L24.51 38.96L24.65 39.12L24.78 39.28L24.92 39.44L25.06 39.60L25.21 39.76L25.35 39.91L25.50 40.06L25.65 40.21L25.81 40.36L25.97 40.51L26.13 40.65L26.29 40.79L26.45 40.93L26.62 41.07L26.79 41.21L26.96 41.34L27.14 41.47L27.32 41.60L27.50 41.72L27.68 41.85L27.86 41.97L28.05 42.09L28.24 42.20L28.43 42.32L28.62 42.43L28.81 42.53L29.01 42.64L29.21 42.74L29.41 42.84L29.61 42.93L29.81 43.03L30.02 43.12L30.23 43.21L30.43 43.29L30.64 43.37L30.86 43.45L31.07 43.52L31.28 43.60L31.50 43.66L31.72 43.73L31.93 43.79L32.15 43.85L32.37 43.90L32.59 43.96L32.82 44.01L33.04 44.05L33.26 44.09L33.49 44.13L33.72 44.17L33.94 44.20L34.17 44.23L34.40 44.25L34.63 44.27L34.85 44.29L35.08 44.30L35.31 44.31L35.54 44.32L35.77 44.32L36.00 44.32L36.23 44.32L36.46 44.31L36.69 44.30L36.92 44.29L37.15 44.27L37.38 44.25L37.61 44.22L37.84 44.19L38.07 44.16L38.30 44.12L38.52 44.08L38.75 44.04L38.98 43.99L39.20 43.94L39.43 43.88L39.65 43.82L39.88 43.76L40.10 43.70L40.32 43.63L40.54 43.56L40.76 43.48L40.98 43.40L41.19 43.32L41.41 43.23L41.62 43.14L41.84 43.04L42.05 42.95L42.26 42.84L42.47 42.74L42.67 42.63L42.88 42.52L43.08 42.40L43.28 42.29L43.48 42.16L43.68 42.04L43.87 41.91L44.07 41.78L44.26 41.64L44.45 41.51L44.64 41.36L44.82 41.22L45.00 41.07L45.18 40.92L45.36 40.76L45.54 40.61L45.71 40.45L45.88 40.28L46.05 40.11L46.21 39.94L46.38 39.77L46.54 39.60L46.69 39.42L46.85 39.24L47.00 39.05L47.15 38.86L47.30 38.67L47.44 38.48L47.58 38.28L47.71 38.09L47.85 37.89L47.98 37.68L48.10 37.48L48.23 37.27L48.35 37.06L48.47 36.84L48.58 36.63L48.69 36.41L48.80 36.19L48.90 35.96L49.00 35.74L49.09 35.51L49.19 35.28L49.27 35.05L49.36 34.82L49.44 34.58L49.52 34.34L49.59 34.10L49.66 33.86L49.73 33.62L49.79 33.37L49.84 33.13L49.90 32.88L49.95 32.63L49.99 32.38L50.03 32.13L50.07 31.87L50.10 31.62L50.13 31.36L50.16 31.10L50.18 30.85L50.19 30.59L50.21 30.32L50.21 30.06L50.22 29.80L50.21 29.54L50.21 29.27L50.20 29.01L50.18 28.74L50.17 28.48L50.14 28.21L50.11 27.94L50.08 27.68L50.04 27.41L50.00 27.14L49.96 26.87L49.91 26.60L49.85 26.34L49.79 26.07L49.73 25.80L49.66 25.53L49.59 25.27L49.51 25.00L49.43 24.73L49.34 24.47L49.25 24.20L49.15 23.94L49.05 23.67L48.95 23.41L48.84 23.15L48.72 22.89L48.60 22.63L48.48 22.37L48.35 22.11L48.22 21.86L48.08 21.60L47.94 21.35L47.80 21.10L47.65 20.85L47.49 20.60L47.34 20.35L47.17 20.11L47.01 19.87L46.84 19.63L46.66 19.39L46.48 19.15L46.30 18.92L46.11 18.68L45.92 18.45L45.72 18.23L45.52 18.00L45.32 17.78L45.11 17.56L44.90 17.34L44.68 17.13L44.46 16.92L44.24 16.71L44.01 16.51L43.78 16.31L43.55 16.11L43.31 15.91L43.07 15.72L42.82 15.53L42.58 15.34L42.33 15.16L42.07 14.98L41.81 14.81L41.55 14.64L41.29 14.47L41.02 14.31L40.75 14.15L40.48 13.99L40.20 13.84L39.92 13.69L39.64 13.55L39.36 13.41L39.07 13.27L38.78 13.14L38.49 13.01L38.20 12.89L37.90 12.77L37.60 12.66L37.30 12.55L37.00 12.44L36.70 12.34L36.39 12.25L36.08 12.16L35.77 12.07L35.46 11.99L35.15 11.91L34.83 11.84L34.52 11.77L34.20 11.71L33.88 11.65L33.56 11.60L33.24 11.55L32.92 11.51L32.60 11.47L32.27 11.44L31.95 11.41L31.62 11.39L31.30 11.37L30.97 11.35L30.65 11.35L30.32 11.35L29.99 11.35L29.66 11.36L29.34 11.37L29.01 11.39L28.68 11.41L28.35 11.44L28.03 11.47L27.70 11.51L27.38 11.56L27.05 11.61L26.72 11.66L26.40 11.72L26.08 11.79L25.75 11.86L25.43 11.94L25.11 12.02L24.79 12.11L24.47 12.20L24.16 12.29L23.84 12.40L23.53 12.50L23.22 12.62L22.91 12.73L22.60 12.86L22.29 12.99L21.98 13.12L21.68 13.26L21.38 13.40L21.08 13.55L20.78 13.70L20.49 13.86L20.20 14.03L19.91 14.19L19.62 14.37L19.34 14.55L19.06 14.73L18.78 14.92L18.50 15.11L18.23 15.31L17.96 15.51L17.70 15.72L17.43 15.93L17.17 16.15L16.92 16.37L16.66 16.59L16.42 16.82L16.17 17.06L15.93 17.30L15.69 17.54L15.46 17.79L15.23 18.04L15.00 18.30L14.78 18.56L14.56 18.82L14.35 19.09L14.14 19.36L13.93 19.64L13.73 19.92L13.54 20.21L13.34 20.49L13.16 20.79L12.98 21.08L12.80 21.38L12.63 21.68L12.46 21.99L12.30 22.30L12.14 22.61L11.98 22.93L11.84 23.24L11.70 23.57L11.56 23.89L11.43 24.22L11.30 24.55L11.18 24.88L11.06 25.22L10.95 25.56L10.85 25.90L10.75 26.25L10.66 26.59L10.57 26.94L10.49 27.29L10.41 27.64L10.34 28.00L10.28 28.36L10.22 28.72L10.17 29.08L10.12 29.44L10.08 29.80L10.05 30.17L10.02 30.53L10.00 30.90L9.98 31.27L9.97 31.64L9.97 32.01L9.97 32.39L9.98 32.76L9.99 33.13L10.01 33.51L10.04 33.88L10.08 34.26L10.12 34.64L10.16 35.01L10.21 35.39L10.27 35.77L10.34 36.14L10.41 36.52L10.49 36.89L10.57 37.27L10.66 37.65L10.76 38.02L10.87 38.39L10.98 38.77L11.09 39.14L11.21 39.51L11.34 39.88L11.48 40.25L11.62 40.62L11.77 40.98L11.92 41.35L12.08 41.71L12.25 42.07L12.42 42.43L12.60 42.79L12.78 43.15L12.97 43.50L13.17 43.85L13.37 44.20L13.58 44.55L13.80 44.89L14.02 45.23L14.25 45.57L14.48 45.91L14.72 46.24L14.96 46.57L15.21 46.90L15.47 47.22L15.73 47.54L15.99 47.86L16.27 48.17L16.54 48.48L16.83 48.78L17.11 49.08L17.41 49.38L17.71 49.68L18.01 49.97L18.32 50.25L18.63 50.53L18.95 50.81L19.27 51.08L19.60 51.35L19.94 51.61L20.27 51.87L20.62 52.13L20.96 52.37L21.31 52.62L21.67 52.86L22.03 53.09L22.39 53.32L22.76 53.54L23.13 53.76L23.51 53.97L23.89 54.18L24.27 54.38L24.66 54.58L25.05 54.77L25.44 54.95L25.84 55.13L26.24 55.30L26.64 55.47L27.05 55.63L27.46 55.78L27.87 55.93L28.28 56.07L28.70 56.21L29.12 56.34L28.94 57.00L28.50 56.89L28.07 56.77L27.64 56.64L27.21 56.51L26.78 56.37L26.35 56.23L25.93 56.07L25.51 55.92L25.10 55.75L24.68 55.58L24.27 55.40L23.86 55.22L23.46 55.03L23.05 54.84L22.66 54.63L22.26 54.43L21.87 54.21L21.48 53.99L21.10 53.77L20.72 53.54L20.34 53.30L19.97 53.06L19.60 52.82L19.23 52.56L18.87 52.30L18.52 52.04L18.17 51.77L17.82 51.50L17.48 51.22L17.14 50.94L16.81 50.65L16.48 50.36L16.16 50.06L15.84 49.76L15.53 49.45L15.22 49.14L14.92 48.82L14.62 48.50L14.33 48.18L14.04 47.85L13.76 47.52L13.48 47.18L13.22 46.85L12.95 46.50L12.69 46.15L12.44 45.80L12.19 45.45L11.95 45.09L11.72 44.73L11.49 44.37L11.27 44.00L11.05 43.63L10.84 43.26L10.64 42.88L10.44 42.50L10.25 42.12L10.06 41.74L9.88 41.36L9.71 40.97L9.54 40.58L9.39 40.19L9.23 39.79L9.09 39.40L8.95 39.00L8.81 38.60L8.69 38.20L8.57 37.80L8.45 37.39L8.35 36.99L8.25 36.58L8.16 36.18L8.07 35.77L7.99 35.36L7.92 34.95L7.85 34.54L7.79 34.13L7.74 33.72L7.70 33.31L7.66 32.90L7.63 32.49L7.60 32.08L7.58 31.67L7.57 31.26L7.57 30.85L7.57 30.44L7.58 30.03L7.60 29.62L7.62 29.21L7.65 28.81L7.68 28.40L7.73 28.00L7.78 27.59L7.83 27.19L7.90 26.79L7.97 26.39L8.04 25.99L8.13 25.60L8.22 25.20L8.31 24.81L8.42 24.42L8.53 24.04L8.64 23.65L8.77 23.27L8.89 22.89L9.03 22.51L9.17 22.13L9.32 21.76L9.47 21.39L9.63 21.02L9.80 20.66L9.97 20.30L10.15 19.94L10.33 19.59L10.52 19.24L10.72 18.89L10.92 18.55L11.13 18.21L11.34 17.87L11.56 17.54L11.78 17.21L12.01 16.89L12.25 16.57L12.49 16.25L12.73 15.94L12.98 15.63L13.24 15.33L13.50 15.03L13.76 14.73L14.04 14.44L14.31 14.16L14.59 13.88L14.88 13.60L15.16 13.33L15.46 13.07L15.76 12.81L16.06 12.55L16.36 12.30L16.68 12.06L16.99 11.82L17.31 11.58L17.63 11.35L17.96 11.13L18.29 10.91L18.62 10.70L18.96 10.49L19.30 10.29L19.64 10.09L19.99 9.90L20.34 9.72L20.69 9.54L21.05 9.37L21.40 9.20L21.76 9.04L22.13 8.88L22.49 8.73L22.86 8.59L23.23 8.45L23.61 8.32L23.98 8.20L24.36 8.08L24.74 7.97L25.12 7.86L25.50 7.76L25.89 7.67L26.27 7.58L26.66 7.50L27.05 7.42L27.43 7.35L27.82 7.29L28.22 7.23L28.61 7.18L29.00 7.14L29.39 7.10L29.79 7.07L30.18 7.04L30.58 7.02L30.97 7.01L31.37 7.00L31.76 7.00L32.16 7.01L32.55 7.02L32.95 7.03L33.34 7.06L33.73 7.09L34.13 7.13L34.52 7.17L34.91 7.22L35.30 7.27L35.69 7.33L36.08 7.40L36.47 7.47L36.85 7.55L37.24 7.63L37.62 7.73L38.00 7.82L38.38 7.92L38.76 8.03L39.13 8.15L39.51 8.27L39.88 8.39L40.25 8.52L40.62 8.66L40.98 8.80L41.35 8.95L41.71 9.10L42.06 9.26L42.42 9.42L42.77 9.59L43.12 9.77L43.47 9.95L43.81 10.13L44.15 10.32L44.49 10.52L44.82 10.72L45.15 10.92L45.48 11.13L45.80 11.35L46.12 11.57L46.44 11.79L46.75 12.02L47.06 12.26L47.36 12.49L47.67 12.74L47.96 12.98L48.25 13.24L48.54 13.49L48.83 13.75L49.11 14.02L49.38 14.28L49.65 14.56L49.92 14.83L50.18 15.11L50.44 15.40L50.69 15.68L50.94 15.98L51.18 16.27L51.42 16.57L51.65 16.87L51.88 17.17L52.10 17.48L52.32 17.79L52.54 18.11L52.74 18.42L52.95 18.74L53.14 19.07L53.33 19.39L53.52 19.72L53.70 20.05L53.88 20.39L54.05 20.72L54.21 21.06L54.37 21.40L54.52 21.74L54.67 22.09L54.81 22.43L54.95 22.78L55.08 23.13L55.20 23.48L55.32 23.83L55.43 24.19L55.54 24.54L55.64 24.90L55.73 25.26L55.82 25.62L55.91 25.98L55.98 26.34L56.05 26.70L56.12 27.07L56.18 27.43L56.23 27.79L56.28 28.16L56.32 28.52L56.35 28.89L56.38 29.25L56.40 29.62L56.42 29.98L56.43 30.35L56.43 30.71L56.43 31.08L56.42 31.44L56.41 31.81L56.39 32.17L56.36 32.53L56.33 32.89L56.29 33.25L56.25 33.61L56.20 33.97L56.14 34.33L56.08 34.69L56.01 35.04L55.93 35.39L55.85 35.74L55.77 36.09L55.67 36.44L55.58 36.79L55.47 37.13L55.36 37.47L55.25 37.81L55.13 38.15L55.00 38.49L54.87 38.82L54.73 39.15L54.59 39.48L54.44 39.80L54.28 40.12L54.12 40.44L53.96 40.76L53.79 41.07L53.61 41.38L53.43 41.69L53.25 41.99L53.06 42.29L52.86 42.59L52.66 42.88L52.45 43.17L52.24 43.46L52.03 43.74L51.81 44.02L51.58 44.29L51.35 44.56L51.12 44.83L50.88 45.09L50.64 45.35L50.39 45.60L50.14 45.85L49.89 46.10L49.63 46.34L49.37 46.58L49.10 46.81L48.83 47.04L48.56 47.26L48.28 47.48L48.00 47.69L47.71 47.90L47.42 48.10L47.13 48.30L46.84 48.49L46.54 48.68L46.24 48.86L45.94 49.04L45.63 49.22L45.32 49.38L45.01 49.55L44.69 49.70L44.38 49.86L44.06 50.00L43.73 50.14L43.41 50.28L43.08 50.41L42.76 50.54L42.43 50.66L42.09 50.77L41.76 50.88L41.43 50.99L41.09 51.08L40.75 51.18L40.41 51.26L40.07 51.35L39.73 51.42L39.38 51.49L39.04 51.56L38.69 51.62L38.35 51.67L38.00 51.72L37.65 51.76L37.31 51.80L36.96 51.83L36.61 51.86L36.26 51.88L35.91 51.89L35.56 51.90L35.21 51.91L34.86 51.90L34.52 51.90L34.17 51.88L33.82 51.87L33.47 51.84L33.12 51.81L32.78 51.78L32.43 51.74L32.09 51.69L31.74 51.64L31.40 51.59L31.06 51.53L30.72 51.46L30.38 51.39L30.04 51.31L29.70 51.23L29.37 51.14L29.03 51.05L28.70 50.95L28.37 50.85L28.04 50.74L27.72 50.62L27.39 50.51L27.07 50.38L26.75 50.26L26.43 50.12L26.11 49.98L25.80 49.84L25.49 49.70L25.18 49.54L24.88 49.39L24.57 49.23L24.27 49.06L23.97 48.89L23.68 48.72L23.39 48.54L23.10 48.35L22.81 48.17L22.53 47.97L22.25 47.78L21.98 47.58L21.70 47.37L21.44 47.16L21.17 46.95L20.91 46.74L20.65 46.52L20.40 46.29L20.14 46.06L19.90 45.83L19.65 45.60L19.42 45.36L19.18 45.12L18.95 44.87L18.72 44.62L18.50 44.37L18.28 44.12L18.07 43.86L17.86 43.60L17.65 43.33L17.45 43.06L17.25 42.79L17.06 42.52L16.87 42.24L16.69 41.97L16.51 41.69L16.34 41.40L16.17 41.12L16.00 40.83L15.85 40.54L15.69 40.24L15.54 39.95L15.40 39.65L15.26 39.35L15.12 39.05L14.99 38.75L14.87 38.45L14.75 38.14L14.63 37.83L14.52 37.53L14.42 37.21L14.32 36.90L14.23 36.59L14.14 36.28L14.05 35.96L13.98 35.65L13.90 35.33L13.84 35.01L13.77 34.69L13.72 34.37L13.67 34.05L13.62 33.73L13.58 33.41L13.54 33.09L13.51 32.77L13.49 32.45L13.47 32.13L13.46 31.81L13.45 31.49L13.45 31.17L13.45 30.85L13.46 30.53L13.47 30.21L13.49 29.89L13.51 29.58L13.54 29.26L13.58 28.94L13.62 28.63L13.66 28.31L13.71 28.00L13.77 27.69L13.83 27.38L13.90 27.07L13.97 26.76L14.05 26.46L14.13 26.15L14.22 25.85L14.31 25.55L14.40 25.25L14.51 24.96L14.61 24.66L14.73 24.37L14.84 24.08L14.97 23.79L15.09 23.51L15.22 23.23L15.36 22.95L15.50 22.67L15.65 22.39L15.80 22.12L15.95 21.85L16.11 21.59L16.27 21.33L16.44 21.07L16.61 20.81L16.79 20.56L16.97 20.31L17.16 20.06L17.35 19.82L17.54 19.58L17.73 19.34L17.94 19.11L18.14 18.88L18.35 18.65L18.56 18.43L18.78 18.22L18.99 18.00L19.22 17.79L19.44 17.59L19.67 17.39L19.90 17.19L20.14 17.00L20.38 16.81L20.62 16.62L20.86 16.44L21.11 16.27L21.36 16.10L21.61 15.93L21.87 15.77L22.12 15.61L22.38 15.46L22.65 15.31L22.91 15.16L23.18 15.02L23.45 14.89L23.72 14.76L23.99 14.63L24.26 14.51L24.54 14.39L24.82 14.28L25.10 14.18L25.38 14.07L25.66 13.98L25.94 13.88L26.23 13.80L26.52 13.71L26.80 13.64L27.09 13.56L27.38 13.49L27.67 13.43L27.96 13.37L28.25 13.32L28.54 13.27L28.84 13.23L29.13 13.19L29.42 13.15L29.72 13.12L30.01 13.10L30.30 13.08L30.60 13.06L30.89 13.05L31.18 13.05L31.48 13.04L31.77 13.05L32.06 13.06L32.35 13.07L32.64 13.09L32.94 13.11L33.23 13.14L33.51 13.17L33.80 13.21L34.09 13.25L34.38 13.29L34.66 13.34L34.95 13.40L35.23 13.46L35.51 13.52L35.79 13.59L36.07 13.66L36.35 13.74L36.62 13.82L36.90 13.91L37.17 13.99L37.44 14.09L37.71 14.19L37.97 14.29L38.24 14.40L38.50 14.51L38.76 14.62L39.02 14.74L39.27 14.86L39.53 14.99L39.78 15.12L40.03 15.25L40.27 15.39L40.51 15.53L40.75 15.67L40.99 15.82L41.23 15.97L41.46 16.13L41.69 16.29L41.92 16.45L42.14 16.62L42.36 16.79L42.58 16.96L42.79 17.13L43.00 17.31L43.21 17.49L43.41 17.68L43.61 17.86L43.81 18.05L44.01 18.25L44.20 18.44L44.38 18.64L44.57 18.84L44.75 19.05L44.92 19.25L45.09 19.46L45.26 19.67L45.43 19.89L45.59 20.10L45.74 20.32L45.90 20.54L46.05 20.76L46.19 20.99L46.33 21.21L46.47 21.44L46.60 21.67L46.73 21.90L46.85 22.13L46.97 22.37L47.09 22.60L47.20 22.84L47.31 23.08L47.41 23.32L47.51 23.56L47.60 23.80L47.69 24.04L47.78 24.28L47.86 24.53L47.94 24.77L48.01 25.02L48.08 25.26L48.14 25.51L48.20 25.76L48.25 26.01L48.30 26.25L48.35 26.50L48.39 26.75L48.43 27.00L48.46 27.25L48.48 27.49L48.51 27.74L48.52 27.99L48.54 28.24L48.55 28.48L48.55 28.73L48.55 28.97L48.55 29.22L48.54 29.46L48.52 29.70L48.51 29.94L48.48 30.18L48.46 30.42L48.42 30.66L48.39 30.90L48.35 31.13L48.30 31.37L48.25 31.60L48.20 31.83L48.14 32.06L48.08 32.28L48.01 32.51L47.94 32.73L47.86 32.95L47.78 33.16L47.70 33.38L47.61 33.59L47.52 33.80L47.42 34.01L47.32 34.21L47.22 34.41L47.11 34.61L46.99 34.80L46.87 35.00L46.75 35.18L46.62 35.37L46.49 35.55L46.35 35.72L46.21 35.89L46.06 36.06L45.91 36.22L45.75 36.37L45.59 36.52L45.41 36.66L45.22 36.78L45.02 36.90L44.71 36.94Z" fill="url(#nbg)"></path>
+          <circle cx="29.03" cy="56.67" r="2.9" fill="var(--nb-data-true)"></circle>
+        </svg>
+      </div>
+      <p class="nb-hero-tagline">Reservoir computing for PyTorch</p>
+      <p class="nb-hero-sub">
+        ResDAG treats reservoir models as ordinary PyTorch layers.
+        Compose them into arbitrary DAGs, fit readouts with a single
+        algebraic solve, and run training and forecasting on the GPU.
+      </p>
+      <div class="nb-hero-cta">
+        <a class="nb-btn nb-btn--primary" href="start/first-forecast/">First forecast — 5 min</a>
+        <a class="nb-btn" href="build/">Composition handbook</a>
+        <a class="nb-btn" href="reference/">API</a>
+      </div>
+    </div>
+    <figure class="nb-attractor">
+      <canvas id="nb-attractor-canvas" width="920" height="800" aria-label="A chaotic attractor and a live ESN forecast of it, rotating in 3D"></canvas>
+      <div class="nb-legend">
+        <span class="nb-leg-true"><i></i>system</span>
+        <span class="nb-leg-pred"><i></i>ESN forecast</span>
+      </div>
+      <figcaption><span id="nb-attractor-name">—</span> — a 500-unit reservoir forecast,
+      drawn live; a different system on each visit. Systems from
+      <a href="https://github.com/El3ssar/TSDynamics">TSDynamics</a></figcaption>
+    </figure>
+  </section>
+
+  <section class="nb-band">
+    <div class="nb-band-inner">
+      <div>
+        <h2>Ten lines to a trained forecaster</h2>
+        <p>
+          One teacher-forced pass collects reservoir states; one
+          conjugate-gradient ridge solve fits the readout. A 500-unit
+          forecaster trains in well under a second, which keeps wide
+          hyperparameter searches cheap.
+        </p>
+      </div>
+      <pre><span class="k">import</span> resdag <span class="k">as</span> rd
+
+data = rd.utils.load_file(<span class="s">"lorenz.npy"</span>)
+splits = rd.utils.prepare_esn_data(
+    data, warmup_steps=<span class="k">200</span>, train_steps=<span class="k">5000</span>, val_steps=<span class="k">2000</span>)
+warmup, train, target, f_warmup, val = splits
+
+model = rd.models.ott_esn(
+    reservoir_size=<span class="k">500</span>, feedback_size=<span class="k">3</span>, output_size=<span class="k">3</span>)
+rd.ESNTrainer(model).fit(
+    (warmup,), (train,), targets={<span class="s">"output"</span>: target})
+
+prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
+    </div>
+  </section>
+
+  <section class="nb-principles nb-wrap">
+    <div class="nb-principles-grid">
+      <div class="nb-principle">
+        <span class="no">No. 1</span>
+        <h3>Layers, not frameworks</h3>
+        <p>Reservoirs, readouts and transforms are ordinary PyTorch modules
+        composed with a functional API: parallel reservoirs, multiple heads,
+        state augmentation — <a href="build/">any DAG you can define</a>.</p>
+      </div>
+      <div class="nb-principle">
+        <span class="no">No. 2</span>
+        <h3>Structure is a function</h3>
+        <p>Connectivity and input structure are pluggable functions: a
+        registry of graph topologies and initializers, or
+        <a href="build/initialization/">any callable that builds a matrix</a>.</p>
+      </div>
+      <div class="nb-principle">
+        <span class="no">No. 3</span>
+        <h3>Honest mathematics</h3>
+        <p>Every update equation, solver decision and timing convention is
+        <a href="theory/">documented index by index</a>, so the implementation
+        can be validated against your own derivations.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="nb-tracks nb-wrap">
+    <div class="nb-tracks-head">Choose a track</div>
+    <div class="nb-tracks-grid">
+      <a class="nb-track" href="start/">
+        <b>Start</b>
+        <span>Installation, a first trained forecaster, and the concepts the library is built on.</span>
+      </a>
+      <a class="nb-track" href="build/">
+        <b>Build</b>
+        <span>Layers, readouts, premade architectures, and the initialization system.</span>
+      </a>
+      <a class="nb-track" href="workflows/">
+        <b>Work</b>
+        <span>Training paths, forecasting with exogenous drivers, hyperparameter studies, GPU use.</span>
+      </a>
+      <a class="nb-track" href="theory/">
+        <b>Theory</b>
+        <span>The update equations, the ridge solvers, and the timing conventions, stated against the code.</span>
+      </a>
+      <a class="nb-track" href="reference/">
+        <b>Reference</b>
+        <span>The full public API, generated from the source docstrings.</span>
+      </a>
+      <a class="nb-track" href="project/">
+        <b>Project</b>
+        <span>Citation, ecosystem, related work, contributing, and the changelog.</span>
+      </a>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  // The hero animation: a chaotic system (ink) and a real ResDAG forecast
+  // of it (vermilion), rotating slowly in 3D. Trajectory pairs were
+  // generated offline by scripts/generate_hero_forecasts.py — the orange
+  // curve is a genuine 500-unit ESN running autoregressively. Systems
+  // ported from TSDynamics (github.com/El3ssar/TSDynamics).
+  var FILES = ["lorenz", "thomas", "halvorsen", "arneodo", "rucklidge", "sprott_b"];
+  var TAIL = 1050;         // samples kept on screen — enough to read the attractor
+  var SPEED = 1.1;         // samples advanced per frame — unhurried
+  var YAW_RATE = 0.07;     // rad/s — the slow rotation
+  var TILT = -0.42;        // fixed pitch for the 3D feel
+
+  var canvas = document.getElementById("nb-attractor-canvas");
+  if (!canvas || canvas.dataset.live) return;
+  canvas.dataset.live = "1";
+  var ctx = canvas.getContext("2d");
+  var label = document.getElementById("nb-attractor-name");
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var W = canvas.width, H = canvas.height;
+  var colors = { true_: "#b06a18", pred: "#2a63d4" };
+  var frame = 0;
+
+  function readColors() {
+    var cs = getComputedStyle(document.body);
+    colors.true_ = (cs.getPropertyValue("--nb-data-true") || "#b06a18").trim();
+    colors.pred = (cs.getPropertyValue("--nb-accent") || "#2a63d4").trim();
+  }
+
+  function center(data) {
+    var pts = data.true.concat(data.pred, data.context || []);
+    var c = [0, 0, 0], i, j;
+    for (i = 0; i < pts.length; i++) for (j = 0; j < 3; j++) c[j] += pts[i][j];
+    for (j = 0; j < 3; j++) c[j] /= pts.length;
+    var ds = [];
+    for (i = 0; i < pts.length; i++) {
+      var dx = pts[i][0] - c[0], dy = pts[i][1] - c[1], dz = pts[i][2] - c[2];
+      ds.push(Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    ds.sort(function (a, b) { return a - b; });
+    // Robust radius: outlier forecast excursions must not shrink the view.
+    return { c: c, r: ds[Math.floor(ds.length * 0.97)] * 1.04 };
+  }
+
+  function project(p, geo, yaw) {
+    var x = p[0] - geo.c[0], y = p[1] - geo.c[1], z = p[2] - geo.c[2];
+    var cy = Math.cos(yaw), sy = Math.sin(yaw);
+    var x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
+    var ct = Math.cos(TILT), st = Math.sin(TILT);
+    var y2 = y * ct - z1 * st;
+    var scale = (Math.min(W, H) / 2 - 26) / geo.r;
+    return [W / 2 + x1 * scale, H / 2 - y2 * scale];
+  }
+
+  function drawTail(pts, upto, geo, yaw, color) {
+    var from = Math.max(0, upto - TAIL);
+    var n = upto - from;
+    if (n < 2) return;
+    var CHUNKS = 10, k;
+    for (k = 0; k < CHUNKS; k++) {
+      var a = from + Math.floor(n * k / CHUNKS);
+      var b = Math.min(from + Math.floor(n * (k + 1) / CHUNKS) + 1, upto);
+      if (b - a < 2) continue;
+      ctx.globalAlpha = 0.07 + 0.78 * Math.pow((k + 1) / CHUNKS, 1.6);
+      ctx.beginPath();
+      var p = project(pts[a], geo, yaw);
+      ctx.moveTo(p[0], p[1]);
+      for (var i = a + 1; i < b; i++) {
+        p = project(pts[i], geo, yaw);
+        ctx.lineTo(p[0], p[1]);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.3;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    var tip = project(pts[upto - 1], geo, yaw);
+    ctx.beginPath();
+    ctx.arc(tip[0], tip[1], 7, 0, 6.2832);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function run(data) {
+    var geo = center(data);
+    // The true system runs from the start; the forecast is born at the
+    // handoff, where teacher forcing ends — it takes off from the ink
+    // curve, tracks it, then diverges. That split is the story.
+    var ctxPts = data.context || [];
+    var trueSeq = ctxPts.concat(data.true);
+    var predSeq = data.pred;
+    var birth = ctxPts.length;
+    var total = Math.min(trueSeq.length, birth + predSeq.length);
+    var t = 12;
+    var t0 = performance.now();
+    if (label) label.textContent = data.name;
+    readColors();
+
+    function tick(now) {
+      var yaw = ((now - t0) / 1000) * YAW_RATE;
+      if (++frame % 40 === 0) readColors();
+      ctx.clearRect(0, 0, W, H);
+      drawTail(trueSeq, Math.floor(t), geo, yaw, colors.true_);
+      if (t > birth) drawTail(predSeq, Math.floor(t) - birth, geo, yaw, colors.pred);
+      t += SPEED;
+      if (t >= total) t = 12;   // loop the same system; new one on reload
+      requestAnimationFrame(tick);
+    }
+
+    if (reduced) {
+      // Static frame, no motion: show the full pair at a fixed angle.
+      ctx.clearRect(0, 0, W, H);
+      drawTail(trueSeq, total, geo, 0.8, colors.true_);
+      drawTail(predSeq, total - birth, geo, 0.8, colors.pred);
+      return;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var lastFile = null;
+  function load() {
+    var pick;
+    do { pick = FILES[Math.floor(Math.random() * FILES.length)]; } while (pick === lastFile && FILES.length > 1);
+    lastFile = pick;
+    fetch("assets/forecasts/" + pick + ".json")
+      .then(function (r) { return r.json(); })
+      .then(run)
+      .catch(function () { /* leave the canvas empty rather than break the page */ });
+  }
+
+  load();
+})();
+</script>
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+
+        <footer class="md-footer">
+  
+    
+      
+        
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+        
+          
+          <a href="start/" class="md-footer__link md-footer__link--next" aria-label="Next: Index">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Index
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright © 2024–2026 Daniel Estevez-Moya — MIT License
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/El3ssar/resdag" target="_blank" rel="noopener" title="ResDAG on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://pypi.org/project/resdag/" target="_blank" rel="noopener" title="ResDAG on PyPI" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["content.code.annotate", "content.code.copy", "content.tabs.link", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.top", "navigation.tracking", "search.highlight", "search.suggest", "toc.follow"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="js/math.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

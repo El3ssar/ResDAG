@@ -27,7 +27,7 @@
   @media (max-width: 960px) { .nb-hero { grid-template-columns: 1fr; } }
 
   .nb-hero-title {
-    display: flex; align-items: center; gap: 1.5rem;
+    display: flex; align-items: center; gap: 1.1rem;
     animation: nb-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
   .nb-wordmark {
@@ -41,8 +41,8 @@
   .nb-wm-res { color: var(--nb-ink); }
   .nb-wm-dag { color: var(--nb-accent); }
   .nb-hero-mark {
-    width: clamp(64px, 7vw, 92px); height: auto; display: block;
-    margin-left: auto; margin-right: 0.5rem;
+    width: clamp(52px, 5.2vw, 72px); height: auto; display: block;
+    flex: 0 0 auto;
   }
   .nb-hero-tagline {
     font-family: var(--nb-mono);
@@ -105,7 +105,9 @@
   .nb-band {
     width: 100vw;
     margin-left: calc(50% - 50vw);
-    background: var(--md-footer-bg-color);
+    background: var(--nb-surface);
+    border-top: 1px solid var(--nb-rule);
+    border-bottom: 1px solid var(--nb-rule);
     padding: 3rem 0;
   }
   .nb-band-inner {
@@ -113,14 +115,18 @@
     display: grid; grid-template-columns: 2fr 3fr; gap: 2.5rem; align-items: center;
   }
   @media (max-width: 960px) { .nb-band-inner { grid-template-columns: 1fr; } }
-  .nb-band h2 { font-family: var(--nb-display); font-weight: 500; font-size: 1.7rem; line-height: 1.2; color: #e3e8e4; margin: 0 0 0.8rem; }
-  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: #a4afa9; }
+  .nb-band h2 { font-family: var(--nb-display); font-weight: 650; font-size: 1.6rem; line-height: 1.2; color: var(--nb-ink); margin: 0 0 0.8rem; }
+  .nb-band p { font-size: 0.82rem; line-height: 1.7; color: var(--nb-ink-soft); }
   .nb-band pre {
     margin: 0; padding: 1.2rem 1.4rem; overflow-x: auto;
-    background: #191e20; border: 1px solid #2e3634; border-left: 3px solid var(--nb-accent);
-    border-radius: 3px; font-family: var(--nb-mono); font-size: 0.72rem; line-height: 1.75; color: #ddd4c8;
+    background: var(--md-code-bg-color); border: 1px solid var(--nb-rule);
+    border-left: 3px solid var(--nb-accent);
+    border-radius: 8px; font-family: var(--nb-mono); font-size: 0.72rem;
+    line-height: 1.75; color: var(--md-code-fg-color);
   }
-  .nb-band .c { color: #717c76; } .nb-band .k { color: #8fd3b8; } .nb-band .s { color: #c0c69a; }
+  .nb-band .c { color: var(--md-code-hl-comment-color); }
+  .nb-band .k { color: var(--md-code-hl-keyword-color); }
+  .nb-band .s { color: var(--md-code-hl-string-color); }
 
   /* ---- Principles: numbered, journal-style ---- */
   .nb-principles { padding-top: 3.4rem; padding-bottom: 0.8rem; }
@@ -206,14 +212,17 @@
       </div>
       <pre><span class="k">import</span> resdag <span class="k">as</span> rd
 
-data = rd.utils.load_file(<span class="s">"lorenz.npy"</span>)          <span class="c"># (batch, time, 3)</span>
-warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
+data = rd.utils.load_file(<span class="s">"lorenz.npy"</span>)
+splits = rd.utils.prepare_esn_data(
     data, warmup_steps=<span class="k">200</span>, train_steps=<span class="k">5000</span>, val_steps=<span class="k">2000</span>)
+warmup, train, target, f_warmup, val = splits
 
-model = rd.models.ott_esn(reservoir_size=<span class="k">500</span>, feedback_size=<span class="k">3</span>, output_size=<span class="k">3</span>)
-rd.ESNTrainer(model).fit((warmup,), (train,), targets={<span class="s">"output"</span>: target})
+model = rd.models.ott_esn(
+    reservoir_size=<span class="k">500</span>, feedback_size=<span class="k">3</span>, output_size=<span class="k">3</span>)
+rd.ESNTrainer(model).fit(
+    (warmup,), (train,), targets={<span class="s">"output"</span>: target})
 
-prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)   <span class="c"># autoregressive</span></pre>
+prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
     </div>
   </section>
 

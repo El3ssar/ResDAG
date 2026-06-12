@@ -12,21 +12,21 @@ other sections.
 
 <div class="grid cards" markdown>
 
-- **01 · [Install](install.md)**
+- **[Install](install.md)**
 
     ---
 
     Installation with pip or uv, the optional HPO extra, and notes on
     GPU support.
 
-- **02 · [First forecast](first-forecast.md)**
+- **[First forecast](first-forecast.md)**
 
     ---
 
     A complete worked example: train an Echo State Network on a chaotic
     attractor, then forecast it autoregressively.
 
-- **03 · [The mental model](concepts.md)**
+- **[The mental model](concepts.md)**
 
     ---
 

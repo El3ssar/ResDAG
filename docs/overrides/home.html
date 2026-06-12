@@ -30,13 +30,13 @@
     display: flex; align-items: center; gap: 1.1rem;
     animation: nb-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
-  .nb-wordmark {
+  .md-typeset .nb-wordmark, .nb-wordmark {
     font-family: var(--nb-display);
     font-size: clamp(3rem, 6.5vw, 4.6rem);
     font-weight: 800;
     letter-spacing: -0.035em;
     line-height: 1;
-    margin: 0;
+    margin: 0 !important;
   }
   .nb-wm-res { color: var(--nb-ink); }
   .nb-wm-dag { color: var(--nb-accent); }
@@ -163,7 +163,7 @@
     <div>
       <div class="nb-hero-title">
         <h1 class="nb-wordmark"><span class="nb-wm-res">Res</span><span class="nb-wm-dag">DAG</span></h1>
-        <svg class="nb-hero-mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg class="nb-hero-mark" viewBox="4.14 5.42 55.72 55.72" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <defs>
             <linearGradient id="nbg" x1="0" y1="1" x2="1" y2="0">
               <stop offset="0" style="stop-color: var(--nb-accent-strong)"/>

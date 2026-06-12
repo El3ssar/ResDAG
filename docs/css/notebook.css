@@ -1,97 +1,127 @@
 /* =========================================================================
-   ResDAG — "laboratory notebook, set in type"
+   ResDAG — "precision instrument"
    -------------------------------------------------------------------------
-   A scientific-journal reading surface: warm paper, warm ink, one vermilion
-   accent, Fraunces display serif over Figtree body, IBM Plex Mono code.
-   Signature motif: the signal line — a thin waveform that draws itself
-   across the hero and recurs as the horizontal-rule divider.
-   Light is the primary theme (long-form reading); dark is a warm-tinted
-   derivative, not an inversion.
+   Developer-tool aesthetic: geometric sans display (Outfit), monospace for
+   structural labels (kickers, tabs, buttons, captions), neutral fields,
+   one emerald accent, hairline borders, soft layered shadows.
+   All colors and fonts come from docs/_tooling/theme.json — edit there and
+   run `uv run python docs/_tooling/apply_theme.py`.
    ========================================================================= */
 
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Figtree:ital,wght@0,300..700;1,300..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Figtree:ital,wght@0,300..700;1,300..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap");
 
-/* =========================================================================
-   Design tokens
-   ========================================================================= */
+/* ===== TOKENS — generated from docs/_tooling/theme.json; edit there ===== */
+
 :root {
-  --nb-display: "Fraunces", Georgia, serif;
+  --nb-display: "Outfit", sans-serif;
   --nb-body: "Figtree", -apple-system, sans-serif;
   --nb-mono: "IBM Plex Mono", ui-monospace, monospace;
-
-  /* Type scale — dramatic contrast, fluid display sizes */
-  --nb-text-xs: 0.72rem;
-  --nb-text-sm: 0.8rem;
-  --nb-text-md: 0.9rem;
-  --nb-h1: clamp(2.1rem, 4.5vw, 3rem);
-  --nb-h2: 1.5rem;
-  --nb-h3: 1.1rem;
-
-  --nb-radius: 3px; /* notebook = near-square corners, not pill-rounded */
 }
 
-/* ----- Light: paper ----------------------------------------------------- */
 [data-md-color-scheme="default"] {
-  --nb-paper: #f8f8f6;
+  --nb-paper: #fbfbfa;
   --nb-surface: #ffffff;
-  --nb-ink: #222826;
-  --nb-ink-soft: #44504a;
-  --nb-muted: #79847f;
-  --nb-rule: #e4e7e4;
-  --nb-rule-strong: #cbd2cc;
-  --nb-accent: #1d6f54;        /* deep pine — links, active, the brand color */
-  --nb-data-true: #5a6b9e;     /* slate — the "system/true" series in every plot */
-  --nb-accent-strong: #155340;
-  --nb-accent-wash: #1d6f5414;
-  --nb-code-bg: #eef1ee;
-  --nb-code-ink: #363f3b;
+  --nb-ink: #141815;
+  --nb-ink-soft: #3f4a44;
+  --nb-muted: #6e7a73;
+  --nb-rule: #e5e8e5;
+  --nb-rule-strong: #d2d8d3;
+  --nb-accent: #0b7a5c;
+  --nb-accent-strong: #085c45;
+  --nb-accent-wash: #0b7a5c14;
+  --nb-code-bg: #f4f6f4;
+  --nb-data-true: #5a6b9e;
 
-  --md-default-bg-color: var(--nb-paper);
-  --md-default-fg-color: var(--nb-ink);
-  --md-default-fg-color--light: var(--nb-ink-soft);
-  --md-default-fg-color--lighter: var(--nb-muted);
-  --md-typeset-color: var(--nb-ink);
-  --md-typeset-a-color: var(--nb-accent-strong);
-  --md-accent-fg-color: var(--nb-accent);
-  --md-primary-fg-color: #222826;
-  --md-primary-bg-color: #f8f8f6;
-  --md-code-bg-color: var(--nb-code-bg);
-  --md-code-fg-color: var(--nb-code-ink);
-  --md-footer-bg-color: #222826;
-  --md-footer-bg-color--dark: #11181a;
+  --md-default-bg-color: #fbfbfa;
+  --md-default-fg-color: #141815;
+  --md-default-fg-color--light: #3f4a44;
+  --md-default-fg-color--lighter: #6e7a73;
+  --md-typeset-color: #141815;
+  --md-typeset-a-color: #0b7a5c;
+  --md-accent-fg-color: #0b7a5c;
+  --md-primary-fg-color: #101413;
+  --md-primary-bg-color: #f2f4f2;
+  --md-footer-bg-color: #101413;
+  --md-footer-bg-color--dark: #101413;
+
+  --md-code-bg-color: #f4f6f4;
+  --md-code-fg-color: #24292f;
+  --md-code-hl-keyword-color: #cf222e;
+  --md-code-hl-string-color: #0a3069;
+  --md-code-hl-number-color: #0550ae;
+  --md-code-hl-function-color: #8250df;
+  --md-code-hl-constant-color: #0550ae;
+  --md-code-hl-name-color: #24292f;
+  --md-code-hl-operator-color: #cf222e;
+  --md-code-hl-punctuation-color: #57606a;
+  --md-code-hl-comment-color: #6e7781;
+  --md-code-hl-special-color: #953800;
+  --md-code-hl-variable-color: #953800;
+  --md-code-hl-generic-color: #24292f;
+  --md-code-hl-color: #0b7a5c14;
 }
 
-/* ----- Dark: midnight desk ---------------------------------------------- */
 [data-md-color-scheme="slate"] {
-  --nb-paper: #16191b;
-  --nb-surface: #1d2123;
-  --nb-ink: #e4e9e5;
-  --nb-ink-soft: #b3bdb7;
-  --nb-muted: #717c76;
-  --nb-rule: #2b3130;
-  --nb-rule-strong: #3e4644;
-  --nb-accent: #7fd0b0;
-  --nb-accent-strong: #97d6bf;
-  --nb-accent-wash: #79c4a814;
-  --nb-code-bg: #1a1e1f;
-  --nb-code-ink: #c4cfc8;
+  --nb-paper: #0c0e0d;
+  --nb-surface: #141816;
+  --nb-ink: #e8ebe8;
+  --nb-ink-soft: #b6beb8;
+  --nb-muted: #79837c;
+  --nb-rule: #252a27;
+  --nb-rule-strong: #39423c;
+  --nb-accent: #3ecf9f;
+  --nb-accent-strong: #6ee0bd;
+  --nb-accent-wash: #3ecf9f14;
+  --nb-code-bg: #11141d;
+  --nb-data-true: #93a3cf;
 
-  --md-default-bg-color: var(--nb-paper);
-  --md-default-fg-color: var(--nb-ink);
-  --md-default-fg-color--light: var(--nb-ink-soft);
-  --md-default-fg-color--lighter: var(--nb-muted);
-  --md-typeset-color: var(--nb-ink);
-  --md-typeset-a-color: var(--nb-accent);
-  --md-accent-fg-color: var(--nb-accent);
-  --md-primary-fg-color: #101417;
-  --md-code-bg-color: var(--nb-code-bg);
-  --md-code-fg-color: var(--nb-code-ink);
-  --md-footer-bg-color: #101417;
-  --md-footer-bg-color--dark: #0b0e10;
+  --md-default-bg-color: #0c0e0d;
+  --md-default-fg-color: #e8ebe8;
+  --md-default-fg-color--light: #b6beb8;
+  --md-default-fg-color--lighter: #79837c;
+  --md-typeset-color: #e8ebe8;
+  --md-typeset-a-color: #3ecf9f;
+  --md-accent-fg-color: #3ecf9f;
+  --md-primary-fg-color: #0a0c0b;
+  --md-primary-bg-color: #f2f4f2;
+  --md-footer-bg-color: #0a0c0b;
+  --md-footer-bg-color--dark: #0a0c0b;
+
+  --md-code-bg-color: #11141d;
+  --md-code-fg-color: #ccd5e0;
+  --md-code-hl-keyword-color: #ff7b72;
+  --md-code-hl-string-color: #a5d6ff;
+  --md-code-hl-number-color: #79c0ff;
+  --md-code-hl-function-color: #d2a8ff;
+  --md-code-hl-constant-color: #79c0ff;
+  --md-code-hl-name-color: #e6edf3;
+  --md-code-hl-operator-color: #ff7b72;
+  --md-code-hl-punctuation-color: #8b949e;
+  --md-code-hl-comment-color: #8b949e;
+  --md-code-hl-special-color: #ffa657;
+  --md-code-hl-variable-color: #ffa657;
+  --md-code-hl-generic-color: #ccd5e0;
+  --md-code-hl-color: #3ecf9f14;
+}
+
+/* ===== /TOKENS ===== */
+
+:root {
+  --nb-radius: 8px;
+  --nb-radius-sm: 6px;
+  --nb-shadow:
+    0 1px 2px rgba(10, 14, 12, 0.05),
+    0 8px 24px rgba(10, 14, 12, 0.05);
+}
+
+[data-md-color-scheme="slate"] {
+  --nb-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 /* =========================================================================
-   Header & navigation — quiet ink bar, small-caps tabs
+   Header & navigation — mono tabs, quiet bar
    ========================================================================= */
 .md-header {
   background: var(--md-primary-fg-color);
@@ -101,7 +131,7 @@
 
 .md-header__topic .md-ellipsis {
   font-family: var(--nb-display);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
 }
 
@@ -111,28 +141,31 @@
 }
 
 .md-tabs__link {
-  font-family: var(--nb-body);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-family: var(--nb-mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   opacity: 0.72;
 }
 
 .md-tabs__link--active {
   opacity: 1;
-  color: var(--nb-accent);
+  color: var(--nb-accent-strong);
+  font-weight: 600;
 }
 
-.md-nav__title { font-family: var(--nb-body); letter-spacing: 0.06em; }
+[data-md-color-scheme="default"] .md-tabs__link--active { color: #5fd8b0; }
+
+.md-nav__title { font-family: var(--nb-body); letter-spacing: 0.04em; }
 
 .md-nav__link--active {
-  color: var(--nb-accent-strong) !important;
+  color: var(--nb-accent) !important;
   font-weight: 700;
 }
 
 /* =========================================================================
-   Typeset — the reading surface
+   Typeset
    ========================================================================= */
 .md-typeset {
   font-family: var(--nb-body);
@@ -142,72 +175,71 @@
 
 .md-typeset h1 {
   font-family: var(--nb-display);
-  font-size: var(--nb-h1);
-  font-weight: 550;
-  font-variation-settings: "opsz" 60;
-  letter-spacing: -0.015em;
-  line-height: 1.12;
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
   color: var(--nb-ink);
   margin-bottom: 0.9em;
 }
 
 .md-typeset h2 {
   font-family: var(--nb-display);
-  font-size: var(--nb-h2);
-  font-weight: 600;
-  letter-spacing: -0.008em;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
   color: var(--nb-ink);
   margin-top: 2.4em;
 }
 
 .md-typeset h3 {
-  font-family: var(--nb-body);
-  font-size: var(--nb-h3);
-  font-weight: 700;
+  font-family: var(--nb-display);
+  font-size: 1.02rem;
+  font-weight: 600;
 }
 
 .md-typeset a {
   text-decoration: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--nb-accent) 45%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--nb-accent) 40%, transparent);
   transition: border-color 0.12s ease, color 0.12s ease;
 }
 
 .md-typeset a:hover {
-  color: var(--nb-accent);
+  color: var(--nb-accent-strong);
   border-bottom-color: var(--nb-accent);
 }
 
-/* Kicker — small-caps section label above page titles */
+/* Kicker — mono section label above page titles */
 .nb-kicker {
   display: block;
-  font-family: var(--nb-body);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--nb-accent);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
 
-/* The signal line — waveform divider (signature motif) */
+/* The signal line — waveform divider */
 .md-typeset hr {
   border: none;
   height: 12px;
   margin: 2.6em auto;
   max-width: 14rem;
   background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='12' viewBox='0 0 224 12'%3E%3Cpath d='M0 6 C 7 6 9 2 14 2 S 21 10 28 10 35 2 42 2 49 10 56 10 63 6 70 6 77 6 84 6 91 1 98 1 105 11 112 11 119 1 126 1 133 11 140 11 147 6 154 6 161 6 168 6 175 3 182 3 189 9 196 9 203 3 210 3 217 6 224 6' fill='none' stroke='%231d6f54' stroke-opacity='0.55' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='12' viewBox='0 0 224 12'%3E%3Cpath d='M0 6 C 7 6 9 2 14 2 S 21 10 28 10 35 2 42 2 49 10 56 10 63 6 70 6 77 6 84 6 91 1 98 1 105 11 112 11 119 1 126 1 133 11 140 11 147 6 154 6 161 6 168 6 175 3 182 3 189 9 196 9 203 3 210 3 217 6 224 6' fill='none' stroke='%230b7a5c' stroke-opacity='0.5' stroke-width='1.4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
 }
 
 /* =========================================================================
-   Code — inset specimen blocks with an accent spine
+   Code — scheme-adaptive highlighting via Material's token variables
    ========================================================================= */
 .md-typeset code {
   font-family: var(--nb-mono);
   font-size: 0.85em;
-  border-radius: var(--nb-radius);
+  border-radius: var(--nb-radius-sm);
   background: var(--nb-code-bg);
   padding: 0.1em 0.35em;
 }
@@ -219,27 +251,24 @@
 
 .md-typeset .highlight {
   border: 1px solid var(--nb-rule);
-  border-left: 3px solid var(--nb-accent);
   border-radius: var(--nb-radius);
-  background: var(--nb-code-bg);
+  overflow: hidden;
 }
 
 /* Named specimen: <div class="nb-specimen" data-label="..."> around a fence */
-.nb-specimen {
-  margin: 1.4em 0;
-}
+.nb-specimen { margin: 1.4em 0; }
 
 .nb-specimen::before {
   content: attr(data-label);
   display: inline-block;
   font-family: var(--nb-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   color: var(--nb-muted);
   border: 1px solid var(--nb-rule);
   border-bottom: none;
-  border-radius: var(--nb-radius) var(--nb-radius) 0 0;
+  border-radius: var(--nb-radius-sm) var(--nb-radius-sm) 0 0;
   padding: 0.3em 0.8em;
   background: var(--nb-surface);
 }
@@ -247,28 +276,26 @@
 .nb-specimen .highlight { margin-top: 0; border-top-left-radius: 0; }
 
 /* =========================================================================
-   Admonitions — margin notes, not alert boxes
+   Admonitions — quiet panels
    ========================================================================= */
 .md-typeset .admonition,
 .md-typeset details {
-  border: none;
-  border-left: 2px solid var(--nb-rule-strong);
-  border-radius: 0;
-  background: transparent;
+  border: 1px solid var(--nb-rule);
+  border-left: 3px solid var(--nb-rule-strong);
+  border-radius: var(--nb-radius-sm);
+  background: var(--nb-surface);
   box-shadow: none;
   font-size: 0.74rem;
-  padding-left: 1rem;
   color: var(--nb-ink-soft);
 }
 
 .md-typeset .admonition-title,
 .md-typeset summary {
   background: transparent !important;
-  padding-left: 0 !important;
-  font-family: var(--nb-body);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  font-family: var(--nb-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--nb-ink);
 }
@@ -279,54 +306,48 @@
 .md-typeset .admonition.warning,
 .md-typeset .admonition.danger { border-left-color: var(--nb-accent); }
 
-.md-typeset .admonition.warning .admonition-title,
-.md-typeset .admonition.danger .admonition-title { color: var(--nb-accent-strong); }
-
 /* =========================================================================
-   Tables — journal rules: horizontal only
+   Tables
    ========================================================================= */
 .md-typeset table:not([class]) {
-  border: none;
-  border-top: 2px solid var(--nb-ink);
-  border-bottom: 1px solid var(--nb-rule-strong);
-  border-radius: 0;
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius-sm);
+  overflow: hidden;
   box-shadow: none;
   font-size: 0.72rem;
-  background: transparent;
+  background: var(--nb-surface);
 }
 
 .md-typeset table:not([class]) th {
-  font-family: var(--nb-body);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: transparent;
-  border-bottom: 1px solid var(--nb-rule-strong);
+  background: var(--nb-code-bg);
   color: var(--nb-ink-soft);
+  border-bottom: 1px solid var(--nb-rule-strong);
 }
 
 .md-typeset table:not([class]) td { border-top: 1px solid var(--nb-rule); }
 
 /* =========================================================================
-   Cards — flat plates with a hard offset shadow (no hover-lift cliché)
+   Cards — flat surfaces, hairline border, soft shadow
    ========================================================================= */
 .md-typeset .grid.cards > ol > li,
 .md-typeset .grid.cards > ul > li {
-  border: 1px solid var(--nb-rule-strong);
+  border: 1px solid var(--nb-rule);
   border-radius: var(--nb-radius);
   background: var(--nb-surface);
-  box-shadow: 3px 3px 0 0 var(--nb-rule);
-  transition: box-shadow 0.14s ease, border-color 0.14s ease;
+  box-shadow: var(--nb-shadow);
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
 .md-typeset .grid.cards > ol > li:hover,
 .md-typeset .grid.cards > ul > li:hover {
   border-color: var(--nb-accent);
-  box-shadow: 3px 3px 0 0 var(--nb-accent-wash), 3px 3px 0 1px var(--nb-accent);
+  transform: translateY(-2px);
 }
-
-.md-typeset .grid.cards strong { font-family: var(--nb-display); font-weight: 600; }
 
 .md-typeset .grid.cards > ul > li > hr {
   background: none;
@@ -336,51 +357,62 @@
   border-bottom: 1px solid var(--nb-rule);
 }
 
+.md-typeset .grid.cards strong { font-family: var(--nb-display); font-weight: 650; }
+
 /* =========================================================================
-   Buttons
+   Buttons — flat, mono label, accent primary
    ========================================================================= */
 .md-typeset .md-button {
-  font-family: var(--nb-body);
-  font-weight: 700;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
+  font-family: var(--nb-mono);
+  font-weight: 500;
+  font-size: 0.64rem;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  border: 1px solid var(--nb-ink);
-  border-radius: var(--nb-radius);
+  border: 1px solid var(--nb-rule-strong);
+  border-radius: var(--nb-radius-sm);
   color: var(--nb-ink);
-  box-shadow: 3px 3px 0 0 var(--nb-rule-strong);
-  transition: box-shadow 0.12s ease, transform 0.12s ease;
+  background: var(--nb-surface);
+  box-shadow: none;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
 }
 
 .md-typeset .md-button--primary {
   background: var(--nb-accent);
-  border-color: var(--nb-accent-strong);
-  color: #fff;
+  border-color: var(--nb-accent);
+  color: #ffffff !important;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  color: #07120d !important;
 }
 
 .md-typeset .md-button:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 0 var(--nb-rule-strong);
   border-color: var(--nb-accent);
   color: var(--nb-accent-strong);
+  transform: translateY(-1px);
 }
 
-.md-typeset .md-button--primary:hover { color: #fff; background: var(--nb-accent-strong); }
+.md-typeset .md-button--primary:hover {
+  background: var(--nb-accent-strong);
+  border-color: var(--nb-accent-strong);
+  color: #ffffff !important;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary:hover {
+  color: #07120d !important;
+}
 
 /* =========================================================================
-   Math — numbered-plate equations
+   Math, figures, legends
    ========================================================================= */
 .md-typeset .katex-display {
   padding: 1rem 1.2rem;
-  border-top: 1px solid var(--nb-rule-strong);
-  border-bottom: 1px solid var(--nb-rule-strong);
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius-sm);
   background: var(--nb-surface);
   overflow-x: auto;
 }
 
-/* =========================================================================
-   Figures
-   ========================================================================= */
 .md-typeset figure {
   border: 1px solid var(--nb-rule);
   border-radius: var(--nb-radius);
@@ -389,49 +421,17 @@
 }
 
 .md-typeset figcaption {
-  font-size: 0.66rem;
-  font-style: italic;
-  font-family: var(--nb-display);
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-style: normal;
   color: var(--nb-muted);
   max-width: none;
 }
 
-/* API reference: calmer headings */
+.nb-legend .nb-leg-true i { background: var(--nb-data-true); }
+
+/* API reference headings */
 .md-typeset .doc-heading { font-family: var(--nb-mono); letter-spacing: 0; }
 
-/* Jade primary surfaces in dark mode need dark text, not white */
-[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
-  color: #0e1f19 !important;
-}
-
-
-/* =========================================================================
-   Code blocks — GitHub Dark in both schemes
-   ========================================================================= */
-.md-typeset .highlight {
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-left: 3px solid var(--nb-accent);
-}
-
-.md-typeset .highlight pre > code,
-.md-typeset pre code {
-  background: #0d1117;
-  color: #c9d1d9;
-}
-
-.md-typeset .highlight :is(.k, .kn, .kd, .kc, .ow, .cp) { color: #ff7b72; }
-.md-typeset .highlight :is(.s, .s1, .s2, .sa, .sd, .se, .sb) { color: #a5d6ff; }
-.md-typeset .highlight :is(.c, .c1, .cm, .ch, .cs) { color: #8b949e; font-style: italic; }
-.md-typeset .highlight :is(.nf, .fm, .nd) { color: #d2a8ff; }
-.md-typeset .highlight :is(.nc, .ne, .nn) { color: #ffa657; }
-.md-typeset .highlight :is(.mi, .mf, .mh, .mo, .kt, .bp) { color: #79c0ff; }
-.md-typeset .highlight :is(.n, .p, .o, .nb, .nv) { color: #c9d1d9; }
-.md-typeset .highlight .gp { color: #8b949e; }
-.md-typeset .highlight .hll { background: #1f2937; }
-
-.md-typeset .highlight button.md-clipboard { color: #8b949e; }
-.md-typeset .highlight button.md-clipboard:hover { color: #c9d1d9; }
-
-/* Legend colors for the data pair, site-wide */
-.nb-legend .nb-leg-true i { background: var(--nb-data-true); }
+/* Footer */
+.md-footer-meta { border-top: 1px solid var(--nb-rule); }

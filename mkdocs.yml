@@ -27,6 +27,9 @@ copyright: >-
 
 docs_dir: docs
 
+exclude_docs: |
+  _tooling/
+
 hooks:
   - hooks/docs_autogen.py
 

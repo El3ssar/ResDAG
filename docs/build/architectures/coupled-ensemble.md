@@ -17,7 +17,7 @@ keeps their trajectories synchronized during forecasting.
 The architecture is N replicas of a sub-model plus an aggregator. The
 shared feedback loop exists only at forecast time:
 
-```
+```text
               ┌─→ sub-model 1 ─┐
 feedback ──→──┼─→     ...     ─┼─→ aggregate ─→ ŷ_t
      ▲        └─→ sub-model N ─┘       │

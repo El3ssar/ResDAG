@@ -6,7 +6,7 @@ autoregressively forecast. Writes docs/assets/forecasts/<name>.json with the
 true continuation and the model's forecast over the same window — the hero
 canvas animates the pair in 3D.
 
-Run from the repo root:  uv run python scripts/generate_hero_forecasts.py
+Run from the repo root:  uv run python docs/_tooling/figures/hero_forecasts.py
 """
 
 import json
@@ -18,7 +18,7 @@ import torch
 import resdag as rd
 from resdag.training import ESNTrainer
 
-OUT = Path(__file__).resolve().parent.parent / "docs" / "assets" / "forecasts"
+OUT = Path(__file__).resolve().parents[3] / "docs" / "assets" / "forecasts"
 
 # name -> (rhs, initial_state, dt, transient_skip)
 SYSTEMS = {

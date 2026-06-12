@@ -16,7 +16,7 @@ def main() -> None:
         "headless_esn": lambda: rd.models.headless_esn(64, 3),
     }
     for name, make in factories.items():
-        make().plot_model(show_shapes=True, rankdir="LR",
+        make().plot_model(show_shapes=False, rankdir="LR",
                           save_path=str(out / f"{name}.svg"), format="svg")
         print(f"  wrote architectures/{name}.svg")
 

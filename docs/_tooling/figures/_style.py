@@ -39,7 +39,7 @@ plt.rcParams.update({
 })
 
 ACCENT_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list(
-    "nb_accent", [PAPER, DV["accent_soft"], ACCENT, DV["pine_deep"]])
+    "nb_accent", [PAPER, DV["accent_soft"], ACCENT, DV["accent_deep"]])
 DIVERGING = matplotlib.colors.LinearSegmentedColormap.from_list(
     "nb_diverging", [TRUE, DV["true_soft"], PAPER, DV["accent_soft"], ACCENT])
 

@@ -111,8 +111,11 @@ lint.select = ["E", "F", "I", "N", "W"]
 lint.ignore = ["E501"]                  # Line too long (handled by black)
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]        # Unused imports in __init__.py are OK
-"tests/**" = ["N803", "N806"]   # Math-style names (X, D, ...) in test fixtures are OK
+"__init__.py" = ["F401"]                  # Unused imports in __init__.py are OK
+# Math notation (W, A, G, Lk, ...) is the house style in the scientific code:
+# renaming matrices and graphs to appease N8xx would hurt readability.
+"src/resdag/**" = ["N803", "N806", "N812"]
+"tests/**" = ["N803", "N806"]
 
 [tool.mypy]
 python_version = "3.11"

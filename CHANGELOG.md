@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-06-14)
+
+### Features
+
+- Support pytorch-symbolic 1.2 and add whole-model save_full/load_full
+  ([#11](https://github.com/El3ssar/ResDAG/pull/11),
+  [`8fe8cdb`](https://github.com/El3ssar/ResDAG/commit/8fe8cdbf3819966450208f9c7ff54fe52af7d476))
+
+
 ## v0.5.0 (2026-06-12)
 
 ### Bug Fixes

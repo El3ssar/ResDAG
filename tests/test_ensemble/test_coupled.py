@@ -247,6 +247,48 @@ class TestStateAndPersistence:
                 for key in s1:
                     assert torch.equal(s1[key], s2[key])
 
+    def test_save_full_load_full_roundtrip_no_rebuild(self):
+        """save_full / load_full reconstruct the whole ensemble without rebuilding."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=2, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+        ens.warmup(f_warm)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ensemble_full.pt"
+            ens.save_full(str(path), epoch=3)
+
+            restored, meta = CoupledEnsembleESNModel.load_full(str(path), return_metadata=True)
+            assert isinstance(restored, CoupledEnsembleESNModel)
+            assert len(restored.models) == len(ens.models)
+            assert meta == {"epoch": 3}
+
+            for m1, m2 in zip(ens.models, restored.models):
+                for (_, p1), (_, p2) in zip(m1.named_parameters(), m2.named_parameters()):
+                    assert torch.equal(p1, p2)
+
+    def test_load_full_rejects_state_dict_checkpoint(self):
+        ens = rd.coupled_ensemble_esn(n_models=2, reservoir_size=15, feedback_size=2, output_size=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ens.pt"
+            ens.save(str(path))  # state-dict format, not full
+            with pytest.raises(ValueError, match="does not contain a full ensemble"):
+                CoupledEnsembleESNModel.load_full(str(path))
+
+    def test_load_rejects_full_checkpoint(self):
+        ens = rd.coupled_ensemble_esn(n_models=2, reservoir_size=15, feedback_size=2, output_size=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ens_full.pt"
+            ens.save_full(str(path))
+            with pytest.raises(ValueError, match="load_full"):
+                rd.coupled_ensemble_esn(
+                    n_models=2, reservoir_size=15, feedback_size=2, output_size=2
+                ).load(str(path))
+
     def test_load_size_mismatch_raises(self):
         ens_small = rd.coupled_ensemble_esn(
             n_models=2, reservoir_size=15, feedback_size=2, output_size=2

@@ -23,6 +23,18 @@ from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer
 from .base_cell import ReservoirCell
 
 
+def _identity(x: torch.Tensor) -> torch.Tensor:
+    """Identity activation.
+
+    Defined at module level (rather than as a ``lambda``) so that cells using
+    ``activation="identity"`` — e.g. :func:`resdag.models.linear_esn` — stay
+    picklable.  A local lambda would make whole-model serialization
+    (``ESNModel.save_full`` / ``torch.save(model)``) fail with a
+    ``PicklingError``.
+    """
+    return x
+
+
 class ESNCell(ReservoirCell):
     """
     Single-timestep leaky Echo State Network update.
@@ -323,7 +335,7 @@ class ESNCell(ReservoirCell):
         activations = {
             "tanh": torch.tanh,
             "relu": F.relu,
-            "identity": lambda x: x,
+            "identity": _identity,
             "sigmoid": torch.sigmoid,
         }
 

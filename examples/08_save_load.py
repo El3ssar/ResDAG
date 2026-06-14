@@ -1,8 +1,13 @@
 """08 — Save / load: persistence patterns for ESN models.
 
-``ESNModel.save()`` stores the state dict (weights), optional reservoir
-states, and arbitrary metadata. The architecture itself is NOT stored:
-re-create the model (same factory call / same DAG), then load into it.
+Two persistence styles:
+
+* ``ESNModel.save()`` stores the state dict (weights), optional reservoir
+  states, and arbitrary metadata. The architecture itself is NOT stored:
+  re-create the model (same factory call / same DAG), then load into it.
+* ``ESNModel.save_full()`` pickles the *whole* model — architecture,
+  weights, and states — so ``load_full()`` rebuilds nothing. This uses the
+  pickling support added in ``pytorch-symbolic`` 1.2.
 
 What it shows
 -------------
@@ -11,6 +16,7 @@ What it shows
 3. ESNModel.load_from_file class method
 4. Forecast continuity: saved states resume exactly where you stopped
 5. Cross-device: save on CPU, load on GPU (skipped if no CUDA)
+6. Whole-model save_full/load_full — no rebuild needed
 
 Expected runtime: ~5 s on CPU.
 """
@@ -151,6 +157,29 @@ def main() -> None:
     else:
         print("CUDA not available — skipped (the pattern is model.to('cuda')")
         print("then model.load(path); torch maps tensors automatically).")
+
+    # ------------------------------------------------------------------
+    # 6. Whole-model save_full / load_full (no rebuild needed)
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("6. Whole-model save_full / load_full")
+    print("=" * 70)
+    print("save_full pickles the architecture too, so load_full needs no")
+    print("build function — handy for quick checkpoints and experiment logs.")
+
+    full_path = tmpdir / "model_full.pt"
+    model.save_full(full_path, epoch=10, val_mse=0.0123)
+    print(f"saved full model to {full_path.name} ({full_path.stat().st_size / 1024:.0f} KiB)")
+
+    # No build_model() call — the architecture is reconstructed from the file.
+    reloaded, meta = ESNModel.load_full(full_path, return_metadata=True)
+    print(f"reconstructed without rebuilding; metadata: {meta}")
+
+    model.reset_reservoirs()
+    reloaded.reset_reservoirs()
+    same_full = torch.allclose(model(x), reloaded(x))
+    print(f"reloaded full model reproduces original outputs: {same_full}")
+    print("Note: load_full uses weights_only=False — only open files you trust.")
 
     print(f"\nDone. Artifacts left in {tmpdir} (delete at will).")
 

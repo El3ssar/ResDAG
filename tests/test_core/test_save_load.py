@@ -16,7 +16,8 @@ import torch
 from resdag.core import ESNModel
 from resdag.layers import ESNLayer
 from resdag.layers.readouts import CGReadoutLayer
-from resdag.models import classic_esn, headless_esn
+from resdag.models import classic_esn, headless_esn, linear_esn
+from resdag.training import ESNTrainer
 
 
 class TestBasicSaveLoad:
@@ -356,6 +357,141 @@ class TestTrainingWorkflow:
                 output = inference_model(x_test)
 
             assert output.shape == (2, 10, 1)
+
+
+class TestFullSaveLoad:
+    """Full-model serialization (save_full / load_full) via pytorch-symbolic 1.2 pickling.
+
+    Unlike state-dict save/load, these round-trip the whole architecture, so no
+    pre-built model is needed on the loading side.
+    """
+
+    def test_save_full_load_full_roundtrip_no_rebuild(self) -> None:
+        """load_full reconstructs a working model without re-creating it first."""
+        model = classic_esn(50, 3, 3)
+        ESNTrainer(model).fit(
+            warmup_inputs=(torch.randn(1, 20, 3),),
+            train_inputs=(torch.randn(1, 40, 3),),
+            targets={"output": torch.randn(1, 40, 3)},
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "full.pt"
+            model.save_full(path)
+
+            restored = ESNModel.load_full(path)  # no build_model() needed
+            assert isinstance(restored, ESNModel)
+
+            x = torch.randn(2, 20, 3)
+            model.reset_reservoirs()
+            restored.reset_reservoirs()
+            assert torch.allclose(model(x), restored(x), atol=1e-5)
+
+    def test_save_full_preserves_subclass_and_methods(self) -> None:
+        """The reconstructed object keeps the ESNModel subclass and its API."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "full.pt"
+            model.save_full(path)
+            restored = ESNModel.load_full(path)
+            assert type(restored).__name__ == "ESNModel"
+            restored.reset_reservoirs()  # ESN-specific method survives
+            out = restored.forecast(torch.randn(1, 20, 3), horizon=10)
+            assert out.shape == (1, 10, 3)
+
+    def test_save_full_preserves_reservoir_states(self) -> None:
+        """Live reservoir states are captured by the full save."""
+        model = headless_esn(50, 3)
+        model.warmup(torch.randn(1, 20, 3))
+        states_before = model.get_reservoir_states()
+        assert states_before  # non-empty
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "full.pt"
+            model.save_full(path)
+            restored = ESNModel.load_full(path)
+            states_after = restored.get_reservoir_states()
+            assert set(states_after) == set(states_before)
+            for key in states_before:
+                assert torch.allclose(states_before[key], states_after[key])
+
+    def test_save_full_metadata_roundtrip(self) -> None:
+        """Metadata kwargs are stored and returned with return_metadata=True."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "full.pt"
+            model.save_full(path, epoch=10, val_mse=0.012)
+
+            restored, meta = ESNModel.load_full(path, return_metadata=True)
+            assert isinstance(restored, ESNModel)
+            assert meta == {"epoch": 10, "val_mse": 0.012}
+
+    def test_save_full_creates_parent_directories(self) -> None:
+        """save_full creates missing parent directories like save does."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "nested" / "dir" / "full.pt"
+            model.save_full(path)
+            assert path.exists()
+
+    def test_linear_esn_identity_activation_is_picklable(self) -> None:
+        """Regression: identity activation must be a module-level fn, not a lambda.
+
+        ``linear_esn`` uses ``activation="identity"``; a local lambda there
+        would raise ``PicklingError`` on save_full / torch.save(model).
+        """
+        model = linear_esn(40, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "linear_full.pt"
+            model.save_full(path)  # must not raise
+            restored = ESNModel.load_full(path)
+            assert isinstance(restored, ESNModel)
+            x = torch.randn(2, 20, 3)
+            model.reset_reservoirs()
+            restored.reset_reservoirs()
+            assert torch.allclose(model(x), restored(x), atol=1e-5)
+
+    def test_load_full_rejects_state_dict_checkpoint(self) -> None:
+        """Pointing load_full at a save() file gives a clear error."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "state_dict.pt"
+            model.save(path)  # state-dict format, not full
+            with pytest.raises(ValueError, match="does not contain a full ESNModel"):
+                ESNModel.load_full(path)
+
+    def test_save_full_with_string_path(self) -> None:
+        """save_full / load_full accept string paths."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path_str = str(Path(tmpdir) / "full.pt")
+            model.save_full(path_str)
+            restored = ESNModel.load_full(path_str)
+            assert isinstance(restored, ESNModel)
+
+    def test_load_rejects_full_checkpoint(self) -> None:
+        """Pointing the state-dict load() at a save_full() file gives a clear error."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "full.pt"
+            model.save_full(path)
+            with pytest.raises(ValueError, match="load_full"):
+                classic_esn(40, 3, 3).load(path)
+
+    def test_load_full_accepts_bare_torch_save(self) -> None:
+        """load_full also reads a plain torch.save(model) file (no metadata wrapper)."""
+        model = classic_esn(40, 3, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bare.pt"
+            torch.save(model, path)  # no save_full wrapper
+            restored = ESNModel.load_full(path)
+            assert isinstance(restored, ESNModel)
+            restored2, meta = ESNModel.load_full(path, return_metadata=True)
+            assert meta == {}  # bare files carry no metadata
+            x = torch.randn(2, 20, 3)
+            model.reset_reservoirs()
+            restored2.reset_reservoirs()
+            assert torch.allclose(model(x), restored2(x), atol=1e-5)
 
 
 @pytest.mark.gpu

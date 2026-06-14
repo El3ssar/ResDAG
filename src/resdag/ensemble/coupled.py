@@ -474,6 +474,12 @@ class CoupledEnsembleESNModel(nn.Module):
             If the checkpoint contains a different number of sub-models.
         """
         checkpoint = torch.load(path, weights_only=False)
+        if not isinstance(checkpoint, dict) or "state_dicts" not in checkpoint:
+            raise ValueError(
+                f"{path} is not a save() state-dict checkpoint. If it was written "
+                f"by save_full() (or torch.save(ensemble)), use "
+                f"CoupledEnsembleESNModel.load_full()."
+            )
         state_dicts: list[dict] = checkpoint["state_dicts"]
         if len(state_dicts) != len(self.models):
             raise ValueError(
@@ -492,6 +498,92 @@ class CoupledEnsembleESNModel(nn.Module):
                     UserWarning,
                     stacklevel=2,
                 )
+
+    def save_full(self, path: str, **metadata: Any) -> None:
+        """Serialize the entire ensemble — every sub-model's architecture,
+        weights, and reservoir states — to a single file.
+
+        Unlike :meth:`save` (state dicts only, requires rebuilding the ensemble
+        before :meth:`load`), this pickles the whole ensemble object and is
+        restored with :meth:`load_full` without rebuilding anything.  Relies on
+        the pickle support added in ``pytorch-symbolic`` 1.2.
+
+        Parameters
+        ----------
+        path : str
+            Destination file path.
+        **metadata
+            Arbitrary key-value pairs stored alongside the ensemble.
+
+        Notes
+        -----
+        Loaded back with ``weights_only=False`` (arbitrary unpickling), so only
+        open files you trust.  Custom callable topology/initializer/activation
+        specs must be importable (module-level, not lambdas) to be picklable;
+        otherwise use the lighter state-dict :meth:`save`.
+
+        See Also
+        --------
+        load_full : Reconstruct an ensemble saved with this method.
+        save : Lighter, state-dict-only persistence (architecture not stored).
+        """
+        torch.save({"resdag_full_ensemble": self, "metadata": metadata}, path)
+
+    @classmethod
+    def load_full(
+        cls,
+        path: str,
+        return_metadata: bool = False,
+        map_location: Any = None,
+    ) -> "CoupledEnsembleESNModel | tuple[CoupledEnsembleESNModel, dict[str, Any]]":
+        """Reconstruct a complete ensemble saved with :meth:`save_full`.
+
+        No pre-built ensemble is required — every sub-model is restored intact.
+
+        Parameters
+        ----------
+        path : str
+            File path written by :meth:`save_full`.
+        return_metadata : bool, default ``False``
+            If ``True``, return ``(ensemble, metadata)`` instead of just the
+            ensemble.
+        map_location : optional
+            Passed to ``torch.load`` to remap storage devices.
+
+        Raises
+        ------
+        ValueError
+            If the file does not contain a whole ensemble (e.g. a state-dict
+            checkpoint from :meth:`save`).
+
+        Warnings
+        --------
+        Loads with ``weights_only=False``, which unpickles arbitrary Python
+        objects.  Only call this on files from a source you trust.
+
+        See Also
+        --------
+        save_full : Serialize a complete ensemble.
+        """
+        payload = torch.load(path, weights_only=False, map_location=map_location)
+        ensemble: CoupledEnsembleESNModel
+        metadata: dict[str, Any]
+        if isinstance(payload, dict) and "resdag_full_ensemble" in payload:
+            ensemble = payload["resdag_full_ensemble"]
+            metadata = payload.get("metadata", {})
+        elif isinstance(payload, CoupledEnsembleESNModel):
+            # A bare ``torch.save(ensemble)`` file, with no metadata wrapper.
+            ensemble = payload
+            metadata = {}
+        else:
+            raise ValueError(
+                f"{path} does not contain a full ensemble. Write one with "
+                f"save_full() (or torch.save(ensemble)); for a state-dict "
+                f"checkpoint from save(), rebuild the ensemble and use load()."
+            )
+        if return_metadata:
+            return ensemble, metadata
+        return ensemble
 
     # ------------------------------------------------------------------
     # Internal helpers

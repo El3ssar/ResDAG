@@ -191,6 +191,7 @@ nav:
       - Forecast: workflows/forecast.md
       - Tune: workflows/tune.md
       - Scale & deploy: workflows/deploy.md
+      - Benchmarks: workflows/benchmarks.md
   - Theory:
       - theory/index.md
       - Reservoir dynamics: theory/dynamics.md

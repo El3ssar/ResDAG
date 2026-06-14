@@ -1,0 +1,9 @@
+# Extra Python dependencies for the reservoir-computing benchmark, on top of an
+# editable resdag install (which brings torch + numpy).
+#
+#   uv pip install -e ".[dev]"                  # resdag + torch, from repo root
+#   uv pip install -r benchmarks/requirements.txt
+#
+# For GPU numbers, install a CUDA build of torch (e.g. the cu128 wheels) rather
+# than the default CPU wheel.
+reservoirpy==0.4.2

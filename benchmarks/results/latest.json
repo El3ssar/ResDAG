@@ -1,0 +1,842 @@
+{
+  "meta": {
+    "timestamp": "2026-06-14T17:38:11.734662+00:00",
+    "hardware": {
+      "platform": "Linux-7.0.12-zen1-1-zen-x86_64-with-glibc2.43",
+      "processor": "",
+      "cpu_count": "16"
+    },
+    "versions": {
+      "python": "3.14.2",
+      "resdag": "0.6.0",
+      "reservoirpy": "0.4.2",
+      "torch": "2.10.0+cu128",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
+    },
+    "hparams": {
+      "dim": 3,
+      "spectral_radius": 0.9,
+      "leak_rate": 0.3,
+      "connectivity": 0.1,
+      "input_scaling": 1.0,
+      "ridge": 1e-06,
+      "activation": "tanh",
+      "seed": 1234,
+      "vpt_threshold": 0.5
+    },
+    "repeats": 2,
+    "warmups": 1,
+    "series_len": 20001,
+    "lyapunov": {
+      "lambda_max": 0.9056,
+      "dt": 0.02
+    }
+  },
+  "contexts": {
+    "train_size": {
+      "title": "Training vs reservoir size",
+      "description": "Fit the ridge readout on a fixed-length sequence while growing the reservoir. Stresses the reservoir run + the readout solve.",
+      "metric": "train",
+      "axis": "reservoir_size",
+      "points": [
+        {
+          "point": {
+            "reservoir_size": 250,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                0.2404918640095275,
+                0.21829261099628638
+              ],
+              "median": 0.22939223750290694,
+              "mean": 0.22939223750290694,
+              "std": 0.011099626506620552,
+              "best": 0.21829261099628638,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.47828352299984545,
+                0.48678363500221167
+              ],
+              "median": 0.48253357900102856,
+              "mean": 0.48253357900102856,
+              "std": 0.004250056001183111,
+              "best": 0.47828352299984545,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                0.2221303260012064,
+                0.22632561399950646
+              ],
+              "median": 0.22422797000035644,
+              "mean": 0.22422797000035644,
+              "std": 0.002097643999150023,
+              "best": 0.2221303260012064,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                1.043806296
+              ],
+              "median": 1.043806296,
+              "mean": 1.043806296,
+              "std": 0.0,
+              "best": 1.043806296,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 500,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                0.33908523799618706,
+                0.3609913550026249
+              ],
+              "median": 0.350038296499406,
+              "mean": 0.350038296499406,
+              "std": 0.010953058503218926,
+              "best": 0.33908523799618706,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.4678979049931513,
+                0.48527122801169753
+              ],
+              "median": 0.4765845665024244,
+              "mean": 0.4765845665024244,
+              "std": 0.008686661509273108,
+              "best": 0.4678979049931513,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                0.3910114269965561,
+                0.37836485299339984
+              ],
+              "median": 0.384688139994978,
+              "mean": 0.384688139994978,
+              "std": 0.006323287001578137,
+              "best": 0.37836485299339984,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                4.613686865
+              ],
+              "median": 4.613686865,
+              "mean": 4.613686865,
+              "std": 0.0,
+              "best": 4.613686865,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                0.9804070829995908,
+                0.9218700750061544
+              ],
+              "median": 0.9511385790028726,
+              "mean": 0.9511385790028726,
+              "std": 0.02926850399671821,
+              "best": 0.9218700750061544,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.5451179189985851,
+                0.5491212590131909
+              ],
+              "median": 0.547119589005888,
+              "mean": 0.547119589005888,
+              "std": 0.0020016700073028915,
+              "best": 0.5451179189985851,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                1.3038675850111758,
+                1.158501730998978
+              ],
+              "median": 1.231184658005077,
+              "mean": 1.231184658005077,
+              "std": 0.07268292700609891,
+              "best": 1.158501730998978,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                24.447311624
+              ],
+              "median": 24.447311624,
+              "mean": 24.447311624,
+              "std": 0.0,
+              "best": 24.447311624,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 2000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                16.037765030996525,
+                15.800959247993887
+              ],
+              "median": 15.919362139495206,
+              "mean": 15.919362139495206,
+              "std": 0.11840289150131866,
+              "best": 15.800959247993887,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.6210015370015753,
+                0.6106629370042356
+              ],
+              "median": 0.6158322370029055,
+              "mean": 0.6158322370029055,
+              "std": 0.005169299998669885,
+              "best": 0.6106629370042356,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                9.935820984988823,
+                10.222728374996223
+              ],
+              "median": 10.079274679992523,
+              "mean": 10.079274679992523,
+              "std": 0.14345369500369998,
+              "best": 9.935820984988823,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [],
+              "median": NaN,
+              "mean": NaN,
+              "std": 0.0,
+              "best": NaN,
+              "rmse": null,
+              "info": {
+                "skipped": "skipped: N=2000 > 1000 (RC.jl too slow)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "train_data": {
+      "title": "Training on lots of data",
+      "description": "Fix the reservoir at 1000 units and grow the training sequence. Stresses the per-timestep reservoir loop at scale.",
+      "metric": "train",
+      "axis": "train_len",
+      "points": [
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 1000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                0.25136665799072944,
+                0.22453929000766948
+              ],
+              "median": 0.23795297399919946,
+              "mean": 0.23795297399919946,
+              "std": 0.013413683991529979,
+              "best": 0.22453929000766948,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.18775574500614312,
+                0.18765044301107991
+              ],
+              "median": 0.18770309400861152,
+              "mean": 0.18770309400861152,
+              "std": 5.2650997531600296e-05,
+              "best": 0.18765044301107991,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                0.45784955300041474,
+                0.48407208498974796
+              ],
+              "median": 0.47096081899508135,
+              "mean": 0.47096081899508135,
+              "std": 0.01311126599466661,
+              "best": 0.45784955300041474,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                3.990278309
+              ],
+              "median": 3.990278309,
+              "mean": 3.990278309,
+              "std": 0.0,
+              "best": 3.990278309,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                1.0251779940008419,
+                0.9069210799934808
+              ],
+              "median": 0.9660495369971613,
+              "mean": 0.9660495369971613,
+              "std": 0.059128457003680523,
+              "best": 0.9069210799934808,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.5233361270074965,
+                0.5370895240048412
+              ],
+              "median": 0.5302128255061689,
+              "mean": 0.5302128255061689,
+              "std": 0.00687669849867234,
+              "best": 0.5233361270074965,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                1.1220819820009638,
+                1.1467363529955037
+              ],
+              "median": 1.1344091674982337,
+              "mean": 1.1344091674982337,
+              "std": 0.012327185497269966,
+              "best": 1.1220819820009638,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                22.426350641
+              ],
+              "median": 22.426350641,
+              "mean": 22.426350641,
+              "std": 0.0,
+              "best": 22.426350641,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 20000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                3.368566600998747,
+                3.4774107900011586
+              ],
+              "median": 3.422988695499953,
+              "mean": 3.422988695499953,
+              "std": 0.05442209450120572,
+              "best": 3.368566600998747,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                1.9235223180003231,
+                1.894715674003237
+              ],
+              "median": 1.90911899600178,
+              "mean": 1.90911899600178,
+              "std": 0.014403321998543106,
+              "best": 1.894715674003237,
+              "rmse": null,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                3.5043700199894374,
+                3.5229484459996456
+              ],
+              "median": 3.5136592329945415,
+              "mean": 3.5136592329945415,
+              "std": 0.009289213005104102,
+              "best": 3.5043700199894374,
+              "rmse": null,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [],
+              "median": NaN,
+              "mean": NaN,
+              "std": 0.0,
+              "best": NaN,
+              "rmse": null,
+              "info": {
+                "skipped": "skipped: train_len=20000 > 10000 (RC.jl too slow)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "forecast": {
+      "title": "Long-horizon autoregressive forecasting",
+      "description": "After an identical warmup, generate ever-longer closed-loop forecasts. Stresses the single-step reservoir update in a tight loop.",
+      "metric": "forecast",
+      "axis": "horizon",
+      "points": [
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 1000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                0.33515993000764865,
+                0.41787773800024297
+              ],
+              "median": 0.3765188340039458,
+              "mean": 0.3765188340039458,
+              "std": 0.04135890399629716,
+              "best": 0.33515993000764865,
+              "rmse": 0.5194082026918752,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                0.28373672599263955,
+                0.2972871359961573
+              ],
+              "median": 0.2905119309943984,
+              "mean": 0.2905119309943984,
+              "std": 0.006775205001758877,
+              "best": 0.28373672599263955,
+              "rmse": 0.28539583532967105,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                0.38575032600783743,
+                0.2347182219964452
+              ],
+              "median": 0.3102342740021413,
+              "mean": 0.3102342740021413,
+              "std": 0.07551605200569611,
+              "best": 0.2347182219964452,
+              "rmse": 0.5546044920494975,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                5.098616988
+              ],
+              "median": 5.098616988,
+              "mean": 5.098616988,
+              "std": 0.0,
+              "best": 5.098616988,
+              "rmse": 1.079179408976248,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 5000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                1.8807038230006583,
+                1.934191609005211
+              ],
+              "median": 1.9074477160029346,
+              "mean": 1.9074477160029346,
+              "std": 0.02674389300227631,
+              "best": 1.8807038230006583,
+              "rmse": 0.41009090413457444,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                1.3435723790025804,
+                1.3363905150035862
+              ],
+              "median": 1.3399814470030833,
+              "mean": 1.3399814470030833,
+              "std": 0.0035909319994971156,
+              "best": 1.3363905150035862,
+              "rmse": 0.16734480902017984,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                0.7708832280040951,
+                0.7768716389982728
+              ],
+              "median": 0.773877433501184,
+              "mean": 0.773877433501184,
+              "std": 0.002994205497088842,
+              "best": 0.7708832280040951,
+              "rmse": 0.5546044920494975,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                23.544240765
+              ],
+              "median": 23.544240765,
+              "mean": 23.544240765,
+              "std": 0.0,
+              "best": 23.544240765,
+              "rmse": 1.079179408976248,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 10000
+          },
+          "results": {
+            "resdag-cpu": {
+              "times": [
+                4.150305321003543,
+                3.9275934619945474
+              ],
+              "median": 4.038949391499045,
+              "mean": 4.038949391499045,
+              "std": 0.11135592950449791,
+              "best": 3.9275934619945474,
+              "rmse": 0.3388497324029216,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "resdag-gpu": {
+              "times": [
+                2.6950836080068257,
+                2.7411749820021214
+              ],
+              "median": 2.7181292950044735,
+              "mean": 2.7181292950044735,
+              "std": 0.023045686997647863,
+              "best": 2.6950836080068257,
+              "rmse": 0.3988738289166587,
+              "info": {
+                "device": "cuda",
+                "dtype": "float32"
+              }
+            },
+            "reservoirpy": {
+              "times": [
+                1.510572506012977,
+                1.5213215239928104
+              ],
+              "median": 1.5159470150028937,
+              "mean": 1.5159470150028937,
+              "std": 0.005374508989916649,
+              "best": 1.510572506012977,
+              "rmse": 0.5546044920494975,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            },
+            "rcjl": {
+              "times": [
+                43.727709688
+              ],
+              "median": 43.727709688,
+              "mean": 43.727709688,
+              "std": 0.0,
+              "best": 43.727709688,
+              "rmse": 1.079179408976248,
+              "info": {
+                "device": "cpu",
+                "dtype": "float64"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "precision": {
+      "title": "Forecast precision (valid prediction time)",
+      "description": "Predictive *skill*, not speed: after an identical warmup, how many steps the closed-loop forecast tracks the true Lorenz trajectory before the normalized error crosses the threshold. Higher is better.",
+      "metric": "precision",
+      "axis": "reservoir_size",
+      "points": [
+        {
+          "point": {
+            "reservoir_size": 500,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 3000
+          },
+          "results": {
+            "resdag-cpu": {
+              "vpt": 146,
+              "vpt_lyap": 2.644352,
+              "horizon": 3000
+            },
+            "resdag-gpu": {
+              "vpt": 148,
+              "vpt_lyap": 2.680576,
+              "horizon": 3000
+            },
+            "reservoirpy": {
+              "vpt": 52,
+              "vpt_lyap": 0.941824,
+              "horizon": 3000
+            },
+            "rcjl": {
+              "vpt": 89,
+              "vpt_lyap": 1.6119679999999998,
+              "horizon": 3000
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 1000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 3000
+          },
+          "results": {
+            "resdag-cpu": {
+              "vpt": 146,
+              "vpt_lyap": 2.644352,
+              "horizon": 3000
+            },
+            "resdag-gpu": {
+              "vpt": 144,
+              "vpt_lyap": 2.608128,
+              "horizon": 3000
+            },
+            "reservoirpy": {
+              "vpt": 143,
+              "vpt_lyap": 2.590016,
+              "horizon": 3000
+            },
+            "rcjl": {
+              "vpt": 27,
+              "vpt_lyap": 0.489024,
+              "horizon": 3000
+            }
+          }
+        },
+        {
+          "point": {
+            "reservoir_size": 2000,
+            "train_len": 5000,
+            "warmup": 200,
+            "horizon": 3000
+          },
+          "results": {
+            "resdag-cpu": {
+              "vpt": 147,
+              "vpt_lyap": 2.662464,
+              "horizon": 3000
+            },
+            "resdag-gpu": {
+              "vpt": 149,
+              "vpt_lyap": 2.6986879999999998,
+              "horizon": 3000
+            },
+            "reservoirpy": {
+              "vpt": 342,
+              "vpt_lyap": 6.194304,
+              "horizon": 3000
+            },
+            "rcjl": {
+              "error": "skipped: N=2000 > 1000 (RC.jl too slow)"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -31,7 +31,7 @@ dependencies = [
     "torch>=2.10.0",
     "numpy>=2.0.0",
     "networkx>=3.0",
-    "pytorch-symbolic>=1.1.1",
+    "pytorch-symbolic>=1.2.1",
     "graphviz>=0.21",
     "scipy>=1.17.0",
 ]

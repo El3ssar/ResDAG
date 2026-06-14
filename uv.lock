@@ -1605,14 +1605,14 @@ wheels = [
 
 [[package]]
 name = "pytorch-symbolic"
-version = "1.1.1"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/df/f3/420abaf197580dfe2ef1843e52378c7c6ec3481fd489f3c242667a8e10e6/pytorch_symbolic-1.1.1.tar.gz", hash = "sha256:bbaed85c23e24c5e8414d284efd7c842f8cb6b8c98525b8a942dffc9e1e606b1", size = 988702, upload-time = "2025-03-15T17:00:18.583Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/22/bd61f90af6db165d19bd5114cee0a320b20e11af9db60a60e78b0d90ddc5/pytorch_symbolic-1.2.1.tar.gz", hash = "sha256:60b6eac6083409bc0feb7d7f5607b94250ed078377d1b1910732e6d7add3b786", size = 989170, upload-time = "2026-06-14T14:15:02.039Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/e4/b3b204d4b0ff66e4e07c5ec874dd218f81ac936f5bbb05f63ec5ff1a80ab/pytorch_symbolic-1.1.1-py3-none-any.whl", hash = "sha256:189c575350c2977d3213fc2efd7123b36d0fa542ad6369c0777fed713215fad5", size = 23403, upload-time = "2025-03-15T17:00:16.466Z" },
+    { url = "https://files.pythonhosted.org/packages/37/60/c18ce080cf14d9923ba16342d1e9fa30466f7a55bddb4ebac56bc43c6c20/pytorch_symbolic-1.2.1-py3-none-any.whl", hash = "sha256:008b306e5525cc9c9489a3c91f91b15251ea775cd1ba7b6b69b7855fd60a9762", size = 23906, upload-time = "2026-06-14T14:15:00.208Z" },
 ]
 
 [[package]]
@@ -1761,7 +1761,7 @@ requires-dist = [
     { name = "pymdown-extensions", marker = "extra == 'docs'", specifier = ">=10.7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pytorch-symbolic", specifier = ">=1.1.1" },
+    { name = "pytorch-symbolic", specifier = ">=1.2.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.10" },
     { name = "scipy", specifier = ">=1.17.0" },
     { name = "torch", specifier = ">=2.10.0" },

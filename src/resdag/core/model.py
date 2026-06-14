@@ -136,12 +136,16 @@ class ESNModel(ps.SymbolicModel):
 
         Notes
         -----
-        ``SymbolicData.__getattr__`` traces a ``GetAttr`` layer into the graph
-        for any unknown attribute whose underlying value supports it —
-        including the ``__deepcopy__`` probe :func:`copy.deepcopy` performs on
-        every instance.  Every graph node is therefore pre-seeded into
-        ``memo`` as an empty shell whose ``__dict__`` is filled by hand, so
-        the copy machinery never looks up attributes on a live node.
+        Non-input graph nodes cache a ``_value`` that may be an autograd-tracked
+        non-leaf tensor, which :func:`copy.deepcopy` cannot duplicate.  Each node
+        is therefore pre-seeded into ``memo`` as an empty shell whose ``__dict__``
+        is filled by hand with ``_value`` cleared, so the copy machinery never
+        tries to copy those caches — they are recomputed on demand from the
+        retained input placeholders.
+
+        Since ``pytorch-symbolic`` 1.2 the whole model is also picklable, so
+        :meth:`save_full` / :meth:`load_full` (or ``torch.save(model)``) offer an
+        alternative way to clone or persist a model, graph and all.
 
         Examples
         --------
@@ -397,6 +401,12 @@ class ESNModel(ps.SymbolicModel):
         path = Path(path)
         checkpoint = torch.load(path, weights_only=False)
 
+        if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
+            raise ValueError(
+                f"{path} is not a save() state-dict checkpoint. If it was written "
+                f"by save_full() (or torch.save(model)), use ESNModel.load_full()."
+            )
+
         self.load_state_dict(checkpoint["state_dict"], strict=strict)
 
         if load_states:
@@ -451,6 +461,135 @@ class ESNModel(ps.SymbolicModel):
             raise ValueError("model argument is required")
 
         model.load(path, strict=strict, load_states=load_states)
+        return model
+
+    def save_full(
+        self,
+        path: str | Path,
+        **metadata: Any,
+    ) -> None:
+        """
+        Serialize the *entire* model — architecture, weights, and reservoir
+        states — to a single file.
+
+        Unlike :meth:`save`, which stores only the ``state_dict`` (so the
+        architecture must be re-created before :meth:`load`), this pickles the
+        whole model object, the ``pytorch_symbolic`` graph included.  Restore it
+        with :meth:`load_full` without rebuilding anything.  This relies on the
+        pickle support added in ``pytorch-symbolic`` 1.2.
+
+        Parameters
+        ----------
+        path : str or Path
+            File path to save to. Parent directories are created if needed.
+        **metadata
+            Additional metadata stored alongside the model (e.g. training info).
+
+        Notes
+        -----
+        The file is a regular ``torch.save`` payload, loaded back with
+        ``weights_only=False`` — only open files you trust.  Current reservoir
+        states are captured as-is; reset or warm up beforehand to control what
+        is persisted.
+
+        Any custom callable passed as a ``topology``, ``*_initializer``, or
+        ``activation`` spec must be importable (a module-level ``def``, not a
+        ``lambda`` or locally-defined function) for the model to pickle.  Specs
+        given as strings, ``(name, kwargs)`` tuples, or registered objects
+        always serialize.  If a callable is not picklable, use the lighter
+        state-dict :meth:`save` instead.
+
+        Examples
+        --------
+        >>> model.save_full("model_full.pt", epoch=10)
+        >>> restored = ESNModel.load_full("model_full.pt")  # no rebuild needed
+        >>> predictions = restored.forecast(warmup, horizon=100)
+
+        See Also
+        --------
+        load_full : Reconstruct a model saved with this method.
+        save : Lighter, state-dict-only persistence (architecture not stored).
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"resdag_full_model": self, "metadata": metadata}, path)
+
+    @classmethod
+    def load_full(
+        cls,
+        path: str | Path,
+        return_metadata: bool = False,
+        map_location: Any = None,
+    ) -> "ESNModel | tuple[ESNModel, dict[str, Any]]":
+        """
+        Reconstruct a complete model saved with :meth:`save_full`.
+
+        No pre-built architecture is required — the model object, its symbolic
+        graph, weights, and reservoir states are all restored from the file.
+
+        Parameters
+        ----------
+        path : str or Path
+            File path written by :meth:`save_full`.
+        return_metadata : bool, default=False
+            If True, return ``(model, metadata)`` instead of just the model.
+        map_location : optional
+            Passed to ``torch.load`` to remap storage devices — e.g.
+            ``"cpu"`` to load a GPU-saved model on a CPU-only machine.
+
+        Returns
+        -------
+        ESNModel or tuple of (ESNModel, dict)
+            The reconstructed model, optionally paired with its metadata dict.
+
+        Raises
+        ------
+        ValueError
+            If the file does not contain a whole model — e.g. it is a
+            state-dict checkpoint from :meth:`save` (rebuild the architecture
+            and use :meth:`load` / :meth:`load_from_file` for those).
+
+        Warnings
+        --------
+        Loads with ``weights_only=False``, which unpickles arbitrary Python
+        objects.  Only call this on files from a source you trust.
+
+        Notes
+        -----
+        Accepts both :meth:`save_full` files (a metadata wrapper) and bare
+        ``torch.save(model)`` files (the model object on its own); the latter
+        carry no metadata.
+
+        Examples
+        --------
+        >>> model.save_full("model_full.pt")
+        >>> restored = ESNModel.load_full("model_full.pt")
+        >>> model_cpu = ESNModel.load_full("gpu_model.pt", map_location="cpu")
+
+        See Also
+        --------
+        save_full : Serialize a complete model.
+        load_from_file : Load a state-dict checkpoint into an existing model.
+        """
+        path = Path(path)
+        payload = torch.load(path, weights_only=False, map_location=map_location)
+        model: ESNModel
+        metadata: dict[str, Any]
+        if isinstance(payload, dict) and "resdag_full_model" in payload:
+            model = payload["resdag_full_model"]
+            metadata = payload.get("metadata", {})
+        elif isinstance(payload, ESNModel):
+            # A bare ``torch.save(model)`` file, with no metadata wrapper.
+            model = payload
+            metadata = {}
+        else:
+            raise ValueError(
+                f"{path} does not contain a full ESNModel. Write one with "
+                f"save_full() (or torch.save(model)); for a state-dict checkpoint "
+                f"from save(), rebuild the architecture and use load()/load_from_file()."
+            )
+        if return_metadata:
+            return model, metadata
         return model
 
     def plot_model(

@@ -55,8 +55,9 @@ carry real work. In practice:
 
 ## Persistence
 
-`save()` stores the state dict, optional reservoir states, and any
-metadata kwargs. The architecture is **not** serialized — keep a build
+There are two ways to persist a model. **State-dict** (`save`/`load`)
+stores weights only — compact and the safe choice for long-term archival
+— but the architecture is **not** serialized, so you keep a build
 function and load into a fresh instance:
 
 ```python
@@ -75,6 +76,25 @@ save, and a later process can `load(..., load_states=True)` and call
 `forecast(..., reset=False)` to continue exactly where this one stopped.
 Metadata is a plain `torch.load` payload — inspectable without building
 the model.
+
+**Whole-model** (`save_full`/`load_full`) serializes everything — the
+graph, weights, and reservoir states — in one file, so there is no build
+function to keep in sync:
+
+```python
+model.save_full("model_full.pt", epoch=10)               # everything
+restored = rd.ESNModel.load_full("model_full.pt")        # no rebuild needed
+restored.forecast(f_warmup, horizon=1000)
+```
+
+This rides on the pickling support added in `pytorch-symbolic` 1.2.
+`load_full` unpickles arbitrary objects (`weights_only=False`), so only
+open files you trust — for sharing weights publicly, prefer the state-dict
+form. One constraint: any custom callable you pass as a `topology`,
+`*_initializer`, or `activation` spec must be importable (a module-level
+`def`, not a `lambda`) for the model to pickle; string, tuple, and
+registered-object specs always work. `CoupledEnsembleESNModel` exposes the
+same `save_full`/`load_full` pair.
 
 ## Inside a larger pipeline
 

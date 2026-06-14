@@ -1,0 +1,4 @@
+# Local benchmark scratch
+results/quick.json
+*.bin
+__pycache__/

@@ -72,7 +72,10 @@ ESNLayer : Core reservoir layer with recurrent dynamics.
 ESNTrainer : Trainer for fitting readout layers.
 """
 
-from . import composition, core, ensemble, hpo, init, layers, models, training, utils
+import importlib
+from typing import Any
+
+from . import core, ensemble, init, layers, models, training, utils
 
 # Convenience imports for common use cases
 from .core import ESNModel, reservoir_input
@@ -110,10 +113,9 @@ __version__ = "0.6.1"
 
 __all__ = [
     # Modules
-    "composition",  # backward compat shim
     "core",
     "ensemble",
-    "hpo",
+    "hpo",  # resolved lazily via __getattr__ (see below)
     "init",
     "layers",
     "models",
@@ -158,8 +160,17 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    """Lazy import for optional HPO functions."""
+def __getattr__(name: str) -> Any:
+    """Lazily resolve optional and deprecated submodules (:pep:`562`).
+
+    ``hpo`` and the deprecated ``composition`` shim are imported only on first
+    access, so a plain ``import resdag`` stays warning-free and does not eagerly
+    pull in scipy/optuna.  The HPO convenience names (``run_hpo``, ``LOSSES``,
+    ``get_study_summary``) likewise resolve through :mod:`resdag.hpo` on demand.
+    Accessing ``resdag.composition`` triggers its :class:`DeprecationWarning`.
+    """
+    if name in ("hpo", "composition"):
+        return importlib.import_module(f".{name}", __name__)
     if name == "run_hpo":
         from .hpo import run_hpo
 

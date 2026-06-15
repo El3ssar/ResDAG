@@ -127,12 +127,18 @@ def prepare_esn_data(
     2. Train: Training input data
     3. Target: Training targets (train data shifted by 1 step)
     4. Forecast warmup: Last warmup_steps of training for forecast initialization
-    5. Validation: Held-out data for testing
+    5. Validation: Held-out data for testing, starting one step after the train
+       window so it aligns with the (purely autoregressive) forecast.
 
-    Data layout::
+    Data layout (``train_end = warmup_steps + train_steps``)::
 
-        [discard][warmup][--------train-------][---val---]
-                        ^target starts here+1
+        [discard][warmup][------- train -------][s][------ val ------]
+
+    ``s`` is ``data[train_end]``: the autoregressive seam — the final training
+    target and the value the forecast warmup's last output predicts (the seed
+    the forecast consumes). It is intentionally excluded from ``val``, so
+    ``forecast(forecast_warmup, horizon=val_steps)`` lines up element-for-element
+    with ``val`` (no manual shift).
 
 
     Parameters
@@ -164,7 +170,9 @@ def prepare_esn_data(
     forecast_warmup : torch.Tensor
         Last warmup_steps of training for forecast init, shape (B, warmup_steps, D).
     val : torch.Tensor
-        Validation data, shape (B, val_steps, D).
+        Validation data, shape (B, val_steps, D). Starts at ``data[train_end + 1]``
+        so it aligns directly with an autoregressive ``forecast`` of the same
+        horizon (the ``data[train_end]`` seam is the forecast's seed, not a target).
 
     Raises
     ------
@@ -204,15 +212,21 @@ def prepare_esn_data(
             f"available data length ({timesteps}) after discarding {discard_steps} steps"
         )
 
-    # Determine validation length
+    # Determine validation length. The autoregressive forecast consumes
+    # ``data[train_end]`` as its bootstrap seed (the value the forecast warmup's
+    # final output predicts) and only emits predictions from ``data[train_end + 1]``
+    # onward, so the validation window starts one step after ``train_end``.
+    val_start = train_end + 1
     if val_steps is None:
-        val_steps = timesteps - train_end
+        val_steps = timesteps - val_start
     else:
-        required = train_end + val_steps
+        required = val_start + val_steps
         if required > timesteps:
             raise ValueError(
-                f"Required data ({required} = warmup + train + val) "
-                f"exceeds available length ({timesteps})"
+                f"Required data ({required} = warmup + train + 1 seam + val) "
+                f"exceeds available length ({timesteps}). The +1 is the "
+                f"autoregressive seam step (data[train_end]) the forecast "
+                f"consumes as its seed before producing val_steps predictions."
             )
 
     # Split data
@@ -220,7 +234,7 @@ def prepare_esn_data(
     train = data[:, warmup_steps:train_end, :]
     target = data[:, warmup_steps + 1 : train_end + 1, :]
     forecast_warmup = train[:, -warmup_steps:, :]
-    val = data[:, train_end : train_end + val_steps, :]
+    val = data[:, val_start : val_start + val_steps, :]
 
     # Optional normalization (compute stats from training data only)
     if normalize:

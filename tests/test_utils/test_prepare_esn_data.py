@@ -18,7 +18,11 @@ def test_target_is_one_step_ahead_of_train() -> None:
     assert target.shape == train.shape
     assert torch.equal(target[:, 0, :], data[:, warmup_steps + 1, :])
     assert torch.equal(target[:, -1, :], data[:, train_end, :])
-    assert torch.equal(target[:, -1, :], val[:, 0, :])
+    # val starts one step after the train window (the data[train_end] seam is
+    # the forecast's bootstrap seed, not a val sample), so train and val are
+    # disjoint — no leakage of the last train target into val[0].
+    assert torch.equal(val[:, 0, :], data[:, train_end + 1, :])
+    assert not torch.equal(target[:, -1, :], val[:, 0, :])
 
 
 def test_forecast_warmup_is_train_suffix() -> None:
@@ -36,20 +40,19 @@ def test_val_steps_none_uses_all_remaining() -> None:
     train_end = warmup_steps + train_steps
     _, _, _, _, val = prepare_esn_data(data, warmup_steps, train_steps, val_steps=None)
 
-    assert val.shape[1] == data.shape[1] - train_end
+    # All remaining data after the one-step autoregressive seam (data[train_end]).
+    assert val.shape[1] == data.shape[1] - train_end - 1
     assert val[0, -1, 0] == data[0, -1, 0]
+    assert val[0, 0, 0] == data[0, train_end + 1, 0]
 
 
-def test_forecast_predictions_continue_validation_series() -> None:
-    """The purely-autoregressive forecast continues the series one step ahead.
+def test_forecast_predictions_align_with_validation() -> None:
+    """``forecast(f_warmup, horizon=val_steps)`` lines up with ``val`` directly.
 
-    ``forecast()`` emits ``horizon`` genuine autoregressive steps with no
-    teacher-forced frame, so the first step is the model's prediction for the
-    timestep *after* the warmup's final prediction.  Under the
-    ``prepare_esn_data`` layout (``val[0] == data[train_end]``) that means
-    ``pred[:, t]`` predicts ``data[train_end + 1 + t]`` — i.e. ``pred[:, :-1]``
-    lines up with ``val[:, 1:]``.  (The forecast/validation index offset is
-    reconciled in the data-prep layer; see issue #19.)
+    The forecast is purely autoregressive (its first step is a genuine
+    prediction, not the teacher-forced warmup output), and ``prepare_esn_data``
+    starts ``val`` at ``data[train_end + 1]`` to match. So ``pred[:, t]`` and
+    ``val[:, t]`` refer to the same timestep — no manual shift needed.
     """
     warmup_steps, train_steps, val_steps = 50, 200, 80
     data = torch.arange(1000, dtype=torch.float32).view(1, -1, 1)
@@ -74,6 +77,4 @@ def test_forecast_predictions_continue_validation_series() -> None:
     pred = model.forecast(f_warmup, horizon=val_steps)
 
     assert pred.shape[1] == val.shape[1]
-    # Slot 0 is a real autoregressive step (not an echo of the warmup output),
-    # so the forecast is shifted one step ahead of the validation window.
-    assert torch.allclose(pred[:, :-1, :], val[:, 1:, :], atol=1e-3)
+    assert torch.allclose(pred, val, atol=1e-3)

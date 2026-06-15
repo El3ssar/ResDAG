@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v0.6.1 (2026-06-15)
+
+### Bug Fixes
+
+- Forecast() emits genuinely autoregressive steps (slot 0, horizon, typing)
+  ([#111](https://github.com/El3ssar/ResDAG/pull/111),
+  [`fbc2baa`](https://github.com/El3ssar/ResDAG/commit/fbc2baa01338fd4e826e0dd9b925c532a7298868))
+
+### Documentation
+
+- Parallel-development protocol + roadmap pointer
+  ([#110](https://github.com/El3ssar/ResDAG/pull/110),
+  [`e1960d3`](https://github.com/El3ssar/ResDAG/commit/e1960d317b2074e97854b51f7ab62f46c35337a5))
+
+- Reservoir-computing benchmark suite and comparison page
+  ([#12](https://github.com/El3ssar/ResDAG/pull/12),
+  [`65bf14f`](https://github.com/El3ssar/ResDAG/commit/65bf14f624d8cdae5c2d59a13e486377fbc99173))
+
+
 ## v0.6.0 (2026-06-14)
 
 ### Features

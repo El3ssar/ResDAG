@@ -636,11 +636,11 @@ class ESNModel(ps.SymbolicModel):
         _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
 
         # ── Helpers ───────────────────────────────────────────────────────────
-        node_to_name = getattr(self, "_node_to_layer_name", {})
+        node_to_name: dict[Any, str] = getattr(self, "_node_to_layer_name", {})
 
         def _is_jupyter() -> bool:
             try:
-                return get_ipython().__class__.__name__ == "ZMQInteractiveShell"  # type: ignore[name-defined]
+                return bool(get_ipython().__class__.__name__ == "ZMQInteractiveShell")  # type: ignore[name-defined]
             except NameError:
                 return False
 
@@ -805,7 +805,7 @@ class ESNModel(ps.SymbolicModel):
         *inputs: torch.Tensor,
         return_outputs: bool = False,
         reset: bool = True,
-    ) -> torch.Tensor | None:
+    ) -> torch.Tensor | tuple[torch.Tensor, ...] | None:
         """
         Teacher-forced warmup to synchronize reservoir states.
 
@@ -827,9 +827,10 @@ class ESNModel(ps.SymbolicModel):
 
         Returns
         -------
-        torch.Tensor or None
-            If ``return_outputs=True``: output tensor(s) of shape
-            ``(batch, timesteps, output_dim)``.
+        torch.Tensor or tuple of torch.Tensor or None
+            If ``return_outputs=True``: the model output of shape
+            ``(batch, timesteps, output_dim)`` for a single-output model, or a
+            tuple of such tensors for a multi-output model.
             Otherwise: None (only internal state is updated).
 
         Raises
@@ -901,19 +902,18 @@ class ESNModel(ps.SymbolicModel):
         forecast_inputs : tuple of torch.Tensor, optional
             Driver inputs for the autoregressive phase (feedback is provided
             by the model's own output, so it is not part of this tuple).
-            ``forecast_inputs[i][:, t, :]`` is the driver value at the
-            ``t``-th timestep *after* the warmup window — i.e. pass the
-            driver series sliced over the forecast window, continuing
-            exactly where the warmup drivers ended.  Each tensor must have
-            ``horizon - 1`` timesteps (or ``horizon``; the last step is then
-            unused, which lets you slice drivers over the same window as
-            your validation targets).  Required when the model has driver
+            ``forecast_inputs[i][:, t, :]`` is the driver paired with forecast
+            step ``t`` — pass the driver series for the forecast window,
+            continuing exactly where the warmup drivers ended.  Each tensor
+            must provide at least ``horizon`` timesteps; only the first
+            ``horizon`` are consumed.  Required when the model has driver
             inputs.
         horizon : int, keyword-only
-            Number of autoregressive steps to generate.
+            Number of autoregressive steps to generate. Must be ``>= 1``.
         initial_feedback : torch.Tensor, optional
-            Custom initial feedback of shape ``(batch, 1, feedback_dim)``.
-            If None, uses last warmup output.
+            Custom feedback of shape ``(batch, 1, feedback_dim)`` used to seed
+            the first autoregressive step. If None, the last warmup output is
+            used as the seed.
         return_warmup : bool, default=False
             If True, prepend warmup outputs to the result.
         reset : bool, default=True
@@ -939,17 +939,23 @@ class ESNModel(ps.SymbolicModel):
         Notes
         -----
         - Convention: first warmup element is always feedback (used for autoregression).
-        - For multi-output models, first output is used as feedback.
+        - For multi-output models, the first output is used as feedback.
         - Feedback output dimension must match feedback input dimension.
+        - Every returned step is genuinely autoregressive: the loop feeds the
+          model its own previous output (seeded by ``initial_feedback`` or the
+          last warmup output). No teacher-forced frame is included, so
+          ``horizon=1`` produces one real forecast step rather than echoing the
+          warmup output, and ``return_warmup=True`` introduces no duplicated
+          frame at the warmup/forecast seam.
 
         **Driver time alignment.** Training pairs ``(feedback_t, driver_t)``
-        with target ``feedback_{t+1}``.  The forecast loop keeps that pairing:
-        prediction ``i`` (for the ``(i+1)``-th step after warmup) is produced
-        from the previous prediction together with ``forecast_inputs[:, i-1]``,
-        the driver at that same timestep.  Prediction ``0`` is produced during
-        warmup from the last warmup feedback/driver pair, so the forecast
-        drivers start at the first step *after* the warmup window — no overlap
-        with the warmup drivers.
+        with target ``feedback_{t+1}``.  The forecast loop preserves that
+        pairing: step ``t`` feeds the current feedback together with
+        ``forecast_inputs[:, t]`` — the driver for that same step — and writes
+        the resulting prediction to slot ``t``.  The seed feedback corresponds
+        to the first step after the warmup window, so ``forecast_inputs`` must
+        hold the driver series beginning right after the warmup drivers (no
+        overlap) and provide at least ``horizon`` timesteps.
 
         Examples
         --------
@@ -991,11 +997,17 @@ class ESNModel(ps.SymbolicModel):
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input (feedback) is required")
 
+        # Validate the horizon up front so callers get a clear error instead of
+        # a downstream IndexError / negative-dimension RuntimeError.
+        if horizon < 1:
+            raise ValueError(f"horizon must be a positive integer, got {horizon}")
+
         # Determine if model has driving inputs
         num_drivers = len(warmup_inputs) - 1
         has_drivers = num_drivers > 0
 
-        # Validate forecast_inputs (drivers only)
+        # Validate forecast_inputs (drivers only). Every autoregressive step
+        # consumes one driver value, so at least ``horizon`` are required.
         if has_drivers:
             if forecast_inputs is None:
                 raise ValueError(
@@ -1008,12 +1020,12 @@ class ESNModel(ps.SymbolicModel):
                     f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}"
                 )
             for i, driver in enumerate(forecast_inputs):
-                if driver.shape[1] not in (horizon - 1, horizon):
+                if driver.shape[1] < horizon:
                     raise ValueError(
-                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected "
-                        f"{horizon - 1} (or {horizon}; the last step is unused). "
-                        f"forecast_inputs must hold the driver series for the "
-                        f"forecast window, starting right after the warmup window."
+                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected at "
+                        f"least {horizon} (one per autoregressive step). forecast_inputs "
+                        f"must hold the driver series for the forecast window, starting "
+                        f"right after the warmup window."
                     )
 
         batch_size = warmup_inputs[0].shape[0]
@@ -1021,7 +1033,18 @@ class ESNModel(ps.SymbolicModel):
         device = warmup_inputs[0].device
         dtype = warmup_inputs[0].dtype
 
-        # Phase 1: Warmup (handles reset internally)
+        # Validate the seed feedback shape up front: (batch, 1, feedback_dim).
+        if initial_feedback is not None:
+            expected_shape = (batch_size, 1, feedback_dim)
+            if initial_feedback.dim() != 3 or tuple(initial_feedback.shape) != expected_shape:
+                raise ValueError(
+                    f"initial_feedback must have shape {expected_shape} "
+                    f"(batch, 1, feedback_dim); got {tuple(initial_feedback.shape)}."
+                )
+
+        # Phase 1: Warmup (handles reset internally). With ``return_outputs=True``
+        # the result is never None — a single tensor for single-output models, a
+        # tuple of tensors for multi-output models.
         warmup_outputs = self.warmup(*warmup_inputs, return_outputs=True, reset=reset)
 
         # Determine output structure
@@ -1051,66 +1074,63 @@ class ESNModel(ps.SymbolicModel):
                 f"feedback input dimension.{readouts_hint}"
             )
 
-        # Get initial feedback
+        # Drivers narrowed to a concrete tuple for the loop (empty for the
+        # feedback-only path). Step ``t`` consumes ``drivers[i][:, t, :]``.
+        drivers: tuple[torch.Tensor, ...] = forecast_inputs if forecast_inputs is not None else ()
+
+        # Phase 2: Autoregressive forecast. Every slot is produced by feeding the
+        # model its own previous output, seeded by ``initial_feedback`` (if given)
+        # or the last warmup output. No teacher-forced frame is emitted, so slot 0
+        # is a genuine forecast step and the warmup/forecast seam is not duplicated.
+        if multi_output:
+            assert isinstance(warmup_outputs, tuple)  # guaranteed by multi_output
+            if initial_feedback is not None:
+                current_feedback = initial_feedback
+            else:
+                current_feedback = warmup_outputs[0][:, -1:, :]
+
+            forecast_multi = tuple(
+                torch.empty(batch_size, horizon, out.shape[-1], dtype=dtype, device=device)
+                for out in warmup_outputs
+            )
+            for t in range(horizon):
+                if has_drivers:
+                    step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
+                else:
+                    step_inputs = (current_feedback,)
+                outputs = self(*step_inputs)
+                for i, out in enumerate(outputs):
+                    forecast_multi[i][:, t, :] = out.squeeze(1)
+                current_feedback = outputs[0]
+
+            if return_warmup:
+                return tuple(
+                    torch.cat([warmup_outputs[i], forecast_multi[i]], dim=1)
+                    for i in range(len(forecast_multi))
+                )
+            return forecast_multi
+
+        assert isinstance(warmup_outputs, torch.Tensor)  # guaranteed by single output
         if initial_feedback is not None:
             current_feedback = initial_feedback
         else:
-            if multi_output:
-                current_feedback = warmup_outputs[0][:, -1:, :]
-            else:
-                current_feedback = warmup_outputs[:, -1:, :]
+            current_feedback = warmup_outputs[:, -1:, :]
 
-        # Pre-allocate forecast output storage
-        if multi_output:
-            forecast_outputs = tuple(
-                torch.empty(batch_size, horizon, shape[-1], dtype=dtype, device=device)
-                for shape in output_shape
-            )
-        else:
-            forecast_outputs = torch.empty(
-                batch_size, horizon, output_shape[-1], dtype=dtype, device=device
-            )
-
-        # Store warmup's last output as first forecast step
-        if multi_output:
-            for i, out in enumerate(warmup_outputs):
-                forecast_outputs[i][:, 0, :] = out[:, -1, :]
-        else:
-            forecast_outputs[:, 0, :] = warmup_outputs[:, -1, :]
-
-        # Phase 2: Autoregressive forecast
-        for t in range(1, horizon):
+        forecast_single = torch.empty(
+            batch_size, horizon, warmup_outputs.shape[-1], dtype=dtype, device=device
+        )
+        for t in range(horizon):
             if has_drivers:
-                # Prediction t pairs the previous prediction (feedback at the
-                # t-th step after warmup) with the driver at that same step,
-                # which is forecast_inputs[:, t-1] (drivers start right after
-                # the warmup window; the step-0 driver was consumed in warmup).
-                driver_inputs_t = tuple(driver[:, t - 1 : t, :] for driver in forecast_inputs)
-                step_inputs = (current_feedback,) + driver_inputs_t
+                step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
             else:
                 step_inputs = (current_feedback,)
-
             output = self(*step_inputs)
+            forecast_single[:, t, :] = output.squeeze(1)
+            current_feedback = output
 
-            if multi_output:
-                for i, out in enumerate(output):
-                    forecast_outputs[i][:, t, :] = out.squeeze(1)
-                current_feedback = output[0]
-            else:
-                forecast_outputs[:, t, :] = output.squeeze(1)
-                current_feedback = output
-
-        # Combine warmup and forecast if requested
         if return_warmup:
-            if multi_output:
-                return tuple(
-                    torch.cat([warmup_outputs[i], forecast_outputs[i]], dim=1)
-                    for i in range(len(output_shape))
-                )
-            else:
-                return torch.cat([warmup_outputs, forecast_outputs], dim=1)
-        else:
-            return forecast_outputs
+            return torch.cat([warmup_outputs, forecast_single], dim=1)
+        return forecast_single
 
 
 __all__ = ["Input", "ESNModel"]

@@ -10,8 +10,8 @@ mechanics; the design rationale lives in the
 > [master roadmap, #109](https://github.com/El3ssar/ResDAG/issues/109)).
 > Pick any issue labelled `status:ready`. If you're running multiple parallel
 > (agent or human) sessions, follow
-> [PARALLEL_DEVELOPMENT.md](PARALLEL_DEVELOPMENT.md) for the worktree → branch →
-> PR protocol and how dependencies/`status:ready` are maintained.
+> [PARALLEL_DEVELOPMENT.md](https://github.com/El3ssar/ResDAG/blob/main/PARALLEL_DEVELOPMENT.md)
+> for the worktree → branch → PR protocol and how dependencies/`status:ready` are maintained.
 
 ## Development setup
 

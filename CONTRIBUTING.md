@@ -16,7 +16,7 @@ mechanics; the design rationale lives in the
 ## Development setup
 
 ```bash
-git clone https://github.com/El3ssar/resdag && cd resdag
+git clone https://github.com/El3ssar/ResDAG && cd ResDAG
 uv sync --extra hpo          # dev tools come from the default dependency group
 uv run pytest --no-cov -q    # 470 tests, ~30 s on CPU
 ```
@@ -52,10 +52,12 @@ python-semantic-release parses the commits since the last release:
 | `feat!: ...` or `BREAKING CHANGE:` footer | minor while 0.x, major from 1.0 |
 | `docs:`, `chore:`, `ci:`, `refactor:`, `test:`, `style:`, `build:` | no release |
 
-A release rewrites `__version__` in `src/resdag/__init__.py` (the only
-place the version exists), tags `vX.Y.Z`, publishes a GitHub release with
-generated notes, and uploads to PyPI. Documentation deploys on the same
-push, and version strings in the docs substitute automatically.
+A release rewrites `__version__` in `src/resdag/__init__.py` and the
+mirrored `version` field in `CITATION.cff` (both are listed in
+`version_variables`, so they stay in lock-step automatically), tags
+`vX.Y.Z`, publishes a GitHub release with generated notes, and uploads to
+PyPI. Documentation deploys on the same push, and version strings in the
+docs substitute automatically.
 
 **Pull requests are squash-merged, and the PR title becomes the commit
 that decides the bump** — so PR titles must be conventional
@@ -86,7 +88,7 @@ New components need tests (place them in the mirror location under
 ## Documentation
 
 ```bash
-uv run mkdocs serve            # live preview at 127.0.0.1:8000/resdag/
+uv run mkdocs serve            # live preview at 127.0.0.1:8000/ResDAG/
 uv run mkdocs build --strict   # link-checking build, run before pushing
 ```
 

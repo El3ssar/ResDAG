@@ -9,6 +9,7 @@ description = "PyTorch-native reservoir computing library with GPU acceleration"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Daniel Estevez-Moya", email = "kemossabee@gmail.com" }]
 keywords = [
     "reservoir computing",
@@ -37,10 +38,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/El3ssar/resdag"
-Documentation = "https://el3ssar.github.io/resdag/"
-Repository = "https://github.com/El3ssar/resdag"
-Issues = "https://github.com/El3ssar/resdag/issues"
+Homepage = "https://github.com/El3ssar/ResDAG"
+Documentation = "https://el3ssar.github.io/ResDAG/"
+Repository = "https://github.com/El3ssar/ResDAG"
+Issues = "https://github.com/El3ssar/ResDAG/issues"
 
 [project.optional-dependencies]
 hpo = ["optuna>=3.0.0"]
@@ -143,11 +144,15 @@ exclude_lines = [
 # Version bumps are computed from conventional commit messages on main:
 #   feat: -> minor, fix:/perf: -> patch, "BREAKING CHANGE:" -> major
 # (major_on_zero=false: while 0.x, breaking changes bump the minor instead).
-# The version lives ONLY in src/resdag/__init__.py; PSR rewrites it, commits,
-# tags vX.Y.Z, and creates the GitHub release. CI publishes to PyPI.
+# The version lives in src/resdag/__init__.py and is mirrored into
+# CITATION.cff; PSR rewrites both, commits, tags vX.Y.Z, and creates the
+# GitHub release. CI publishes to PyPI.
 # -------------------------------------------------------------------------
 [tool.semantic_release]
-version_variables = ["src/resdag/__init__.py:__version__"]
+version_variables = [
+    "src/resdag/__init__.py:__version__",
+    "CITATION.cff:version",
+]
 build_command = "python -m pip install build && python -m build"
 commit_message = "chore(release): v{version} [skip ci]"
 tag_format = "v{version}"

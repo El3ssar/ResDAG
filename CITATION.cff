@@ -1,0 +1,25 @@
+# This CITATION.cff lets GitHub render a "Cite this repository" button and
+# gives downstream tooling machine-readable citation metadata.
+#
+# The `version` and `date-released` fields are kept in sync with each release
+# by python-semantic-release (see [tool.semantic_release] in pyproject.toml);
+# `version` is listed in `version_variables`. The human-readable BibTeX in
+# docs/project/citation.md mirrors this entry.
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+title: "ResDAG: Reservoir computing for PyTorch"
+type: software
+authors:
+  - family-names: Estevez-Moya
+    given-names: Daniel
+    email: kemossabee@gmail.com
+version: "0.6.2"
+date-released: "2026-06-15"
+license: MIT
+url: "https://el3ssar.github.io/ResDAG/"
+repository-code: "https://github.com/El3ssar/ResDAG"
+keywords:
+  - reservoir computing
+  - echo state networks
+  - pytorch
+  - machine learning

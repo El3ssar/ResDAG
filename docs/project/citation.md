@@ -13,7 +13,7 @@ If ResDAG contributes to published work, cite the software:
   author  = {Estevez-Moya, Daniel},
   title   = {ResDAG: Reservoir computing for PyTorch},
   year    = {2026},
-  url     = {https://github.com/El3ssar/resdag},
+  url     = {https://github.com/El3ssar/ResDAG},
   version = {{{ resdag_version }}},
 }
 ```

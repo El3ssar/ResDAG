@@ -1,0 +1,114 @@
+"""Packaging and citation metadata guarantees.
+
+These checks lock in three adoption-critical, easy-to-drift facts:
+
+* an MIT ``LICENSE`` file exists at the repository root (the README badge and
+  ``license = "MIT"`` in ``pyproject.toml`` both promise one);
+* a machine-readable ``CITATION.cff`` exists, parses, and declares a software
+  ``version`` that stays in lock-step with :data:`resdag.__version__` (both are
+  bumped together by python-semantic-release);
+* every documentation URL uses the one canonical GitHub Pages casing,
+  ``el3ssar.github.io/ResDAG/`` — the lowercase ``/resdag/`` spelling returns
+  HTTP 404 and must never reappear.
+
+The repository-layout checks are skipped gracefully when the tests run outside
+a source checkout (e.g. against an installed wheel), where the root metadata
+files are not shipped.
+"""
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+import resdag
+
+ROOT = Path(__file__).resolve().parents[1]
+
+# Built from fragments so this file does not itself trip the drift scan below.
+_BAD_PAGES_URL = "el3ssar.github.io/" + "resdag/"
+_GOOD_PAGES_URL = "el3ssar.github.io/ResDAG/"
+
+# Text files worth scanning for stale doc-URL casing.
+_TEXT_SUFFIXES = {".md", ".toml", ".yml", ".yaml", ".cff", ".py"}
+
+
+def _require_root_file(name: str) -> Path:
+    """Return *name* under the repo root, skipping if it is not present."""
+    path = ROOT / name
+    if not path.is_file():
+        pytest.skip(f"{name} not present (running outside a source checkout)")
+    return path
+
+
+def test_license_file_present_and_mit() -> None:
+    """An MIT ``LICENSE`` exists with the expected copyright holder."""
+    text = _require_root_file("LICENSE").read_text(encoding="utf-8")
+    assert "MIT License" in text
+    assert "Daniel Estevez-Moya" in text
+    assert "WITHOUT WARRANTY OF ANY KIND" in text
+
+
+def test_citation_cff_present_and_valid() -> None:
+    """``CITATION.cff`` parses and carries the fields GitHub's widget needs."""
+    yaml = pytest.importorskip("yaml")
+    data = yaml.safe_load(_require_root_file("CITATION.cff").read_text(encoding="utf-8"))
+
+    assert data["cff-version"] == "1.2.0"
+    assert data["type"] == "software"
+    assert data["license"] == "MIT"
+    assert data["message"]
+    assert data["title"]
+    assert data["authors"], "CITATION.cff must list at least one author"
+    assert data["authors"][0]["family-names"] == "Estevez-Moya"
+
+
+def test_citation_version_matches_package() -> None:
+    """The cited ``version`` stays in lock-step with ``resdag.__version__``."""
+    yaml = pytest.importorskip("yaml")
+    data = yaml.safe_load(_require_root_file("CITATION.cff").read_text(encoding="utf-8"))
+    assert str(data["version"]) == resdag.__version__
+
+
+def test_citation_and_pyproject_use_canonical_pages_casing() -> None:
+    """The Documentation URL uses the casing that returns HTTP 200."""
+    pyproject = _require_root_file("pyproject.toml").read_text(encoding="utf-8")
+    assert _GOOD_PAGES_URL in pyproject
+    assert _BAD_PAGES_URL not in pyproject
+
+    citation = _require_root_file("CITATION.cff").read_text(encoding="utf-8")
+    assert _GOOD_PAGES_URL in citation
+    assert _BAD_PAGES_URL not in citation
+
+
+def test_no_lowercase_pages_url_in_tracked_files() -> None:
+    """No tracked text file resurrects the 404-ing lowercase Pages URL."""
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip("git not available; cannot enumerate tracked files")
+
+    tracked = [line for line in listing.stdout.splitlines() if line]
+    if not tracked:
+        pytest.skip("no tracked files reported by git")
+
+    self_rel = Path(__file__).resolve().relative_to(ROOT).as_posix()
+    offenders = []
+    for rel in tracked:
+        if rel == self_rel or Path(rel).suffix not in _TEXT_SUFFIXES:
+            continue
+        path = ROOT / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if re.search(re.escape(_BAD_PAGES_URL), text):
+            offenders.append(rel)
+
+    assert not offenders, f"lowercase Pages URL found in: {offenders}"

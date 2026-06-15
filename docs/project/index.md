@@ -16,6 +16,6 @@ Information about the project rather than the API: citation, dependencies and co
 | [Contributing](contributing.md) | Dev setup, the quality gate, and where new components plug in |
 | [Changelog](changelog.md) | Release history |
 
-Source lives at [github.com/El3ssar/resdag](https://github.com/El3ssar/resdag);
+Source lives at [github.com/El3ssar/ResDAG](https://github.com/El3ssar/ResDAG);
 bugs and feature requests go to the
-[issue tracker](https://github.com/El3ssar/resdag/issues).
+[issue tracker](https://github.com/El3ssar/ResDAG/issues).

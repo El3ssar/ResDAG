@@ -44,6 +44,6 @@ belongs on a GPU.
 
 ## More
 
-- Full documentation: <https://el3ssar.github.io/resdag/>
+- Full documentation: <https://el3ssar.github.io/ResDAG/>
 - Developer reference: [`../CLAUDE.md`](../CLAUDE.md)
-- Releases: <https://github.com/El3ssar/resdag/releases>
+- Releases: <https://github.com/El3ssar/ResDAG/releases>

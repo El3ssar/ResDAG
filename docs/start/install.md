@@ -45,7 +45,7 @@ detail.
 ## Development install
 
 ```bash
-git clone https://github.com/El3ssar/resdag && cd resdag
+git clone https://github.com/El3ssar/ResDAG && cd ResDAG
 uv sync --extra dev
 uv run pytest --no-cov -q
 ```

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Weekly link-check canary (Mondays 06:00 UTC) — catches doc-URL drift
+    # such as the GitHub Pages casing without gating day-to-day PRs.
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -76,3 +81,28 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           force_orphan: true
+
+  linkcheck:
+    # Validates the project's own documentation/metadata URLs — the canonical
+    # GitHub Pages casing in particular. Runs only on the weekly schedule and
+    # on manual dispatch, never on a pull request, so a transient external 404
+    # can never block unrelated work. The deterministic casing guard lives in
+    # tests/test_packaging_metadata.py and runs on every PR.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check documentation links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          fail: true
+          args: >-
+            --no-progress
+            --exclude-mail
+            README.md
+            CONTRIBUTING.md
+            examples/README.md
+            docs/project/index.md
+            docs/project/changelog.md
+            .github/ISSUE_TEMPLATE/config.yml

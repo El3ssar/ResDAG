@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.6.2 (2026-06-15)
+
+### Bug Fixes
+
+- Realign prepare_esn_data val with the autoregressive forecast
+  ([#115](https://github.com/El3ssar/ResDAG/pull/115),
+  [`1b700f0`](https://github.com/El3ssar/ResDAG/commit/1b700f019813ca0533fa2cfc39686cf7dbd332c2))
+
+- Restore lazy composition/hpo imports so `import resdag` is warning-free
+  ([#113](https://github.com/El3ssar/ResDAG/pull/113),
+  [`94bb10d`](https://github.com/El3ssar/ResDAG/commit/94bb10db80da6e1f6c43dd9ced918c318020c1de))
+
+
 ## v0.6.1 (2026-06-15)
 
 ### Bug Fixes

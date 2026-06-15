@@ -5,6 +5,14 @@ welcome — components, fixes, docs, benchmarks. This guide covers the
 mechanics; the design rationale lives in the
 [documentation](https://el3ssar.github.io/ResDAG/).
 
+> **Looking for something to work on?** The roadmap is tracked as a
+> dependency-ordered set of issues (see the
+> [master roadmap, #109](https://github.com/El3ssar/ResDAG/issues/109)).
+> Pick any issue labelled `status:ready`. If you're running multiple parallel
+> (agent or human) sessions, follow
+> [PARALLEL_DEVELOPMENT.md](PARALLEL_DEVELOPMENT.md) for the worktree → branch →
+> PR protocol and how dependencies/`status:ready` are maintained.
+
 ## Development setup
 
 ```bash

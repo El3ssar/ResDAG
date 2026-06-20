@@ -2,9 +2,10 @@
 
 from typing import Any
 
-from resdag.core import ESNModel, reservoir_input
+from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import ESNLayer
+
+from ._builder import _esn_builder
 
 
 def linear_esn(
@@ -64,14 +65,12 @@ def linear_esn(
     >>> model = linear_esn(100, 1)
     >>> linear_states = model(input_data)
     """
-    # Build model - just input and reservoir with linear activation.
-    # The time dimension on the symbolic input is a placeholder.
-    inp = reservoir_input(feedback_size)
-
-    reservoir = ESNLayer(
+    # Linear: reservoir output only, no readout, identity activation forced.
+    return _esn_builder(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
-        input_size=None,
+        output_size=None,
+        augment=None,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
@@ -80,6 +79,4 @@ def linear_esn(
         bias=bias,
         trainable=trainable,
         **reservoir_kwargs,
-    )(inp)
-
-    return ESNModel(inp, reservoir)
+    )

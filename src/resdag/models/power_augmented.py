@@ -21,9 +21,11 @@ headless_esn : Reservoir-only model for analysis.
 
 from typing import Any
 
-from resdag.core import ESNModel, reservoir_input
+from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, Power
+from resdag.layers import Power
+
+from ._builder import _esn_builder
 
 
 def power_augmented(
@@ -141,13 +143,13 @@ def power_augmented(
     resdag.training.ESNTrainer : Trainer for fitting readout.
     resdag.init.topology.get_topology : Get topology by name.
     """
-    # Build model.  The time dimension on the symbolic input is a placeholder.
-    inp = reservoir_input(feedback_size)
-
-    reservoir = ESNLayer(
+    # Power augmentation: raise reservoir states to ``exponent``, concat input.
+    return _esn_builder(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
-        input_size=None,
+        output_size=output_size,
+        augment=lambda: Power(exponent=exponent),
+        concat_input=True,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
@@ -155,21 +157,8 @@ def power_augmented(
         activation=activation,
         bias=bias,
         trainable=trainable,
+        readout_alpha=readout_alpha,
+        readout_bias=readout_bias,
+        readout_name=readout_name,
         **reservoir_kwargs,
-    )(inp)
-
-    # Augment reservoir states (square even-indexed units)
-    augmented = Power(exponent=exponent)(reservoir)
-
-    # Concatenate input with augmented reservoir
-    concat = Concatenate()(inp, augmented)
-
-    readout = CGReadoutLayer(
-        in_features=feedback_size + reservoir_size,
-        out_features=output_size,
-        bias=readout_bias,
-        alpha=readout_alpha,
-        name=readout_name,
-    )(concat)
-
-    return ESNModel(inp, readout)
+    )

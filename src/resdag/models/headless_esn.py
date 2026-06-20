@@ -2,9 +2,10 @@
 
 from typing import Any
 
-from resdag.core import ESNModel, reservoir_input
+from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import ESNLayer
+
+from ._builder import _esn_builder
 
 
 def headless_esn(
@@ -71,14 +72,12 @@ def headless_esn(
     >>> model = headless_esn(100, 1)
     >>> reservoir_states = model(input_data)  # Direct reservoir output
     """
-    # Build model - just input and reservoir.
-    # The time dimension on the symbolic input is a placeholder.
-    inp = reservoir_input(feedback_size)
-
-    reservoir = ESNLayer(
+    # Headless: reservoir output only, no augmentation and no readout.
+    return _esn_builder(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
-        input_size=None,
+        output_size=None,
+        augment=None,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
@@ -87,6 +86,4 @@ def headless_esn(
         bias=bias,
         trainable=trainable,
         **reservoir_kwargs,
-    )(inp)
-
-    return ESNModel(inp, reservoir)
+    )

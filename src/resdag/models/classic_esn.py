@@ -13,9 +13,10 @@ See Also
 
 from typing import Any
 
-from resdag.core import ESNModel, reservoir_input
+from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
+
+from ._builder import _esn_builder
 
 
 def classic_esn(
@@ -23,11 +24,11 @@ def classic_esn(
     feedback_size: int,
     output_size: int,
     # Reservoir params
-    topology: TopologySpec = None,
+    topology: TopologySpec | None = None,
     spectral_radius: float = 0.9,
     leak_rate: float = 1.0,
     noise: float = 0.0,
-    feedback_initializer: InitializerSpec = None,
+    feedback_initializer: InitializerSpec | None = None,
     activation: str = "tanh",
     bias: bool = True,
     trainable: bool = False,
@@ -130,14 +131,13 @@ def classic_esn(
     :func:`resdag.models.linear_esn` : Linear ESN variant
     :class:`resdag.training.ESNTrainer` : Trainer for fitting readouts
     """
-    # Build model with pytorch_symbolic.  The time dimension is a placeholder
-    # — actual sequence lengths are inferred from the input at call time.
-    inp = reservoir_input(feedback_size)
-
-    reservoir = ESNLayer(
+    # Classic ESN: no augmentation, concatenate the raw input back in.
+    return _esn_builder(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
-        input_size=None,  # No driving input in classic ESN
+        output_size=output_size,
+        augment=None,
+        concat_input=True,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
@@ -146,17 +146,8 @@ def classic_esn(
         activation=activation,
         bias=bias,
         trainable=trainable,
+        readout_alpha=readout_alpha,
+        readout_bias=readout_bias,
+        readout_name=readout_name,
         **reservoir_kwargs,
-    )(inp)
-
-    concat = Concatenate()(inp, reservoir)
-
-    readout = CGReadoutLayer(
-        in_features=reservoir_size + feedback_size,
-        out_features=output_size,
-        bias=readout_bias,
-        alpha=readout_alpha,
-        name=readout_name,
-    )(concat)
-
-    return ESNModel(inp, readout)
+    )

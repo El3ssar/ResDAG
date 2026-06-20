@@ -50,3 +50,8 @@ __all__ = [
     "watts_strogatz_graph",
     "zero_graph",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

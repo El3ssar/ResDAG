@@ -92,3 +92,8 @@ __all__ = [
     "scale_to_spectral_radius",
     "show_topologies",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

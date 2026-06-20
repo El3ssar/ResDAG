@@ -163,3 +163,8 @@ __all__ = [
     "get_study_summary",
     "make_study_name",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

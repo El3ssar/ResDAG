@@ -18,3 +18,8 @@ _warnings.warn(
 from resdag.core import ESNModel, Input, reservoir_input  # noqa: F401, E402
 
 __all__ = ["ESNModel", "Input", "reservoir_input"]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

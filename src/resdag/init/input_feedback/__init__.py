@@ -35,6 +35,9 @@ RingWindowInputInitializer
     Windowed inputs on ring topology.
 ZeroInitializer
     Sets all weights to zero.
+FunctionInitializer
+    Wraps any matrix-building callable as an initializer (the input/feedback
+    analog of a matrix-builder topology).
 
 Functions
 ---------
@@ -109,3 +112,8 @@ __all__ = [
     "get_input_feedback",
     "show_input_initializers",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

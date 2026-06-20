@@ -85,4 +85,12 @@ def reservoir_input(feature_size: int, dtype: torch.dtype | None = None):
     return ps.Input((1, feature_size), dtype=dtype)
 
 
-__all__ = ["ESNModel", "Input", "ps", "reservoir_input"]
+# ``ps`` (the re-exported ``pytorch_symbolic`` module) and ``torch`` remain
+# importable for backward compatibility but are intentionally left out of the
+# public surface — see ``__dir__`` below.
+__all__ = ["ESNModel", "Input", "reservoir_input"]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

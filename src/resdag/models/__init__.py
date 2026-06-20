@@ -17,6 +17,9 @@ headless_esn
     Reservoir only (no readout) for analysis.
 linear_esn
     Linear reservoir for baseline comparison.
+coupled_ensemble_esn
+    Build a :class:`~resdag.ensemble.CoupledEnsembleESNModel` of N coupled
+    ESN sub-models sharing an averaged feedback signal.
 
 Each architecture accepts individual parameters for full customization
 while providing sensible defaults for quick experimentation.
@@ -64,3 +67,8 @@ __all__ = [
     "ott_esn",
     "power_augmented",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

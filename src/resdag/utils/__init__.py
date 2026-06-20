@@ -18,6 +18,8 @@ create_torch_generator
     Create a torch ``Generator`` for reproducible weight/bias draws.
 coerce_seed_to_int
     Reduce an int/``torch.Generator``/None seed to a plain int (or None).
+SeedLike
+    Type alias for accepted seed inputs (``int | torch.Generator | None``).
 load_file
     Load a time series from disk (re-exported from ``resdag.utils.data``).
 prepare_esn_data
@@ -81,3 +83,8 @@ __all__ = [
     "narma",
     "sine",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

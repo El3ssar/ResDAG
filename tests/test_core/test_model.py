@@ -120,6 +120,91 @@ class TestESNModelStateManagement:
         with pytest.raises(KeyError, match="strict"):
             model.set_reservoir_states({"not_a_reservoir": torch.zeros(1, 32)})
 
+    def test_set_reservoir_states_wrong_shape_raises(self, make_tiny_model, seeded: None) -> None:
+        """A wrong reservoir_size is rejected by the cell's shape contract."""
+        model = make_tiny_model(reservoir_size=16)
+        model(torch.randn(1, 5, 3))
+        key = next(iter(model.get_reservoir_states()))
+
+        with pytest.raises(ValueError) as excinfo:
+            model.set_reservoir_states({key: torch.randn(1, 999)})
+
+        message = str(excinfo.value)
+        assert "ESNCell" in message  # names the offending cell class
+        assert "999" in message  # names the offending shape
+
+    def test_set_reservoir_states_coerces_dtype(self, make_tiny_model, seeded: None) -> None:
+        """A float64 state is cast to the model's dtype, preserving its values."""
+        model = make_tiny_model()  # float32 weights
+        model(torch.randn(1, 20, 3))
+        saved = model.get_reservoir_states()
+        key = next(iter(saved))
+        as_double = {key: saved[key].double()}
+
+        with pytest.warns(UserWarning, match="coerced"):
+            model.set_reservoir_states(as_double)
+
+        restored = model.get_reservoir_states()[key]
+        assert restored.dtype == torch.float32
+        assert torch.allclose(restored, saved[key], rtol=1e-5, atol=1e-6)
+
+    def test_set_reservoir_states_dtype_roundtrip_reproduces_trajectory(
+        self, make_tiny_model, seeded: None
+    ) -> None:
+        """A float32<->float64 round-trip preserves the continued trajectory."""
+        model = make_tiny_model()
+        x1 = torch.randn(1, 20, 3)
+        x2 = torch.randn(1, 10, 3)
+
+        model(x1)
+        saved = model.get_reservoir_states()
+        out_a = model(x2)  # consumes the saved state
+
+        # Restore the state after a float64 detour; it must be coerced back.
+        as_double = {k: v.double() for k, v in saved.items()}
+        with pytest.warns(UserWarning, match="coerced"):
+            model.set_reservoir_states(as_double)
+        out_b = model(x2)
+
+        assert torch.allclose(out_a, out_b, rtol=1e-5, atol=1e-6)
+
+    def test_set_reservoir_states_same_dtype_does_not_warn(
+        self, make_tiny_model, seeded: None
+    ) -> None:
+        """No coercion warning when device and dtype already match."""
+        import warnings
+
+        model = make_tiny_model()
+        model(torch.randn(1, 20, 3))
+        saved = model.get_reservoir_states()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning fails the test
+            model.set_reservoir_states(saved)
+
+    @pytest.mark.gpu
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+    def test_set_reservoir_states_cpu_cuda_roundtrip(self, make_tiny_model, seeded: None) -> None:
+        """A CPU<->CUDA round-trip coerces device and preserves the trajectory."""
+        model = make_tiny_model(device="cuda")
+        x1 = torch.randn(1, 20, 3, device="cuda")
+        x2 = torch.randn(1, 10, 3, device="cuda")
+
+        model(x1)
+        saved = model.get_reservoir_states()
+        out_a = model(x2)  # consumes the saved state
+
+        # Restore the state after a CPU detour; it must be coerced back to CUDA.
+        on_cpu = {k: v.cpu() for k, v in saved.items()}
+        with pytest.warns(UserWarning, match="coerced"):
+            model.set_reservoir_states(on_cpu)
+
+        restored = next(iter(model.get_reservoir_states().values()))
+        assert restored.device.type == "cuda"
+
+        out_b = model(x2)
+        assert torch.allclose(out_a, out_b, rtol=1e-5, atol=1e-6)
+
     def test_set_random_reservoir_states_lazy(self, make_tiny_model) -> None:
         """set_random_reservoir_states(batch_size=N) initialises and randomizes."""
         model = make_tiny_model()

@@ -198,6 +198,37 @@ class BaseReservoirLayer(nn.Module, ABC):
         if self.state is None or self.state.shape[0] != batch_size:
             self.state = self.cell.init_state(batch_size, device, dtype)
 
+    def reference_device_dtype(self) -> tuple[torch.device, torch.dtype]:
+        """
+        Resolve the canonical device and dtype of this reservoir's weights.
+
+        The reference is the first floating-point parameter or buffer of the
+        inner cell (the same scan used when lazily allocating a zero state),
+        falling back to ``cpu`` / ``float32`` for weightless cells such as the
+        NG-RC reservoir.  This is the device/dtype an incoming forward pass is
+        expected to use, so callers restoring a saved state should coerce it to
+        this reference to avoid a silent re-initialisation in
+        :meth:`_maybe_init_state`.
+
+        Returns
+        -------
+        device : torch.device
+            Device of the cell's first floating-point tensor, or ``cpu``.
+        dtype : torch.dtype
+            Dtype of the cell's first floating-point tensor, or ``float32``.
+        """
+        ref = next(
+            (
+                t
+                for t in chain(self.cell.parameters(), self.cell.buffers())
+                if t.is_floating_point()
+            ),
+            None,
+        )
+        device = ref.device if ref is not None else torch.device("cpu")
+        dtype = ref.dtype if ref is not None else torch.float32
+        return device, dtype
+
     def reset_state(self, batch_size: int | None = None) -> None:
         """
         Reset internal state to zero.
@@ -218,16 +249,7 @@ class BaseReservoirLayer(nn.Module, ABC):
             if self.state is not None:
                 device, dtype = self.state.device, self.state.dtype
             else:
-                ref = next(
-                    (
-                        t
-                        for t in chain(self.cell.parameters(), self.cell.buffers())
-                        if t.is_floating_point()
-                    ),
-                    None,
-                )
-                device = ref.device if ref is not None else torch.device("cpu")
-                dtype = ref.dtype if ref is not None else torch.float32
+                device, dtype = self.reference_device_dtype()
             self.state = self.cell.init_state(batch_size, device, dtype)
         else:
             self.state = None

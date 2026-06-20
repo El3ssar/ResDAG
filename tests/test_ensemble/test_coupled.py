@@ -95,6 +95,117 @@ class TestConstruction:
             )
             assert torch.equal(cell1.weight_hh.data, cell2.weight_hh.data)
 
+    def test_seeded_build_does_not_clobber_global_rng(self):
+        """Building a seeded ensemble must leave the global RNG untouched.
+
+        Regression for the bug where the factory called
+        ``torch.manual_seed(seed + i)`` inside the construction loop, mutating
+        the process-global default generator so a subsequent global
+        ``torch.randn`` no longer matched the pre-construction draw.  The fix
+        snapshots and restores the global RNG state, so ensemble construction
+        is composable inside an otherwise-reproducible pipeline.
+        """
+        torch.manual_seed(2024)
+        expected = torch.randn(8)
+
+        # Re-seed to the same point, build a seeded ensemble, then draw again:
+        # the draw must match the pre-construction value bit-for-bit.
+        torch.manual_seed(2024)
+        rd.coupled_ensemble_esn(
+            n_models=3, reservoir_size=25, feedback_size=2, output_size=2, seed=7
+        )
+        after = torch.randn(8)
+        assert torch.equal(expected, after)
+
+    def test_global_rng_restored_even_when_factory_raises(self):
+        """The global RNG is restored via ``finally`` even on a factory error."""
+
+        def _boom(**_: object) -> ESNModel:
+            raise RuntimeError("factory blew up")
+
+        torch.manual_seed(1234)
+        expected = torch.randn(4)
+
+        torch.manual_seed(1234)
+        with pytest.raises(RuntimeError, match="factory blew up"):
+            rd.coupled_ensemble_esn(n_models=2, model_factory=_boom, seed=5)
+        after = torch.randn(4)
+        assert torch.equal(expected, after)
+
+    def test_unseeded_build_advances_global_rng(self):
+        """Without ``seed`` the factory's own draws still advance the global RNG.
+
+        The save/restore guard only applies to the seeded path; an unseeded
+        build is not expected to be RNG-neutral and should consume entropy
+        normally.
+        """
+        torch.manual_seed(99)
+        before = torch.randn(4)
+
+        torch.manual_seed(99)
+        rd.coupled_ensemble_esn(n_models=2, reservoir_size=20, feedback_size=2, output_size=2)
+        after = torch.randn(4)
+        assert not torch.equal(before, after)
+
+    def test_headless_sub_models_rejected(self):
+        """Headless sub-models (reservoir-state output) raise a clear ValueError."""
+        from resdag.models import headless_esn
+
+        models = [headless_esn(reservoir_size=20, feedback_size=3) for _ in range(2)]
+        with pytest.raises(ValueError, match="Sub-model 0 is not autoregressively coupleable"):
+            CoupledEnsembleESNModel(models)
+
+    def test_linear_sub_models_rejected(self):
+        """Linear (headless, identity-activation) sub-models are rejected too."""
+        from resdag.models import linear_esn
+
+        models = [linear_esn(reservoir_size=20, feedback_size=3) for _ in range(2)]
+        with pytest.raises(ValueError, match="output dimension"):
+            CoupledEnsembleESNModel(models)
+
+    def test_headless_via_factory_rejected(self):
+        """The factory path surfaces the same guard for headless factories."""
+        from resdag.models import headless_esn
+
+        with pytest.raises(ValueError, match="not autoregressively coupleable"):
+            rd.coupled_ensemble_esn(
+                n_models=2,
+                model_factory=headless_esn,
+                reservoir_size=20,
+                feedback_size=3,
+            )
+
+    def test_output_feedback_mismatch_names_dims(self):
+        """A readout-bearing model whose output != feedback dim is also rejected."""
+        from resdag.core import Input
+        from resdag.layers import CGReadoutLayer, ESNLayer
+
+        def _mismatched(**_: object) -> ESNModel:
+            feedback = Input(shape=(20, 3))
+            states = ESNLayer(reservoir_size=20, feedback_size=3, spectral_radius=0.9)(feedback)
+            readout = CGReadoutLayer(20, 2, name="output")(states)  # out=2 != feedback=3
+            return ESNModel(feedback, readout)
+
+        models = [_mismatched()]
+        with pytest.raises(ValueError) as excinfo:
+            CoupledEnsembleESNModel(models)
+        msg = str(excinfo.value)
+        assert "(2)" in msg and "(3)" in msg  # names both mismatched dims
+
+    def test_classic_sub_models_accepted(self):
+        """Readout-bearing classic sub-models pass the guard."""
+        models = [
+            rd.classic_esn(reservoir_size=20, feedback_size=3, output_size=3) for _ in range(2)
+        ]
+        ens = CoupledEnsembleESNModel(models)
+        assert ens.n_models == 2
+
+    def test_driven_sub_models_accepted(self):
+        """Multi-input (driven) sub-models with matching output dim pass the guard."""
+        models = [_driven_submodel_factory(seed=i) for i in range(2)]
+        ens = CoupledEnsembleESNModel(models)
+        assert ens.n_models == 2
+
 
 # ---------------------------------------------------------------------------
 # Fit / forecast

@@ -109,21 +109,82 @@ class TestOutliersFilteredMean:
     """Tests for OutliersFilteredMean layer."""
 
     def test_z_score_method_basic(self) -> None:
-        """Test Z-score outlier filtering."""
+        """A blatant outlier is filtered, so the output matches the inlier mean."""
         layer = OutliersFilteredMean(method="z_score", threshold=2.0)
-        # Create data with several samples and one obvious outlier
+        # Ten members tightly clustered near 1.0, plus one blatant outlier.
         torch.manual_seed(42)
         samples = []
-        for i in range(10):
-            samples.append(torch.randn(2, 5, 4) * 0.1 + 1.0)  # Mean ~1.0
+        for _ in range(10):
+            samples.append(torch.randn(2, 5, 4) * 0.05 + 1.0)  # Mean ~1.0
         samples.append(torch.ones(2, 5, 4) * 100.0)  # Obvious outlier
         x = torch.stack(samples, dim=0)
 
         output = layer(x)
+        plain_mean = x.mean(dim=0)
 
         assert output.shape == (2, 5, 4)
-        # Output should be close to 1.0 (outlier filtered out)
-        assert torch.all(torch.abs(output - 1.0) < 2.0)
+        # Tight assertion: the outlier must actually be dropped. The result sits
+        # at the inlier cluster (~1.0), nowhere near the contaminated plain mean
+        # (~10.0). The loose `< 2.0` bound the original test used would have
+        # passed even with nothing filtered, so check both ends.
+        assert torch.all(torch.abs(output - 1.0) < 0.1)
+        assert torch.all(plain_mean > 9.0)  # confirm the outlier really contaminates the plain mean
+
+    def test_z_score_filters_outlier_small_ensembles(self) -> None:
+        """A single strong outlier is filtered for N in {3, 4, 5} at the default threshold.
+
+        The non-robust mean/std Z-score saturates at ``sqrt(N - 1)`` for a lone
+        outlier, so a 3.0 cutoff could never flag anything until ``N >= 11``.
+        The robust median/MAD modified Z-score must catch it even for tiny
+        ensembles.
+        """
+        layer = OutliersFilteredMean(method="z_score")  # default threshold
+        for n in (3, 4, 5):
+            inliers = [torch.ones(2, 3, 4) for _ in range(n - 1)]  # norm 2.0
+            outlier = torch.ones(2, 3, 4) * 1000.0  # norm 2000.0
+            x = torch.stack(inliers + [outlier], dim=0)
+
+            output = layer(x)
+
+            # Outlier dropped -> output equals the inlier value (1.0), not the
+            # contaminated plain mean (which is far larger).
+            assert torch.allclose(
+                output, torch.ones(2, 3, 4), atol=1e-4
+            ), f"outlier not filtered for N={n}"
+
+    def test_z_score_all_outliers_falls_back_to_plain_mean(self) -> None:
+        """When every member is flagged, the layer returns the plain mean."""
+        # All members identical -> zero dispersion -> the degenerate MAD path
+        # keeps members at the median, so the mean is preserved exactly.
+        layer = OutliersFilteredMean(method="z_score")
+        samples = [torch.ones(2, 3, 4) * 7.0 for _ in range(4)]
+        x = torch.stack(samples, dim=0)
+
+        output = layer(x)
+
+        assert torch.allclose(output, torch.ones(2, 3, 4) * 7.0)
+
+    def test_z_score_preserves_inlier_spread(self) -> None:
+        """Inliers with mild spread are kept; only the true outlier is dropped."""
+        layer = OutliersFilteredMean(method="z_score")
+        samples = [
+            torch.ones(1, 1, 1) * 1.0,
+            torch.ones(1, 1, 1) * 1.1,
+            torch.ones(1, 1, 1) * 0.9,
+            torch.ones(1, 1, 1) * 100.0,  # Outlier
+        ]
+        x = torch.stack(samples, dim=0)
+
+        output = layer(x)
+
+        # Mean of the three inliers (1.0, 1.1, 0.9) == 1.0; outlier excluded.
+        assert torch.allclose(output, torch.ones(1, 1, 1) * 1.0, atol=1e-4)
+
+    def test_default_threshold_is_method_aware(self) -> None:
+        """Default threshold differs by method; explicit values are preserved."""
+        assert OutliersFilteredMean(method="z_score").threshold == 3.5
+        assert OutliersFilteredMean(method="iqr").threshold == 1.5
+        assert OutliersFilteredMean(method="z_score", threshold=2.0).threshold == 2.0
 
     def test_iqr_method_basic(self) -> None:
         """Test IQR outlier filtering."""

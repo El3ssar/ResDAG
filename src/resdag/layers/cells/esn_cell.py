@@ -87,6 +87,23 @@ class ESNCell(ReservoirCell):
     leak_rate : float, default=1.0
         Leaky integration rate in [0, 1].  A value of 1.0 means no leaking
         (standard RNN update); smaller values create slower dynamics.
+    noise : float, default=0.0
+        Standard deviation of additive Gaussian state noise injected after the
+        activation, following the classical ESN regularizer (Jaeger 2001;
+        Lukoševičius 2012):
+
+        .. math::
+
+            \\tilde{h}_t = f(\\cdot) + \\nu\\,\\epsilon_t,
+            \\quad \\epsilon_t \\sim \\mathcal{N}(0, 1)
+
+        where :math:`\\nu` = ``noise``.  Noise is applied **only in training
+        mode** (``self.training is True``, like dropout) and is a no-op under
+        :meth:`~torch.nn.Module.eval`.  The default ``0.0`` disables it
+        entirely, leaving outputs bit-identical to the noiseless cell.  The
+        noise stream is reproducible: it is seeded deterministically from
+        ``seed`` (independently of the weight-init draws), so a given ``seed``
+        reproduces the same perturbations on every run.  Must be non-negative.
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
@@ -147,6 +164,7 @@ class ESNCell(ReservoirCell):
         bias_scaling: float = 1.0,
         activation: str = "tanh",
         leak_rate: float = 1.0,
+        noise: float = 0.0,
         trainable: bool = False,
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
@@ -154,6 +172,9 @@ class ESNCell(ReservoirCell):
         seed: SeedLike = None,
     ) -> None:
         super().__init__()
+
+        if noise < 0.0:
+            raise ValueError(f"noise must be non-negative, got {noise}")
 
         # Store configuration
         self.reservoir_size = reservoir_size
@@ -168,6 +189,7 @@ class ESNCell(ReservoirCell):
         self.feedback_initializer = feedback_initializer
         self.input_initializer = input_initializer
         self.leak_rate = leak_rate
+        self.noise = noise
         self.trainable = trainable
         self.seed = seed
         # Integer form threaded into the NumPy-backed topology builders and the
@@ -175,6 +197,13 @@ class ESNCell(ReservoirCell):
         # torch.Generator is reduced to its initial_seed() so the topology stays
         # a pure function of the generator.
         self._seed_int = coerce_seed_to_int(seed)
+        # Per-device cache of torch Generators driving the train-mode state
+        # noise.  Built lazily on first use (and rebuilt after unpickling — see
+        # ``__getstate__``) so the noise stream follows the state's device while
+        # staying a deterministic function of ``seed``.  Drawn from a stream
+        # *independent* of the weight-init generator so that toggling ``noise``
+        # never perturbs weight reproducibility.
+        self._noise_generators: dict[torch.device, torch.Generator] = {}
 
         # Activation function
         self._activation_name = activation
@@ -253,10 +282,18 @@ class ESNCell(ReservoirCell):
             ``self.feedback_size``, if a driving input is provided but
             ``self.weight_input`` is ``None``, or if the driving input
             feature dimension does not match ``self.input_size``.
+
+        Notes
+        -----
+        When ``self.noise > 0`` and the cell is in training mode, additive
+        Gaussian noise is injected into the post-activation state (see the
+        ``noise`` constructor parameter).  This matches the noise applied in
+        the :meth:`step` fast path, so the two paths stay consistent.
         """
         projected = self.project_inputs(inputs)
         recurrent_contrib = F.linear(state, self.weight_hh)
         new_state = self.activation_fn(projected + recurrent_contrib)
+        new_state = self._apply_noise(new_state)
 
         if self.leak_rate < 1.0:
             new_state = torch.lerp(state, new_state, self.leak_rate)
@@ -345,10 +382,92 @@ class ESNCell(ReservoirCell):
         """
         pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
         new_state = self.activation_fn(pre_activation)
+        new_state = self._apply_noise(new_state)
 
         if self.leak_rate < 1.0:
             new_state = torch.lerp(state, new_state, self.leak_rate)
         return new_state, new_state
+
+    # ------------------------------------------------------------------
+    # State noise (train-mode regularizer)
+    # ------------------------------------------------------------------
+
+    def _noise_generator(self, device: torch.device) -> torch.Generator:
+        """Return the cached noise generator for ``device`` (lazily built).
+
+        Each device gets its own :class:`torch.Generator` so the noise can be
+        drawn directly on the state's device.  The generators are seeded from
+        ``self.seed`` but on a stream *offset* from the weight-init draws, so
+        the perturbations are reproducible without disturbing weight
+        reproducibility.
+
+        Parameters
+        ----------
+        device : torch.device
+            Device on which the noise tensor will be drawn.
+
+        Returns
+        -------
+        torch.Generator
+            A generator placed on ``device``, deterministic in ``self.seed``.
+        """
+        generator = self._noise_generators.get(device)
+        if generator is None:
+            # Offset the integer seed so the noise stream is independent of the
+            # weight-init stream; ``None`` keeps it tied to torch's global RNG
+            # (so ``torch.manual_seed`` still propagates).
+            base = self._seed_int
+            noise_seed = None if base is None else (base + 0x9E3779B9) % (2**63 - 1)
+            generator = create_torch_generator(noise_seed, device=device)
+            self._noise_generators[device] = generator
+        return generator
+
+    def _apply_noise(self, state: torch.Tensor) -> torch.Tensor:
+        """Add Gaussian state noise in training mode (no-op otherwise).
+
+        Mirrors the dropout gating convention: noise is injected only when
+        ``self.training`` is ``True`` and ``self.noise > 0``; under
+        :meth:`~torch.nn.Module.eval` (or with ``noise == 0.0``) the state is
+        returned unchanged, so eval-mode and noiseless outputs stay
+        bit-identical to the legacy cell.
+
+        Parameters
+        ----------
+        state : torch.Tensor
+            Post-activation state of shape ``(batch, reservoir_size)``.
+
+        Returns
+        -------
+        torch.Tensor
+            ``state`` perturbed by ``noise * N(0, 1)`` in training mode,
+            otherwise ``state`` itself.
+        """
+        if not self.training or self.noise == 0.0:
+            return state
+        generator = self._noise_generator(state.device)
+        epsilon = torch.randn(
+            state.shape,
+            generator=generator,
+            device=state.device,
+            dtype=state.dtype,
+        )
+        return state + self.noise * epsilon
+
+    def __getstate__(self) -> dict:
+        """Drop the transient per-device noise generators before pickling.
+
+        :class:`torch.Generator` objects carry live device/RNG state that does
+        not round-trip cleanly across devices; the cache is rebuilt lazily (and
+        deterministically from ``seed``) on first use after unpickling.
+        """
+        state = self.__dict__.copy()
+        state["_noise_generators"] = {}
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore state, re-creating the empty noise-generator cache."""
+        state.setdefault("_noise_generators", {})
+        self.__dict__.update(state)
 
     # ------------------------------------------------------------------
     # Weight initialization (verbatim from legacy ReservoirLayer)
@@ -454,11 +573,13 @@ class ESNCell(ReservoirCell):
     def __repr__(self) -> str:
         """Return string representation."""
         input_str = f", input_size={self.input_size}" if self.input_size is not None else ""
+        noise_str = f", noise={self.noise}" if self.noise != 0.0 else ""
         return (
             f"ESNCell("
             f"reservoir_size={self.reservoir_size}, "
             f"feedback_size={self.feedback_size}"
             f"{input_str}, "
             f"spectral_radius={self.spectral_radius}"
+            f"{noise_str}"
             f")"
         )

@@ -53,6 +53,13 @@ class ESNLayer(BaseReservoirLayer):
     leak_rate : float, default=1.0
         Leaky integration rate in [0, 1].  Value of 1.0 means no leaking
         (standard RNN update).  Smaller values create slower dynamics.
+    noise : float, default=0.0
+        Standard deviation of additive Gaussian state noise injected after the
+        activation (the classical ESN readout-conditioning regularizer).
+        Active **only in training mode** (like dropout) and a no-op under
+        :meth:`~torch.nn.Module.eval`.  The default ``0.0`` disables it, leaving
+        outputs bit-identical to the noiseless layer.  Reproducible under the
+        layer's ``seed``.  Must be non-negative.
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
@@ -190,6 +197,7 @@ class ESNLayer(BaseReservoirLayer):
         bias_scaling: float = 1.0,
         activation: str = "tanh",
         leak_rate: float = 1.0,
+        noise: float = 0.0,
         trainable: bool = False,
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
@@ -205,6 +213,7 @@ class ESNLayer(BaseReservoirLayer):
             bias_scaling=bias_scaling,
             activation=activation,
             leak_rate=leak_rate,
+            noise=noise,
             trainable=trainable,
             feedback_initializer=feedback_initializer,
             input_initializer=input_initializer,

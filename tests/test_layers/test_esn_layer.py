@@ -307,6 +307,53 @@ class TestESNLayerLeakRate:
         assert not torch.allclose(out_no_leak, out_with_leak)
 
 
+class TestESNLayerNoise:
+    """Train-mode state-noise injection plumbed through the sequence loop."""
+
+    def test_noise_forwarded_to_cell(self) -> None:
+        """The noise kwarg reaches the inner ESNCell."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.1)
+
+        assert reservoir.noise == 0.1
+        assert reservoir.cell.noise == 0.1
+
+    def test_noise_perturbs_sequence_in_train_mode(self) -> None:
+        """noise > 0 changes the output sequence in train() mode."""
+        noisy = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.1, seed=0)
+        clean = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.0, seed=0)
+        noisy.train()
+        clean.train()
+        feedback = torch.randn(2, 15, 10)
+
+        out_noisy = noisy(feedback)
+        out_clean = clean(feedback)
+
+        assert not torch.allclose(out_noisy, out_clean)
+
+    def test_noise_noop_in_eval_mode(self) -> None:
+        """noise > 0 is a no-op under eval(), matching the noiseless layer."""
+        noisy = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.5, seed=0)
+        clean = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.0, seed=0)
+        noisy.eval()
+        clean.eval()
+        feedback = torch.randn(2, 15, 10)
+
+        out_noisy = noisy(feedback)
+        out_clean = clean(feedback)
+
+        assert torch.equal(out_noisy, out_clean)
+
+    def test_noise_reproducible_under_seed(self) -> None:
+        """Two seeded layers produce identical noisy sequences."""
+        a = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.2, seed=99)
+        b = ESNLayer(reservoir_size=50, feedback_size=10, noise=0.2, seed=99)
+        a.train()
+        b.train()
+        feedback = torch.randn(2, 15, 10)
+
+        assert torch.equal(a(feedback), b(feedback))
+
+
 class TestESNLayerGradients:
     """Gradient flow through trainable reservoirs."""
 

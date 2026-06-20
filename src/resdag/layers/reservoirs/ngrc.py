@@ -39,7 +39,11 @@ class NGReservoir(BaseReservoirLayer):
     s : int, default=1
         Spacing between delay taps, in timesteps.
     p : int, default=2
-        Polynomial degree for nonlinear feature construction.
+        Polynomial degree for nonlinear feature construction.  Only monomials
+        of *exactly* degree ``p`` are emitted.  When ``p == 1`` and
+        ``include_linear`` is ``True`` the nonlinear block is omitted, because
+        the degree-1 monomials are identical to the linear features (see
+        :class:`~resdag.layers.cells.ngrc_cell.NGCell`).
     include_constant : bool, default=True
         Whether to prepend a constant ``1.0`` to the feature vector.
     include_linear : bool, default=True

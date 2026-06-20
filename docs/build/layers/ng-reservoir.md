@@ -51,8 +51,16 @@ $$
 $$
 
 The three terms are the constant 1, the delay-embedded inputs, and every
-degree-`p` monomial; `include_constant` and `include_linear` toggle the
-first two.
+monomial of *exactly* degree `p`; `include_constant` and `include_linear`
+toggle the first two.
+
+!!! note "Degree 1 (`p=1`)"
+    With `p=1` the degree-1 monomials are the linear features themselves.
+    To avoid two identical blocks (which would make the readout design
+    matrix rank-deficient), the monomial block is dropped when `p=1` and
+    `include_linear=True`. With `p=1` and `include_linear=False` the
+    degree-1 monomials are kept, since they are then the only
+    delay-embedded features.
 
 !!! warning "Combinatorial growth"
     The binomial term grows fast in `k`, `p`, and `input_dim`; the layer

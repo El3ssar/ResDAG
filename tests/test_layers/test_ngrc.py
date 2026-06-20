@@ -365,6 +365,88 @@ class TestNGCellMonomials:
 
 
 # ---------------------------------------------------------------------------
+# NGCell — p=1 must not duplicate the linear block (issue #151)
+# ---------------------------------------------------------------------------
+
+
+class TestNGCellP1NoDuplicateColumns:
+    """Regression tests for issue #151.
+
+    With ``p == 1`` the degree-1 monomials are exactly the columns of
+    ``O_lin``.  Emitting both blocks duplicated every linear column and made
+    the readout design matrix rank-deficient.  The nonlinear block must be
+    dropped when ``p == 1`` and ``include_linear`` is ``True``.
+    """
+
+    def test_no_duplicate_columns_p1_with_linear(self) -> None:
+        """``NGCell(p=1, include_linear=True)`` emits no duplicate columns."""
+        cell = NGCell(input_dim=3, k=2, p=1, include_constant=True, include_linear=True)
+        x = torch.randn(4, 3)
+        # Use a couple of steps so the delay buffer is non-trivially filled.
+        state = cell.init_state(4, "cpu", torch.float32)
+        _, state = cell([torch.randn(4, 3)], state)
+        features, _ = cell([x], state)
+
+        # No two feature columns may be identical (constant col is unique).
+        cols = features.t()  # (feature_dim, batch)
+        for i in range(cols.shape[0]):
+            for j in range(i + 1, cols.shape[0]):
+                assert not torch.allclose(
+                    cols[i], cols[j]
+                ), f"columns {i} and {j} are identical for p=1"
+
+    def test_feature_dim_p1_with_linear_no_nonlin_block(self) -> None:
+        """``feature_dim`` drops the monomial block for p=1 + include_linear."""
+        # D = input_dim * k = 6. With the duplicate fix: 1 (const) + 6 (lin).
+        cell = NGCell(input_dim=3, k=2, p=1, include_constant=True, include_linear=True)
+        D = 3 * 2
+        assert cell.feature_dim == 1 + D  # no extra n_monomials term
+
+    def test_o_lin_and_nonlin_blocks_not_identical_p1(self) -> None:
+        """O_lin and any nonlinear block must not be identical for p=1.
+
+        Before the fix the output was ``[const || O_lin || O_nonlin]`` with
+        ``O_nonlin == O_lin`` (a verbatim duplicate of the linear block).
+        After the fix there is no separate nonlinear block, so the output is
+        exactly ``[const || O_lin]`` with nothing trailing the linear columns.
+        """
+        D = 3 * 2
+        cell = NGCell(input_dim=3, k=2, p=1, include_constant=True, include_linear=True)
+        x = torch.randn(2, 3)
+        state = cell.init_state(2, "cpu", torch.float32)
+        _, state = cell([torch.randn(2, 3)], state)
+        features, _ = cell([x], state)
+
+        # The only block of D columns is O_lin; nothing trails it (the bug
+        # produced a trailing copy of O_lin here).
+        assert features.shape[1] == 1 + D
+        trailing = features[:, 1 + D :]
+        assert trailing.shape[1] == 0
+
+    def test_p1_without_linear_keeps_degree1_monomials(self) -> None:
+        """``p=1, include_linear=False`` keeps the degree-1 monomials."""
+        # With no linear block, the degree-1 monomials are the only delay
+        # features and do not overlap anything.
+        D = 3 * 2
+        cell = NGCell(input_dim=3, k=2, p=1, include_constant=False, include_linear=False)
+        assert cell.feature_dim == D  # exactly the degree-1 monomials
+
+        x = torch.randn(2, 3)
+        state = cell.init_state(2, "cpu", torch.float32)
+        _, state = cell([torch.randn(2, 3)], state)
+        features, _ = cell([x], state)
+        assert features.shape == (2, D)
+
+    def test_reservoir_full_rank_design_matrix_p1(self) -> None:
+        """The NGReservoir feature matrix is full column rank for p=1."""
+        layer = NGReservoir(input_dim=3, k=2, p=1, include_constant=True, include_linear=True)
+        x = torch.randn(1, 64, 3)
+        feats = layer(x)[0]  # (time, feature_dim)
+        rank = torch.linalg.matrix_rank(feats.double())
+        assert int(rank) == layer.feature_dim
+
+
+# ---------------------------------------------------------------------------
 # NGCell — no learnable parameters
 # ---------------------------------------------------------------------------
 

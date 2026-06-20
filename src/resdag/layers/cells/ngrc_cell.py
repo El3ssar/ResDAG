@@ -49,8 +49,16 @@ class NGCell(ReservoirCell):
         Spacing between delay taps, in timesteps.
     p : int, default=2
         Polynomial degree for nonlinear feature construction.  All unique
-        monomials of degree ``p`` from the ``D = input_dim * k`` linear
-        features are included.
+        monomials of *exactly* degree ``p`` from the ``D = input_dim * k``
+        linear features are included.
+
+        .. note::
+            When ``p == 1`` the degree-1 monomials *are* the linear features
+            ``O_lin``.  To avoid emitting two identical blocks (which makes the
+            readout design matrix rank-deficient), the nonlinear block is
+            **omitted** whenever ``p == 1`` and ``include_linear`` is ``True``.
+            With ``p == 1`` and ``include_linear=False`` the degree-1 monomials
+            are kept, since they are then the only delay-embedded features.
     include_constant : bool, default=True
         Whether to prepend a constant ``1.0`` feature to the output vector.
         Set ``True`` for Lorenz63 forecasting (Eq. 9).
@@ -66,7 +74,13 @@ class NGCell(ReservoirCell):
 
             D = input_dim * k
             n_nonlin = C(D + p - 1, p)
-            feature_dim = int(include_constant) + int(include_linear) * D + n_nonlin
+            # The nonlinear block is dropped when it would duplicate O_lin:
+            emit_nonlin = not (p == 1 and include_linear)
+            feature_dim = (
+                int(include_constant)
+                + int(include_linear) * D
+                + int(emit_nonlin) * n_nonlin
+            )
 
     state_size : int
         Number of rows in the delay buffer: ``(k - 1) * s``.  When ``k=1``
@@ -148,9 +162,18 @@ class NGCell(ReservoirCell):
 
         n_monomials = len(raw_indices)
 
+        # When p == 1 the degree-1 monomials are exactly the columns of O_lin,
+        # so emitting both O_lin and O_nonlin would duplicate every linear
+        # column and make the readout design matrix rank-deficient.  Drop the
+        # nonlinear block in that case; keep it when include_linear is False
+        # (the degree-1 monomials are then the only delay-embedded features).
+        self._emit_nonlinear: bool = not (p == 1 and include_linear)
+
         # Total output dimension
         self._feature_dim: int = (
-            int(include_constant) + int(include_linear) * linear_feature_dim + n_monomials
+            int(include_constant)
+            + int(include_linear) * linear_feature_dim
+            + int(self._emit_nonlinear) * n_monomials
         )
 
         if self._feature_dim > 10_000:
@@ -268,9 +291,10 @@ class NGCell(ReservoirCell):
         # o_lin[:, monomial_indices]: (batch, n_monomials, p) via advanced
         # indexing (broadcast over batch, gather over feature dim).
         # .prod(dim=-1): (batch, n_monomials)
+        #
+        # Skipped when p == 1 and include_linear is True, because the degree-1
+        # monomials are exactly the columns of O_lin (see __init__).
         # ------------------------------------------------------------------
-        o_nonlin = o_lin[:, self.monomial_indices].prod(dim=-1)  # (batch, n_monomials)
-
         # ------------------------------------------------------------------
         # 4. Assemble O_total = [c] ⊕ O_lin ⊕ O_nonlin (Eq. 9 / Eq. 10)
         # ------------------------------------------------------------------
@@ -279,7 +303,9 @@ class NGCell(ReservoirCell):
             parts.append(torch.ones(batch, 1, device=x.device, dtype=x.dtype))
         if self.include_linear:
             parts.append(o_lin)
-        parts.append(o_nonlin)
+        if self._emit_nonlinear:
+            o_nonlin = o_lin[:, self.monomial_indices].prod(dim=-1)  # (batch, n_monomials)
+            parts.append(o_nonlin)
 
         o_total = torch.cat(parts, dim=-1)  # (batch, feature_dim)
 

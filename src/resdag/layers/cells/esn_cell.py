@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer, resolve_topology
+from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
 from .base_cell import ReservoirCell
 
@@ -100,16 +101,22 @@ class ESNCell(ReservoirCell):
         Structure of the recurrent weight matrix: a registry name (graph or
         matrix topology), any matrix-building callable, a
         ``(callable, params)`` tuple, or a configured topology object.
-    seed : int, optional
-        Reproducibility seed forwarded to the topology and feedback/input
-        initializers (whichever accept a ``seed`` argument). With ``seed``
-        set, a string- or callable-form ``topology='erdos_renyi'`` produces
-        the same recurrent matrix on every build, without the
-        ``('erdos_renyi', {'seed': ...})`` tuple form. An explicit ``seed``
-        inside a tuple/object spec always wins over this argument. When
-        ``seed=None`` (the default), string-form graph topologies are still
-        reproducible under ``torch.manual_seed`` because the NumPy generator
-        is derived from torch's global RNG.
+    seed : int or torch.Generator, optional
+        Reproducibility seed that deterministically fixes *every* reservoir
+        parameter — the recurrent (topology) matrix, the feedback and input
+        weights (including the default ``uniform(-1, 1)`` draw used when no
+        initializer is given), and the random bias. Accepts a plain ``int`` or
+        a :class:`torch.Generator` (an int is extracted from the generator's
+        ``initial_seed()`` for the NumPy-backed topology/named-initializer
+        path, while the generator itself drives the torch default-init draws).
+        With ``seed`` set, a string- or callable-form
+        ``topology='erdos_renyi'`` produces the same recurrent matrix on every
+        build, without the ``('erdos_renyi', {'seed': ...})`` tuple form. An
+        explicit ``seed`` inside a tuple/object spec always wins over this
+        argument. When ``seed=None`` (the default), string-form graph
+        topologies and the default torch draws are still reproducible under
+        ``torch.manual_seed`` because their generators are derived from torch's
+        global RNG.
 
     Attributes
     ----------
@@ -144,7 +151,7 @@ class ESNCell(ReservoirCell):
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
-        seed: int | None = None,
+        seed: SeedLike = None,
     ) -> None:
         super().__init__()
 
@@ -163,6 +170,11 @@ class ESNCell(ReservoirCell):
         self.leak_rate = leak_rate
         self.trainable = trainable
         self.seed = seed
+        # Integer form threaded into the NumPy-backed topology builders and the
+        # named feedback/input initializers (they take an int/None seed).  A
+        # torch.Generator is reduced to its initial_seed() so the topology stays
+        # a pure function of the generator.
+        self._seed_int = coerce_seed_to_int(seed)
 
         # Activation function
         self._activation_name = activation
@@ -359,15 +371,28 @@ class ESNCell(ReservoirCell):
         return activations[activation]
 
     def _initialize_weights(self) -> None:
-        """Initialize all weight matrices."""
-        self._initialize_feedback_weights()
+        """Initialize all weight matrices.
+
+        A single torch ``Generator`` (built from ``self.seed``) drives every
+        default ``nn.init`` draw — feedback, input, recurrent, then bias, in
+        that fixed order — so a given ``seed`` deterministically reproduces all
+        parameters.  Named/object initializers and topologies seed themselves
+        from the integer seed instead (see ``_seed_int``).
+        """
+        # One generator for all torch default draws; seeded from self.seed so
+        # the parameters are a pure function of the seed and independent of the
+        # global RNG state.  When seed is None it is derived from the global RNG
+        # so torch.manual_seed still propagates.
+        generator = create_torch_generator(self.seed)
+
+        self._initialize_feedback_weights(generator)
 
         if self.input_size is not None:
-            self._initialize_input_weights()
+            self._initialize_input_weights(generator)
         else:
             self.register_parameter("weight_input", None)
 
-        self._initialize_recurrent_weights()
+        self._initialize_recurrent_weights(generator)
 
         if self._bias:
             # Random bias drawn like the feedback/input weights.  A
@@ -375,42 +400,44 @@ class ESNCell(ReservoirCell):
             # tanh dynamics oddly symmetric (f(-x) = -f(x)).
             self.bias_h = nn.Parameter(torch.empty(self.reservoir_size))
             if self.bias_scaling != 0.0:
-                nn.init.uniform_(self.bias_h, -self.bias_scaling, self.bias_scaling)
+                nn.init.uniform_(
+                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
+                )
             else:
                 nn.init.zeros_(self.bias_h)
         else:
             self.register_parameter("bias_h", None)
 
-    def _initialize_feedback_weights(self) -> None:
+    def _initialize_feedback_weights(self, generator: torch.Generator) -> None:
         """Initialize feedback weight matrix."""
         self.weight_feedback = nn.Parameter(torch.empty(self.reservoir_size, self.feedback_size))
 
-        resolved = resolve_initializer(self.feedback_initializer, seed=self.seed)
+        resolved = resolve_initializer(self.feedback_initializer, seed=self._seed_int)
         if resolved is not None:
             resolved.initialize(self.weight_feedback)
         else:
-            nn.init.uniform_(self.weight_feedback, -1, 1)
+            nn.init.uniform_(self.weight_feedback, -1, 1, generator=generator)
 
-    def _initialize_input_weights(self) -> None:
+    def _initialize_input_weights(self, generator: torch.Generator) -> None:
         """Initialize driving input weight matrix."""
         assert self.input_size is not None
         self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
 
-        resolved = resolve_initializer(self.input_initializer, seed=self.seed)
+        resolved = resolve_initializer(self.input_initializer, seed=self._seed_int)
         if resolved is not None:
             resolved.initialize(self.weight_input)
         else:
-            nn.init.uniform_(self.weight_input, -1, 1)
+            nn.init.uniform_(self.weight_input, -1, 1, generator=generator)
 
-    def _initialize_recurrent_weights(self) -> None:
+    def _initialize_recurrent_weights(self, generator: torch.Generator) -> None:
         """Initialize recurrent weight matrix from topology or random."""
         self.weight_hh = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
 
-        resolved = resolve_topology(self.topology, seed=self.seed)
+        resolved = resolve_topology(self.topology, seed=self._seed_int)
         if resolved is not None:
             resolved.initialize(self.weight_hh, spectral_radius=self.spectral_radius)
         else:
-            nn.init.uniform_(self.weight_hh, -1.0, 1.0)
+            nn.init.uniform_(self.weight_hh, -1.0, 1.0, generator=generator)
             if self.spectral_radius is not None:
                 self._scale_spectral_radius()
 

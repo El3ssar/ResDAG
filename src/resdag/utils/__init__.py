@@ -13,7 +13,11 @@ data
 Functions
 ---------
 create_rng
-    Create a random number generator with optional seed.
+    Create a NumPy random number generator with optional seed.
+create_torch_generator
+    Create a torch ``Generator`` for reproducible weight/bias draws.
+coerce_seed_to_int
+    Reduce an int/``torch.Generator``/None seed to a plain int (or None).
 load_file
     Load a time series from disk (re-exported from ``resdag.utils.data``).
 prepare_esn_data
@@ -35,6 +39,14 @@ resdag.utils.data : Data loading and preparation.
 
 from . import data
 from .data import load_file, prepare_esn_data
-from .general import create_rng
+from .general import SeedLike, coerce_seed_to_int, create_rng, create_torch_generator
 
-__all__ = ["create_rng", "data", "load_file", "prepare_esn_data"]
+__all__ = [
+    "SeedLike",
+    "coerce_seed_to_int",
+    "create_rng",
+    "create_torch_generator",
+    "data",
+    "load_file",
+    "prepare_esn_data",
+]

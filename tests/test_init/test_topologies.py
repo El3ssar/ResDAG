@@ -12,11 +12,14 @@ Pins down:
   in ``ESNLayer``.
 """
 
+import importlib
+
 import networkx as nx
 import numpy as np
 import pytest
 import torch
 
+import resdag.init.graphs as graphs_pkg
 from resdag.init.graphs import dendrocycle_graph, erdos_renyi_graph, ring_chord_graph
 from resdag.init.topology import (
     GraphTopology,
@@ -37,6 +40,47 @@ def block_diagonal(n: int, blocks: int = 4) -> torch.Tensor:
         s = b * size
         w[s : s + size, s : s + size] = torch.randn(size, size)
     return w
+
+
+# ---------------------------------------------------------------------------
+# Public-API export consistency (issue #137)
+# ---------------------------------------------------------------------------
+
+
+class TestGraphsPackageExports:
+    """``resdag.init.graphs.__all__`` must agree with the bound module symbols.
+
+    Regression guard for the drift class where ``__all__`` advertises a name
+    that is never bound at module level (issue #137: ``__all__`` listed
+    ``chord_dendrocycle_graph`` while the import bound
+    ``dendrocycle_with_chords_graph``). Such drift silently breaks both
+    targeted imports and ``from resdag.init.graphs import *``.
+    """
+
+    def test_every_all_name_is_bound(self) -> None:
+        """Every name advertised in ``__all__`` resolves to a module attribute."""
+        missing = [name for name in graphs_pkg.__all__ if not hasattr(graphs_pkg, name)]
+
+        assert not missing, f"__all__ advertises names not bound on the module: {missing}"
+
+    def test_every_all_name_is_importable(self) -> None:
+        """Every ``__all__`` name imports via ``from ... import <name>``."""
+        for name in graphs_pkg.__all__:
+            module = importlib.import_module("resdag.init.graphs")
+            assert hasattr(module, name), f"cannot import name {name!r} from resdag.init.graphs"
+
+    def test_star_import_succeeds(self) -> None:
+        """``from resdag.init.graphs import *`` executes without error.
+
+        A phantom ``__all__`` entry raises ``AttributeError`` at star-import
+        time, so successful execution proves every advertised name is bound.
+        """
+        namespace: dict[str, object] = {}
+
+        exec("from resdag.init.graphs import *", namespace)
+
+        for name in graphs_pkg.__all__:
+            assert name in namespace, f"star import did not bind {name!r}"
 
 
 # ---------------------------------------------------------------------------

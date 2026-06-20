@@ -33,7 +33,6 @@ from .zero import zero_graph
 
 __all__ = [
     "barabasi_albert_graph",
-    "chord_dendrocycle_graph",
     "complete_graph",
     "connected_erdos_renyi_graph",
     "connected_watts_strogatz_graph",

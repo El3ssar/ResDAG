@@ -109,6 +109,7 @@ from .layers import (
     RidgeReadoutLayer,
     SelectiveDropout,
     SelectiveExponentiation,
+    Standardize,
     SVDReadoutLayer,
 )
 from .models import (
@@ -168,6 +169,7 @@ __all__ = [
     "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",
+    "Standardize",
     # Ensemble
     "CoupledEnsembleESNModel",
     # Training

@@ -17,6 +17,9 @@ SelectiveDropout
     Per-feature dropout with selectivity control.
 SelectiveExponentiation
     Per-feature exponentiation transformation (squares even-indexed units).
+Standardize
+    Per-feature z-score standardization with buffer-stored mean/std,
+    ``fit``, and an exact ``inverse``.
 
 Examples
 --------
@@ -34,6 +37,7 @@ from .feature_partitioner import FeaturePartitioner
 from .power import Power
 from .selective_dropout import SelectiveDropout
 from .selective_exponentiation import SelectiveExponentiation
+from .standardize import Standardize
 
 __all__ = [
     "Concatenate",
@@ -41,4 +45,5 @@ __all__ = [
     "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",
+    "Standardize",
 ]

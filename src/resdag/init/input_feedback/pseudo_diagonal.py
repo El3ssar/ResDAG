@@ -26,8 +26,11 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
     Parameters
     ----------
     input_scaling : float, optional
-        Scaling factor applied to all weights. If None, no scaling is applied
-        (weights remain in [-1, 1]).
+        Uniform magnitude knob from the shared scaling contract (see
+        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
+        (the default) applies no scaling (nonzero entries stay in ``[-1, 1]``); a
+        float ``s`` multiplies every entry by ``s``, so ``max|W|`` scales linearly
+        with ``s`` (``input_scaling=0.5`` halves it).
     binarize : bool, default=False
         Whether to binarize weights to {-input_scaling, input_scaling} instead
         of uniform distribution.
@@ -52,9 +55,8 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
         seed: int | None = None,
     ) -> None:
         """Initialize the PseudoDiagonalInitializer."""
-        self.input_scaling = input_scaling
+        super().__init__(input_scaling=input_scaling, seed=seed)
         self.binarize = binarize
-        self.seed = seed
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor with pseudo-diagonal structure.
@@ -123,9 +125,8 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
                 values[row, start_col:end_col] = block_values
                 start_col = end_col
 
-        # Apply scaling if provided
-        if self.input_scaling is not None:
-            values *= self.input_scaling
+        # Apply the shared uniform scaling contract as the documented final transform.
+        values = self._apply_scaling(values)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

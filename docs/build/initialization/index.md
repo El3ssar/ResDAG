@@ -98,6 +98,60 @@ layer = ESNLayer(200, feedback_size=3, spectral_radius=1.0,
     `spectral_radius` rescales the result *afterwards*. A topology function does not
     need to normalize its own spectrum.
 
+## The `input_scaling` contract
+
+`input_scaling` is the one knob that controls input-injection magnitude — among
+the most performance-critical ESN hyperparameters. Every input/feedback
+initializer honors the **same** contract, defined once on
+`InputFeedbackInitializer`:
+
+- `input_scaling=None` (the default for most initializers) applies **no
+  scaling** — the matrix keeps its natural range.
+- `input_scaling=s` applies a single, uniform `W <- s * W` as the documented
+  *final* transform, so the matrix's magnitude statistic scales **linearly**
+  with `s`. Concretely, `input_scaling=0.5` halves it and `input_scaling=2.0`
+  doubles it.
+
+The "magnitude statistic" is `max|W|` for the elementwise initializers and the
+**per-channel L2 norm** for the two structured ring initializers (whose value
+*is* the scaling target). What `input_scaling=0.5` does, per initializer:
+
+| Initializer | Natural range / statistic | Effect of `input_scaling=0.5` |
+| --- | --- | --- |
+| `random` | entries in `[-1, 1]` | entries in `[-0.5, 0.5]`; `max\|W\|` → `0.5` |
+| `random_binary` | entries in `{-1, +1}` | entries in `{-0.5, +0.5}` |
+| `chessboard` | entries in `{-1, +1}` | entries in `{-0.5, +0.5}` |
+| `chebyshev` | Chebyshev map values | every entry × `0.5` |
+| `pseudo_diagonal` | structured `[-1, 1]` | every entry × `0.5` |
+| `binary_balanced` | balanced `{-1, +1}` | every entry × `0.5` |
+| `dendrocycle_input` | `U[-draw_width, draw_width]` on core | every drawn entry × `0.5` (see below) |
+| `opposite_anchors` | per-channel L2 norm = `input_scaling` | per-channel L2 norm = `0.5` |
+| `ring_window` | per-channel L2 norm = `input_scaling` | per-channel L2 norm = `0.5` |
+
+!!! warning "`gain` is now `input_scaling`"
+    `opposite_anchors` and `ring_window` previously named this knob `gain`.
+    `gain` is now a **deprecated alias** for `input_scaling` (identical meaning —
+    the per-channel L2 norm); passing it emits a `DeprecationWarning`, and
+    passing both raises.
+
+!!! note "`dendrocycle_input`: draw width vs. scaling"
+    `dendrocycle_input` historically overloaded `input_scaling` to mean the draw
+    half-width of `U[-s, s]`. That role is now the separate **`draw_width`**
+    parameter (default `1.0`); `input_scaling` is the uniform final multiply
+    shared with every other initializer (default `None`). To reproduce the old
+    `dendrocycle_input(input_scaling=s)` draw, pass `draw_width=s`.
+
+```python
+# Same magnitude regime regardless of which initializer you swap in:
+layer = ESNLayer(200, feedback_size=3, feedback_initializer=("random", {"input_scaling": 0.5}))
+layer = ESNLayer(200, feedback_size=3, feedback_initializer=("opposite_anchors", {"input_scaling": 0.5}))
+```
+
+An optional `connectivity` knob (a fraction in `(0, 1]`) lives on the same base
+class: it keeps that fraction of nonzero entries per input channel. Structured
+initializers that already define their own connectivity pattern (only the core
+ring receives input, a fixed window per channel) document whether they honor it.
+
 ---
 
 ## The catalogs

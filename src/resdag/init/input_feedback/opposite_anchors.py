@@ -1,20 +1,27 @@
 """Opposite anchors initializer for ring topologies."""
 
+from typing import Any
+
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
+from .base import (
+    InputFeedbackInitializer,
+    _numpy_compute_dtype,
+    _resolve_scaling_alias,
+    _resolve_shape,
+)
 from .registry import register_input_feedback
 
 
-@register_input_feedback("opposite_anchors", gain=1.0)
+@register_input_feedback("opposite_anchors", input_scaling=None, gain=None)
 class OppositeAnchorsInitializer(InputFeedbackInitializer):
     """Initializer that connects each input to two opposite anchors on an n-node ring.
 
     Each input channel connects to two anchor nodes on opposite sides of the ring,
-    with equal-magnitude bipolar weights on both anchors (gain normalized by sqrt(2),
-    so total channel energy equals 'gain'). If the two anchors coincide (n=1), all
-    weight goes to that single node.
+    with equal-magnitude bipolar weights on both anchors (``input_scaling`` normalized
+    by sqrt(2), so the per-channel L2 norm equals ``input_scaling``). If the two
+    anchors coincide (n=1), all weight goes to that single node.
 
     The first (positive) anchor of channel ``i`` is placed at ``round(i * n / m) % n``,
     spreading the ``m`` anchors evenly around the **full** ring; the second (negative)
@@ -25,6 +32,14 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
     This is useful for ring/cycle topologies where you want inputs distributed evenly
     around the ring with bipolar activation patterns.
 
+    Scaling
+    -------
+    For this structured initializer the magnitude statistic governed by the shared
+    contract is the **per-channel L2 norm**, which equals ``input_scaling``. Hence
+    ``input_scaling=0.5`` makes every channel's column have L2 norm ``0.5`` (and,
+    since each column is two equal-magnitude bipolar entries, ``max|W| = 0.5/sqrt(2)``).
+    The per-channel L2 norm therefore scales linearly with ``input_scaling``.
+
     Capacity limit
     --------------
     The ring has only ``n = reservoir_size`` nodes, so at most ``n`` channels can be
@@ -34,33 +49,48 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
 
     Parameters
     ----------
-    gain : float, default=1.0
-        Global input gain per channel.
+    input_scaling : float, optional
+        Per-channel L2 norm of each input column. Defaults to ``1.0`` when neither
+        ``input_scaling`` nor the deprecated ``gain`` is given.
+    gain : float, optional
+        Deprecated alias for ``input_scaling`` (same meaning). Emits a
+        ``DeprecationWarning``; passing both ``input_scaling`` and ``gain`` raises.
 
     Raises
     ------
     ValueError
-        If ``gain`` is not a positive finite float (at construction), or if
+        If the resolved scaling is not a positive finite float (at construction),
+        if both ``input_scaling`` and ``gain`` are supplied, or if
         ``in_features > reservoir_size`` when :meth:`initialize` is called.
 
     Examples
     --------
     >>> from resdag.init.input_feedback import OppositeAnchorsInitializer
     >>>
-    >>> init = OppositeAnchorsInitializer(gain=1.0)
+    >>> init = OppositeAnchorsInitializer(input_scaling=1.0)
     >>> weight = torch.empty(100, 5)  # (reservoir_size, num_inputs)
     >>> init.initialize(weight)
     >>>
     >>> # Each input connects to two opposite points on the ring
     """
 
-    def __init__(self, gain: float = 1.0) -> None:
+    def __init__(
+        self,
+        input_scaling: float | None = None,
+        gain: float | None = None,
+    ) -> None:
         """Initialize the OppositeAnchorsInitializer."""
-        if not np.isfinite(gain) or gain <= 0:
-            raise ValueError("gain must be a positive finite float.")
-        self.gain = float(gain)
+        resolved = _resolve_scaling_alias(input_scaling, gain, default=1.0)
+        if resolved is None or not np.isfinite(resolved) or resolved <= 0:
+            raise ValueError("input_scaling must be a positive finite float.")
+        super().__init__(input_scaling=resolved)
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    @property
+    def gain(self) -> float | None:
+        """Deprecated alias for :attr:`input_scaling`."""
+        return self.input_scaling
+
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with opposite anchor pattern.
 
         Parameters
@@ -97,14 +127,20 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
                 "reservoir."
             )
 
-        # Build at the target precision so gain / sqrt(2) keeps full precision
-        # in a float64 weight instead of being truncated to float32.
+        # Build at the target precision so input_scaling / sqrt(2) keeps full
+        # precision in a float64 weight instead of being truncated to float32.
         values = np.zeros((n, m), dtype=compute_dtype)
         half = n // 2
 
+        # ``input_scaling`` is the per-channel L2 norm target (never None here:
+        # the constructor resolves the alias and defaults it to 1.0).
+        assert self.input_scaling is not None
+        scaling = float(self.input_scaling)
+
         # Special case: n == 1
         if n == 1:
-            values[0, :] = self.gain
+            # All weight on the single node; |w| == per-channel L2 norm.
+            values[0, :] = scaling
         else:
             # Spread the positive anchors evenly around the *full* ring so distinct
             # channels never collide while m <= n. The negative anchor is the
@@ -112,7 +148,9 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
             j0 = np.round(np.arange(m) * n / m).astype(int) % n
             j1 = (j0 + half) % n
 
-            w = self.gain / np.sqrt(2.0)
+            # Two equal-magnitude entries per column -> per-channel L2 norm is
+            # sqrt(2) * w, so w = scaling / sqrt(2) makes the norm equal scaling.
+            w = scaling / np.sqrt(2.0)
             values[j0, np.arange(m)] = w
             values[j1, np.arange(m)] = -w  # Negative for bipolar pattern
 
@@ -125,4 +163,4 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         return weight
 
     def __repr__(self) -> str:
-        return f"OppositeAnchorsInitializer(gain={self.gain})"
+        return f"OppositeAnchorsInitializer(input_scaling={self.input_scaling})"

@@ -9,6 +9,7 @@ Pins down:
 - custom initializer objects driving an ESNLayer on every device.
 """
 
+import numpy as np
 import pytest
 import torch
 
@@ -19,6 +20,7 @@ from resdag.init.input_feedback import (
     ChessboardInitializer,
     DendrocycleInputInitializer,
     FunctionInitializer,
+    InputFeedbackInitializer,
     OppositeAnchorsInitializer,
     PseudoDiagonalInitializer,
     RandomBinaryInitializer,
@@ -140,7 +142,7 @@ _SEEDED_INITIALIZERS = [
     ),
     pytest.param(
         DendrocycleInputInitializer,
-        {"c": 0.2, "input_scaling": 0.5},
+        {"c": 0.2, "draw_width": 0.5},
         id="dendrocycle_input",
     ),
 ]
@@ -245,7 +247,7 @@ class TestOppositeAnchorsCollision:
 
     def test_regression_n6_m5_distinct_columns(self) -> None:
         """The reported case ``n=6, m=5`` yields five distinct columns."""
-        init = OppositeAnchorsInitializer(gain=1.0)
+        init = OppositeAnchorsInitializer(input_scaling=1.0)
         weight = torch.empty(6, 5)  # (reservoir_size=6, in_features=5)
         init.initialize(weight)
 
@@ -260,7 +262,7 @@ class TestOppositeAnchorsCollision:
         """No two columns are identical for ``in_features`` up to ``reservoir_size``."""
         for m in range(1, n + 1):
             weight = torch.empty(n, m)
-            OppositeAnchorsInitializer(gain=1.0).initialize(weight)
+            OppositeAnchorsInitializer(input_scaling=1.0).initialize(weight)
 
             for i in range(m):
                 for j in range(i + 1, m):
@@ -270,7 +272,7 @@ class TestOppositeAnchorsCollision:
 
     def test_in_features_exceeds_reservoir_size_raises(self) -> None:
         """``in_features > reservoir_size`` raises a clear ``ValueError``."""
-        init = OppositeAnchorsInitializer(gain=1.0)
+        init = OppositeAnchorsInitializer(input_scaling=1.0)
         weight = torch.empty(6, 7)  # (reservoir_size=6, in_features=7)
 
         with pytest.raises(ValueError, match="in_features <= reservoir_size"):
@@ -278,7 +280,7 @@ class TestOppositeAnchorsCollision:
 
     def test_single_channel_full_ring(self) -> None:
         """A single channel (``m=1``) still produces a valid bipolar column."""
-        init = OppositeAnchorsInitializer(gain=1.0)
+        init = OppositeAnchorsInitializer(input_scaling=1.0)
         weight = torch.empty(8, 1)
         init.initialize(weight)
 
@@ -325,7 +327,7 @@ _PRECISION_INITIALIZERS = [
     ),
     pytest.param(
         OppositeAnchorsInitializer,
-        {"gain": 1.0},  # gain / sqrt(2) is already irrational
+        {"input_scaling": 1.0},  # input_scaling / sqrt(2) is already irrational
         (64, 8),
         id="opposite_anchors",
     ),
@@ -393,3 +395,264 @@ class TestStructuredInitializerPrecision:
         # And every value is genuinely float32 (no widening surprises).
         assert w1.dtype == torch.float32
         assert torch.equal(w1, w1.to(torch.float64).to(torch.float32))
+
+
+def _max_abs(weight: torch.Tensor) -> float:
+    """Documented magnitude statistic for elementwise initializers: ``max|W|``."""
+    return float(weight.abs().max())
+
+
+def _max_channel_l2(weight: torch.Tensor) -> float:
+    """Documented magnitude statistic for ring initializers: per-channel L2 norm.
+
+    Returns the largest column (input-channel) L2 norm, which the structured ring
+    initializers (``opposite_anchors``, ``ring_window``) pin to ``input_scaling``.
+    """
+    return float(torch.linalg.vector_norm(weight, dim=0).max())
+
+
+# (factory, base_kwargs, statistic, shape) for every initializer that honors the
+# shared ``input_scaling`` contract. ``statistic`` maps a weight to the magnitude
+# the initializer documents as scaling linearly with ``input_scaling``:
+#   - elementwise initializers -> ``max|W|``
+#   - structured ring initializers -> per-channel L2 norm
+_SCALING_CONTRACT = [
+    pytest.param(
+        lambda s: RandomInputInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (128, 6),
+        id="random",
+    ),
+    pytest.param(
+        lambda s: RandomBinaryInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (128, 6),
+        id="random_binary",
+    ),
+    pytest.param(
+        lambda s: PseudoDiagonalInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (128, 6),
+        id="pseudo_diagonal",
+    ),
+    pytest.param(
+        lambda s: ChessboardInitializer(input_scaling=s),
+        _max_abs,
+        (64, 8),
+        id="chessboard",
+    ),
+    pytest.param(
+        lambda s: ChebyshevInitializer(p=0.3, k=3.5, input_scaling=s),
+        _max_abs,
+        (64, 8),
+        id="chebyshev",
+    ),
+    pytest.param(
+        lambda s: BinaryBalancedInitializer(input_scaling=s),
+        _max_abs,
+        (64, 8),
+        id="binary_balanced",
+    ),
+    pytest.param(
+        lambda s: DendrocycleInputInitializer(c=0.5, draw_width=1.0, input_scaling=s, seed=0),
+        _max_abs,
+        (64, 8),
+        id="dendrocycle_input",
+    ),
+    pytest.param(
+        lambda s: OppositeAnchorsInitializer(input_scaling=s),
+        _max_channel_l2,
+        (64, 8),
+        id="opposite_anchors",
+    ),
+    pytest.param(
+        lambda s: RingWindowInputInitializer(
+            c=0.5, window=0.5, taper="cosine", signed="alt_ring", input_scaling=s
+        ),
+        _max_channel_l2,
+        (64, 8),
+        id="ring_window",
+    ),
+]
+
+
+class TestScalingContract:
+    """The shared ``input_scaling`` contract: a uniform, linear magnitude knob.
+
+    Acceptance criterion: ``max|W|`` (or the documented per-channel L2 norm for
+    the structured ring initializers) scales **linearly** with ``input_scaling``
+    for every initializer.
+    """
+
+    @pytest.mark.parametrize(("factory", "statistic", "shape"), _SCALING_CONTRACT)
+    def test_statistic_scales_linearly_with_input_scaling(self, factory, statistic, shape) -> None:
+        """Doubling/halving ``input_scaling`` doubles/halves the magnitude statistic."""
+        base = torch.empty(*shape, dtype=torch.float64)
+        half = torch.empty(*shape, dtype=torch.float64)
+        double = torch.empty(*shape, dtype=torch.float64)
+
+        factory(1.0).initialize(base)
+        factory(0.5).initialize(half)
+        factory(2.0).initialize(double)
+
+        s_base = statistic(base)
+        assert s_base > 0.0  # the chosen shape produces a non-trivial matrix
+
+        # input_scaling=0.5 -> magnitude * 0.5; input_scaling=2.0 -> magnitude * 2.0.
+        assert statistic(half) == pytest.approx(0.5 * s_base, rel=1e-9)
+        assert statistic(double) == pytest.approx(2.0 * s_base, rel=1e-9)
+
+    @pytest.mark.parametrize(("factory", "statistic", "shape"), _SCALING_CONTRACT)
+    def test_input_scaling_half_is_pointwise_half(self, factory, statistic, shape) -> None:
+        """``input_scaling=0.5`` is exactly the elementwise half of ``input_scaling=1.0``.
+
+        The contract states ``input_scaling`` is a *uniform* final multiply, so
+        every entry — not just the magnitude statistic — must scale together.
+        """
+        base = torch.empty(*shape, dtype=torch.float64)
+        half = torch.empty(*shape, dtype=torch.float64)
+
+        factory(1.0).initialize(base)
+        factory(0.5).initialize(half)
+
+        assert torch.allclose(half, 0.5 * base, atol=1e-12)
+
+
+class TestScalingContractBase:
+    """Unit coverage for the contract helpers owned by ``InputFeedbackInitializer``."""
+
+    class _Identity(InputFeedbackInitializer):
+        """Minimal subclass exposing the protected helpers for testing."""
+
+        def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+            return weight
+
+    def test_apply_scaling_none_is_identity_numpy(self) -> None:
+        """``input_scaling=None`` returns the array unchanged (numpy)."""
+        init = self._Identity(input_scaling=None)
+        values = np.array([[1.0, -2.0], [3.0, -4.0]])
+        out = init._apply_scaling(values)
+        assert np.array_equal(out, values)
+
+    def test_apply_scaling_multiplies_numpy(self) -> None:
+        """A float ``input_scaling`` multiplies a numpy array uniformly."""
+        init = self._Identity(input_scaling=0.5)
+        values = np.array([[1.0, -2.0], [3.0, -4.0]])
+        out = init._apply_scaling(values)
+        assert np.allclose(out, 0.5 * values)
+
+    def test_apply_scaling_multiplies_torch(self) -> None:
+        """A float ``input_scaling`` multiplies a torch tensor uniformly."""
+        init = self._Identity(input_scaling=2.0)
+        values = torch.tensor([[1.0, -2.0], [3.0, -4.0]])
+        out = init._apply_scaling(values)
+        assert torch.allclose(out, 2.0 * values)
+
+    def test_apply_scaling_preserves_dtype(self) -> None:
+        """Scaling a float64 numpy intermediate stays float64."""
+        init = self._Identity(input_scaling=_IRRATIONAL_SCALE)
+        values = np.ones((3, 3), dtype=np.float64)
+        assert init._apply_scaling(values).dtype == np.float64
+
+    def test_apply_connectivity_none_is_identity(self) -> None:
+        """``connectivity=None`` leaves the produced sparsity untouched."""
+        init = self._Identity(connectivity=None, seed=0)
+        values = np.ones((10, 4))
+        assert np.array_equal(init._apply_connectivity(values), values)
+
+    def test_apply_connectivity_density_numpy(self) -> None:
+        """``connectivity=c`` keeps round(c * rows) nonzeros per column (numpy)."""
+        init = self._Identity(connectivity=0.5, seed=0)
+        values = np.ones((10, 4))
+        out = init._apply_connectivity(values)
+        # Each column keeps exactly round(0.5 * 10) == 5 nonzeros.
+        assert np.array_equal((out != 0).sum(axis=0), np.full(4, 5))
+
+    def test_apply_connectivity_density_torch(self) -> None:
+        """``connectivity=c`` keeps round(c * rows) nonzeros per column (torch)."""
+        init = self._Identity(connectivity=0.3, seed=1)
+        values = torch.ones(20, 3)
+        out = init._apply_connectivity(values)
+        keep = round(0.3 * 20)
+        assert torch.equal((out != 0).sum(dim=0), torch.full((3,), keep))
+
+    def test_apply_connectivity_keeps_at_least_one(self) -> None:
+        """A tiny ``connectivity`` still keeps at least one nonzero per column."""
+        init = self._Identity(connectivity=0.01, seed=0)
+        values = np.ones((10, 4))
+        out = init._apply_connectivity(values)
+        assert np.all((out != 0).sum(axis=0) >= 1)
+
+    def test_invalid_input_scaling_raises(self) -> None:
+        """A non-finite ``input_scaling`` is rejected at construction."""
+        with pytest.raises(ValueError, match="input_scaling"):
+            self._Identity(input_scaling=float("inf"))
+
+    @pytest.mark.parametrize("bad", [0.0, -0.1, 1.5])
+    def test_invalid_connectivity_raises(self, bad: float) -> None:
+        """``connectivity`` outside ``(0, 1]`` is rejected at construction."""
+        with pytest.raises(ValueError, match="connectivity"):
+            self._Identity(connectivity=bad)
+
+
+class TestGainDeprecatedAlias:
+    """``gain`` is a deprecated alias for ``input_scaling`` where it existed."""
+
+    @pytest.mark.parametrize("cls", [OppositeAnchorsInitializer])
+    def test_gain_warns_and_aliases_opposite_anchors(self, cls) -> None:
+        """Passing ``gain`` warns and behaves identically to ``input_scaling``."""
+        with pytest.warns(DeprecationWarning, match="gain"):
+            via_gain = cls(gain=0.7)
+        via_scaling = cls(input_scaling=0.7)
+
+        assert via_gain.input_scaling == via_scaling.input_scaling
+        assert via_gain.gain == 0.7  # property mirrors input_scaling
+
+        w_gain = torch.empty(32, 4, dtype=torch.float64)
+        w_scaling = torch.empty(32, 4, dtype=torch.float64)
+        via_gain.initialize(w_gain)
+        via_scaling.initialize(w_scaling)
+        assert torch.allclose(w_gain, w_scaling)
+
+    def test_gain_warns_and_aliases_ring_window(self) -> None:
+        """``ring_window`` accepts the deprecated ``gain`` alias too."""
+        with pytest.warns(DeprecationWarning, match="gain"):
+            via_gain = RingWindowInputInitializer(c=0.5, window=0.5, gain=0.7)
+        via_scaling = RingWindowInputInitializer(c=0.5, window=0.5, input_scaling=0.7)
+
+        w_gain = torch.empty(32, 4, dtype=torch.float64)
+        w_scaling = torch.empty(32, 4, dtype=torch.float64)
+        via_gain.initialize(w_gain)
+        via_scaling.initialize(w_scaling)
+        assert torch.allclose(w_gain, w_scaling)
+
+    def test_both_input_scaling_and_gain_raises(self) -> None:
+        """Supplying both names is ambiguous and raises."""
+        with pytest.raises(ValueError, match="only one of"):
+            OppositeAnchorsInitializer(input_scaling=0.5, gain=0.5)
+
+    def test_gain_alias_via_registry(self) -> None:
+        """``get_input_feedback`` honors the ``gain`` alias with a warning."""
+        with pytest.warns(DeprecationWarning, match="gain"):
+            init = get_input_feedback("opposite_anchors", gain=0.5)
+        assert init.input_scaling == 0.5
+
+
+class TestDendrocycleDrawWidthVsScaling:
+    """Dendrocycle separates its draw half-width from the uniform scaling knob."""
+
+    def test_draw_width_sets_raw_spread(self) -> None:
+        """With ``input_scaling=None``, ``max|W|`` is bounded by ``draw_width``."""
+        weight = torch.empty(200, 4, dtype=torch.float64)
+        DendrocycleInputInitializer(c=0.5, draw_width=0.5, seed=0).initialize(weight)
+        assert 0.0 < float(weight.abs().max()) <= 0.5
+
+    def test_input_scaling_multiplies_on_top_of_draw_width(self) -> None:
+        """``input_scaling`` is a uniform multiply *on top of* the raw draw."""
+        raw = torch.empty(200, 4, dtype=torch.float64)
+        scaled = torch.empty(200, 4, dtype=torch.float64)
+        DendrocycleInputInitializer(c=0.5, draw_width=1.0, seed=0).initialize(raw)
+        DendrocycleInputInitializer(c=0.5, draw_width=1.0, input_scaling=0.25, seed=0).initialize(
+            scaled
+        )
+        assert torch.allclose(scaled, 0.25 * raw, atol=1e-12)

@@ -23,8 +23,11 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
     Parameters
     ----------
     input_scaling : float, optional
-        Scaling factor applied to all weights. If provided, weights will be
-        in {-input_scaling, +input_scaling}. If None, weights are {-1, +1}.
+        Uniform magnitude knob from the shared scaling contract (see
+        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
+        (the default) leaves entries in ``{-1, +1}``; a float ``s`` multiplies
+        every entry by ``s`` (entries become ``{-s, +s}``), so ``max|W|`` scales
+        linearly with ``s`` (``input_scaling=0.5`` halves it).
     seed : int, optional
         Random seed for reproducibility.
 
@@ -50,8 +53,7 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         seed: int | None = None,
     ) -> None:
         """Initialize the RandomBinaryInitializer."""
-        self.input_scaling = input_scaling
-        self.seed = seed
+        super().__init__(input_scaling=input_scaling, seed=seed)
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor with binary random values.
@@ -80,9 +82,8 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         # Generate binary values {-1, +1}
         values = rng.choice([-1.0, 1.0], size=(out_features, in_features))
 
-        # Apply scaling if provided
-        if self.input_scaling is not None:
-            values *= self.input_scaling
+        # Apply the shared uniform scaling contract as the documented final transform.
+        values = self._apply_scaling(values)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

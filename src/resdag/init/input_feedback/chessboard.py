@@ -20,7 +20,11 @@ class ChessboardInitializer(InputFeedbackInitializer):
     Parameters
     ----------
     input_scaling : float, optional
-        Scaling factor applied to all weights. If None, weights are {-1, +1}.
+        Uniform magnitude knob from the shared scaling contract (see
+        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
+        (the default) leaves entries in ``{-1, +1}``; a float ``s`` multiplies
+        every entry by ``s`` (entries become ``{-s, +s}``), so ``max|W|`` scales
+        linearly with ``s`` (``input_scaling=0.5`` halves it).
 
     Examples
     --------
@@ -39,7 +43,7 @@ class ChessboardInitializer(InputFeedbackInitializer):
 
     def __init__(self, input_scaling: float | None = None) -> None:
         """Initialize the ChessboardInitializer."""
-        self.input_scaling = input_scaling
+        super().__init__(input_scaling=input_scaling)
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor with chessboard pattern.
@@ -65,9 +69,8 @@ class ChessboardInitializer(InputFeedbackInitializer):
         j = np.arange(in_features)[None, :]
         values = ((-1.0) ** (i + j)).astype(compute_dtype)
 
-        # Apply scaling if provided
-        if self.input_scaling is not None:
-            values *= self.input_scaling
+        # Apply the shared uniform scaling contract as the documented final transform.
+        values = self._apply_scaling(values)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

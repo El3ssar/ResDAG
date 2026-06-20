@@ -27,7 +27,11 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
     Parameters
     ----------
     input_scaling : float, optional
-        Scaling factor applied to the {-1, +1} matrix.
+        Uniform magnitude knob from the shared scaling contract (see
+        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
+        (the default) leaves entries in ``{-1, +1}``; a float ``s`` multiplies
+        every entry by ``s`` (entries become ``{-s, +s}``), so ``max|W|`` scales
+        linearly with ``s`` (``input_scaling=0.5`` halves it).
     balance_global : bool, default=True
         When rows is odd, enforce near-equal global count of +1 vs -1 column-sums
         by flipping full columns.
@@ -64,10 +68,9 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
         seed: int | None = None,  # Unused, for API consistency
     ) -> None:
         """Initialize the BinaryBalancedInitializer."""
-        self.input_scaling = input_scaling
+        super().__init__(input_scaling=input_scaling, seed=seed)
         self.balance_global = balance_global
         self.step = step
-        self.seed = seed  # Kept but unused
 
     @staticmethod
     def _next_pow2(x: int) -> int:
@@ -194,8 +197,8 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
         # input_scaling survives a float64 weight intact.
         values = V.astype(compute_dtype)
 
-        if self.input_scaling is not None:
-            values *= float(self.input_scaling)
+        # Apply the shared uniform scaling contract as the documented final transform.
+        values = self._apply_scaling(values)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

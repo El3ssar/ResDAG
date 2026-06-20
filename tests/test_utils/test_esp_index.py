@@ -8,6 +8,15 @@ These cover the four behaviours fixed in issue #178:
   ``set_random_state`` API (no direct ``res.state = ...``);
 * 3-D NG-RC state support;
 * an explicit skip for reservoirs whose ESP is undefined.
+
+They also cover the core convergence semantics tracked by issue #252:
+
+* a stable reservoir (``spectral_radius < 1``) drives the ESP index toward
+  zero — trajectories from different initial states forget their start;
+* an unstable reservoir (``spectral_radius >> 1``) does *not* converge;
+* both the ``history=True`` and ``history=False`` return shapes;
+* the ``verbose=True`` progress-printing branch;
+* every behaviour exercised on the shared ``device`` fixture.
 """
 
 import pytest
@@ -24,12 +33,18 @@ from resdag.utils.states import esp_index
 # ---------------------------------------------------------------------------
 
 
-def _esn_model(seq_len: int = 20, feedback_dim: int = 3, size: int = 40) -> ESNModel:
+def _esn_model(
+    seq_len: int = 20,
+    feedback_dim: int = 3,
+    size: int = 40,
+    spectral_radius: float = 0.9,
+    device: torch.device | str = "cpu",
+) -> ESNModel:
     """ESN-only model: Input -> ESNLayer -> CGReadout."""
     inp = ps.Input((seq_len, feedback_dim))
-    res = ESNLayer(size, feedback_size=feedback_dim, spectral_radius=0.9)(inp)
+    res = ESNLayer(size, feedback_size=feedback_dim, spectral_radius=spectral_radius)(inp)
     out = CGReadoutLayer(size, feedback_dim, name="output")(res)
-    return ESNModel(inp, out)
+    return ESNModel(inp, out).to(device)
 
 
 def _ngrc_model(seq_len: int = 20, feedback_dim: int = 3, k: int = 2) -> ESNModel:
@@ -211,3 +226,126 @@ def test_no_reservoirs_raises() -> None:
     fb = torch.randn(2, 5, 3)
     with pytest.raises(ValueError, match="No reservoir layers"):
         esp_index(model, fb, verbose=False)
+
+
+# ---------------------------------------------------------------------------
+# Convergence semantics (issue #252) — on the shared device fixture
+# ---------------------------------------------------------------------------
+
+
+def _late_over_early(history: torch.Tensor) -> tuple[float, float]:
+    """Return ``(early_mean, late_mean)`` per-timestep distances from a history tensor.
+
+    Parameters
+    ----------
+    history : torch.Tensor
+        ESP distance history of shape ``(iterations, timesteps, batch)``.
+
+    Returns
+    -------
+    tuple of float
+        The mean distance over the first ten timesteps and over the last ten,
+        each averaged across iterations and the batch dimension.
+    """
+    per_timestep = history.mean(dim=(0, 2))  # (timesteps,)
+    window = min(10, per_timestep.shape[0])
+    early = per_timestep[:window].mean().item()
+    late = per_timestep[-window:].mean().item()
+    return early, late
+
+
+def test_stable_reservoir_converges_to_near_zero(device: torch.device) -> None:
+    """A ``spectral_radius < 1`` reservoir forgets its initial state: ESP -> 0."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=80, size=60, spectral_radius=0.9, device=device)
+    fb = (torch.randn(2, 80, 3, device=device) * 0.5).to(device)
+
+    indices, history = esp_index(model, fb, iterations=4, history=True, verbose=False)
+
+    (value,) = indices.values()
+    assert torch.isfinite(value[0])
+
+    (hist,) = history.values()
+    early, late = _late_over_early(hist[0])
+    # Trajectories converge: the tail distance collapses far below the start.
+    assert late < early
+    assert late < 1e-3
+    assert late / early < 1e-2
+
+
+def test_unstable_reservoir_does_not_converge(device: torch.device) -> None:
+    """A ``spectral_radius >> 1`` reservoir keeps trajectories apart: no ESP."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=80, size=60, spectral_radius=10.0, device=device)
+    fb = (torch.randn(2, 80, 3, device=device) * 0.5).to(device)
+
+    indices, history = esp_index(model, fb, iterations=4, history=True, verbose=False)
+
+    (value,) = indices.values()
+    assert torch.isfinite(value[0])
+    # The averaged index stays well away from zero.
+    assert value[0] > 1.0
+
+    (hist,) = history.values()
+    early, late = _late_over_early(hist[0])
+    # No convergence: the tail distance is the same order as the start.
+    assert late > 1.0
+    assert late / early > 0.5
+
+
+def test_stable_beats_unstable_convergence(device: torch.device) -> None:
+    """The ESP index ranks a stable reservoir below an unstable one."""
+    torch.manual_seed(0)
+    fb = (torch.randn(2, 80, 3, device=device) * 0.5).to(device)
+
+    stable = _esn_model(seq_len=80, size=60, spectral_radius=0.9, device=device)
+    unstable = _esn_model(seq_len=80, size=60, spectral_radius=10.0, device=device)
+
+    (stable_idx,) = esp_index(stable, fb, iterations=4, verbose=False).values()
+    (unstable_idx,) = esp_index(unstable, fb, iterations=4, verbose=False).values()
+
+    assert stable_idx[0] < unstable_idx[0]
+
+
+def test_history_false_returns_plain_dict(device: torch.device) -> None:
+    """``history=False`` returns just the index dict (no history tuple)."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=30, device=device)
+    fb = torch.randn(2, 30, 3, device=device)
+
+    result = esp_index(model, fb, iterations=3, history=False, verbose=False)
+
+    assert isinstance(result, dict)
+    (value,) = result.values()
+    assert value[0].ndim == 0
+    assert value[0].device.type == device.type
+
+
+def test_history_true_returns_index_and_history(device: torch.device) -> None:
+    """``history=True`` returns a ``(indices, history)`` tuple with matching keys."""
+    torch.manual_seed(0)
+    iterations = 3
+    model = _esn_model(seq_len=25, device=device)
+    fb = torch.randn(2, 25, 3, device=device)
+
+    out = esp_index(model, fb, iterations=iterations, history=True, verbose=False)
+
+    assert isinstance(out, tuple)
+    indices, history = out
+    assert set(indices) == set(history)
+    (hist,) = history.values()
+    assert hist[0].shape == (iterations, 25, 2)
+    assert hist[0].device.type == device.type
+
+
+def test_verbose_prints_progress(device: torch.device, capsys: pytest.CaptureFixture[str]) -> None:
+    """The ``verbose=True`` branch prints per-iteration progress."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=20, device=device)
+    fb = torch.randn(2, 20, 3, device=device)
+
+    esp_index(model, fb, iterations=2, verbose=True)
+
+    captured = capsys.readouterr()
+    assert "Iteration 1/2" in captured.out
+    assert "Iteration 2/2" in captured.out

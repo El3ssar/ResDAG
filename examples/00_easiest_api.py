@@ -26,24 +26,13 @@ import numpy as np
 import resdag as rd
 
 
-def generate_lorenz(n_steps: int, dt: float = 0.01, seed: int = 42) -> np.ndarray:
-    """Integrate the Lorenz-63 system (Euler), returning a normalized (T, 3) array."""
-    rng = np.random.default_rng(seed)
-    sigma, rho, beta = 10.0, 28.0, 8.0 / 3.0
-    xyz = np.empty((n_steps, 3))
-    xyz[0] = np.array([1.0, 1.0, 1.05]) + 1e-3 * rng.standard_normal(3)
-    for t in range(1, n_steps):
-        x, y, z = xyz[t - 1]
-        dxyz = np.array([sigma * (y - x), x * (rho - z) - y, x * y - beta * z])
-        xyz[t] = xyz[t - 1] + dt * dxyz
-    return (xyz - xyz.mean(0)) / xyz.std(0)  # zero mean, unit std per feature
-
-
 def main() -> None:
     # ------------------------------------------------------------------
     # The whole workflow, ~10 lines: build -> fit -> forecast.
     # ------------------------------------------------------------------
-    series = generate_lorenz(2300)  # (2300, 3) numpy array of (time, features)
+    # rd.lorenz returns a (1, T, 3) tensor; the facade is happy with numpy too,
+    # so we drop the batch axis and hand it a plain (T, 3) numpy series.
+    series = rd.lorenz(2300, seed=42).squeeze(0).numpy()  # (2300, 3) (time, features)
     train, truth = series[:1900], series[1900:2100]  # hold out the last 200 steps
 
     esn = rd.ESN(

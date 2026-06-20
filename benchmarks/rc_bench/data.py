@@ -1,19 +1,22 @@
 """Shared benchmark data.
 
-A single Lorenz-63 trajectory is generated once (NumPy, float64) and handed to
-every adapter, so all libraries train and forecast on byte-identical inputs.
-The series is normalized to zero mean / unit std per channel — the usual
-preprocessing for ESN forecasting and a fair common ground across libraries.
+A single Lorenz-63 trajectory is generated once and handed to every adapter, so
+all libraries train and forecast on byte-identical inputs. The series is
+normalized to zero mean / unit std per channel — the usual preprocessing for ESN
+forecasting and a fair common ground across libraries.
+
+The Lorenz integrator now lives in the public API
+(:func:`resdag.utils.data.lorenz`); this module is a thin NumPy-returning
+adapter over it, so the benchmark harness and the library share a single
+source of truth.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import torch
 
-
-def _lorenz_rhs(state: np.ndarray, sigma: float, rho: float, beta: float) -> np.ndarray:
-    x, y, z = state
-    return np.array([sigma * (y - x), x * (rho - z) - y, x * y - beta * z])
+from resdag.utils.data import lorenz as _lorenz_tensor
 
 
 def lorenz(
@@ -25,7 +28,10 @@ def lorenz(
     discard: int = 1000,
     seed: int = 0,
 ) -> np.ndarray:
-    """Generate a normalized Lorenz-63 trajectory.
+    """Generate a normalized Lorenz-63 trajectory as a 2D NumPy array.
+
+    Thin wrapper over :func:`resdag.utils.data.lorenz` that drops the batch axis
+    and returns NumPy, matching the interface the benchmark adapters expect.
 
     Parameters
     ----------
@@ -33,6 +39,8 @@ def lorenz(
         Number of timesteps to return (after the discarded transient).
     dt : float
         Integration step (RK4).
+    sigma, rho, beta : float
+        Lorenz parameters.
     discard : int
         Leading transient steps to drop so the trajectory sits on the attractor.
     seed : int
@@ -44,21 +52,18 @@ def lorenz(
         Array of shape ``(n_timesteps, 3)``, dtype float64, per-channel
         standardized.
     """
-    rng = np.random.default_rng(seed)
-    state = np.array([1.0, 1.0, 1.0]) + 0.01 * rng.standard_normal(3)
-    total = n_timesteps + discard
-    out = np.empty((total, 3), dtype=np.float64)
-    for i in range(total):
-        out[i] = state
-        k1 = _lorenz_rhs(state, sigma, rho, beta)
-        k2 = _lorenz_rhs(state + 0.5 * dt * k1, sigma, rho, beta)
-        k3 = _lorenz_rhs(state + 0.5 * dt * k2, sigma, rho, beta)
-        k4 = _lorenz_rhs(state + dt * k3, sigma, rho, beta)
-        state = state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-
-    series = out[discard:]
-    series = (series - series.mean(axis=0)) / series.std(axis=0)
-    return np.ascontiguousarray(series, dtype=np.float64)
+    series = _lorenz_tensor(
+        n_timesteps,
+        dt=dt,
+        sigma=sigma,
+        rho=rho,
+        beta=beta,
+        discard=discard,
+        normalize="standard",
+        seed=seed,
+        dtype=torch.float64,
+    )
+    return np.ascontiguousarray(series.squeeze(0).numpy(), dtype=np.float64)
 
 
 def make_series(min_length: int, seed: int = 0) -> np.ndarray:

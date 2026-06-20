@@ -22,20 +22,6 @@ import torch
 import resdag as rd
 
 
-def generate_lorenz(n_steps: int, dt: float = 0.01, seed: int = 42) -> torch.Tensor:
-    """Integrate Lorenz-63 (Euler). Returns (1, n_steps, 3), normalized."""
-    torch.manual_seed(seed)
-    sigma, rho, beta = 10.0, 28.0, 8.0 / 3.0
-    xyz = torch.empty(n_steps, 3)
-    xyz[0] = torch.tensor([1.0, 1.0, 1.05])
-    for t in range(1, n_steps):
-        x, y, z = xyz[t - 1]
-        dxyz = torch.stack((sigma * (y - x), x * (rho - z) - y, x * y - beta * z))
-        xyz[t] = xyz[t - 1] + dt * dxyz
-    xyz = (xyz - xyz.mean(0)) / xyz.std(0)
-    return xyz.unsqueeze(0)  # (1, n_steps, 3)
-
-
 def main() -> None:
     try:
         from resdag.hpo import get_study_summary, run_hpo
@@ -69,7 +55,7 @@ def main() -> None:
         }
 
     # Data is loaded per trial (lets you subsample / augment per trial).
-    data = generate_lorenz(2300)  # (1, 2300, 3)
+    data = rd.lorenz(2300, seed=42)  # (1, 2300, 3)
     warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
         data, warmup_steps=200, train_steps=1600, val_steps=300
     )

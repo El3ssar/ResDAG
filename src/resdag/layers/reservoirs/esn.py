@@ -70,6 +70,15 @@ class ESNLayer(BaseReservoirLayer):
         callable ``fn(n, **kw) -> matrix | nx.Graph`` (or in-place
         ``fn(tensor)``), ``(callable, params)``, or a configured topology
         object.
+    seed : int, optional
+        Reproducibility seed forwarded to the topology and feedback/input
+        initializers (whichever accept a ``seed`` argument).  With ``seed``
+        set, a string-form ``topology='erdos_renyi'`` is reproducible without
+        the ``('erdos_renyi', {'seed': ...})`` tuple form; an explicit seed in
+        a tuple/object spec always wins.  When ``seed=None`` (the default),
+        string-form graph topologies are still reproducible under
+        ``torch.manual_seed`` because the NumPy generator is derived from
+        torch's global RNG.
 
     Attributes
     ----------
@@ -118,6 +127,23 @@ class ESNLayer(BaseReservoirLayer):
     ...     spectral_radius=0.95
     ... )
 
+    Reproducible string-form topology via the ``seed`` argument:
+
+    >>> a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42)
+    >>> b = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42)
+    >>> torch.equal(a.weight_hh, b.weight_hh)
+    True
+
+    String-form topologies are also reproducible under ``torch.manual_seed``
+    without an explicit ``seed``:
+
+    >>> torch.manual_seed(0)
+    >>> a = ESNLayer(50, feedback_size=3, topology="erdos_renyi")
+    >>> torch.manual_seed(0)
+    >>> b = ESNLayer(50, feedback_size=3, topology="erdos_renyi")
+    >>> torch.equal(a.weight_hh, b.weight_hh)
+    True
+
     Stateful processing across batches:
 
     >>> out1 = reservoir(data1)  # State initialized
@@ -148,6 +174,7 @@ class ESNLayer(BaseReservoirLayer):
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
+        seed: int | None = None,
     ) -> None:
         cell = ESNCell(
             reservoir_size=reservoir_size,
@@ -162,6 +189,7 @@ class ESNLayer(BaseReservoirLayer):
             feedback_initializer=feedback_initializer,
             input_initializer=input_initializer,
             topology=topology,
+            seed=seed,
         )
         super().__init__(cell)
         # Preserve legacy attribute used by existing callsites and tests

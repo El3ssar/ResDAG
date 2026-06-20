@@ -25,7 +25,7 @@ from resdag.init.topology import (
     register_matrix_topology,
     show_topologies,
 )
-from resdag.init.utils import resolve_topology
+from resdag.init.utils import resolve_initializer, resolve_topology
 from resdag.layers import ESNLayer
 
 
@@ -407,3 +407,118 @@ class TestESNLayerTopologyIntegration:
         )
         w = layer.weight_hh.data
         assert torch.allclose(w @ w.T, torch.eye(16), atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Seed reproducibility (issue #134)
+# ---------------------------------------------------------------------------
+
+
+class TestSeedReproducibility:
+    """Reproducibility of topology/initializer weights via torch RNG and seed."""
+
+    def test_graph_topology_reproducible_under_torch_manual_seed(self) -> None:
+        """Back-to-back graph-topology layers under torch.manual_seed match.
+
+        Acceptance criterion: ``create_rng(None)`` derives its NumPy seed from
+        torch's global RNG, so the string-form graph topology is reproducible
+        without any explicit ``seed``.
+        """
+        torch.manual_seed(0)
+        a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", spectral_radius=0.9)
+        torch.manual_seed(0)
+        b = ESNLayer(50, feedback_size=3, topology="erdos_renyi", spectral_radius=0.9)
+
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_matrix_topology_reproducible_under_torch_manual_seed(self) -> None:
+        """Back-to-back matrix-topology layers under torch.manual_seed match."""
+        torch.manual_seed(0)
+        a = ESNLayer(40, feedback_size=3, topology="orthogonal", spectral_radius=0.9)
+        torch.manual_seed(0)
+        b = ESNLayer(40, feedback_size=3, topology="orthogonal", spectral_radius=0.9)
+
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_different_torch_seeds_give_different_graph_weights(self) -> None:
+        """Different torch global seeds yield different graph-topology weights."""
+        torch.manual_seed(0)
+        a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", spectral_radius=0.9)
+        torch.manual_seed(123)
+        b = ESNLayer(50, feedback_size=3, topology="erdos_renyi", spectral_radius=0.9)
+
+        assert not torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_seed_kwarg_reproducible_without_tuple_form(self) -> None:
+        """``ESNLayer(..., topology='erdos_renyi', seed=42)`` is reproducible.
+
+        Acceptance criterion: a top-level ``seed`` argument makes the
+        string-form topology reproducible without the ``(name, {'seed': ...})``
+        tuple form, independent of the torch global RNG state.
+        """
+        torch.manual_seed(1)
+        a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42, spectral_radius=0.9)
+        torch.manual_seed(2)
+        b = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42, spectral_radius=0.9)
+
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_seed_kwarg_different_seeds_differ(self) -> None:
+        """Different ``seed`` values yield different recurrent weights."""
+        a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42)
+        b = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=43)
+
+        assert not torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_seed_kwarg_round_trips_to_topology(self) -> None:
+        """A ``seed`` kwarg round-trips into the resolved topology kwargs."""
+        topology = resolve_topology("erdos_renyi", seed=123)
+
+        assert isinstance(topology, GraphTopology)
+        assert topology.graph_kwargs["seed"] == 123
+
+    def test_explicit_tuple_seed_wins_over_seed_kwarg(self) -> None:
+        """An explicit seed inside a tuple spec overrides the ``seed`` kwarg."""
+        a = ESNLayer(50, feedback_size=3, topology=("erdos_renyi", {"seed": 7}), seed=42)
+        b = ESNLayer(50, feedback_size=3, topology=("erdos_renyi", {"seed": 7}), seed=999)
+
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_seed_kwarg_matrix_topology_reproducible(self) -> None:
+        """The ``seed`` kwarg drives the orthogonal matrix topology too."""
+        a = ESNLayer(40, feedback_size=3, topology="orthogonal", seed=5)
+        b = ESNLayer(40, feedback_size=3, topology="orthogonal", seed=5)
+
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_resolve_topology_seed_skipped_for_pre_resolved_object(self) -> None:
+        """A pre-resolved TopologyInitializer is returned untouched by seed."""
+        topology = get_topology("erdos_renyi")
+        resolved = resolve_topology(topology, seed=42)
+
+        # Identity preserved and the seed kwarg is not injected (its registered
+        # default of None is left intact rather than overwritten with 42).
+        assert resolved is topology
+        assert topology.graph_kwargs["seed"] is None
+
+    def test_resolve_initializer_seed_round_trips(self) -> None:
+        """A ``seed`` kwarg round-trips into a seed-accepting initializer."""
+        initializer = resolve_initializer("random", seed=99)
+
+        assert initializer.seed == 99  # type: ignore[attr-defined]
+
+    def test_resolve_initializer_seed_ignored_when_unsupported(self) -> None:
+        """A ``seed`` kwarg is silently ignored by initializers without seed."""
+        # xavier_uniform_ takes (tensor, gain) — no seed param — must not raise.
+        initializer = resolve_initializer(torch.nn.init.xavier_uniform_, seed=42)
+
+        weight = torch.empty(8, 4)
+        initializer.initialize(weight)  # type: ignore[union-attr]
+        assert weight.shape == (8, 4)
+
+    def test_seed_kwarg_reproduces_feedback_initializer(self) -> None:
+        """The ``seed`` kwarg also makes seed-accepting feedback init reproducible."""
+        a = ESNLayer(40, feedback_size=3, topology="zeros", feedback_initializer="random", seed=8)
+        b = ESNLayer(40, feedback_size=3, topology="zeros", feedback_initializer="random", seed=8)
+
+        assert torch.equal(a.weight_feedback, b.weight_feedback)

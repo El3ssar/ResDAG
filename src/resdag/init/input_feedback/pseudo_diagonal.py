@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -77,11 +77,13 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
         out_features, in_features = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
         rng = np.random.default_rng(self.seed)
 
-        # Create sparse block-diagonal structure
-        values = np.zeros((out_features, in_features), dtype=np.float32)
+        # Create sparse block-diagonal structure at the target precision so that
+        # the float64 ``rng.uniform`` draws are not truncated to float32.
+        values = np.zeros((out_features, in_features), dtype=compute_dtype)
 
         # Case 1: out_features >= in_features (typical for reservoirs)
         # Each input feature gets a contiguous block of output neurons

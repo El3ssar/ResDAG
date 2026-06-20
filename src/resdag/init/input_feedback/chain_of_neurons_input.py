@@ -5,7 +5,7 @@ from typing import Sequence
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -67,6 +67,7 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
         units, input_dim = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
         if input_dim != self.features:
             raise ValueError(
@@ -79,7 +80,9 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
                 f"({self.features}) to align chains with inputs."
             )
 
-        values = np.zeros((units, input_dim), dtype=np.float32)
+        # Build at the target precision so non-float32-representable per-input
+        # weights survive a float64 weight intact.
+        values = np.zeros((units, input_dim), dtype=compute_dtype)
 
         # Resolve per-input weights
         if isinstance(self.weights, (list, tuple, np.ndarray)):

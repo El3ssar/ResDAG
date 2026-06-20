@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -76,6 +76,7 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
         N, M = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
         rng = np.random.default_rng(self.seed)
 
@@ -87,7 +88,9 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
         if not (1 <= C <= N):
             raise ValueError("C must be in [1, N].")
 
-        values = np.zeros((N, M), dtype=np.float32)
+        # Build at the target precision so the float64 ``rng.uniform`` draws are
+        # not truncated to float32 in a float64 weight.
+        values = np.zeros((N, M), dtype=compute_dtype)
 
         # Case 1: fewer inputs than cores
         if M <= C:

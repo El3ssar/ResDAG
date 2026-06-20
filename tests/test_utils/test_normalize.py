@@ -163,3 +163,186 @@ def test_exports_match_across_namespaces() -> None:
     assert denormalize_data is denormalize_data_data
     assert normalize_data is normalize_data_data
     assert prepare_esn_data is prepare_esn_data_data
+
+
+# ---------------------------------------------------------------------------
+# Forward-transform reference values (hand-computed against a tiny tensor)
+# ---------------------------------------------------------------------------
+
+
+def _reference_data() -> torch.Tensor:
+    """A small, fully hand-traceable (1, 4, 2) tensor.
+
+    Column 0 spans ``[1, 7]`` (mean 4, max-abs 7); column 1 spans ``[-3, 9]``
+    (mean 3, max-abs 9). The asymmetry around zero exercises the min/range,
+    mean/std and mean-restoring branches distinctly.
+    """
+    return torch.tensor(
+        [[[1.0, -3.0], [3.0, 1.0], [5.0, 5.0], [7.0, 9.0]]],
+        dtype=torch.float64,
+    )
+
+
+def test_minmax_reference_values() -> None:
+    """``minmax`` maps the per-feature min->-1 and max->+1 linearly."""
+    data = _reference_data()
+    normalized, stats = normalize_data(data, method="minmax")
+
+    # col0: min=1, range=6 -> 2*(x-1)/6 - 1 ; col1: min=-3, range=12
+    expected = torch.tensor(
+        [
+            [
+                [2 * (1.0 - 1.0) / 6 - 1, 2 * (-3.0 + 3.0) / 12 - 1],
+                [2 * (3.0 - 1.0) / 6 - 1, 2 * (1.0 + 3.0) / 12 - 1],
+                [2 * (5.0 - 1.0) / 6 - 1, 2 * (5.0 + 3.0) / 12 - 1],
+                [2 * (7.0 - 1.0) / 6 - 1, 2 * (9.0 + 3.0) / 12 - 1],
+            ]
+        ],
+        dtype=torch.float64,
+    )
+    assert torch.allclose(normalized, expected)
+    assert torch.allclose(stats["min"].flatten(), torch.tensor([1.0, -3.0], dtype=torch.float64))
+    assert torch.allclose(stats["range"].flatten(), torch.tensor([6.0, 12.0], dtype=torch.float64))
+    # Range is exactly [-1, 1] per feature.
+    assert torch.allclose(normalized.amin(dim=(0, 1)), torch.full((2,), -1.0, dtype=torch.float64))
+    assert torch.allclose(normalized.amax(dim=(0, 1)), torch.full((2,), 1.0, dtype=torch.float64))
+
+
+def test_standard_reference_values() -> None:
+    """``standard`` subtracts the mean and divides by the (unbiased) std."""
+    data = _reference_data()
+    normalized, stats = normalize_data(data, method="standard")
+
+    expected = (data - data.mean(dim=(0, 1), keepdim=True)) / data.std(dim=(0, 1), keepdim=True)
+    assert torch.allclose(normalized, expected)
+    assert torch.allclose(stats["mean"].flatten(), torch.tensor([4.0, 3.0], dtype=torch.float64))
+    # Output has ~zero mean and ~unit (unbiased) std per feature.
+    assert torch.allclose(
+        normalized.mean(dim=(0, 1)), torch.zeros(2, dtype=torch.float64), atol=1e-12
+    )
+    assert torch.allclose(normalized.std(dim=(0, 1)), torch.ones(2, dtype=torch.float64))
+
+
+def test_noncentered_reference_values() -> None:
+    """``noncentered`` divides by the per-feature max-abs, leaving zero fixed."""
+    data = _reference_data()
+    normalized, stats = normalize_data(data, method="noncentered")
+
+    # col0 max-abs = 7, col1 max-abs = 9
+    expected = data / torch.tensor([7.0, 9.0], dtype=torch.float64)
+    assert torch.allclose(normalized, expected)
+    assert torch.allclose(stats["scale"].flatten(), torch.tensor([7.0, 9.0], dtype=torch.float64))
+    # Max absolute value is exactly 1 per feature; zero stays zero.
+    assert torch.allclose(normalized.abs().amax(dim=(0, 1)), torch.ones(2, dtype=torch.float64))
+
+
+def test_meanpreserving_reference_values() -> None:
+    """``meanpreserving`` scales deviations to [-1, 1] then restores the mean."""
+    data = _reference_data()
+    normalized, stats = normalize_data(data, method="meanpreserving")
+
+    mean = data.mean(dim=(0, 1), keepdim=True)
+    maxdev = (data - mean).abs().amax(dim=(0, 1), keepdim=True)
+    expected = (data - mean) / maxdev + mean
+    assert torch.allclose(normalized, expected)
+    assert torch.allclose(stats["mean"].flatten(), torch.tensor([4.0, 3.0], dtype=torch.float64))
+    assert torch.allclose(stats["maxdev"].flatten(), torch.tensor([3.0, 6.0], dtype=torch.float64))
+    # The mean is preserved exactly by construction.
+    assert torch.allclose(normalized.mean(dim=(0, 1)), mean.flatten())
+
+
+# ---------------------------------------------------------------------------
+# Zero-variance / zero-range edge cases (the guard branches)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_zero_variance_is_finite(method: str) -> None:
+    """A constant feature must not divide by zero (the ``== 0 -> 1.0`` guards)."""
+    const_value = 5.0
+    data = torch.full((1, 10, 2), const_value, dtype=torch.float64)
+    normalized, stats = normalize_data(data, method=method)
+
+    assert torch.isfinite(normalized).all()
+
+    if method == "minmax":
+        # range guarded to 1 -> 2*(x - x)/1 - 1 == -1 everywhere.
+        assert torch.allclose(stats["range"], torch.ones_like(stats["range"]))
+        assert torch.allclose(normalized, torch.full_like(normalized, -1.0))
+    elif method == "standard":
+        # std guarded to 1 -> (x - x)/1 == 0 everywhere.
+        assert torch.allclose(stats["std"], torch.ones_like(stats["std"]))
+        assert torch.allclose(normalized, torch.zeros_like(normalized))
+    elif method == "noncentered":
+        # scale = |const| (non-zero here) -> x/|x| == 1 everywhere.
+        assert torch.allclose(normalized, torch.ones_like(normalized))
+    else:  # meanpreserving
+        # maxdev guarded to 1; deviations are 0 so output == mean == const.
+        assert torch.allclose(stats["maxdev"], torch.ones_like(stats["maxdev"]))
+        assert torch.allclose(normalized, torch.full_like(normalized, const_value))
+
+
+def test_noncentered_all_zero_scale_guarded() -> None:
+    """An all-zero feature keeps ``noncentered`` finite via the scale guard."""
+    data = torch.zeros(1, 8, 3, dtype=torch.float64)
+    normalized, stats = normalize_data(data, method="noncentered")
+
+    assert torch.allclose(stats["scale"], torch.ones_like(stats["scale"]))
+    assert torch.isfinite(normalized).all()
+    assert torch.allclose(normalized, torch.zeros_like(normalized))
+
+
+# ---------------------------------------------------------------------------
+# Stats round-trip: reproduces output and applies to held-out data
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_passing_stats_reproduces_output(method: str) -> None:
+    """Re-applying the returned stats reproduces the original normalized output."""
+    data = _sample_data()
+    normalized, stats = normalize_data(data, method=method)
+
+    reproduced, stats_again = normalize_data(data, method=method, stats=stats)
+    assert torch.allclose(reproduced, normalized, atol=1e-12)
+    # Passing stats short-circuits recomputation: the dict is returned as-is.
+    assert stats_again is stats
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_held_out_data_uses_fitted_stats(method: str) -> None:
+    """Stats fitted on a training tensor transform unseen data with the same map.
+
+    The held-out transform must equal applying the documented forward formula
+    with the *fitted* stats (not stats recomputed from the held-out data).
+    """
+    train = _sample_data()
+    _, stats = normalize_data(train, method=method)
+
+    held_out = _sample_data() * 1.3 - 4.0  # different distribution
+    applied, _ = normalize_data(held_out, method=method, stats=stats)
+
+    if method == "minmax":
+        manual = 2 * (held_out - stats["min"]) / stats["range"] - 1
+    elif method == "standard":
+        manual = (held_out - stats["mean"]) / stats["std"]
+    elif method == "noncentered":
+        manual = held_out / stats["scale"]
+    else:  # meanpreserving
+        manual = (held_out - stats["mean"]) / stats["maxdev"] + stats["mean"]
+
+    assert torch.allclose(applied, manual, atol=1e-12)
+    # And inverting with the same stats recovers the held-out values.
+    assert torch.allclose(denormalize_data(applied, method, stats), held_out, atol=1e-8)
+
+
+def test_normalize_unknown_method_raises() -> None:
+    """The forward transform rejects an unknown method (both stat + apply paths)."""
+    with pytest.raises(ValueError, match="Unknown normalization method"):
+        normalize_data(_sample_data(), method="bogus")  # type: ignore[arg-type]
+
+
+def test_apply_norm_unknown_method_raises() -> None:
+    """``_apply_norm`` rejects an unknown method when stats are supplied."""
+    with pytest.raises(ValueError, match="Unknown normalization method"):
+        normalize_data(_sample_data(), method="bogus", stats={"min": torch.zeros(1)})  # type: ignore[arg-type]

@@ -8,6 +8,7 @@ from resdag.init.topology.registry import register_graph_topology
 
 @register_graph_topology(
     "spectral_cascade",
+    prescaled=True,
     spectral_radius=1.0,
     self_loops=False,
 )
@@ -28,13 +29,25 @@ def spectral_cascade_graph(
       - The 2-node clique has spectral radius = `spectral_radius`.
       - Each larger clique k=3..N has spectral radius (N - k + 1)*spectral_radius / N.
 
+    This topology is **pre-scaled**: the graded per-clique radii above *are* its
+    spectral structure, and they are encoded in the edge weights by this builder
+    itself. The layer-level spectral-radius rescale would flatten that cascade
+    into a single global radius, so it is suppressed. The graded-radii property
+    therefore holds only when the rescale is skipped — i.e. when the layer
+    ``spectral_radius`` is ``None`` (or, equivalently, when this topology is used
+    by name, in which case a layer ``spectral_radius`` is ignored with a
+    warning). Set the cascade's top radius through this builder's own
+    ``spectral_radius`` parameter instead.
+
     Parameters
     ----------
     n : int
         Total number of nodes (must be triangular, i.e. n = N(N+1)/2).
     spectral_radius : float
         The "starting" radius for the 2-node clique, which is then decreased
-        across bigger cliques down to sr/N for the largest clique.
+        across bigger cliques down to sr/N for the largest clique. This is the
+        builder's own parameter and is independent of any layer-level
+        ``spectral_radius`` (which is ignored for this pre-scaled topology).
     self_loops : bool, optional
         If True, each node has a self-loop of weight = (-1)^i. Default: False.
 

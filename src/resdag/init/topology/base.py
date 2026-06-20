@@ -24,6 +24,7 @@ resdag.init.matrices : Direct matrix-construction functions.
 resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
@@ -251,6 +252,35 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
     return matrix
 
 
+def _warn_prescaled_override(topology_name: str, spectral_radius: float) -> None:
+    """Warn that a layer ``spectral_radius`` is ignored by a pre-scaled topology.
+
+    Pre-scaled topologies (``prescaled=True``) bake their own spectral structure
+    into the recurrent matrix — graded per-clique radii, unit singular values, or
+    an analytically fixed radius. The outer
+    :func:`scale_to_spectral_radius` rescale would silently overwrite that
+    structure, so it is skipped and this warning makes the (otherwise silent)
+    collision of the two meanings of ``spectral_radius`` explicit and
+    deterministic.
+
+    Parameters
+    ----------
+    topology_name : str
+        Name of the topology builder, used in the warning message.
+    spectral_radius : float
+        The ignored layer-level target spectral radius.
+    """
+    warnings.warn(
+        f"Topology '{topology_name}' is pre-scaled: it bakes its own spectral "
+        f"structure into the recurrent matrix, so the layer-level "
+        f"spectral_radius={spectral_radius} is ignored (no outer rescale is "
+        f"applied). Control the radius through the topology's own parameters, or "
+        f"leave the layer spectral_radius as None to silence this warning.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 class TopologyInitializer(ABC):
     """
     Abstract base class for topology-based weight initialization.
@@ -262,11 +292,26 @@ class TopologyInitializer(ABC):
 
     Subclasses must implement the :meth:`initialize` method.
 
+    Attributes
+    ----------
+    prescaled : bool
+        Whether the topology bakes its own spectral structure into the
+        recurrent matrix (graded radii, unit singular values, an analytically
+        fixed spectral radius, ...). When ``True``, :meth:`initialize` skips the
+        outer :func:`scale_to_spectral_radius` rescale so that structure is
+        preserved, and warns if a layer-level ``spectral_radius`` is also passed
+        (the two collide). Defaults to ``False``.
+
     See Also
     --------
     GraphTopology : Concrete implementation using NetworkX graphs.
     resdag.layers.ESNLayer : Uses topology initializers.
     """
+
+    #: Topologies that own their spectral scaling set this to ``True`` so the
+    #: base classes skip the outer rescale.  Overridden per-instance in
+    #: ``__init__`` of the concrete subclasses.
+    prescaled: bool = False
 
     @abstractmethod
     def initialize(
@@ -308,6 +353,13 @@ class GraphTopology(TopologyInitializer):
         Must return a NetworkX graph with weighted edges.
     graph_kwargs : dict, optional
         Keyword arguments to pass to the graph function.
+    prescaled : bool, default=False
+        If ``True``, the graph builder already bakes its own spectral structure
+        into the adjacency matrix (e.g. ``spectral_cascade``'s graded per-clique
+        radii). The outer :func:`scale_to_spectral_radius` rescale is then
+        skipped in :meth:`initialize`, and a warning is emitted if a
+        ``spectral_radius`` is nonetheless requested, since the two meanings of
+        ``spectral_radius`` collide.
 
     Attributes
     ----------
@@ -315,6 +367,8 @@ class GraphTopology(TopologyInitializer):
         The graph generation function.
     graph_kwargs : dict
         Keyword arguments for the graph function.
+    prescaled : bool
+        Whether the outer spectral-radius rescale is suppressed (see above).
 
     Examples
     --------
@@ -343,9 +397,11 @@ class GraphTopology(TopologyInitializer):
         self,
         graph_func: Callable,
         graph_kwargs: dict[str, Any] | None = None,
+        prescaled: bool = False,
     ):
         self.graph_func = graph_func
         self.graph_kwargs = graph_kwargs or {}
+        self.prescaled = prescaled
 
     def initialize(
         self,
@@ -358,12 +414,17 @@ class GraphTopology(TopologyInitializer):
         Generates a graph using the stored function, converts it to an
         adjacency matrix, and optionally scales to the target spectral radius.
 
+        When this topology is :attr:`prescaled`, the outer spectral-radius
+        rescale is skipped (the builder's own spectral structure is kept) and a
+        warning is emitted if ``spectral_radius`` is not ``None``.
+
         Parameters
         ----------
         weight : torch.Tensor
             Square tensor to initialize, shape ``(n, n)``.
         spectral_radius : float, optional
-            Target spectral radius for the weight matrix.
+            Target spectral radius for the weight matrix. Ignored (with a
+            warning) when the topology is :attr:`prescaled`.
 
         Returns
         -------
@@ -394,9 +455,17 @@ class GraphTopology(TopologyInitializer):
         # Convert to torch tensor
         weight_data = torch.from_numpy(adj_matrix).to(device=device, dtype=dtype)
 
-        # Apply spectral radius scaling if requested
+        # Apply spectral radius scaling if requested.  Pre-scaled topologies bake
+        # their own spectral structure into the adjacency matrix, so the outer
+        # rescale is suppressed (and the collision is surfaced as a warning).
         if spectral_radius is not None:
-            weight_data = self._scale_spectral_radius(weight_data, spectral_radius)
+            if self.prescaled:
+                _warn_prescaled_override(
+                    getattr(self.graph_func, "__name__", repr(self.graph_func)),
+                    spectral_radius,
+                )
+            else:
+                weight_data = self._scale_spectral_radius(weight_data, spectral_radius)
 
         # Copy into weight tensor
         with torch.no_grad():
@@ -434,7 +503,11 @@ class GraphTopology(TopologyInitializer):
 
     def __repr__(self) -> str:
         """Return string representation."""
-        return f"{self.__class__.__name__}(graph_func={self.graph_func.__name__}, kwargs={self.graph_kwargs})"
+        prescaled = ", prescaled=True" if self.prescaled else ""
+        return (
+            f"{self.__class__.__name__}(graph_func={self.graph_func.__name__}, "
+            f"kwargs={self.graph_kwargs}{prescaled})"
+        )
 
 
 class MatrixTopology(TopologyInitializer):
@@ -460,6 +533,13 @@ class MatrixTopology(TopologyInitializer):
         The matrix-building function (build style or in-place style).
     matrix_kwargs : dict, optional
         Keyword arguments bound to the function.
+    prescaled : bool, default=False
+        If ``True``, the builder already fixes the matrix's spectral structure
+        (e.g. ``orthogonal``'s unit singular values, or
+        ``fast_spectral_initialization``'s analytically targeted radius). The
+        outer :func:`scale_to_spectral_radius` rescale is then skipped in
+        :meth:`initialize`, and a warning is emitted if a ``spectral_radius`` is
+        nonetheless requested.
 
     Examples
     --------
@@ -497,9 +577,11 @@ class MatrixTopology(TopologyInitializer):
         self,
         matrix_func: Callable,
         matrix_kwargs: dict[str, Any] | None = None,
+        prescaled: bool = False,
     ):
         self.matrix_func = matrix_func
         self.matrix_kwargs = matrix_kwargs or {}
+        self.prescaled = prescaled
 
     def initialize(
         self,
@@ -509,12 +591,17 @@ class MatrixTopology(TopologyInitializer):
         """
         Initialize a square weight tensor from the wrapped callable.
 
+        When this topology is :attr:`prescaled`, the outer spectral-radius
+        rescale is skipped (the builder's own spectral structure is kept) and a
+        warning is emitted if ``spectral_radius`` is not ``None``.
+
         Parameters
         ----------
         weight : torch.Tensor
             Square tensor to initialize, shape ``(n, n)``. Modified in-place.
         spectral_radius : float, optional
-            Target spectral radius. If None, no scaling is applied.
+            Target spectral radius. If None, no scaling is applied. Ignored
+            (with a warning) when the topology is :attr:`prescaled`.
 
         Returns
         -------
@@ -537,8 +624,17 @@ class MatrixTopology(TopologyInitializer):
         result = _call_matrix_builder(self.matrix_func, weight, (n,), self.matrix_kwargs)
         matrix = _coerce_to_matrix(result, (n, n), weight.device, weight.dtype)
 
+        # Pre-scaled builders fix their own spectral structure (unit singular
+        # values, analytic radius, ...), so the outer rescale is suppressed and
+        # the collision is surfaced as a warning rather than silently applied.
         if spectral_radius is not None:
-            matrix = scale_to_spectral_radius(matrix, spectral_radius)
+            if self.prescaled:
+                _warn_prescaled_override(
+                    getattr(self.matrix_func, "__name__", repr(self.matrix_func)),
+                    spectral_radius,
+                )
+            else:
+                matrix = scale_to_spectral_radius(matrix, spectral_radius)
 
         with torch.no_grad():
             weight.copy_(matrix)
@@ -548,7 +644,10 @@ class MatrixTopology(TopologyInitializer):
     def __repr__(self) -> str:
         """Return string representation."""
         name = getattr(self.matrix_func, "__name__", repr(self.matrix_func))
-        return f"{self.__class__.__name__}(matrix_func={name}, kwargs={self.matrix_kwargs})"
+        prescaled = ", prescaled=True" if self.prescaled else ""
+        return (
+            f"{self.__class__.__name__}(matrix_func={name}, kwargs={self.matrix_kwargs}{prescaled})"
+        )
 
 
 def _call_matrix_builder(

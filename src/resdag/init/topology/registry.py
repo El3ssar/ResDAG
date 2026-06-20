@@ -36,14 +36,22 @@ from typing import Any, Callable, get_args, get_origin
 
 from .base import GraphTopology, MatrixTopology, TopologyInitializer
 
-# Registry of topology names to (builder_func, default_kwargs, wrapper_class).
-# wrapper_class is GraphTopology for NetworkX-based builders and
-# MatrixTopology for direct matrix builders.
-_TOPOLOGY_REGISTRY: dict[str, tuple[Callable, dict[str, Any], type[TopologyInitializer]]] = {}
+# Registry of topology names to (builder_func, default_kwargs, wrapper_class,
+# prescaled).  wrapper_class is GraphTopology for NetworkX-based builders and
+# MatrixTopology for direct matrix builders.  ``prescaled`` flags builders that
+# bake their own spectral structure into the matrix, so the wrapper skips the
+# outer spectral-radius rescale (see :class:`TopologyInitializer.prescaled`).
+# The wrapper type is the concrete union (not the abstract base) so the
+# ``wrapper_class(builder_func, kwargs, prescaled=...)`` construction in
+# :func:`get_topology` type-checks against the real constructors.
+_TOPOLOGY_REGISTRY: dict[
+    str, tuple[Callable, dict[str, Any], type[GraphTopology] | type[MatrixTopology], bool]
+] = {}
 
 
 def register_graph_topology(
     name: str,
+    prescaled: bool = False,
     **default_kwargs: Any,
 ) -> Callable[[Callable], Callable]:
     """
@@ -57,6 +65,12 @@ def register_graph_topology(
     ----------
     name : str
         Unique name for the topology.
+    prescaled : bool, default=False
+        Mark the topology as already carrying its own spectral structure (e.g.
+        ``spectral_cascade``'s graded per-clique radii). When ``True`` the
+        wrapper :class:`~resdag.init.topology.GraphTopology` skips the outer
+        :func:`~resdag.init.topology.scale_to_spectral_radius` rescale and warns
+        if a layer-level ``spectral_radius`` is also requested.
     **default_kwargs
         Default keyword arguments for the graph function.
 
@@ -88,7 +102,7 @@ def register_graph_topology(
     def decorator(graph_func: Callable) -> Callable:
         if name in _TOPOLOGY_REGISTRY:
             raise ValueError(f"Topology '{name}' is already registered")
-        _TOPOLOGY_REGISTRY[name] = (graph_func, default_kwargs, GraphTopology)
+        _TOPOLOGY_REGISTRY[name] = (graph_func, default_kwargs, GraphTopology, prescaled)
         return graph_func
 
     return decorator
@@ -96,6 +110,7 @@ def register_graph_topology(
 
 def register_matrix_topology(
     name: str,
+    prescaled: bool = False,
     **default_kwargs: Any,
 ) -> Callable[[Callable], Callable]:
     """
@@ -109,6 +124,13 @@ def register_matrix_topology(
     ----------
     name : str
         Unique name for the topology.
+    prescaled : bool, default=False
+        Mark the topology as already fixing its own spectral structure (e.g.
+        ``orthogonal``'s unit singular values, or
+        ``fast_spectral_initialization``'s analytically targeted radius). When
+        ``True`` the wrapper :class:`~resdag.init.topology.MatrixTopology` skips
+        the outer :func:`~resdag.init.topology.scale_to_spectral_radius` rescale
+        and warns if a layer-level ``spectral_radius`` is also requested.
     **default_kwargs
         Default keyword arguments for the matrix function.
 
@@ -146,7 +168,7 @@ def register_matrix_topology(
     def decorator(matrix_func: Callable) -> Callable:
         if name in _TOPOLOGY_REGISTRY:
             raise ValueError(f"Topology '{name}' is already registered")
-        _TOPOLOGY_REGISTRY[name] = (matrix_func, default_kwargs, MatrixTopology)
+        _TOPOLOGY_REGISTRY[name] = (matrix_func, default_kwargs, MatrixTopology, prescaled)
         return matrix_func
 
     return decorator
@@ -204,12 +226,12 @@ def get_topology(
         available = ", ".join(_TOPOLOGY_REGISTRY.keys())
         raise ValueError(f"Unknown topology '{name}'. Available topologies: {available}")
 
-    builder_func, default_kwargs, wrapper_class = _TOPOLOGY_REGISTRY[name]
+    builder_func, default_kwargs, wrapper_class, prescaled = _TOPOLOGY_REGISTRY[name]
 
     # Merge default kwargs with overrides
     kwargs = {**default_kwargs, **override_kwargs}
 
-    return wrapper_class(builder_func, kwargs)
+    return wrapper_class(builder_func, kwargs, prescaled=prescaled)
 
 
 def show_topologies(name: str | None = None) -> list[str] | None:
@@ -246,11 +268,13 @@ def show_topologies(name: str | None = None) -> list[str] | None:
         available = "\n".join(sorted(_TOPOLOGY_REGISTRY.keys()))
         raise ValueError(f"Unknown topology '{name}'.\nAvailable:\n{available}")
 
-    builder_func, default_kwargs, wrapper_class = _TOPOLOGY_REGISTRY[name]
+    builder_func, default_kwargs, wrapper_class, prescaled = _TOPOLOGY_REGISTRY[name]
 
     sig = inspect.signature(builder_func)
 
-    print(f"\nTopology: {name} ({'graph' if wrapper_class is GraphTopology else 'matrix'})\n")
+    kind = "graph" if wrapper_class is GraphTopology else "matrix"
+    prescaled_note = ", pre-scaled" if prescaled else ""
+    print(f"\nTopology: {name} ({kind}{prescaled_note})\n")
     print("Parameters:\n")
 
     for param_name, param in sig.parameters.items():

@@ -26,6 +26,7 @@ def classic_esn(
     topology: TopologySpec = None,
     spectral_radius: float = 0.9,
     leak_rate: float = 1.0,
+    noise: float = 0.0,
     feedback_initializer: InitializerSpec = None,
     activation: str = "tanh",
     bias: bool = True,
@@ -67,6 +68,11 @@ def classic_esn(
         Desired spectral radius for recurrent weights.
     leak_rate : float, default=1.0
         Leaky integration rate (1.0 = no leak).
+    noise : float, default=0.0
+        Standard deviation of additive Gaussian state noise injected into the
+        reservoir after the activation.  Active only in training mode (a no-op
+        under :meth:`~torch.nn.Module.eval`); ``0.0`` disables it.  Forwarded to
+        :class:`~resdag.layers.ESNLayer`.  Must be non-negative.
     feedback_initializer : InitializerSpec, optional
         Initializer for feedback weights. Accepts:
 
@@ -135,6 +141,7 @@ def classic_esn(
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
+        noise=noise,
         feedback_initializer=feedback_initializer,
         activation=activation,
         bias=bias,

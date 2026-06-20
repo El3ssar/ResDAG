@@ -9,6 +9,7 @@ their forward shapes, parameter plumbing, and GPU execution.
 import pytest
 import torch
 
+from resdag.layers.cells import ESNCell
 from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn
 
 
@@ -88,6 +89,22 @@ class TestClassicESN:
         # Check for Concatenate layer
         has_concat = any("Concatenate" in str(type(m)) for m in model.modules())
         assert has_concat, "Classic ESN should have Concatenate layer"
+
+    def test_noise_forwarded_to_reservoir(self) -> None:
+        """The noise kwarg is forwarded to the reservoir cell."""
+        model = classic_esn(reservoir_size=50, feedback_size=2, output_size=3, noise=0.05)
+
+        cells = [m for m in model.modules() if isinstance(m, ESNCell)]
+        assert cells, "classic_esn should contain an ESNCell"
+        assert all(c.noise == 0.05 for c in cells)
+
+    def test_noise_defaults_to_zero(self) -> None:
+        """Without the noise kwarg the reservoir cell keeps noise=0.0."""
+        model = classic_esn(reservoir_size=50, feedback_size=2, output_size=3)
+
+        cells = [m for m in model.modules() if isinstance(m, ESNCell)]
+        assert cells
+        assert all(c.noise == 0.0 for c in cells)
 
 
 class TestOttESN:

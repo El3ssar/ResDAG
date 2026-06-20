@@ -180,3 +180,138 @@ class TestESNCellForwardStep:
 
         with pytest.raises(ValueError, match="Driving input size mismatch"):
             cell([torch.randn(1, 3), torch.randn(1, 5)], state)
+
+
+class TestESNCellNoise:
+    """Train-mode additive Gaussian state-noise regularizer."""
+
+    def test_default_noise_is_zero(self) -> None:
+        """noise defaults to 0.0 (no behaviour change)."""
+        cell = ESNCell(reservoir_size=8, feedback_size=2)
+
+        assert cell.noise == 0.0
+
+    def test_negative_noise_raises(self) -> None:
+        """A negative noise stddev is rejected at construction."""
+        with pytest.raises(ValueError, match="noise must be non-negative"):
+            ESNCell(reservoir_size=8, feedback_size=2, noise=-0.1)
+
+    def test_default_noise_is_bit_identical(self) -> None:
+        """noise=0.0 leaves the train-mode output bit-identical to no noise."""
+        cell = ESNCell(reservoir_size=16, feedback_size=3, seed=0)
+        cell.train()
+        fb = torch.randn(4, 3)
+        state = cell.init_state(4, fb.device, fb.dtype)
+
+        out_a, _ = cell([fb], state)
+        out_b, _ = cell([fb], state)
+
+        # No noise => deterministic and identical across calls in train mode.
+        assert torch.equal(out_a, out_b)
+
+    def test_noise_perturbs_state_in_train_mode(self) -> None:
+        """noise > 0 in train() mode perturbs the output state."""
+        noisy = ESNCell(reservoir_size=32, feedback_size=3, noise=0.1, seed=0)
+        clean = ESNCell(reservoir_size=32, feedback_size=3, noise=0.0, seed=0)
+        noisy.train()
+        clean.train()
+        fb = torch.randn(4, 3)
+        state = clean.init_state(4, fb.device, fb.dtype)
+
+        out_noisy, _ = noisy([fb], state)
+        out_clean, _ = clean([fb], state)
+
+        # Same seed => identical weights, so any difference is the noise.
+        assert torch.equal(noisy.weight_hh, clean.weight_hh)
+        assert not torch.allclose(out_noisy, out_clean)
+
+    def test_noise_is_noop_in_eval_mode(self) -> None:
+        """noise > 0 is a no-op under eval(), matching the noiseless cell."""
+        noisy = ESNCell(reservoir_size=32, feedback_size=3, noise=0.5, seed=0)
+        clean = ESNCell(reservoir_size=32, feedback_size=3, noise=0.0, seed=0)
+        noisy.eval()
+        clean.eval()
+        fb = torch.randn(4, 3)
+        state = clean.init_state(4, fb.device, fb.dtype)
+
+        out_noisy, _ = noisy([fb], state)
+        out_clean, _ = clean([fb], state)
+
+        assert torch.equal(out_noisy, out_clean)
+
+    def test_noise_output_shape(self) -> None:
+        """Noisy output keeps the (batch, reservoir_size) shape."""
+        cell = ESNCell(reservoir_size=24, feedback_size=3, noise=0.2, seed=0)
+        cell.train()
+        fb = torch.randn(5, 3)
+        state = cell.init_state(5, fb.device, fb.dtype)
+
+        output, new_state = cell([fb], state)
+
+        assert output.shape == (5, 24)
+        assert new_state.shape == (5, 24)
+
+    def test_noise_is_reproducible_under_seed(self) -> None:
+        """Two seeded cells produce identical noise streams in train mode."""
+        a = ESNCell(reservoir_size=32, feedback_size=3, noise=0.3, seed=123)
+        b = ESNCell(reservoir_size=32, feedback_size=3, noise=0.3, seed=123)
+        a.train()
+        b.train()
+        fb = torch.randn(4, 3)
+        state = a.init_state(4, fb.device, fb.dtype)
+
+        # Step both through several timesteps; the noise streams must agree.
+        for _ in range(5):
+            out_a, state_a = a([fb], state)
+            out_b, state_b = b([fb], state)
+            assert torch.equal(out_a, out_b)
+            state = state_a
+
+    def test_forward_and_step_apply_noise_identically(self) -> None:
+        """forward() and the step() fast path inject the same noise."""
+        cell_fwd = ESNCell(reservoir_size=20, feedback_size=3, noise=0.25, seed=7)
+        cell_step = ESNCell(reservoir_size=20, feedback_size=3, noise=0.25, seed=7)
+        cell_fwd.train()
+        cell_step.train()
+        fb = torch.randn(4, 3)
+        state = cell_fwd.init_state(4, fb.device, fb.dtype)
+
+        out_fwd, _ = cell_fwd([fb], state)
+
+        # step() consumes a precomputed projection; build it the same way the
+        # layer fast path does, then compare the perturbed states.  The two
+        # paths differ only by the fused-vs-unfused recurrent matmul (~1e-6),
+        # so an identical noise stream keeps them within that same band.
+        projected = cell_step.project_inputs([fb])
+        out_step, _ = cell_step.step(projected, state)
+
+        assert torch.allclose(out_fwd, out_step, atol=1e-6)
+
+    def test_forward_step_noise_matches_added_epsilon(self) -> None:
+        """The noise added by forward()/step() is the *same* perturbation.
+
+        Subtracting the noiseless output isolates the injected epsilon; the
+        two paths must inject the identical noise tensor (same seeded stream),
+        not merely a sample of the same magnitude.
+        """
+        noisy = ESNCell(reservoir_size=20, feedback_size=3, noise=0.4, seed=11)
+        clean = ESNCell(reservoir_size=20, feedback_size=3, noise=0.0, seed=11)
+        for c in (noisy, clean):
+            c.train()
+        fb = torch.randn(4, 3)
+        state = clean.init_state(4, fb.device, fb.dtype)
+
+        # Noise injected on the forward() path.
+        eps_fwd = noisy([fb], state)[0] - clean([fb], state)[0]
+
+        # Re-seed the noise stream by clearing the per-device cache, then take
+        # the step() path on a fresh cell so its first draw matches forward's.
+        noisy_step = ESNCell(reservoir_size=20, feedback_size=3, noise=0.4, seed=11)
+        clean_step = ESNCell(reservoir_size=20, feedback_size=3, noise=0.0, seed=11)
+        for c in (noisy_step, clean_step):
+            c.train()
+        proj_noisy = noisy_step.project_inputs([fb])
+        proj_clean = clean_step.project_inputs([fb])
+        eps_step = noisy_step.step(proj_noisy, state)[0] - clean_step.step(proj_clean, state)[0]
+
+        assert torch.allclose(eps_fwd, eps_step, atol=1e-6)

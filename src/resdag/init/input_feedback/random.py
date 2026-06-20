@@ -79,10 +79,14 @@ class RandomInputInitializer(InputFeedbackInitializer):
         """Initialize the RandomInputInitializer."""
         self.input_scaling = input_scaling
         self.seed = seed
-        self.rng = np.random.default_rng(seed)
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor with uniform random values.
+
+        The RNG is constructed from ``self.seed`` on every call, so the produced
+        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
+        same instance with equal shapes therefore yield identical matrices.
+        Pass ``seed=None`` for a fresh draw on each call.
 
         Parameters
         ----------
@@ -98,8 +102,10 @@ class RandomInputInitializer(InputFeedbackInitializer):
         device = weight.device
         dtype = weight.dtype
 
+        rng = np.random.default_rng(self.seed)
+
         # Generate random values in [-1, 1]
-        values = self.rng.uniform(-1.0, 1.0, size=(out_features, in_features))
+        values = rng.uniform(-1.0, 1.0, size=(out_features, in_features))
 
         # Apply scaling if provided
         if self.input_scaling is not None:

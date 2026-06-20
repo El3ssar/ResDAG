@@ -100,6 +100,16 @@ class ESNCell(ReservoirCell):
         Structure of the recurrent weight matrix: a registry name (graph or
         matrix topology), any matrix-building callable, a
         ``(callable, params)`` tuple, or a configured topology object.
+    seed : int, optional
+        Reproducibility seed forwarded to the topology and feedback/input
+        initializers (whichever accept a ``seed`` argument). With ``seed``
+        set, a string- or callable-form ``topology='erdos_renyi'`` produces
+        the same recurrent matrix on every build, without the
+        ``('erdos_renyi', {'seed': ...})`` tuple form. An explicit ``seed``
+        inside a tuple/object spec always wins over this argument. When
+        ``seed=None`` (the default), string-form graph topologies are still
+        reproducible under ``torch.manual_seed`` because the NumPy generator
+        is derived from torch's global RNG.
 
     Attributes
     ----------
@@ -134,6 +144,7 @@ class ESNCell(ReservoirCell):
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
+        seed: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -151,6 +162,7 @@ class ESNCell(ReservoirCell):
         self.input_initializer = input_initializer
         self.leak_rate = leak_rate
         self.trainable = trainable
+        self.seed = seed
 
         # Activation function
         self._activation_name = activation
@@ -373,7 +385,7 @@ class ESNCell(ReservoirCell):
         """Initialize feedback weight matrix."""
         self.weight_feedback = nn.Parameter(torch.empty(self.reservoir_size, self.feedback_size))
 
-        resolved = resolve_initializer(self.feedback_initializer)
+        resolved = resolve_initializer(self.feedback_initializer, seed=self.seed)
         if resolved is not None:
             resolved.initialize(self.weight_feedback)
         else:
@@ -384,7 +396,7 @@ class ESNCell(ReservoirCell):
         assert self.input_size is not None
         self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
 
-        resolved = resolve_initializer(self.input_initializer)
+        resolved = resolve_initializer(self.input_initializer, seed=self.seed)
         if resolved is not None:
             resolved.initialize(self.weight_input)
         else:
@@ -394,7 +406,7 @@ class ESNCell(ReservoirCell):
         """Initialize recurrent weight matrix from topology or random."""
         self.weight_hh = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
 
-        resolved = resolve_topology(self.topology)
+        resolved = resolve_topology(self.topology, seed=self.seed)
         if resolved is not None:
             resolved.initialize(self.weight_hh, spectral_radius=self.spectral_radius)
         else:

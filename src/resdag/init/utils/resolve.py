@@ -5,6 +5,7 @@ This module provides helper functions to resolve flexible specification formats
 objects.
 """
 
+import inspect
 from typing import Any, Callable
 
 from resdag.init.input_feedback import (
@@ -21,7 +22,46 @@ InitializerSpec = (
 )
 
 
-def resolve_topology(spec: TopologySpec) -> TopologyInitializer | None:
+def _accepts_seed(func: Callable) -> bool:
+    """Return True if ``func`` accepts a ``seed`` keyword argument.
+
+    A builder accepts ``seed`` if its signature names a ``seed`` parameter or
+    declares ``**kwargs`` (variadic keyword). When introspection fails (e.g.
+    a C builtin without a signature) we assume it does not.
+    """
+    try:
+        params = inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return False
+    if "seed" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def _inject_seed(kwargs: dict[str, Any], builder: Callable, seed: int | None) -> dict[str, Any]:
+    """Return ``kwargs`` with ``seed`` added if appropriate.
+
+    The seed is injected only when ``seed`` is not None, ``kwargs`` does not
+    already pin a ``seed`` (an explicit spec value always wins), and ``builder``
+    accepts a ``seed`` argument.
+    """
+    if seed is None or "seed" in kwargs or not _accepts_seed(builder):
+        return kwargs
+    return {**kwargs, "seed": seed}
+
+
+def _topology_builder(topology: TopologyInitializer) -> Callable | None:
+    """Return the wrapped builder of a resolved topology, or None."""
+    builder = getattr(topology, "graph_func", None)
+    if builder is None:
+        builder = getattr(topology, "matrix_func", None)
+    return builder
+
+
+def resolve_topology(
+    spec: TopologySpec,
+    seed: int | None = None,
+) -> TopologyInitializer | None:
     """Resolve a topology specification to a TopologyInitializer object.
 
     Accepts five formats:
@@ -38,6 +78,13 @@ def resolve_topology(spec: TopologySpec) -> TopologyInitializer | None:
     ----------
     spec : TopologySpec
         Topology specification in one of the accepted formats.
+    seed : int, optional
+        Seed forwarded to the underlying builder for reproducibility. It is
+        applied only to the ``str``, ``tuple[str, dict]``, ``callable``, and
+        ``tuple[callable, dict]`` forms, only when the builder accepts a
+        ``seed`` argument, and only when the spec did not already pin one (an
+        explicit spec seed always wins). Pre-resolved ``TopologyInitializer``
+        objects are returned untouched.
 
     Returns
     -------
@@ -52,6 +99,9 @@ def resolve_topology(spec: TopologySpec) -> TopologyInitializer | None:
     Examples
     --------
     >>> resolve_topology("erdos_renyi")
+    GraphTopology(...)
+
+    >>> resolve_topology("erdos_renyi", seed=42)
     GraphTopology(...)
 
     >>> resolve_topology(("watts_strogatz", {"k": 6, "p": 0.1}))
@@ -71,21 +121,45 @@ def resolve_topology(spec: TopologySpec) -> TopologyInitializer | None:
     if isinstance(spec, TopologyInitializer):
         return spec
     if isinstance(spec, str):
-        return get_topology(spec)
+        topology = get_topology(spec)
+        builder = _topology_builder(topology)
+        if builder is not None and _accepts_seed(builder) and seed is not None:
+            return get_topology(spec, seed=seed)
+        return topology
     if isinstance(spec, tuple):
         name, params = spec
         if callable(name):
-            return MatrixTopology(name, dict(params))
-        return get_topology(name, **params)
+            return MatrixTopology(name, _inject_seed(dict(params), name, seed))
+        builder = _topology_builder(get_topology(name))
+        injected = (
+            _inject_seed(dict(params), builder, seed) if builder is not None else dict(params)
+        )
+        return get_topology(name, **injected)
     if callable(spec):
-        return MatrixTopology(spec)
+        return MatrixTopology(spec, _inject_seed({}, spec, seed))
     raise TypeError(
         f"Invalid topology spec type: {type(spec).__name__}. "
         f"Expected str, callable, tuple[str | callable, dict], or TopologyInitializer."
     )
 
 
-def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | None:
+def _initializer_seed_target(initializer: InputFeedbackInitializer) -> Callable:
+    """Return the callable whose signature decides ``seed`` acceptance.
+
+    For function-wrapped initializers (:class:`FunctionInitializer`) this is
+    the wrapped function; for class-based initializers it is the class
+    constructor.
+    """
+    fn: Callable | None = getattr(initializer, "fn", None)
+    if fn is not None:
+        return fn
+    return type(initializer)
+
+
+def resolve_initializer(
+    spec: InitializerSpec,
+    seed: int | None = None,
+) -> InputFeedbackInitializer | None:
     """Resolve an initializer specification to an InputFeedbackInitializer object.
 
     Accepts five formats:
@@ -102,6 +176,13 @@ def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | Non
     ----------
     spec : InitializerSpec
         Initializer specification in one of the accepted formats.
+    seed : int, optional
+        Seed forwarded to the underlying initializer for reproducibility. It
+        is applied only to the ``str``, ``tuple[str, dict]``, ``callable``,
+        and ``tuple[callable, dict]`` forms, only when the initializer accepts
+        a ``seed`` argument, and only when the spec did not already pin one (an
+        explicit spec seed always wins). Pre-resolved
+        ``InputFeedbackInitializer`` objects are returned untouched.
 
     Returns
     -------
@@ -117,6 +198,9 @@ def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | Non
     --------
     >>> resolve_initializer("pseudo_diagonal")
     PseudoDiagonalInitializer(...)
+
+    >>> resolve_initializer("random", seed=42)
+    RandomInputInitializer(...)
 
     >>> resolve_initializer(("chebyshev", {"p": 0.5, "q": 3.0}))
     ChebyshevInitializer(...)
@@ -135,14 +219,20 @@ def resolve_initializer(spec: InitializerSpec) -> InputFeedbackInitializer | Non
     if isinstance(spec, InputFeedbackInitializer):
         return spec
     if isinstance(spec, str):
-        return get_input_feedback(spec)
+        initializer = get_input_feedback(spec)
+        target = _initializer_seed_target(initializer)
+        if _accepts_seed(target) and seed is not None:
+            return get_input_feedback(spec, seed=seed)
+        return initializer
     if isinstance(spec, tuple):
         name, params = spec
         if callable(name):
-            return FunctionInitializer(name, **dict(params))
-        return get_input_feedback(name, **params)
+            return FunctionInitializer(name, **_inject_seed(dict(params), name, seed))
+        target = _initializer_seed_target(get_input_feedback(name))
+        injected = _inject_seed(dict(params), target, seed)
+        return get_input_feedback(name, **injected)
     if callable(spec):
-        return FunctionInitializer(spec)
+        return FunctionInitializer(spec, **_inject_seed({}, spec, seed))
     raise TypeError(
         f"Invalid initializer spec type: {type(spec).__name__}. "
         f"Expected str, callable, tuple[str | callable, dict], or InputFeedbackInitializer."

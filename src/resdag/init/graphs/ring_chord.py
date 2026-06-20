@@ -7,6 +7,7 @@ from resdag.init.topology.registry import register_graph_topology
 
 @register_graph_topology(
     "ring_chord",
+    prescaled=True,
     L=1,
     w=0.5,
     alpha=1.0,
@@ -22,6 +23,13 @@ def ring_chord_graph(
       - ring edges i -> (i+1) mod n with weight 1.0
       - backward chords i -> (i - L_k) mod n with weight w * alpha**k
 
+    This topology is **pre-scaled**: the unit ring weight together with the
+    ``w``/``alpha`` chord weights *are* the spectral structure of the recurrent
+    matrix. The layer-level spectral-radius rescale would multiply all of these
+    by a single factor and discard the carefully chosen ring-vs-chord ratio, so
+    it is suppressed: a layer ``spectral_radius`` passed alongside this topology
+    is ignored (with a warning). Control the chord scale through ``w`` / ``alpha``.
+
     Parameters
     ----------
     n : int
@@ -29,7 +37,9 @@ def ring_chord_graph(
     L : int | Iterable[int]
         One delay or a small list of delays (each in [1, n//2]).
     w : float
-        Base chord weight (ratio vs. ring=1). Must be >= 0.
+        Base chord weight (ratio vs. ring=1). Must be >= 0. Because this
+        topology is pre-scaled, the ring/chord weights are used verbatim and any
+        layer ``spectral_radius`` is ignored.
     alpha : float
         Geometric decay across multiple chords (0<alpha<=1). Ignored if L is int.
 

@@ -13,6 +13,7 @@ Pins down:
 """
 
 import importlib
+import warnings
 
 import networkx as nx
 import numpy as np
@@ -705,3 +706,237 @@ class TestBarabasiAlbertGraph:
             barabasi_albert_graph(10, m=0)
         with pytest.raises(ValueError, match="m must be"):
             barabasi_albert_graph(10, m=10)
+
+
+# ---------------------------------------------------------------------------
+# Pre-scaled topologies: baked-in spectral structure (issue #140)
+# ---------------------------------------------------------------------------
+
+
+def _block_spectral_radius(weight: torch.Tensor, sl: slice) -> float:
+    """Largest ``|eigenvalue|`` of the ``weight[sl, sl]`` sub-block."""
+    sub = weight[sl, sl].numpy()
+    if sub.size == 0:
+        return 0.0
+    return float(np.max(np.abs(np.linalg.eigvals(sub))))
+
+
+def _spectral_radius(weight: torch.Tensor) -> float:
+    """Largest ``|eigenvalue|`` of the full matrix."""
+    return float(np.max(np.abs(np.linalg.eigvals(weight.numpy()))))
+
+
+class TestPrescaledTopologyFlag:
+    """The ``prescaled`` flag plumbs from registration through to the wrapper.
+
+    Regression guard for issue #140: topologies that bake their own spectral
+    structure into the recurrent matrix (graded per-clique radii, unit singular
+    values, weight-ratio cycles, ...) must *not* be silently flattened by the
+    outer :func:`scale_to_spectral_radius` rescale.
+    """
+
+    PRESCALED_NAMES = [
+        "spectral_cascade",
+        "orthogonal",
+        "multi_cycle",
+        "ring_chord",
+        "simple_cycle_jumps",
+    ]
+
+    @pytest.mark.parametrize("name", PRESCALED_NAMES)
+    def test_registered_prescaled_flag_is_true(self, name: str) -> None:
+        """Each baked-in-structure topology resolves with ``prescaled=True``."""
+        topology = get_topology(name)
+        assert topology.prescaled is True
+
+    def test_default_topologies_are_not_prescaled(self) -> None:
+        """Ordinary topologies keep ``prescaled=False`` (rescale still applies)."""
+        assert get_topology("erdos_renyi").prescaled is False
+        assert get_topology("watts_strogatz").prescaled is False
+
+    def test_repr_advertises_prescaled(self) -> None:
+        """The wrapper ``repr`` surfaces the pre-scaled status."""
+        assert "prescaled=True" in repr(get_topology("orthogonal"))
+        assert "prescaled=True" in repr(get_topology("spectral_cascade"))
+        assert "prescaled=True" not in repr(get_topology("erdos_renyi"))
+
+
+class TestPrescaledSpectralCascade:
+    """``spectral_cascade`` keeps its graded per-clique radii (issue #140)."""
+
+    def test_graded_radii_preserved_with_layer_spectral_radius(self) -> None:
+        """A layer ``spectral_radius`` does not flatten the per-clique cascade.
+
+        For ``n = 10`` the cascade has ``N = 4`` cliques of sizes 1..4 occupying
+        contiguous index blocks ``[0]``, ``[1:3]``, ``[3:6]``, ``[6:10]``. The
+        builder grades their radii as ``sr`` (2-clique) then
+        ``(N - k + 1) * sr / N`` for ``k = 3, 4`` — i.e. ``1.0, 0.5, 0.25`` for
+        ``sr = 1.0``. The outer rescale would collapse all of these into a single
+        global radius; the pre-scaled flag must prevent that.
+        """
+        topology = get_topology("spectral_cascade", spectral_radius=1.0)
+        weight = torch.empty(10, 10)
+
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            topology.initialize(weight, spectral_radius=0.9)
+
+        assert _block_spectral_radius(weight, slice(1, 3)) == pytest.approx(1.0, abs=1e-4)
+        assert _block_spectral_radius(weight, slice(3, 6)) == pytest.approx(0.5, abs=1e-4)
+        assert _block_spectral_radius(weight, slice(6, 10)) == pytest.approx(0.25, abs=1e-4)
+
+    def test_builder_spectral_radius_scales_the_cascade(self) -> None:
+        """The builder's own ``spectral_radius`` parameter sets the top radius."""
+        topology = get_topology("spectral_cascade", spectral_radius=0.8)
+        weight = torch.empty(10, 10)
+        topology.initialize(weight, spectral_radius=None)
+
+        # 2-clique radius equals the builder's spectral_radius; the cascade grades
+        # the larger cliques down by the same factor.
+        assert _block_spectral_radius(weight, slice(1, 3)) == pytest.approx(0.8, abs=1e-4)
+        assert _block_spectral_radius(weight, slice(3, 6)) == pytest.approx(0.4, abs=1e-4)
+
+    def test_no_warning_when_layer_spectral_radius_is_none(self) -> None:
+        """No warning is emitted when only the builder parameter is used."""
+        topology = get_topology("spectral_cascade", spectral_radius=1.0)
+        weight = torch.empty(10, 10)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            topology.initialize(weight, spectral_radius=None)
+
+
+class TestPrescaledOrthogonal:
+    """``orthogonal`` keeps unit singular values / norm-preservation (issue #140)."""
+
+    def test_singular_values_stay_unit_with_layer_spectral_radius(self) -> None:
+        """A layer ``spectral_radius`` must not collapse the singular values.
+
+        An orthogonal matrix has every singular value equal to ``gain`` (1 by
+        default), which is its defining norm-preserving property. The outer
+        rescale would force every singular value to the target radius; the
+        pre-scaled flag must suppress that and warn instead.
+        """
+        topology = get_topology("orthogonal", seed=0)
+        weight = torch.empty(16, 16)
+
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            topology.initialize(weight, spectral_radius=0.9)
+
+        singular_values = torch.linalg.svdvals(weight)
+        assert torch.allclose(singular_values, torch.ones(16), atol=1e-5)
+        # Norm-preservation: W W^T == I.
+        assert torch.allclose(weight @ weight.T, torch.eye(16), atol=1e-5)
+
+    def test_gain_controls_singular_values(self) -> None:
+        """With the rescale suppressed, ``gain`` is the only scale knob."""
+        topology = get_topology("orthogonal", gain=2.0, seed=0)
+        weight = torch.empty(8, 8)
+        topology.initialize(weight, spectral_radius=None)
+
+        singular_values = torch.linalg.svdvals(weight)
+        assert torch.allclose(singular_values, torch.full((8,), 2.0), atol=1e-5)
+
+
+class TestPrescaledWeightTopologies:
+    """``multi_cycle`` / ``ring_chord`` / ``simple_cycle_jumps`` keep their weights."""
+
+    def test_multi_cycle_weight_is_verbatim_spectral_radius(self) -> None:
+        """``weight`` is the multi-cycle spectral radius; the layer SR is ignored.
+
+        A multi-cycle matrix is block-diagonal with ``k`` permutation cycles
+        scaled by ``weight``, so its spectral radius equals ``|weight|`` exactly.
+        Previously a layer ``spectral_radius`` silently overwrote it (issue #140);
+        now ``weight`` is used verbatim and the override warns.
+        """
+        topology = get_topology("multi_cycle", k=3, weight=0.9)
+        weight = torch.empty(9, 9)
+
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            topology.initialize(weight, spectral_radius=0.5)
+
+        assert _spectral_radius(weight) == pytest.approx(0.9, abs=1e-4)
+
+    def test_ring_chord_ratio_preserved(self) -> None:
+        """The unit ring vs. ``w`` chord weight ratio survives a layer SR."""
+        topology = get_topology("ring_chord", L=1, w=0.5, alpha=1.0)
+        weight = torch.empty(12, 12)
+
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            topology.initialize(weight, spectral_radius=0.3)
+
+        nonzero = weight[weight != 0]
+        # Edge weights are exactly the builder's {1.0 (ring), 0.5 (chord)} values,
+        # not rescaled by a single global factor.
+        unique = sorted({round(float(v), 6) for v in nonzero})
+        assert unique == [0.5, 1.0]
+
+    def test_simple_cycle_jumps_weights_verbatim(self) -> None:
+        """The ``r_c`` cycle and ``r_l`` jump weights are used verbatim."""
+        topology = get_topology("simple_cycle_jumps", jump_length=2, r_c=1.0, r_l=0.4)
+        weight = torch.empty(10, 10)
+
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            topology.initialize(weight, spectral_radius=0.7)
+
+        nonzero = weight[weight != 0]
+        unique = sorted({round(float(v), 6) for v in nonzero})
+        assert unique == [0.4, 1.0]
+
+
+class TestPrescaledRegimeAndWarning:
+    """The both-set collision is a deterministic warning; the lone regimes are clean."""
+
+    def test_layer_spectral_radius_alone_does_not_warn(self) -> None:
+        """A pre-scaled topology with ``spectral_radius=None`` is silent."""
+        topology = get_topology("orthogonal", seed=1)
+        weight = torch.empty(8, 8)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            topology.initialize(weight, spectral_radius=None)
+
+    def test_non_prescaled_topology_still_rescales(self) -> None:
+        """Ordinary topologies are unaffected: the outer rescale still applies."""
+        topology = get_topology("erdos_renyi", p=0.2, seed=1)
+        weight = torch.empty(50, 50)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # must not warn
+            topology.initialize(weight, spectral_radius=0.9)
+
+        assert _spectral_radius(weight) == pytest.approx(0.9, abs=1e-2)
+
+    def test_warning_names_the_topology(self) -> None:
+        """The warning message identifies the offending builder and target SR."""
+        topology = get_topology("multi_cycle", k=2, weight=0.8)
+        weight = torch.empty(8, 8)
+
+        with pytest.warns(UserWarning, match="multi_cycle_graph"):
+            topology.initialize(weight, spectral_radius=0.5)
+
+    def test_prescaled_matrix_topology_warns(self) -> None:
+        """The same suppression applies to ``MatrixTopology`` builders."""
+        topology = get_topology("orthogonal", seed=2)
+        assert isinstance(topology, MatrixTopology)
+        weight = torch.empty(8, 8)
+
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            topology.initialize(weight, spectral_radius=0.6)
+
+    def test_layer_end_to_end_preserves_orthogonality(self) -> None:
+        """Through ``ESNLayer`` a pre-scaled topology keeps its structure.
+
+        Passing ``spectral_radius`` to the layer warns but leaves the orthogonal
+        recurrent matrix norm-preserving rather than collapsing its singular
+        values to the requested radius.
+        """
+        with pytest.warns(UserWarning, match="pre-scaled"):
+            layer = ESNLayer(
+                reservoir_size=16,
+                feedback_size=3,
+                topology=("orthogonal", {"seed": 3}),
+                spectral_radius=0.9,
+            )
+
+        w = layer.weight_hh.data
+        assert torch.allclose(w @ w.T, torch.eye(16), atol=1e-5)

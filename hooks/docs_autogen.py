@@ -76,7 +76,10 @@ def _param_table(fn, skip=("n", "rows", "cols", "self", "seed")) -> str:
 
 
 def _topology_page(name: str, entry) -> str:
-    builder, defaults, wrapper = entry
+    # Forward-compatible unpack: the registry entry is
+    # (builder, defaults, wrapper, prescaled, ...). Bind the leading fields we
+    # use and ignore any trailing ones so future additions don't break the hook.
+    builder, defaults, wrapper, *_ = entry
     kind = "graph" if wrapper.__name__ == "GraphTopology" else "matrix"
     summary = _doc_summary(builder)
     table = _param_table(builder)

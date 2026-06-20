@@ -7,8 +7,39 @@ import pytest
 import torch
 
 import resdag as rd
+from resdag.core import ESNModel, Input
 from resdag.ensemble import CoupledEnsembleESNModel
 from resdag.ensemble.aggregators import OutliersFilteredMean
+from resdag.layers import CGReadoutLayer, ESNLayer
+
+
+def _driven_submodel_factory(
+    *,
+    reservoir_size: int = 24,
+    feedback_size: int = 2,
+    driver_size: int = 2,
+    output_size: int = 2,
+    seed: int | None = None,
+    **_: object,
+) -> ESNModel:
+    """Build a single driving-input ESN sub-model for the coupled ensemble.
+
+    The first (and only) readout matches ``feedback_size`` so the aggregated
+    output can be fed back autoregressively, exactly like the single-model
+    driven forecast tests.
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+    feedback = Input(shape=(20, feedback_size))
+    driver = Input(shape=(20, driver_size))
+    states = ESNLayer(
+        reservoir_size=reservoir_size,
+        feedback_size=feedback_size,
+        input_size=driver_size,
+        spectral_radius=0.9,
+    )(feedback, driver)
+    readout = CGReadoutLayer(reservoir_size, output_size, name="output")(states)
+    return ESNModel([feedback, driver], readout)
 
 
 def _toy_data(seq_len: int = 60, feature_size: int = 2):
@@ -101,16 +132,122 @@ class TestFitForecast:
             assert buf.shape == (1, 10, 2)
 
     def test_forecast_return_warmup(self):
-        x = _toy_data()
-        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+        # Next-step (shifted) target so the genuine first forecast frame differs
+        # from the last warmup frame, making the seam-duplication check active.
+        x = _toy_data(seq_len=80)
+        warmup = x[:, :10]
+        train_in, train_tgt = x[:, 10:49], x[:, 11:50]
+        f_warm = x[:, 50:70]
 
         ens = rd.coupled_ensemble_esn(
             n_models=3, reservoir_size=20, feedback_size=2, output_size=2, seed=0
         )
+        ens.fit((warmup,), (train_in,), {"output": train_tgt.clone()})
+
+        warmup_steps = f_warm.shape[1]
+        horizon = 20
+        forecast_only = ens.forecast(f_warm, horizon=horizon)
+        full = ens.forecast(f_warm, horizon=horizon, return_warmup=True)
+
+        # Length is exactly warmup_steps + horizon.
+        assert full.shape[1] == warmup_steps + horizon
+        # The forecast tail of the return_warmup output equals the standalone
+        # forecast — slot 0 is a genuine step, not a teacher-forced echo.
+        assert torch.allclose(full[:, warmup_steps:, :], forecast_only)
+        # No duplicated seam frame: the old buggy code wrote the aggregated
+        # last-warmup echo into forecast slot 0, so full[:, warmup_steps] would
+        # equal full[:, warmup_steps - 1]. With the fix they differ.
+        assert not torch.allclose(full[:, warmup_steps - 1, :], full[:, warmup_steps, :], atol=1e-5)
+
+    def test_forecast_slot0_is_genuine_step_not_warmup_echo(self):
+        """Slot 0 is a genuine coupled step, not the aggregated warmup echo.
+
+        Reproduces the corrected ESNModel.forecast semantics by hand: warm every
+        sub-model, aggregate the last warmup step as the seed feedback, take one
+        coupled step, and check ``forecast(..., horizon=1)`` matches that — *not*
+        the seed feedback itself (which is what the old off-by-one returned).
+
+        The readout is fitted to a *next-step* (shifted) target so the genuine
+        step provably differs from the seed echo, making the regression check
+        below active rather than vacuous.
+        """
+        x = _toy_data(seq_len=80)
+        warmup = x[:, :10]
+        train_in, train_tgt = x[:, 10:49], x[:, 11:50]  # predict next step
+        f_warm = x[:, 50:70]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=3, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        ens.fit((warmup,), (train_in,), {"output": train_tgt.clone()})
+
+        # Manual one-step coupled forecast from the warmed state.
+        last_steps = []
+        with torch.no_grad():
+            for m in ens.models:
+                w = m.warmup(f_warm, return_outputs=True, reset=True)
+                last_steps.append(w[:, -1:, :])
+            seed_feedback = torch.stack(last_steps, dim=0).mean(dim=0)  # aggregated echo
+            step_outputs = [m(seed_feedback) for m in ens.models]
+            expected_step = torch.stack(step_outputs, dim=0).mean(dim=0).squeeze(1)
+
+        out = ens.forecast(f_warm, horizon=1)
+        assert out.shape == (1, 1, 2)
+        # Slot 0 equals the genuine coupled step ...
+        assert torch.allclose(out[:, 0, :], expected_step, atol=1e-5)
+        # ... and the genuine step differs from the seed echo (sanity check that
+        # this test would catch the old off-by-one) ...
+        assert not torch.allclose(expected_step, seed_feedback.squeeze(1), atol=1e-5)
+        # ... so slot 0 is not the old teacher-forced warmup echo.
+        assert not torch.allclose(out[:, 0, :], seed_feedback.squeeze(1), atol=1e-5)
+
+    def test_forecast_rejects_non_positive_horizon(self):
+        """``horizon <= 0`` raises a ValueError naming the parameter."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=2, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
         ens.fit((warmup,), (train,), {"output": train.clone()})
-        full = ens.forecast(f_warm, horizon=20, return_warmup=True)
-        # Warmup phase has 20 steps, autoregressive horizon adds 20 → 40.
-        assert full.shape[1] == 20 + 20
+
+        for bad in (0, -1):
+            with pytest.raises(ValueError, match="horizon"):
+                ens.forecast(f_warm, horizon=bad)
+
+    def test_forecast_return_individuals_buffers_are_genuine_steps(self):
+        """Per-model buffers have shape ``(batch, horizon, F)`` and no slot-0 echo.
+
+        Each per-model slot 0 is that sub-model's own forecast of the seed
+        feedback, *not* the aggregated warmup echo that the old code wrote in.
+        """
+        x = _toy_data(seq_len=80)
+        warmup = x[:, :10]
+        train_in, train_tgt = x[:, 10:49], x[:, 11:50]  # predict next step
+        f_warm = x[:, 50:70]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=3, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        ens.fit((warmup,), (train_in,), {"output": train_tgt.clone()})
+
+        # Manual seed feedback (aggregated last warmup) + per-model first steps.
+        last_steps = []
+        with torch.no_grad():
+            for m in ens.models:
+                w = m.warmup(f_warm, return_outputs=True, reset=True)
+                last_steps.append(w[:, -1:, :])
+            seed_feedback = torch.stack(last_steps, dim=0).mean(dim=0)
+            expected_first = [m(seed_feedback).squeeze(1) for m in ens.models]
+
+        _, indiv = ens.forecast(f_warm, horizon=8, return_individuals=True)
+        assert len(indiv) == 3
+        for buf, exp in zip(indiv, expected_first):
+            assert buf.shape == (1, 8, 2)
+            # Slot 0 is the sub-model's genuine first forecast step ...
+            assert torch.allclose(buf[:, 0, :], exp, atol=1e-5)
+            # ... and not the aggregated warmup echo (old slot-0 pre-fill).
+            assert not torch.allclose(buf[:, 0, :], seed_feedback.squeeze(1), atol=1e-5)
 
     def test_fit_parallel_n_workers(self):
         x = _toy_data()
@@ -139,6 +276,138 @@ class TestFitForecast:
         x = _toy_data()
         with pytest.raises(ValueError, match="n_workers"):
             ens.fit((x[:, :10],), (x[:, 10:30],), {"output": x[:, 10:30].clone()}, n_workers=0)
+
+
+# ---------------------------------------------------------------------------
+# Driven (input-driven) forecast
+# ---------------------------------------------------------------------------
+
+
+def _reservoir_layer_of(model: ESNModel) -> ESNLayer:
+    """Return the (single) ESN reservoir layer inside a sub-model."""
+    return next(m for m in model.modules() if isinstance(m, ESNLayer))  # type: ignore[return-value]
+
+
+class TestDrivenForecast:
+    """Driver alignment in the coupled loop matches ESNModel.forecast."""
+
+    def _build_driven_ensemble(self, n_models: int = 3) -> CoupledEnsembleESNModel:
+        ens = rd.coupled_ensemble_esn(
+            n_models=n_models,
+            model_factory=_driven_submodel_factory,
+            seed=0,
+        )
+        x = _toy_data()
+        warmup, train = x[:, :10], x[:, 10:40]
+        driver_w = torch.randn(1, warmup.shape[1], 2)
+        driver_t = torch.randn(1, train.shape[1], 2)
+        ens.fit((warmup, driver_w), (train, driver_t), {"output": train.clone()})
+        return ens
+
+    def test_driven_forecast_shape(self):
+        ens = self._build_driven_ensemble()
+        x = _toy_data()
+        f_warm = x[:, 40:60]
+        warm_driver = torch.randn(1, f_warm.shape[1], 2)
+        horizon = 12
+        forecast_driver = torch.randn(1, horizon, 2)
+        out = ens.forecast(
+            (f_warm, warm_driver),
+            forecast_inputs=(forecast_driver,),
+            horizon=horizon,
+        )
+        assert out.shape == (1, horizon, 2)
+
+    def test_driven_step_consumes_forecast_inputs_t(self):
+        """Step ``t`` consumes ``forecast_inputs[:, t]`` for every sub-model."""
+        ens = self._build_driven_ensemble(n_models=2)
+        x = _toy_data()
+        f_warm = x[:, 40:60]
+        warm_driver = (
+            torch.arange(f_warm.shape[1], dtype=torch.float32)
+            .view(1, -1, 1)
+            .expand(1, f_warm.shape[1], 2)
+        )
+        horizon = 6
+        forecast_driver = (
+            (100 + torch.arange(horizon, dtype=torch.float32))
+            .view(1, horizon, 1)
+            .expand(1, horizon, 2)
+        )
+
+        # Probe the first sub-model's reservoir layer.
+        reservoir_layer = _reservoir_layer_of(ens.models[0])
+        seen: list[torch.Tensor] = []
+        handle = reservoir_layer.register_forward_pre_hook(
+            lambda module, args: seen.append(args[1].detach().clone())
+        )
+        try:
+            ens.forecast(
+                (f_warm, warm_driver.contiguous()),
+                forecast_inputs=(forecast_driver.contiguous(),),
+                horizon=horizon,
+            )
+        finally:
+            handle.remove()
+
+        # First captured call is the teacher-forced warmup pass.
+        assert seen[0].shape[1] == f_warm.shape[1]
+        autoregressive = seen[1:]
+        assert len(autoregressive) == horizon
+        for t, captured in enumerate(autoregressive):
+            expected = forecast_driver[:, t : t + 1, :]
+            assert torch.equal(captured, expected), (
+                f"step {t} consumed driver {captured.flatten()[0].item()}, "
+                f"expected {expected.flatten()[0].item()}"
+            )
+
+    def test_driven_accepts_extra_driver_steps(self):
+        """A longer driver tensor is accepted; only the first ``horizon`` used."""
+        ens = self._build_driven_ensemble(n_models=2)
+        x = _toy_data()
+        f_warm = x[:, 40:60]
+        warm_driver = torch.randn(1, f_warm.shape[1], 2)
+        horizon = 5
+        forecast_driver = torch.randn(1, horizon + 4, 2)
+
+        reservoir_layer = _reservoir_layer_of(ens.models[0])
+        seen: list[torch.Tensor] = []
+        handle = reservoir_layer.register_forward_pre_hook(
+            lambda module, args: seen.append(args[1].detach().clone())
+        )
+        try:
+            ens.forecast(
+                (f_warm, warm_driver),
+                forecast_inputs=(forecast_driver,),
+                horizon=horizon,
+            )
+        finally:
+            handle.remove()
+
+        autoregressive = seen[1:]
+        assert len(autoregressive) == horizon
+        for t, captured in enumerate(autoregressive):
+            assert torch.equal(captured, forecast_driver[:, t : t + 1, :])
+
+    def test_driven_rejects_too_few_driver_steps(self):
+        ens = self._build_driven_ensemble(n_models=2)
+        x = _toy_data()
+        f_warm = x[:, 40:60]
+        warm_driver = torch.randn(1, f_warm.shape[1], 2)
+        with pytest.raises(ValueError, match="forecast_inputs\\[0\\]"):
+            ens.forecast(
+                (f_warm, warm_driver),
+                forecast_inputs=(torch.randn(1, 3, 2),),
+                horizon=10,
+            )
+
+    def test_driven_missing_drivers_raises(self):
+        ens = self._build_driven_ensemble(n_models=2)
+        x = _toy_data()
+        f_warm = x[:, 40:60]
+        warm_driver = torch.randn(1, f_warm.shape[1], 2)
+        with pytest.raises(ValueError, match="forecast_inputs must be provided"):
+            ens.forecast((f_warm, warm_driver), horizon=10)
 
 
 # ---------------------------------------------------------------------------

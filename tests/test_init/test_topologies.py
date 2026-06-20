@@ -522,3 +522,34 @@ class TestSeedReproducibility:
         b = ESNLayer(40, feedback_size=3, topology="zeros", feedback_initializer="random", seed=8)
 
         assert torch.equal(a.weight_feedback, b.weight_feedback)
+
+
+class TestResolverGeneratorSeed:
+    """The resolvers accept a ``torch.Generator`` seed (reduced to its int)."""
+
+    def test_resolve_topology_accepts_generator(self) -> None:
+        """A generator seed round-trips into a seed-accepting graph topology."""
+        gen = torch.Generator().manual_seed(321)
+        resolved = resolve_topology("erdos_renyi", seed=gen)
+
+        assert resolved.graph_kwargs["seed"] == 321  # type: ignore[attr-defined]
+
+    def test_resolve_topology_generator_matches_int(self) -> None:
+        """A generator seeded with N resolves to the same matrix as ``seed=N``."""
+        gen = torch.Generator().manual_seed(55)
+        from_gen = resolve_topology("erdos_renyi", seed=gen)
+        from_int = resolve_topology("erdos_renyi", seed=55)
+
+        w_gen = torch.empty(30, 30)
+        w_int = torch.empty(30, 30)
+        from_gen.initialize(w_gen)  # type: ignore[union-attr]
+        from_int.initialize(w_int)  # type: ignore[union-attr]
+
+        assert torch.equal(w_gen, w_int)
+
+    def test_resolve_initializer_accepts_generator(self) -> None:
+        """A generator seed round-trips into a seed-accepting initializer."""
+        gen = torch.Generator().manual_seed(99)
+        initializer = resolve_initializer("random", seed=gen)
+
+        assert initializer.seed == 99  # type: ignore[attr-defined]

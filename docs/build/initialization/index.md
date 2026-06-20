@@ -41,6 +41,30 @@ layer = ESNLayer(200, feedback_size=3, input_size=5,
                  input_initializer=("random", {"input_scaling": 0.5}))
 ```
 
+## Reproducibility
+
+A single `seed` on `ESNLayer` fixes the **entire** reservoir — the recurrent
+(topology) matrix, the feedback and input weights, and the random bias — so two
+layers built with the same seed are identical down to the last entry. It covers
+the registry/callable specs *and* the default `uniform(-1, 1)` draws used when
+no spec is given, and it is independent of the global RNG state:
+
+```python
+a = ESNLayer(200, feedback_size=3, topology="erdos_renyi", seed=42)
+b = ESNLayer(200, feedback_size=3, topology="erdos_renyi", seed=42)
+assert torch.equal(a.weight_hh, b.weight_hh)
+assert torch.equal(a.weight_feedback, b.weight_feedback)
+assert torch.equal(a.bias_h, b.bias_h)
+```
+
+`seed` accepts a plain `int` or a `torch.Generator` — the latter is convenient
+for threading a per-trial generator (e.g. `seed + trial.number`) through an HPO
+`model_creator` so every trial draws an identical reservoir run-to-run. An
+explicit `seed` inside a tuple/object spec always wins over the layer-level one.
+Pass `seed=None` (the default) and the reservoir still tracks
+`torch.manual_seed`, because every generator — NumPy for graph topologies, torch
+for the rectangular/bias draws — is derived from torch's global RNG.
+
 ## Any function is a topology
 
 A bare callable is a valid spec; no registration is required.

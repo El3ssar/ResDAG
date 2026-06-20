@@ -16,6 +16,7 @@ resdag.init.input_feedback : Input/feedback weight initialization.
 
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers.cells import ESNCell
+from resdag.utils.general import SeedLike
 
 from .base_reservoir import BaseReservoirLayer
 
@@ -70,15 +71,20 @@ class ESNLayer(BaseReservoirLayer):
         callable ``fn(n, **kw) -> matrix | nx.Graph`` (or in-place
         ``fn(tensor)``), ``(callable, params)``, or a configured topology
         object.
-    seed : int, optional
-        Reproducibility seed forwarded to the topology and feedback/input
-        initializers (whichever accept a ``seed`` argument).  With ``seed``
-        set, a string-form ``topology='erdos_renyi'`` is reproducible without
-        the ``('erdos_renyi', {'seed': ...})`` tuple form; an explicit seed in
-        a tuple/object spec always wins.  When ``seed=None`` (the default),
-        string-form graph topologies are still reproducible under
-        ``torch.manual_seed`` because the NumPy generator is derived from
-        torch's global RNG.
+    seed : int or torch.Generator, optional
+        Reproducibility seed that deterministically fixes the *entire*
+        reservoir — topology (recurrent) matrix, feedback weights, input
+        weights, and bias — so two layers built with the same seed are
+        identical down to the last entry.  Accepts a plain ``int`` or a
+        :class:`torch.Generator` (handy for threading a per-trial generator
+        from an HPO loop).  This covers both explicit initializers/topologies
+        *and* the default ``uniform(-1, 1)`` draws used when none is given.
+        With ``seed`` set, a string-form ``topology='erdos_renyi'`` is
+        reproducible without the ``('erdos_renyi', {'seed': ...})`` tuple form;
+        an explicit seed in a tuple/object spec always wins.  When ``seed=None``
+        (the default), the reservoir is still reproducible under
+        ``torch.manual_seed`` because every generator (NumPy and torch) is
+        derived from torch's global RNG.
 
     Attributes
     ----------
@@ -127,15 +133,29 @@ class ESNLayer(BaseReservoirLayer):
     ...     spectral_radius=0.95
     ... )
 
-    Reproducible string-form topology via the ``seed`` argument:
+    Fully reproducible reservoir via the ``seed`` argument — recurrent matrix,
+    feedback/input weights, and bias all match:
 
     >>> a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42)
     >>> b = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42)
     >>> torch.equal(a.weight_hh, b.weight_hh)
     True
+    >>> torch.equal(a.weight_feedback, b.weight_feedback)
+    True
+    >>> torch.equal(a.bias_h, b.bias_h)
+    True
 
-    String-form topologies are also reproducible under ``torch.manual_seed``
-    without an explicit ``seed``:
+    A :class:`torch.Generator` works too (e.g. an HPO per-trial generator):
+
+    >>> g1 = torch.Generator().manual_seed(7)
+    >>> g2 = torch.Generator().manual_seed(7)
+    >>> a = ESNLayer(50, feedback_size=3, seed=g1)
+    >>> b = ESNLayer(50, feedback_size=3, seed=g2)
+    >>> torch.equal(a.weight_feedback, b.weight_feedback)
+    True
+
+    The reservoir is also reproducible under ``torch.manual_seed`` without an
+    explicit ``seed``:
 
     >>> torch.manual_seed(0)
     >>> a = ESNLayer(50, feedback_size=3, topology="erdos_renyi")
@@ -174,7 +194,7 @@ class ESNLayer(BaseReservoirLayer):
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
-        seed: int | None = None,
+        seed: SeedLike = None,
     ) -> None:
         cell = ESNCell(
             reservoir_size=reservoir_size,

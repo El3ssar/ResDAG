@@ -15,6 +15,8 @@ re-exported at `resdag.utils` for convenience; their canonical home is
     options:
       members:
         - create_rng
+        - create_torch_generator
+        - coerce_seed_to_int
 
 ---
 

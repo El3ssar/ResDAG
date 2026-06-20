@@ -14,6 +14,7 @@ from resdag.init.input_feedback import (
     get_input_feedback,
 )
 from resdag.init.topology import MatrixTopology, TopologyInitializer, get_topology
+from resdag.utils.general import SeedLike, coerce_seed_to_int
 
 # Type aliases for specification formats
 TopologySpec = None | str | Callable | tuple[str | Callable, dict[str, Any]] | TopologyInitializer
@@ -60,7 +61,7 @@ def _topology_builder(topology: TopologyInitializer) -> Callable | None:
 
 def resolve_topology(
     spec: TopologySpec,
-    seed: int | None = None,
+    seed: SeedLike = None,
 ) -> TopologyInitializer | None:
     """Resolve a topology specification to a TopologyInitializer object.
 
@@ -78,13 +79,14 @@ def resolve_topology(
     ----------
     spec : TopologySpec
         Topology specification in one of the accepted formats.
-    seed : int, optional
+    seed : int or torch.Generator, optional
         Seed forwarded to the underlying builder for reproducibility. It is
         applied only to the ``str``, ``tuple[str, dict]``, ``callable``, and
         ``tuple[callable, dict]`` forms, only when the builder accepts a
         ``seed`` argument, and only when the spec did not already pin one (an
-        explicit spec seed always wins). Pre-resolved ``TopologyInitializer``
-        objects are returned untouched.
+        explicit spec seed always wins). A :class:`torch.Generator` is reduced
+        to its ``initial_seed()`` before use. Pre-resolved
+        ``TopologyInitializer`` objects are returned untouched.
 
     Returns
     -------
@@ -116,6 +118,7 @@ def resolve_topology(
     >>> resolve_topology(get_topology("ring_chord"))
     GraphTopology(...)
     """
+    seed = coerce_seed_to_int(seed)
     if spec is None:
         return None
     if isinstance(spec, TopologyInitializer):
@@ -158,7 +161,7 @@ def _initializer_seed_target(initializer: InputFeedbackInitializer) -> Callable:
 
 def resolve_initializer(
     spec: InitializerSpec,
-    seed: int | None = None,
+    seed: SeedLike = None,
 ) -> InputFeedbackInitializer | None:
     """Resolve an initializer specification to an InputFeedbackInitializer object.
 
@@ -176,12 +179,13 @@ def resolve_initializer(
     ----------
     spec : InitializerSpec
         Initializer specification in one of the accepted formats.
-    seed : int, optional
+    seed : int or torch.Generator, optional
         Seed forwarded to the underlying initializer for reproducibility. It
         is applied only to the ``str``, ``tuple[str, dict]``, ``callable``,
         and ``tuple[callable, dict]`` forms, only when the initializer accepts
         a ``seed`` argument, and only when the spec did not already pin one (an
-        explicit spec seed always wins). Pre-resolved
+        explicit spec seed always wins). A :class:`torch.Generator` is reduced
+        to its ``initial_seed()`` before use. Pre-resolved
         ``InputFeedbackInitializer`` objects are returned untouched.
 
     Returns
@@ -214,6 +218,7 @@ def resolve_initializer(
     >>> resolve_initializer(get_input_feedback("random"))
     RandomInitializer(...)
     """
+    seed = coerce_seed_to_int(seed)
     if spec is None:
         return None
     if isinstance(spec, InputFeedbackInitializer):

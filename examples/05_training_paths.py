@@ -20,24 +20,9 @@ import time
 import torch
 import torch.nn as nn
 
-from resdag import ESNLayer, ESNModel, reservoir_input
+from resdag import ESNLayer, ESNModel, lorenz, reservoir_input
 from resdag.layers import CGReadoutLayer
 from resdag.training import ESNTrainer
-
-
-def generate_lorenz(n_steps: int, dt: float = 0.01, seed: int = 42) -> torch.Tensor:
-    """Integrate Lorenz-63 (Euler). Returns (1, n_steps, 3), normalized."""
-    torch.manual_seed(seed)
-    sigma, rho, beta = 10.0, 28.0, 8.0 / 3.0
-    xyz = torch.empty(n_steps, 3)
-    xyz[0] = torch.tensor([1.0, 1.0, 1.05])
-    for t in range(1, n_steps):
-        x, y, z = xyz[t - 1]
-        dxyz = torch.stack((sigma * (y - x), x * (rho - z) - y, x * y - beta * z))
-        xyz[t] = xyz[t - 1] + dt * dxyz
-    xyz = (xyz - xyz.mean(0)) / xyz.std(0)
-    return xyz.unsqueeze(0)  # (1, n_steps, 3)
-
 
 RESERVOIR_SIZE = 200
 
@@ -46,7 +31,7 @@ def main() -> None:
     torch.manual_seed(42)
 
     # Shared task: one-step-ahead prediction of Lorenz-63.
-    data = generate_lorenz(1801)  # (1, 1801, 3) = (batch, time, features)
+    data = lorenz(1801, seed=42)  # (1, 1801, 3) = (batch, time, features)
     warmup = data[:, :200]  # (1, 200, 3)
     train_in = data[:, 200:1400]  # (1, 1200, 3)
     train_tgt = data[:, 201:1401]  # next step of train_in

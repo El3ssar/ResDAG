@@ -121,6 +121,11 @@ from .models import (
 )
 from .training import ESNTrainer
 
+# Canonical dataset generators. The ``resdag.utils.data`` submodule is also
+# exposed as ``resdag.datasets`` for a discoverable, library-style entry point.
+from .utils import data as datasets
+from .utils.data import henon, lorenz, mackey_glass, narma, rossler, sine
+
 __version__ = "0.6.2"
 
 __all__ = [
@@ -174,6 +179,14 @@ __all__ = [
     "headless_esn",
     "linear_esn",
     "power_augmented",
+    # Canonical dataset generators
+    "datasets",
+    "lorenz",
+    "rossler",
+    "henon",
+    "mackey_glass",
+    "narma",
+    "sine",
 ]
 
 

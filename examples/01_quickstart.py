@@ -23,23 +23,6 @@ import resdag as rd
 from resdag.training import ESNTrainer
 
 
-def generate_lorenz(n_steps: int, dt: float = 0.01, seed: int = 42) -> torch.Tensor:
-    """Integrate the Lorenz-63 system with the Euler method.
-
-    Returns a normalized tensor of shape (1, n_steps, 3) = (batch, time, features).
-    """
-    torch.manual_seed(seed)
-    sigma, rho, beta = 10.0, 28.0, 8.0 / 3.0
-    xyz = torch.empty(n_steps, 3)
-    xyz[0] = torch.tensor([1.0, 1.0, 1.05])
-    for t in range(1, n_steps):
-        x, y, z = xyz[t - 1]
-        dxyz = torch.stack((sigma * (y - x), x * (rho - z) - y, x * y - beta * z))
-        xyz[t] = xyz[t - 1] + dt * dxyz
-    xyz = (xyz - xyz.mean(0)) / xyz.std(0)  # zero mean, unit std per feature
-    return xyz.unsqueeze(0)  # (1, n_steps, 3)
-
-
 def main() -> None:
     torch.manual_seed(42)
 
@@ -50,7 +33,9 @@ def main() -> None:
     print("1. Generate and split data")
     print("=" * 70)
 
-    data = generate_lorenz(2300)  # (1, 2300, 3) = (batch, time, features)
+    # rd.lorenz ships a correct RK4 Lorenz-63 integrator in the public API:
+    # a (1, 2300, 3) = (batch, time, features) standardized tensor.
+    data = rd.lorenz(2300, seed=42)
 
     # prepare_esn_data slices one long series into the five segments every
     # ESN workflow needs (val follows train, f_warmup is the tail of train):

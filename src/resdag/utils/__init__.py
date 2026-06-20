@@ -23,6 +23,9 @@ load_file
 prepare_esn_data
     Split a series into ESN train/forecast segments (re-exported from
     ``resdag.utils.data``).
+lorenz, rossler, henon, mackey_glass, narma, sine
+    Canonical reservoir-computing dataset generators (re-exported from
+    ``resdag.utils.data``).
 
 Examples
 --------
@@ -32,13 +35,24 @@ Examples
 ...     data, warmup_steps=100, train_steps=500, val_steps=200
 ... )
 
+>>> series = rd.utils.lorenz(2000)  # (1, 2000, 3) chaotic benchmark series
+
 See Also
 --------
 resdag.utils.data : Data loading and preparation.
 """
 
 from . import data
-from .data import load_file, prepare_esn_data
+from .data import (
+    henon,
+    load_file,
+    lorenz,
+    mackey_glass,
+    narma,
+    prepare_esn_data,
+    rossler,
+    sine,
+)
 from .general import SeedLike, coerce_seed_to_int, create_rng, create_torch_generator
 
 __all__ = [
@@ -49,4 +63,11 @@ __all__ = [
     "data",
     "load_file",
     "prepare_esn_data",
+    # Canonical dataset generators
+    "lorenz",
+    "rossler",
+    "henon",
+    "mackey_glass",
+    "narma",
+    "sine",
 ]

@@ -26,10 +26,12 @@ transparent eager fallback when compilation is unavailable or fails.
 Notes
 -----
 The engine feeds every non-reservoir layer the same 3-D ``(batch, 1, features)``
-slice the graph path would, so the result is identical for *any* layer (including
-shape-sensitive ones such as :class:`~resdag.layers.transforms.FeaturePartitioner`),
-not just feature-wise transforms.  Only the reservoir update is special-cased: its
-parents are squeezed to 2-D for the single-step
+slice the graph path would, so the result is identical for *any* layer — including
+ones that inspect input rank or operate along the time axis — not just feature-wise
+transforms.  (The built-in transforms are additionally rank-agnostic, so they would
+also work on a squeezed 2-D slice; keeping the engine 3-D makes that independent of
+the layer.)  Only the reservoir update is special-cased: its parents are squeezed to
+2-D for the single-step
 :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
 and the output is unsqueezed back.  Reservoir *states* are threaded separately and
 keep their native shape (2-D for an ESN, 3-D delay buffer for NG-RC).

@@ -101,6 +101,24 @@ class TestFeaturePartitioner:
         for partition in output:
             assert partition.shape == (3, 5, 6)
 
+    def test_2d_input_accepted(self) -> None:
+        """2-D ``(batch, features)`` input is accepted (rank-agnostic on dim=-1).
+
+        Needed so the layer works in the autoregressive ``forecast`` path, where
+        the flattened engine feeds single-step slices.
+        """
+        layer = FeaturePartitioner(partitions=4, overlap=1)
+        x2 = torch.randn(3, 16)
+
+        parts2 = layer(x2)
+        assert len(parts2) == 4
+        for partition in parts2:
+            assert partition.shape == (3, 6)  # 16//4 + 2*1
+        # Each 2-D partition equals the 3-D path on a singleton-time slice.
+        parts3 = layer(x2.unsqueeze(1))
+        for p2, p3 in zip(parts2, parts3):
+            assert torch.equal(p2, p3.squeeze(1))
+
     def test_extra_repr(self) -> None:
         """Test string representation."""
         layer = FeaturePartitioner(partitions=3, overlap=2)
@@ -317,14 +335,30 @@ class TestSelectiveDropout:
 
         assert torch.allclose(output, x)
 
-    def test_invalid_input_shape_raises_error(self) -> None:
-        """Test that invalid input shape raises error."""
+    def test_2d_input_accepted(self) -> None:
+        """2-D ``(batch, features)`` input is accepted (rank-agnostic on dim=-1).
+
+        Required so the layer can sit in the autoregressive ``forecast`` path,
+        and consistent with ``ReadoutLayer`` / the other feature-wise transforms.
+        """
         mask = [False, True, False, True]
         layer = SelectiveDropout(mask)
-        x = torch.ones(5, 4)  # 2D instead of 3D
+        x2 = torch.randn(5, 4)
 
-        with pytest.raises(ValueError, match="Expected input shape"):
-            layer(x)
+        out2 = layer(x2)
+        assert out2.shape == (5, 4)
+        assert torch.all(out2[:, [1, 3]] == 0)
+        assert torch.equal(out2[:, [0, 2]], x2[:, [0, 2]])
+        # 2-D result equals the 3-D path on a singleton-time slice.
+        x3 = x2.unsqueeze(1)
+        assert torch.equal(layer(x3).squeeze(1), out2)
+
+    @pytest.mark.parametrize("bad", [torch.ones(4), torch.ones(2, 3, 5, 4)])
+    def test_invalid_input_rank_raises_error(self, bad: torch.Tensor) -> None:
+        """Ranks other than 2-D / 3-D still raise."""
+        layer = SelectiveDropout([False, True, False, True])
+        with pytest.raises(ValueError, match="expects 2D"):
+            layer(bad)
 
     def test_mismatched_feature_dim_raises_error(self) -> None:
         """Test that mismatched feature dim raises error."""

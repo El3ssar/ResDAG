@@ -19,7 +19,7 @@ import torch
 
 from resdag.core import ESNModel, Input
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
-from resdag.layers.transforms import FeaturePartitioner
+from resdag.layers.transforms import FeaturePartitioner, SelectiveDropout
 
 # torch.compile is unsupported on Python 3.15+ (mirrors tests/test_core/test_compile_and_precision.py).
 COMPILE_SUPPORTED = torch.__version__ >= "2.0.0" and sys.version_info < (3, 15)
@@ -468,13 +468,34 @@ class TestFlatEngineParity:
         # The DAG really does carry two reservoirs through the engine.
         assert len(model._get_flat_step().reservoir_layers) == 2
 
+    def test_selective_dropout_in_path_bit_parity(self) -> None:
+        """A feature-wise transform (``SelectiveDropout``) in the AR path.
+
+        Guards that a transform applied per step matches the legacy graph
+        re-execution exactly — regression coverage for transforms that must
+        accept the engine's single-step slice.
+        """
+        torch.manual_seed(0)
+        inp = Input(shape=(20, 3))
+        states = ESNLayer(reservoir_size=16, feedback_size=3, spectral_radius=0.9)(inp)
+        dropped = SelectiveDropout([True, False] * 8)(states)
+        out = CGReadoutLayer(16, 3, name="output")(dropped)
+        model = ESNModel(inp, out).double()
+        warmup = torch.randn(2, 25, 3, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=40)
+        ref = _legacy_graph_forecast(model, (warmup,), 40)
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+
     def test_multi_output_unpack_layer_bit_parity(self) -> None:
         """A graph with an unpacked (sibling) node + a shape-sensitive transform.
 
-        ``FeaturePartitioner`` returns a list and indexes ``input.shape`` as 3-D,
-        and the ``a, b = parts`` unpack creates ``UnpackLayer`` siblings that the
-        engine must splat. This is the case the per-step engine must feed full
-        3-D slices, not squeezed 2-D ones.
+        ``FeaturePartitioner`` returns a list and the ``a, b = parts`` unpack
+        creates ``UnpackLayer`` siblings, exercising the multi-output codegen
+        branch in ``build_flat_step`` (the only built-in layer that triggers it).
+        ``FeaturePartitioner`` is also rank-agnostic, so this confirms the engine
+        feeds it a usable single-step slice.
         """
         torch.manual_seed(0)
         inp = Input(shape=(20, 4))
@@ -489,6 +510,9 @@ class TestFlatEngineParity:
         flat = model.forecast(warmup, horizon=40)
         ref = _legacy_graph_forecast(model, (warmup,), 40)
         assert (flat - ref[0]).abs().max().item() < 1e-10
+        # The generated source took the multi-output sibling branch: only that
+        # branch splats its single parent (``_C[k](*parent)``).
+        assert "(*" in model._get_flat_step().source
 
     def test_initial_feedback_bit_parity(self, make_tiny_model) -> None:
         model = make_tiny_model(feedback_size=3).double()

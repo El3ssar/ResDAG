@@ -23,10 +23,14 @@ class SelectiveDropout(nn.Module):
               Can be array-like (list, numpy array) or torch.Tensor of shape (features,)
 
     Input Shape:
-        (batch, timesteps, features)
+        (batch, features) or (batch, timesteps, features) — the mask is applied
+        on the feature (last) dimension, so both ranks are accepted. The
+        autoregressive :meth:`resdag.core.ESNModel.forecast` engine drives the
+        graph one timestep at a time, which is why per-step layers must accept
+        the singleton-time slice as well as the full sequence.
 
     Output Shape:
-        (batch, timesteps, features)
+        Same shape as the input.
 
     Example:
         >>> import numpy as np
@@ -64,19 +68,28 @@ class SelectiveDropout(nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Apply selective dropout using the stored mask.
 
+        Handles both 2-D ``(batch, features)`` and 3-D
+        ``(batch, timesteps, features)`` inputs — the mask broadcasts over the
+        feature (last) dimension, mirroring :class:`~resdag.layers.readouts.ReadoutLayer`.
+        Accepting the 2-D rank lets the layer sit in the autoregressive forecast
+        path, where the flattened engine feeds single-step slices.
+
         Args:
-            input: Input tensor of shape (batch, timesteps, features)
+            input: Input tensor of shape (batch, features) or
+                (batch, timesteps, features)
 
         Returns:
-            Input tensor with masked features set to zero
+            Input tensor (same shape) with masked features set to zero
 
         Raises:
-            ValueError: If input shape doesn't match expected format
+            ValueError: If input is neither 2-D nor 3-D, or the mask size does
+                not match the feature dimension
         """
-        if input.dim() != 3:
+        if input.dim() not in (2, 3):
             raise ValueError(
-                f"Expected input shape (batch, timesteps, features), "
-                f"got {input.dim()}D tensor with shape {input.shape}"
+                f"SelectiveDropout expects 2D (batch, features) or 3D "
+                f"(batch, timesteps, features) input, got {input.dim()}D tensor "
+                f"with shape {input.shape}"
             )
 
         feature_dim = input.shape[-1]

@@ -12,6 +12,10 @@ data
 
 Functions
 ---------
+seed_everything
+    Seed Python, NumPy, and torch (CPU + CUDA) for reproducible runs.
+resolve_device
+    Resolve a device spec (``'auto'``/str/``torch.device``) to a ``torch.device``.
 create_rng
     Create a NumPy random number generator with optional seed.
 create_torch_generator
@@ -20,6 +24,8 @@ coerce_seed_to_int
     Reduce an int/``torch.Generator``/None seed to a plain int (or None).
 SeedLike
     Type alias for accepted seed inputs (``int | torch.Generator | None``).
+DeviceLike
+    Type alias for accepted device specs (``str | torch.device | None``).
 load_file
     Load a time series from disk (re-exported from ``resdag.utils.data``).
 prepare_esn_data
@@ -63,13 +69,24 @@ from .data import (
     rossler,
     sine,
 )
-from .general import SeedLike, coerce_seed_to_int, create_rng, create_torch_generator
+from .general import (
+    DeviceLike,
+    SeedLike,
+    coerce_seed_to_int,
+    create_rng,
+    create_torch_generator,
+    resolve_device,
+    seed_everything,
+)
 
 __all__ = [
+    "DeviceLike",
     "SeedLike",
     "coerce_seed_to_int",
     "create_rng",
     "create_torch_generator",
+    "resolve_device",
+    "seed_everything",
     "data",
     "load_file",
     "prepare_esn_data",

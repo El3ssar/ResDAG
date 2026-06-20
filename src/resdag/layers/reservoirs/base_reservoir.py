@@ -60,7 +60,17 @@ class BaseReservoirLayer(nn.Module, ABC):
     def __init__(self, cell: ReservoirCell) -> None:
         super().__init__()
         self.cell = cell
-        self.state: torch.Tensor | None = None
+        # Register the reservoir state as a *non-persistent* buffer so that
+        # ``nn.Module._apply`` (driven by ``.to()`` / ``.cuda()`` / ``.double()``)
+        # moves a warmed-up state along with the module's parameters, instead of
+        # leaving it on the original device/dtype and triggering a silent
+        # zero-reinit on the next forward.  ``persistent=False`` keeps it out of
+        # ``state_dict()`` so the ``save`` / ``include_states`` split is
+        # untouched.  The buffer is initialised to ``None`` and reassigned with a
+        # concrete tensor on first use (buffers accept reassignment, including
+        # back to ``None`` for lazy re-init).
+        self.register_buffer("state", None, persistent=False)
+        self.state: torch.Tensor | None
         self.detach_state_between_calls: bool = True
 
     def forward(
@@ -166,13 +176,26 @@ class BaseReservoirLayer(nn.Module, ABC):
         device: torch.device,
         dtype: torch.dtype,
     ) -> None:
-        """Initialize state to zeros if None, batch size changed, or device changed."""
-        if (
-            self.state is None
-            or self.state.shape[0] != batch_size
-            or self.state.device != device
-            or self.state.dtype != dtype
-        ):
+        """
+        Lazily allocate a zero state only when it is genuinely missing.
+
+        A re-init happens **only** when the state is ``None`` or its batch size
+        no longer matches the incoming batch.  Device and dtype are *not* a
+        trigger: the state is a registered buffer, so ``.to()`` / ``.cuda()`` /
+        ``.double()`` already move it together with the module's parameters, and
+        re-zeroing on a device/dtype mismatch would silently discard a warmed-up
+        trajectory — the very bug this guard used to cause.
+
+        Parameters
+        ----------
+        batch_size : int
+            Batch size of the incoming sequence.
+        device : torch.device
+            Target device for a freshly allocated state.
+        dtype : torch.dtype
+            Target dtype for a freshly allocated state.
+        """
+        if self.state is None or self.state.shape[0] != batch_size:
             self.state = self.cell.init_state(batch_size, device, dtype)
 
     def reset_state(self, batch_size: int | None = None) -> None:

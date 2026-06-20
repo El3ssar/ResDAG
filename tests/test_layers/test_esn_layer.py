@@ -448,6 +448,108 @@ class TestStateDetachBetweenCalls:
             out.sum().backward()
 
 
+class TestESNLayerStateBuffer:
+    """The reservoir state is a non-persistent buffer (issue #132).
+
+    The 2-D ESN state must move with the module under ``.to()`` / ``.double()``
+    (so a warmed-up trajectory survives a device/dtype change instead of being
+    silently zero-reinitialised), yet must NOT leak into ``state_dict()`` — the
+    ``save`` / ``include_states`` split depends on it staying out.
+    """
+
+    def test_state_is_registered_buffer(self) -> None:
+        """``state`` lives in ``named_buffers()`` but not ``state_dict()``."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        reservoir(torch.randn(2, 8, 3))  # warm up so the buffer is a real tensor
+
+        assert "state" in dict(reservoir.named_buffers())
+        assert "state" not in reservoir.state_dict()
+
+    def test_state_not_in_state_dict_before_warmup(self) -> None:
+        """A ``None`` state never appears in ``state_dict()``."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        assert reservoir.state is None
+        assert "state" not in reservoir.state_dict()
+
+    def test_state_does_not_require_grad(self) -> None:
+        """A buffer state must not carry gradients by default."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        reservoir(torch.randn(2, 8, 3))
+        assert reservoir.state.requires_grad is False
+
+    def test_double_preserves_warmed_state(self) -> None:
+        """``.double()`` moves and preserves the warmed state (no zero-reinit)."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        reservoir(torch.randn(2, 8, 3))  # warm up on CPU/float32
+        warmed = reservoir.get_state().clone()
+
+        assert reservoir.state.dtype == torch.float32
+        reservoir = reservoir.double()
+
+        # State moved to float64 and values are preserved (cast, not re-zeroed).
+        assert reservoir.state.dtype == torch.float64
+        assert (reservoir.state != 0).any()
+        assert torch.allclose(reservoir.state, warmed.double())
+
+    def test_double_then_forward_keeps_continuity(self) -> None:
+        """Warm → ``.double()`` → forward must not silently zero the state."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        feedback = torch.randn(2, 8, 3)
+        reservoir(feedback)
+        warmed = reservoir.get_state().clone()
+
+        reservoir = reservoir.double()
+        # The next forward must continue from the (moved) warmed state, i.e.
+        # _maybe_init_state must NOT re-init purely due to the dtype change.
+        out = reservoir(feedback.double())
+        assert out.dtype == torch.float64
+        assert not torch.allclose(reservoir.state, warmed.double())  # state evolved
+        assert (reservoir.state != 0).any()
+
+    def test_maybe_init_state_no_reinit_on_dtype_change(self) -> None:
+        """A dtype-only change must reuse the moved state, not allocate zeros."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3).double()
+        reservoir(torch.randn(2, 8, 3, dtype=torch.float64))
+        before = reservoir.state
+
+        # Same batch, dtype already matches the buffer: identity must be kept.
+        reservoir._maybe_init_state(2, before.device, torch.float64)
+        assert reservoir.state is before
+
+    def test_maybe_init_state_reinits_on_batch_change(self) -> None:
+        """A genuine batch-size change still triggers a fresh zero state."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        reservoir(torch.randn(2, 8, 3))
+        assert reservoir.state.shape[0] == 2
+
+        reservoir(torch.randn(5, 8, 3))  # different batch
+        assert reservoir.state.shape[0] == 5
+
+    def test_reset_to_none_then_reinit_still_a_buffer(self) -> None:
+        """reset_state() → None → forward keeps ``state`` a buffer (moves on .to)."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        reservoir(torch.randn(2, 8, 3))
+        reservoir.reset_state()
+        assert reservoir.state is None
+
+        reservoir(torch.randn(2, 8, 3))  # lazy re-init
+        assert "state" in dict(reservoir.named_buffers())
+        reservoir = reservoir.double()  # buffer still moves
+        assert reservoir.state.dtype == torch.float64
+
+    @pytest.mark.gpu
+    @cuda_required
+    def test_to_cuda_preserves_warmed_state(self) -> None:
+        """Warm on CPU, ``.to('cuda')``: state moves to GPU with values intact."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3)
+        reservoir(torch.randn(2, 8, 3))
+        warmed = reservoir.get_state().clone()
+
+        reservoir = reservoir.to("cuda")
+        assert reservoir.state.device.type == "cuda"
+        assert torch.allclose(reservoir.state.cpu(), warmed)
+
+
 class TestESNLayerTopology:
     """Topology-spec resolution through the layer (string/tuple/object)."""
 

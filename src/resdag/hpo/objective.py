@@ -1,42 +1,36 @@
 """Objective function builder for Optuna optimization.
 
-This module provides the core machinery for creating Optuna objective functions
-from user-defined callbacks.  It handles the full per-trial lifecycle: model
-creation, training, forecasting, evaluation, and optional monitor-loss logging.
+This module exposes :func:`build_objective`, a thin wrapper that constructs a
+:class:`resdag.hpo.runner.TrialRunner` and returns it as the per-trial
+objective.  ``TrialRunner`` carries the full per-trial lifecycle (seeding, model
+creation, training, a single forecast with horizon-checkpoint pruning, and loss
+evaluation).  Keeping ``build_objective`` as a wrapper preserves backward
+compatibility for existing callers while the picklable runner powers
+``spawn``-based distribution and Optuna pruners.
 
 See Also
 --------
+resdag.hpo.runner : The picklable :class:`TrialRunner` doing the real work.
 resdag.hpo.run : High-level orchestrator that calls :func:`build_objective`.
 resdag.hpo.losses : Loss functions available for evaluation.
 """
 
-import gc
-import logging
 from typing import Any, Callable
 
-import numpy as np
 import optuna
 import torch
 
 from resdag.core import ESNModel
-from resdag.training import ESNTrainer
 
 from .losses import LossProtocol
+from .runner import TrialCallback, TrialRunner, _cleanup, _validate_data_keys
 
 __all__ = ["build_objective"]
 
-logger = logging.getLogger(__name__)
-
-
-def _cleanup() -> None:
-    """Reclaim memory between trials.
-
-    Forces Python garbage collection and, when CUDA is available, empties
-    the GPU memory cache to avoid out-of-memory errors across long studies.
-    """
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+# Re-exported for backward compatibility with callers/tests that imported these
+# private helpers from ``resdag.hpo.objective`` before the TrialRunner refactor.
+_cleanup = _cleanup
+_validate_data_keys = _validate_data_keys
 
 
 def build_objective(
@@ -55,66 +49,90 @@ def build_objective(
     seed: int | None = None,
     clip_value: float | None = None,
     prune_on_clip: bool = False,
-) -> Callable[[optuna.Trial], float]:
-    """Build an Optuna objective function from user-defined callbacks.
+    n_checkpoints: int = 5,
+    torch_scoring: bool = True,
+    trial_callbacks: list[TrialCallback] | None = None,
+) -> TrialRunner:
+    """Build an Optuna objective from user-defined callbacks.
 
-    Creates a closure that wraps model creation, training, and evaluation
-    into a single objective function that Optuna can optimize.
+    Thin wrapper around :class:`resdag.hpo.runner.TrialRunner`.  The returned
+    object is a *picklable* callable: invoke it with an :class:`optuna.Trial`
+    and it returns the (possibly clipped) loss to minimize.  Because it is a
+    real object rather than a closure, it can be shipped to ``spawn``-ed worker
+    processes and drives Optuna pruners via per-checkpoint reporting.
 
     Parameters
     ----------
     model_creator : Callable[..., ESNModel]
-        Function that creates a fresh model given hyperparameters.
-        Must accept all hyperparameters from ``search_space`` as keyword arguments.
+        Function that creates a fresh model given hyperparameters.  Must accept
+        all hyperparameters from ``search_space`` as keyword arguments.
     search_space : Callable[[Trial], dict[str, Any]]
         Function that defines the hyperparameter search space using Optuna's
-        ``trial.suggest_*`` methods. Returns a dictionary of hyperparameters.
+        ``trial.suggest_*`` methods.  Returns a dictionary of hyperparameters.
     data_loader : Callable[[Trial], dict[str, Tensor]]
-        Function that loads and returns training/validation data. Must return
-        a dictionary with keys: "warmup", "train", "target", "f_warmup", "val".
-        Optionally include driver inputs with keys like "warmup_driver", "train_driver".
+        Function that loads and returns training/validation data.  Must return a
+        dictionary with keys: ``"warmup"``, ``"train"``, ``"target"``,
+        ``"f_warmup"``, ``"val"``.  Optionally include driver inputs with keys
+        like ``"warmup_driver"``, ``"train_driver"``.
     loss_fn : LossProtocol
         Loss function to evaluate model performance.
     targets_key : str, default="output"
         Name of the readout layer target in the targets dict.
     drivers_keys : list[str], optional
-        List of driver input keys in data dict (e.g., ["driver1", "driver2"]).
-        If provided, these are passed as additional inputs during training/forecasting.
+        List of driver input keys in the data dict (e.g. ``["driver1"]``).  If
+        provided, these are passed as additional inputs during
+        training/forecasting.
     horizon_key : str, optional
-        Key in data dict specifying forecast horizon. If None, uses val.shape[1].
+        Key in the data dict specifying the forecast horizon.  If ``None``, uses
+        ``val.shape[1]``.
     catch_exceptions : bool, default=True
-        If True, catch exceptions and return penalty_value instead of raising.
+        If ``True``, catch exceptions and return ``penalty_value`` instead of
+        raising.  Pruning (``optuna.TrialPruned``) is always re-raised.
     penalty_value : float, default=1e10
         Value to return when a trial fails.
     monitor_losses : list[LossProtocol], optional
         Additional loss functions to compute and log (but not optimize on).
         These are logged as user attributes on the trial.
     monitor_params : dict[str, dict[str, Any]], optional
-        Keyword arguments for each monitor loss. Keys are loss function names,
-        values are dicts of kwargs. E.g., ``{"efh": {"threshold": 0.3}}``.
+        Keyword arguments for each monitor loss.  Keys are loss function names,
+        values are dicts of kwargs, e.g. ``{"efh": {"threshold": 0.3}}``.
     device : torch.device, optional
-        Device to place model and data on (e.g., ``torch.device("cuda")``).
-        If None, uses default device from model/data.
+        Device to place model and data on (e.g. ``torch.device("cuda")``).  If
+        ``None``, uses the default device from model/data.
     seed : int, optional
-        Base seed for per-trial reproducibility. Each trial uses
-        ``seed + trial.number`` to seed PyTorch and numpy.
+        Base seed for per-trial reproducibility.  Each trial uses
+        ``seed + trial.number`` to seed PyTorch and NumPy.
     clip_value : float, optional
-        Upper bound for the objective value.  When set and the raw loss
-        exceeds this threshold, the value returned to Optuna is clamped to
-        *clip_value* (or the trial is pruned, see *prune_on_clip*).  The
-        unclipped value is always stored as the ``"raw_loss"`` user attribute.
-        When ``None`` (default), no clipping is applied and
-        ``raw_loss == loss``.
+        Upper bound for the objective value.  When set and the raw loss exceeds
+        this threshold, the value returned to Optuna is clamped to *clip_value*
+        (or the trial is pruned, see *prune_on_clip*).  The unclipped value is
+        always stored as the ``"raw_loss"`` user attribute.  When ``None``
+        (default), no clipping is applied and ``raw_loss == loss``.
     prune_on_clip : bool, default=False
         If ``True`` **and** *clip_value* is set, trials whose raw loss exceeds
         *clip_value* are pruned (via ``optuna.TrialPruned``) instead of
         returning the clipped value.  Pruned trials do not count towards the
         study's completed trials.
+    n_checkpoints : int, default=5
+        Number of growing horizon checkpoints at which to report intermediate
+        losses and check for pruning.  The single forecast is sliced to each
+        checkpoint (no repeated forecasts).  Values ``<= 1`` disable
+        intermediate reporting (a single report at the full horizon, matching
+        the legacy single-shot behaviour).
+    torch_scoring : bool, default=True
+        If ``True``, score on the forecast's device with ``torch.Tensor`` inputs
+        until the final scalar, falling back to NumPy when the loss does not
+        support tensors.  Set ``False`` to always score in NumPy.
+    trial_callbacks : list[TrialCallback], optional
+        Per-trial callbacks invoked after each successful evaluation.  Each
+        receives ``(trial, context)`` and may call ``trial.report`` /
+        ``trial.should_prune`` to act as a pruning signal.  Callback exceptions
+        are logged and swallowed — a callback can never fail the trial.
 
     Returns
     -------
-    Callable[[Trial], float]
-        The objective function for Optuna to optimize.
+    TrialRunner
+        A picklable callable objective for Optuna to optimize.
 
     Example
     -------
@@ -129,198 +147,23 @@ def build_objective(
     >>> study = optuna.create_study()
     >>> study.optimize(objective, n_trials=100)
     """
-
-    def objective(trial: optuna.Trial) -> float:
-        try:
-            # 0. Per-trial reproducible seeding
-            if seed is not None:
-                trial_seed = seed + trial.number
-                torch.manual_seed(trial_seed)
-                np.random.seed(trial_seed % (2**32))
-
-            # 1. Get hyperparameters from search space
-            params = search_space(trial)
-
-            # 2. Load data
-            data = data_loader(trial)
-            _validate_data_keys(data, drivers_keys=drivers_keys)
-
-            # Move data to device
-            if device is not None:
-                data = {
-                    k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in data.items()
-                }
-
-            # 3. Create fresh model
-            model = model_creator(**params)
-            if device is not None:
-                model = model.to(device)
-
-            # 4. Prepare inputs
-            warmup_inputs = (data["warmup"],)
-            train_inputs = (data["train"],)
-
-            if drivers_keys:
-                for key in drivers_keys:
-                    warmup_key = f"warmup_{key}"
-                    train_key = f"train_{key}"
-                    if warmup_key in data and train_key in data:
-                        warmup_inputs = warmup_inputs + (data[warmup_key],)
-                        train_inputs = train_inputs + (data[train_key],)
-
-            # 5. Train with ESNTrainer
-            trainer = ESNTrainer(model)
-            trainer.fit(
-                warmup_inputs=warmup_inputs,
-                train_inputs=train_inputs,
-                targets={targets_key: data["target"]},
-            )
-
-            # 6. Forecast
-            horizon = (
-                data[horizon_key] if horizon_key and horizon_key in data else data["val"].shape[1]
-            )
-
-            # Prepare forecast warmup inputs (feedback + drivers)
-            f_warmup_inputs: tuple = (data["f_warmup"],)
-            forecast_drivers_list: list = []
-
-            if drivers_keys:
-                for key in drivers_keys:
-                    # Forecast warmup drivers (for warmup phase)
-                    f_warmup_key = f"f_warmup_{key}"
-                    if f_warmup_key in data:
-                        f_warmup_inputs = f_warmup_inputs + (data[f_warmup_key],)
-
-                    # Forecast drivers (for autoregressive phase)
-                    forecast_key = f"forecast_{key}"
-                    if forecast_key in data:
-                        forecast_drivers_list.append(data[forecast_key])
-
-            # Run forecast
-            preds = model.forecast(
-                f_warmup_inputs,
-                forecast_inputs=tuple(forecast_drivers_list) if forecast_drivers_list else None,
-                horizon=horizon,
-            )
-
-            # 7. Compute loss
-            val = data["val"]
-            timesteps = min(preds.shape[1], val.shape[1])
-
-            # Convert to numpy for loss function
-            preds_np = preds[:, :timesteps, :].detach().cpu().numpy()
-            val_np = val[:, :timesteps, :].detach().cpu().numpy()
-
-            raw_loss = float(loss_fn(val_np, preds_np))
-
-            # Always store the unclipped value
-            trial.set_user_attr("raw_loss", raw_loss)
-
-            # Apply clipping
-            if clip_value is not None and raw_loss > clip_value:
-                if prune_on_clip:
-                    raise optuna.TrialPruned(
-                        f"raw_loss {raw_loss:.6f} exceeds clip_value {clip_value}"
-                    )
-                loss = clip_value
-            else:
-                loss = raw_loss
-
-            trial.set_user_attr("loss", loss)
-
-            # Compute and log monitor losses
-            if monitor_losses:
-                monitor_params_resolved = monitor_params or {}
-                for monitor_fn in monitor_losses:
-                    # Get loss name for logging and params lookup
-                    loss_name = getattr(monitor_fn, "__name__", str(monitor_fn))
-                    # Get kwargs for this monitor loss
-                    kwargs = monitor_params_resolved.get(loss_name, {})
-                    try:
-                        monitor_value = float(monitor_fn(val_np, preds_np, **kwargs))
-                        trial.set_user_attr(f"monitor_{loss_name}", monitor_value)
-                    except Exception as e:
-                        logger.warning(f"Monitor loss {loss_name} failed: {e}")
-                        trial.set_user_attr(f"monitor_{loss_name}", None)
-
-            return loss
-
-        except Exception as e:
-            if catch_exceptions:
-                logger.warning(f"Trial {trial.number} failed: {e}")
-                trial.set_user_attr("error", str(e))
-                return penalty_value
-            raise
-
-        finally:
-            _cleanup()
-
-    return objective
-
-
-_REQUIRED_DATA_KEYS = ("warmup", "train", "target", "f_warmup", "val")
-
-
-def _validate_data_keys(
-    data: Any,
-    drivers_keys: list[str] | None = None,
-) -> None:
-    """Validate the dictionary returned by the user-provided ``data_loader``.
-
-    The data dict must contain the five required keys (``"warmup"``,
-    ``"train"``, ``"target"``, ``"f_warmup"``, ``"val"``), each mapping to
-    a 3-D ``torch.Tensor`` of shape ``(batch, timesteps, features)``.
-    Driver keys named by ``drivers_keys`` are also validated when present.
-
-    Parameters
-    ----------
-    data : Any
-        Value returned by ``data_loader(trial)``.  Must be a dict-like
-        object.
-    drivers_keys : list of str, optional
-        Driver feature keys.  If provided, the corresponding ``warmup_*``,
-        ``train_*``, ``f_warmup_*`` and ``forecast_*`` entries (when
-        present) are validated as 3-D tensors.
-
-    Raises
-    ------
-    TypeError
-        If ``data`` is not a dictionary.
-    KeyError
-        If one or more required keys are missing, listed alongside the keys
-        the loader did return for easy typo spotting.
-    ValueError
-        If any required entry is not a ``torch.Tensor`` or is not 3-D.
-    """
-    if not isinstance(data, dict):
-        raise TypeError(
-            f"data_loader must return a dict, got {type(data).__name__}. "
-            f"Expected keys: {list(_REQUIRED_DATA_KEYS)}."
-        )
-
-    missing = [k for k in _REQUIRED_DATA_KEYS if k not in data]
-    if missing:
-        raise KeyError(
-            f"data_loader output is missing required keys: {missing}. "
-            f"Required: {list(_REQUIRED_DATA_KEYS)}. "
-            f"Got keys: {sorted(data.keys())}."
-        )
-
-    keys_to_check = list(_REQUIRED_DATA_KEYS)
-    if drivers_keys:
-        for key in drivers_keys:
-            for prefix in ("warmup_", "train_", "f_warmup_", "forecast_"):
-                full = f"{prefix}{key}"
-                if full in data:
-                    keys_to_check.append(full)
-
-    for key in keys_to_check:
-        value = data[key]
-        if not isinstance(value, torch.Tensor):
-            raise ValueError(f"data['{key}'] must be a torch.Tensor, got {type(value).__name__}.")
-        if value.dim() != 3:
-            raise ValueError(
-                f"data['{key}'] must be a 3-D tensor (batch, timesteps, features); "
-                f"got shape {tuple(value.shape)}."
-            )
+    return TrialRunner(
+        model_creator=model_creator,
+        search_space=search_space,
+        data_loader=data_loader,
+        loss_fn=loss_fn,
+        targets_key=targets_key,
+        drivers_keys=drivers_keys,
+        horizon_key=horizon_key,
+        catch_exceptions=catch_exceptions,
+        penalty_value=penalty_value,
+        monitor_losses=monitor_losses,
+        monitor_params=monitor_params,
+        device=device,
+        seed=seed,
+        clip_value=clip_value,
+        prune_on_clip=prune_on_clip,
+        n_checkpoints=n_checkpoints,
+        torch_scoring=torch_scoring,
+        trial_callbacks=trial_callbacks,
+    )

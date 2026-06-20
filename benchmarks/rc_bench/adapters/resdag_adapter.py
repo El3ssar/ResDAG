@@ -30,6 +30,11 @@ class _ResdagBase(Adapter):
     family = "resdag"
     _torch_device = "cpu"
     _dtype_name = "float64"
+    # Drive the autoregressive forecast through the torch.compile (cudagraph)
+    # path. Worth it on GPU, where per-step kernel-launch overhead — not the
+    # tiny matmul — dominates a long closed-loop forecast; on CPU the eager flat
+    # step is already launch-free, so leave it off there.
+    _compile_forecast = False
 
     @classmethod
     def is_available(cls) -> tuple[bool, str]:
@@ -114,7 +119,7 @@ class _ResdagBase(Adapter):
 
         def op(m):
             with torch.no_grad():
-                return m.forecast(warm, horizon=point.horizon)
+                return m.forecast(warm, horizon=point.horizon, compile=self._compile_forecast)
 
         times, last = repeat_timed(setup, op, repeats, warmups, sync=self._sync)
 
@@ -153,3 +158,4 @@ class ResdagGPUAdapter(_ResdagBase):
     label = "resdag (GPU)"
     _torch_device = "cuda"
     _dtype_name = "float32"
+    _compile_forecast = True

@@ -5,8 +5,24 @@ All load functions return tensors with shape (B, T, D) where:
 - B = batch dimension (typically 1 for single files)
 - T = time steps
 - D = feature dimension
+
+Shape-inference rules
+---------------------
+The ``(timesteps, features)`` convention is preserved across every loader:
+
+- **CSV** is always read with ``ndmin=2`` so the on-disk grid maps directly to
+  ``(T, D)``. A single-row, ``N``-column file is therefore ``(1, N)`` -> one
+  timestep of ``N`` features -> ``(1, 1, N)``, and a single-column, ``T``-row
+  file is ``(T, 1)`` -> ``T`` timesteps of one feature -> ``(1, T, 1)``. The
+  time and feature axes are never silently transposed.
+- **NPY/NPZ/NetCDF** preserve the array's stored shape. A genuinely 1D array
+  ``(T,)`` is interpreted as a *univariate series* and reshaped to ``(1, T, 1)``;
+  a warning is emitted because that ``(T,)``-is-univariate assumption is
+  ambiguous (it could equally be a single multi-feature observation). Store data
+  as 2D ``(T, D)`` to make the intent explicit and suppress the warning.
 """
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +49,18 @@ def _torch_to_numpy_dtype(dtype: torch.dtype) -> np.dtype:
 def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
     """Ensure data has shape (B, T, D).
 
+    The ``(timesteps, features)`` convention is applied consistently:
+
+    - 1D ``(T,)`` is treated as a *univariate series* and reshaped to
+      ``(1, T, 1)`` (``T`` timesteps of one feature). This is the only
+      genuinely ambiguous case: ``(T,)`` could also be a single ``T``-feature
+      observation. Callers that load 1D data from a file should warn about this
+      assumption (see :func:`_warn_if_1d`); CSV avoids it entirely by reading
+      with ``ndmin=2``.
+    - 2D ``(T, D)`` is reshaped to ``(1, T, D)`` (``T`` timesteps, ``D``
+      features) with no transposition.
+    - 3D ``(B, T, D)`` is returned unchanged.
+
     Parameters
     ----------
     data : np.ndarray
@@ -51,7 +79,7 @@ def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
         If data has more than 3 dimensions.
     """
     if data.ndim == 1:
-        # (T,) -> (1, T, 1)
+        # (T,) -> (1, T, 1): univariate series interpretation.
         return data.reshape(1, -1, 1)
     elif data.ndim == 2:
         # (T, D) -> (1, T, D)
@@ -62,6 +90,32 @@ def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
         raise ValueError(
             f"{source} has unsupported shape {data.shape}. "
             "Expected 1D (T,), 2D (T, D), or 3D (B, T, D)."
+        )
+
+
+def _warn_if_1d(data: np.ndarray, source: str) -> None:
+    """Warn when a 1D array is interpreted as a univariate ``(T,)`` series.
+
+    A stored 1D array is ambiguous: it could be ``T`` timesteps of one feature
+    or a single ``T``-feature observation. :func:`_ensure_3d` assumes the
+    former; this helper surfaces that assumption so it is not silent. Store data
+    as 2D ``(T, D)`` to make the intent explicit and avoid the warning.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The array loaded from disk.
+    source : str
+        Source description for the warning message.
+    """
+    if data.ndim == 1:
+        warnings.warn(
+            f"{source} contains a 1D array of shape {data.shape}; "
+            "interpreting it as a univariate series (T,) -> (1, T, 1). "
+            "If these are features of a single observation, store the data as "
+            "2D (T, D) to make the shape unambiguous.",
+            UserWarning,
+            stacklevel=3,
         )
 
 
@@ -87,10 +141,22 @@ def load_csv(
     Notes
     -----
     Expects headerless CSV with numeric values only.
+
+    The file is read with ``ndmin=2`` so the on-disk grid maps directly to
+    ``(T, D)`` and the ``(timesteps, features)`` convention is preserved without
+    ambiguity:
+
+    - a single-row, ``N``-column file -> ``(1, N)`` -> ``(1, 1, N)``
+      (one timestep of ``N`` features);
+    - a single-column, ``T``-row file -> ``(T, 1)`` -> ``(1, T, 1)``
+      (``T`` timesteps of one feature).
+
+    Without ``ndmin=2`` ``np.loadtxt`` collapses a single row to a 1D array,
+    which would silently transpose the time and feature axes.
     """
     dtype = dtype or torch.get_default_dtype()
     np_dtype = _torch_to_numpy_dtype(dtype)
-    data = np.loadtxt(path, delimiter=delimiter, dtype=np_dtype)
+    data = np.loadtxt(path, delimiter=delimiter, dtype=np_dtype, ndmin=2)
     data = _ensure_3d(data, f"CSV file '{path}'")
     return torch.from_numpy(data)
 
@@ -109,10 +175,18 @@ def load_npy(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     -------
     torch.Tensor
         Data tensor with shape (B, T, D).
+
+    Warns
+    -----
+    UserWarning
+        If the stored array is 1D ``(T,)``. It is interpreted as a univariate
+        series and reshaped to ``(1, T, 1)``; store data as 2D ``(T, D)`` to
+        make the shape unambiguous and suppress the warning.
     """
     dtype = dtype or torch.get_default_dtype()
     np_dtype = _torch_to_numpy_dtype(dtype)
     data = np.load(path).astype(np_dtype)
+    _warn_if_1d(data, f"NPY file '{path}'")
     data = _ensure_3d(data, f"NPY file '{path}'")
     return torch.from_numpy(data)
 
@@ -138,6 +212,13 @@ def load_npz(path: PathLike, key: str = "data", dtype: torch.dtype | None = None
     ------
     KeyError
         If the specified key is not found in the file.
+
+    Warns
+    -----
+    UserWarning
+        If the stored array is 1D ``(T,)``. It is interpreted as a univariate
+        series and reshaped to ``(1, T, 1)``; store data as 2D ``(T, D)`` to
+        make the shape unambiguous and suppress the warning.
     """
     dtype = dtype or torch.get_default_dtype()
     np_dtype = _torch_to_numpy_dtype(dtype)
@@ -147,6 +228,7 @@ def load_npz(path: PathLike, key: str = "data", dtype: torch.dtype | None = None
         raise KeyError(f"Key '{key}' not found in '{path}'. Available keys: {available}")
 
     data = data_dict[key].astype(np_dtype)
+    _warn_if_1d(data, f"NPZ file '{path}' (key '{key}')")
     data = _ensure_3d(data, f"NPZ file '{path}'")
     return torch.from_numpy(data)
 
@@ -166,6 +248,13 @@ def load_nc(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     torch.Tensor
         Data tensor with shape (B, T, D).
 
+    Warns
+    -----
+    UserWarning
+        If the stored array is 1D ``(T,)``. It is interpreted as a univariate
+        series and reshaped to ``(1, T, 1)``; store data as 2D ``(T, D)`` to
+        make the shape unambiguous and suppress the warning.
+
     Notes
     -----
     Requires xarray to be installed.
@@ -180,6 +269,7 @@ def load_nc(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     dtype = dtype or torch.get_default_dtype()
     np_dtype = _torch_to_numpy_dtype(dtype)
     data = xr.open_dataarray(path).to_numpy().astype(np_dtype)
+    _warn_if_1d(data, f"NetCDF file '{path}'")
     data = _ensure_3d(data, f"NetCDF file '{path}'")
     return torch.from_numpy(data)
 

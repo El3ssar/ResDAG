@@ -23,6 +23,12 @@ load_file
 prepare_esn_data
     Split a series into ESN train/forecast segments (re-exported from
     ``resdag.utils.data``).
+normalize_data
+    Normalize a series and return the fitted statistics (re-exported from
+    ``resdag.utils.data``).
+denormalize_data
+    Invert a normalization back to the original scale (re-exported from
+    ``resdag.utils.data``).
 lorenz, rossler, henon, mackey_glass, narma, sine
     Canonical reservoir-computing dataset generators (re-exported from
     ``resdag.utils.data``).
@@ -44,11 +50,13 @@ resdag.utils.data : Data loading and preparation.
 
 from . import data
 from .data import (
+    denormalize_data,
     henon,
     load_file,
     lorenz,
     mackey_glass,
     narma,
+    normalize_data,
     prepare_esn_data,
     rossler,
     sine,
@@ -63,6 +71,8 @@ __all__ = [
     "data",
     "load_file",
     "prepare_esn_data",
+    "normalize_data",
+    "denormalize_data",
     # Canonical dataset generators
     "lorenz",
     "rossler",

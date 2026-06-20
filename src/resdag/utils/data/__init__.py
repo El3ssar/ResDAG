@@ -28,6 +28,8 @@ prepare_esn_data
     Split time series into warmup, train, target, f_warmup, val.
 normalize_data
     Normalize data using various methods.
+denormalize_data
+    Invert a normalization, mapping data back to its original scale.
 load_and_prepare
     Load and prepare data in one step.
 
@@ -96,7 +98,7 @@ from .io import (
     save_npy,
     save_npz,
 )
-from .prepare import load_and_prepare, normalize_data, prepare_esn_data
+from .prepare import denormalize_data, load_and_prepare, normalize_data, prepare_esn_data
 
 __all__ = [
     # File I/O
@@ -113,6 +115,7 @@ __all__ = [
     # Data preparation
     "prepare_esn_data",
     "normalize_data",
+    "denormalize_data",
     "load_and_prepare",
     # Canonical dataset generators
     "lorenz",

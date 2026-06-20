@@ -14,6 +14,14 @@ import torch
 # Type aliases
 NormMethod = Literal["minmax", "standard", "noncentered", "meanpreserving"]
 ESNDataSplits = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+ESNDataSplitsWithStats = tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    dict[str, torch.Tensor] | None,
+]
 
 
 def normalize_data(
@@ -60,6 +68,64 @@ def normalize_data(
 
     normalized = _apply_norm(data, method, stats)
     return normalized, stats
+
+
+def denormalize_data(
+    data: torch.Tensor,
+    method: NormMethod,
+    stats: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    """Invert :func:`normalize_data`, mapping data back to its original scale.
+
+    Applies the exact inverse of the transform that :func:`normalize_data` (and
+    ``prepare_esn_data(normalize=True, ...)``) applied, using the fitted
+    statistics. This closes the normalize -> forecast -> report loop: feed model
+    predictions through ``denormalize_data`` to recover physical units, compute
+    errors in the original scale, or plot against the raw series.
+
+    Parameters
+    ----------
+    data : torch.Tensor
+        Normalized data of shape (B, T, D) to map back to the original scale.
+    method : {"minmax", "standard", "noncentered", "meanpreserving"}
+        Normalization method that produced ``data``. Must match the method used
+        for the forward transform. The inverse of each method is:
+
+        - "minmax": ``(data + 1) / 2 * range + min``
+        - "standard": ``data * std + mean``
+        - "noncentered": ``data * scale``
+        - "meanpreserving": ``(data - mean) * maxdev + mean``
+    stats : dict
+        Fitted statistics returned by :func:`normalize_data` (or by
+        :func:`prepare_esn_data` with ``return_stats=True``). The required keys
+        depend on ``method``: ``{"min", "range"}`` for "minmax",
+        ``{"mean", "std"}`` for "standard", ``{"scale"}`` for "noncentered",
+        and ``{"mean", "maxdev"}`` for "meanpreserving".
+
+    Returns
+    -------
+    torch.Tensor
+        Data restored to the original scale, with the same shape as ``data``.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not a recognized normalization method.
+
+    See Also
+    --------
+    normalize_data : The forward transform this function inverts.
+    prepare_esn_data : Returns the fitted ``stats`` when ``return_stats=True``.
+
+    Examples
+    --------
+    >>> data = torch.randn(1, 100, 3)
+    >>> normalized, stats = normalize_data(data, method="standard")
+    >>> restored = denormalize_data(normalized, method="standard", stats=stats)
+    >>> torch.allclose(restored, data, atol=1e-6)
+    True
+    """
+    return _apply_denorm(data, method, stats)
 
 
 def _compute_stats(data: torch.Tensor, method: NormMethod) -> dict[str, torch.Tensor]:
@@ -111,6 +177,22 @@ def _apply_norm(
         raise ValueError(f"Unknown normalization method: '{method}'")
 
 
+def _apply_denorm(
+    data: torch.Tensor, method: NormMethod, stats: dict[str, torch.Tensor]
+) -> torch.Tensor:
+    """Apply the inverse of :func:`_apply_norm` to data (exact round-trip)."""
+    if method == "minmax":
+        return (data + 1) / 2 * stats["range"] + stats["min"]
+    elif method == "standard":
+        return data * stats["std"] + stats["mean"]
+    elif method == "noncentered":
+        return data * stats["scale"]
+    elif method == "meanpreserving":
+        return (data - stats["mean"]) * stats["maxdev"] + stats["mean"]
+    else:
+        raise ValueError(f"Unknown normalization method: '{method}'")
+
+
 def prepare_esn_data(
     data: torch.Tensor,
     warmup_steps: int,
@@ -119,7 +201,8 @@ def prepare_esn_data(
     discard_steps: int = 0,
     normalize: bool = False,
     norm_method: NormMethod = "minmax",
-) -> ESNDataSplits:
+    return_stats: bool = False,
+) -> ESNDataSplits | ESNDataSplitsWithStats:
     """Prepare time series data for ESN training and forecasting.
 
     Splits data into segments appropriate for ESN workflows:
@@ -158,6 +241,13 @@ def prepare_esn_data(
         training data and applied to all splits globally.
     norm_method : str, default="minmax"
         Normalization method if normalize=True.
+    return_stats : bool, default=False
+        If True, append the fitted normalization statistics as a 6th return
+        element so the normalize -> forecast -> report loop can be closed via
+        :func:`denormalize_data`. The element is the ``stats`` dict when
+        ``normalize=True`` and ``None`` when ``normalize=False`` (nothing was
+        fitted). When False (the default), the legacy 5-tuple is returned
+        unchanged.
 
     Returns
     -------
@@ -173,11 +263,20 @@ def prepare_esn_data(
         Validation data, shape (B, val_steps, D). Starts at ``data[train_end + 1]``
         so it aligns directly with an autoregressive ``forecast`` of the same
         horizon (the ``data[train_end]`` seam is the forecast's seed, not a target).
+    stats : dict or None
+        Only returned when ``return_stats=True``. The fitted normalization
+        statistics (as returned by :func:`normalize_data`) when ``normalize=True``,
+        otherwise ``None``. Pass to :func:`denormalize_data` to map forecasts
+        back to the original scale.
 
     Raises
     ------
     ValueError
         If data is too short for the requested splits.
+
+    See Also
+    --------
+    denormalize_data : Inverts the normalization using the returned ``stats``.
 
     Examples
     --------
@@ -190,6 +289,14 @@ def prepare_esn_data(
     >>> print(target.shape)   # (1, 500, 3)
     >>> print(f_warmup.shape) # (1, 100, 3)
     >>> print(val.shape)      # (1, 200, 3)
+
+    Close the round-trip by keeping the fitted stats and inverting later:
+
+    >>> warmup, train, target, f_warmup, val, stats = prepare_esn_data(
+    ...     data, warmup_steps=100, train_steps=500, val_steps=200,
+    ...     normalize=True, norm_method="minmax", return_stats=True,
+    ... )
+    >>> val_physical = denormalize_data(val, "minmax", stats)  # original units
     """
     _, timesteps, _ = data.shape
 
@@ -237,6 +344,7 @@ def prepare_esn_data(
     val = data[:, val_start : val_start + val_steps, :]
 
     # Optional normalization (compute stats from training data only)
+    stats: dict[str, torch.Tensor] | None = None
     if normalize:
         stats = _compute_stats(train, norm_method)
         warmup = _apply_norm(warmup, norm_method, stats)
@@ -245,6 +353,8 @@ def prepare_esn_data(
         forecast_warmup = _apply_norm(forecast_warmup, norm_method, stats)
         val = _apply_norm(val, norm_method, stats)
 
+    if return_stats:
+        return warmup, train, target, forecast_warmup, val, stats
     return warmup, train, target, forecast_warmup, val
 
 
@@ -256,9 +366,10 @@ def load_and_prepare(
     discard_steps: int = 0,
     normalize: bool = False,
     norm_method: NormMethod = "minmax",
+    return_stats: bool = False,
     dtype: torch.dtype | None = None,
     **load_kwargs,
-) -> ESNDataSplits:
+) -> ESNDataSplits | ESNDataSplitsWithStats:
     """Load data from file(s) and prepare for ESN training.
 
     Convenience function that combines loading and preparation.
@@ -280,6 +391,10 @@ def load_and_prepare(
         Whether to normalize data.
     norm_method : str, default="minmax"
         Normalization method.
+    return_stats : bool, default=False
+        If True, append the fitted normalization statistics as a 6th return
+        element (``None`` when ``normalize=False``). Forwarded to
+        :func:`prepare_esn_data`; see its docstring for details.
     dtype : torch.dtype, optional
         Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
     **load_kwargs
@@ -287,8 +402,13 @@ def load_and_prepare(
 
     Returns
     -------
-    ESNDataSplits
-        Tuple of (warmup, train, target, forecast_warmup, val) tensors.
+    ESNDataSplits or ESNDataSplitsWithStats
+        Tuple of (warmup, train, target, forecast_warmup, val) tensors, with a
+        trailing ``stats`` element when ``return_stats=True``.
+
+    See Also
+    --------
+    denormalize_data : Inverts the normalization using the returned ``stats``.
 
     Examples
     --------
@@ -322,4 +442,5 @@ def load_and_prepare(
         discard_steps=discard_steps,
         normalize=normalize,
         norm_method=norm_method,
+        return_stats=return_stats,
     )

@@ -12,6 +12,8 @@ resdag.layers.readouts.ReadoutLayer : Base readout layer.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
+from collections.abc import Callable
+
 import torch
 
 from .base import ReadoutLayer
@@ -55,10 +57,11 @@ class CGReadoutLayer(ReadoutLayer):
         L2 regularization strength. Must be non-negative. Larger values
         provide more regularization (smoother outputs, less overfitting).
     max_iter : int, default=100
-        Maximum number of CG iterations.
+        Maximum number of CG iterations. Must be a positive integer.
     tol : float, default=1e-5
-        Convergence tolerance for CG solver. Iterations stop when
-        residual norm squared is below ``tol**2``.
+        Convergence tolerance for the CG solver. Must be positive. Each output
+        column is considered converged when its residual-norm-squared falls
+        below ``tol**2``.
     use_float64 : bool, default=True
         If ``True`` (default), the CG iterations on the small
         ``(in_features, in_features)`` system run in ``float64`` and the
@@ -125,6 +128,12 @@ class CGReadoutLayer(ReadoutLayer):
         gram_dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__(in_features, out_features, bias, name, trainable)
+        if alpha < 0:
+            raise ValueError(f"alpha must be non-negative, got {alpha}.")
+        if tol <= 0:
+            raise ValueError(f"tol must be positive, got {tol}.")
+        if max_iter < 1:
+            raise ValueError(f"max_iter must be a positive integer, got {max_iter}.")
         self.max_iter = max_iter
         self.tol = tol
         self.alpha = alpha
@@ -210,32 +219,87 @@ class CGReadoutLayer(ReadoutLayer):
             return XtX @ w + alpha * w
 
         def conjugate_gradient(
-            A_func,
+            A_func: Callable[[torch.Tensor], torch.Tensor],
             B: torch.Tensor,
             max_iter: int,
             tol: float,
         ) -> torch.Tensor:
-            """Solve A @ X = B using Conjugate Gradient."""
+            """Solve ``A @ X = B`` column-by-column with Conjugate Gradient.
+
+            The system is solved for every output column simultaneously; each
+            column carries its own residual and step size. Three guards keep a
+            degenerate column from poisoning the whole fitted weight matrix
+            with ``NaN`` (the bug this method fixes):
+
+            - **Per-column converged/degenerate mask.** A column is *frozen*
+              once its residual reaches zero — either it started at zero (a
+              trivial/all-zero target column) or it converged to exact zero.
+              Frozen columns take a zero step and a zero ``beta`` and so never
+              evaluate ``0 / 0``; an all-zero target column therefore fits to
+              ``W = 0`` (no ``NaN``) instead of poisoning every other column.
+            - **Floored ``alpha`` denominator.** ``(P · AP)`` is replaced by
+              ``1`` wherever it is exactly zero before dividing, so a column
+              whose search direction collapses (``denom == 0``) yields a finite
+              step rather than ``NaN``. (For the symmetric positive-definite
+              normal-equations operator solved here ``denom`` is only zero when
+              ``P`` itself is zero — i.e. the column is already converged — so
+              the floored step does not perturb the solution; the guard is
+              defensive.)
+            - **Floored ``beta`` divisor.** ``Rs_old`` is floored before
+              forming ``beta = Rs_new / Rs_old`` so a column that converges to
+              exactly zero never produces ``0 / 0`` for ``beta`` either.
+
+            Convergence per column uses the residual-norm-squared test
+            ``||r||^2 <= tol^2``. (Making ``tol`` scale-invariant is tracked
+            separately as ``readouts-cg-relative-tolerance``; this ticket keeps
+            the legacy stopping precision so existing fits are unchanged and
+            only adds the degenerate-column ``NaN`` guards.)
+
+            Returns
+            -------
+            torch.Tensor
+                Solution ``X`` of the same shape as ``B``.
+            """
             X = torch.zeros_like(B)
             R = B - A_func(X)
             P = R.clone()
             Rs_old = (R * R).sum(dim=0)
 
+            tol_sq = tol * tol
+            # ``frozen`` is the NaN guard: a column whose residual is exactly
+            # zero (a zero/trivial target column, or one that hit exact
+            # convergence) must not divide. A zero target column has
+            # ``Rs_old == 0`` from the start and is frozen immediately.
+            frozen = Rs_old == 0
+
             for it in range(max_iter):
                 # The convergence test forces a device->host sync; checking
                 # every iteration serializes the GPU. Every 10 is plenty —
                 # at most 9 extra cheap (F, F) matvecs past convergence.
-                if it % 10 == 0 and bool(torch.all(Rs_old < tol**2)):
+                if it % 10 == 0 and bool(torch.all((Rs_old <= tol_sq) | frozen)):
                     break
 
                 AP = A_func(P)
-                alpha_cg = Rs_old / (P * AP).sum(dim=0)
+                denom = (P * AP).sum(dim=0)
+                # Replace an exactly-zero denominator with 1 so a collapsed
+                # search direction (denom == 0) divides to a finite step rather
+                # than NaN. For an SPD operator denom == 0 implies P == 0 (the
+                # column has converged), so this only ever fires defensively.
+                safe_denom = torch.where(denom == 0, torch.ones_like(denom), denom)
+                alpha_cg = torch.where(frozen, torch.zeros_like(Rs_old), Rs_old / safe_denom)
                 X = X + P * alpha_cg
                 R = R - AP * alpha_cg
                 Rs_new = (R * R).sum(dim=0)
-                beta = Rs_new / Rs_old
+
+                # Floor Rs_old before forming beta; frozen columns are masked to
+                # beta = 0 regardless, so a converged/zero column never hits 0/0.
+                safe_rs_old = torch.where(Rs_old == 0, torch.ones_like(Rs_old), Rs_old)
+                beta = torch.where(frozen, torch.zeros_like(Rs_new), Rs_new / safe_rs_old)
                 P = R + P * beta
                 Rs_old = Rs_new
+                # Freeze any column that has now reached exact zero residual so
+                # its next iteration can't divide 0/0.
+                frozen = frozen | (Rs_old == 0)
 
             return X
 

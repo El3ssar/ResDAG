@@ -772,3 +772,231 @@ class TestCGReadoutDevice:
 
         assert y_pred.device.type == device.type
         assert y_pred.shape == (10, 5)
+
+
+class TestCGReadoutDegenerateColumns:
+    """Degenerate target columns must not poison the fit with NaNs.
+
+    Regression coverage for the per-column converged/degenerate mask: a column
+    whose residual is zero from the start (or that converges to exact zero)
+    used to drive ``0 / 0 = NaN`` in the CG step sizes, and the NaN then
+    propagated to every other column.
+    """
+
+    def test_zero_column_does_not_produce_nans(self) -> None:
+        """A single all-zero target column fits without NaNs (bias=False).
+
+        The other columns keep their fitted values; only the zero column maps
+        to ``W = 0``.
+        """
+        torch.manual_seed(0)
+
+        n_samples, n_features = 200, 12
+        X = torch.randn(n_samples, n_features, dtype=torch.float64)
+        y = torch.randn(n_samples, 3, dtype=torch.float64)
+        y[:, 1] = 0.0  # degenerate column in the middle
+
+        readout = CGReadoutLayer(in_features=n_features, out_features=3, bias=False, alpha=1e-6)
+        coefs, intercept = readout._solve_ridge_cg(X, y, 1e-6)
+
+        assert torch.isfinite(coefs).all()
+        assert intercept is None
+        # The zero column must fit to W = 0; the others must be non-trivial.
+        assert torch.allclose(coefs[:, 1], torch.zeros(n_features, dtype=torch.float64))
+        assert not torch.allclose(coefs[:, 0], torch.zeros(n_features, dtype=torch.float64))
+        assert not torch.allclose(coefs[:, 2], torch.zeros(n_features, dtype=torch.float64))
+
+    def test_zero_column_via_fit_keeps_other_columns_accurate(self) -> None:
+        """fit() with one zero target column leaves the other columns finite."""
+        torch.manual_seed(1)
+
+        X = torch.randn(150, 10)
+        true_w = torch.randn(10, 4)
+        y = X @ true_w
+        y[:, 2] = 0.0  # one degenerate column
+
+        readout = CGReadoutLayer(in_features=10, out_features=4, alpha=1e-8)
+        readout.fit(X, y)
+
+        assert torch.isfinite(readout.weight).all()
+        assert torch.isfinite(readout.bias).all()
+        y_pred = readout(X)
+        assert torch.isfinite(y_pred).all()
+        # The zero column stays at zero; the rest are recovered.
+        assert torch.allclose(y_pred[:, 2], torch.zeros(150), atol=1e-4)
+
+    def test_all_zero_targets_give_zero_weight_finite_bias(self) -> None:
+        """All-zero targets fit to W = 0 with a finite (zero) bias, no NaNs."""
+        torch.manual_seed(2)
+
+        X = torch.randn(120, 8, dtype=torch.float64)
+        y = torch.zeros(120, 5, dtype=torch.float64)
+
+        readout = CGReadoutLayer(in_features=8, out_features=5, alpha=1e-6)
+        readout.fit(X, y)
+
+        assert torch.isfinite(readout.weight).all()
+        assert torch.isfinite(readout.bias).all()
+        assert torch.allclose(readout.weight, torch.zeros_like(readout.weight))
+        assert torch.allclose(readout.bias, torch.zeros_like(readout.bias))
+
+    def test_all_zero_targets_no_bias_give_zero_weight(self) -> None:
+        """All-zero targets with bias=False fit to W = 0 (no NaNs, no shift)."""
+        torch.manual_seed(3)
+
+        X = torch.randn(120, 8, dtype=torch.float64) + 3.0
+        y = torch.zeros(120, 5, dtype=torch.float64)
+
+        readout = CGReadoutLayer(in_features=8, out_features=5, bias=False, alpha=1e-6)
+        coefs, intercept = readout._solve_ridge_cg(X, y, 1e-6)
+
+        assert intercept is None
+        assert torch.isfinite(coefs).all()
+        assert torch.allclose(coefs, torch.zeros_like(coefs))
+
+    def test_over_iterating_past_convergence_stays_finite(self) -> None:
+        """A well-conditioned fit over-iterated far past convergence stays finite.
+
+        Once a column's residual reaches its tolerance (and ultimately exact
+        zero) it is frozen, so thousands of extra iterations never turn the
+        coefficients into NaNs.
+        """
+        torch.manual_seed(4)
+
+        n_samples, n_features, n_outputs = 60, 15, 4
+        X = torch.randn(n_samples, n_features, dtype=torch.float64)
+        y = torch.randn(n_samples, n_outputs, dtype=torch.float64)
+        alpha = 1e-6
+
+        # Huge max_iter with an extremely tight tol forces the loop to keep
+        # running long after exact convergence.
+        readout = CGReadoutLayer(
+            in_features=n_features, out_features=n_outputs, max_iter=5000, tol=1e-30
+        )
+        coefs, intercept = readout._solve_ridge_cg(X, y, alpha)
+
+        assert torch.isfinite(coefs).all()
+        assert intercept is not None and torch.isfinite(intercept).all()
+
+        # Still matches the closed-form solution (no accuracy loss).
+        coefs_cf, intercept_cf = solve_ridge_closed_form(X, y, alpha)
+        assert torch.allclose(coefs, coefs_cf, atol=1e-6, rtol=1e-5)
+
+    def test_over_iterating_with_zero_column_stays_finite(self) -> None:
+        """Over-iteration AND a zero column together still stay finite.
+
+        This is the worst case from the bug report: a zero column would go NaN,
+        and over-iterating past convergence used to turn every column NaN.
+        """
+        torch.manual_seed(5)
+
+        X = torch.randn(80, 10, dtype=torch.float64)
+        y = torch.randn(80, 3, dtype=torch.float64)
+        y[:, 0] = 0.0
+
+        readout = CGReadoutLayer(in_features=10, out_features=3, max_iter=3000, tol=1e-30)
+        coefs, _ = readout._solve_ridge_cg(X, y, 1e-6)
+
+        assert torch.isfinite(coefs).all()
+        assert torch.allclose(coefs[:, 0], torch.zeros(10, dtype=torch.float64))
+
+
+class TestCGReadoutConstructionValidation:
+    """Constructor-time validation of alpha, tol, and max_iter."""
+
+    def test_negative_alpha_rejected_at_construction(self) -> None:
+        """alpha < 0 raises ValueError at construction."""
+        with pytest.raises(ValueError, match="alpha must be non-negative"):
+            CGReadoutLayer(in_features=10, out_features=2, alpha=-1e-6)
+
+    def test_zero_alpha_allowed(self) -> None:
+        """alpha == 0 (pure least squares) is allowed."""
+        readout = CGReadoutLayer(in_features=10, out_features=2, alpha=0.0)
+        assert readout.alpha == 0.0
+
+    def test_non_positive_tol_rejected(self) -> None:
+        """tol <= 0 raises ValueError at construction."""
+        with pytest.raises(ValueError, match="tol must be positive"):
+            CGReadoutLayer(in_features=10, out_features=2, tol=0.0)
+        with pytest.raises(ValueError, match="tol must be positive"):
+            CGReadoutLayer(in_features=10, out_features=2, tol=-1e-5)
+
+    def test_non_positive_max_iter_rejected(self) -> None:
+        """max_iter < 1 raises ValueError at construction.
+
+        ``max_iter=0`` previously skipped the loop entirely and returned an
+        all-zero weight matrix with ``is_fitted == True``.
+        """
+        with pytest.raises(ValueError, match="max_iter must be a positive integer"):
+            CGReadoutLayer(in_features=10, out_features=2, max_iter=0)
+        with pytest.raises(ValueError, match="max_iter must be a positive integer"):
+            CGReadoutLayer(in_features=10, out_features=2, max_iter=-3)
+
+
+class TestReadoutLayerInFeaturesValidation:
+    """fit() validates the state feature dimension against in_features."""
+
+    def test_fit_wrong_in_features_raises_clear_error(self) -> None:
+        """A wrong in_features surfaces as a clear ValueError, not a deep matvec error."""
+        readout = CGReadoutLayer(in_features=20, out_features=5)
+        X = torch.randn(100, 16)  # 16 != 20
+        y = torch.randn(100, 5)
+
+        with pytest.raises(ValueError, match="state feature dimension"):
+            readout.fit(X, y)
+
+    def test_fit_wrong_in_features_3d_raises(self) -> None:
+        """The in_features check fires for flattened 3D inputs too."""
+        readout = CGReadoutLayer(in_features=20, out_features=5)
+        X = torch.randn(4, 25, 16)  # 16 != 20 after flatten
+        y = torch.randn(4, 25, 5)
+
+        with pytest.raises(ValueError, match="state feature dimension"):
+            readout.fit(X, y)
+
+    def test_fit_correct_in_features_passes(self) -> None:
+        """Correct in_features fits without raising."""
+        readout = CGReadoutLayer(in_features=20, out_features=5, alpha=1e-3)
+        readout.fit(torch.randn(100, 20), torch.randn(100, 5))
+        assert readout.is_fitted
+
+
+class TestReadoutLayerIsFittedPersistence:
+    """is_fitted is a registered buffer surviving state_dict round-trips."""
+
+    def test_is_fitted_in_state_dict(self) -> None:
+        """is_fitted is stored as a buffer and appears in the state_dict."""
+        readout = CGReadoutLayer(in_features=10, out_features=3)
+        assert "_is_fitted" in readout.state_dict()
+        assert readout.state_dict()["_is_fitted"].dtype == torch.bool
+
+    def test_is_fitted_survives_state_dict_round_trip(self) -> None:
+        """A fitted readout's is_fitted=True survives load_state_dict."""
+        src = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-3)
+        src.fit(torch.randn(50, 10), torch.randn(50, 3))
+        assert src.is_fitted
+
+        dst = CGReadoutLayer(in_features=10, out_features=3)
+        assert not dst.is_fitted
+        dst.load_state_dict(src.state_dict())
+
+        assert dst.is_fitted is True
+        # Loaded weights match.
+        assert torch.allclose(dst.weight, src.weight)
+
+    def test_unfitted_is_fitted_survives_round_trip(self) -> None:
+        """An unfitted readout stays is_fitted=False after a round-trip."""
+        src = CGReadoutLayer(in_features=10, out_features=3)
+        dst = CGReadoutLayer(in_features=10, out_features=3)
+        dst.fit(torch.randn(20, 10), torch.randn(20, 3))
+        assert dst.is_fitted
+
+        dst.load_state_dict(src.state_dict())
+        assert dst.is_fitted is False
+
+    def test_is_fitted_buffer_moves_with_device(self, device: torch.device) -> None:
+        """The is_fitted buffer follows .to(device) and stays readable."""
+        readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-3).to(device)
+        readout.fit(torch.randn(30, 10, device=device), torch.randn(30, 3, device=device))
+        assert readout.is_fitted is True
+        assert readout._is_fitted.device.type == device.type

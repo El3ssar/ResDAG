@@ -84,6 +84,11 @@ class ReadoutLayer(nn.Linear):
     resdag.training.ESNTrainer : Trainer for fitting readouts.
     """
 
+    # Declared so type checkers know the registered buffer is a Tensor (the
+    # ``nn.Module`` attribute proxy would otherwise widen it to ``Tensor |
+    # Module``).
+    _is_fitted: torch.Tensor
+
     def __init__(
         self,
         in_features: int,
@@ -96,7 +101,11 @@ class ReadoutLayer(nn.Linear):
 
         self._name = name
         self.trainable = trainable
-        self._is_fitted = False
+        # ``is_fitted`` is stored as a registered (persistent) buffer so it
+        # survives ``state_dict`` / ``load_state_dict`` round-trips. A plain
+        # Python attribute would silently reset to ``False`` on reload, leaving
+        # a model with fitted weights but ``is_fitted == False``.
+        self.register_buffer("_is_fitted", torch.zeros((), dtype=torch.bool))
 
         if not self.trainable:
             self._freeze_weights()
@@ -117,8 +126,11 @@ class ReadoutLayer(nn.Linear):
     def is_fitted(self) -> bool:
         """
         bool : True if ``fit()`` has been called successfully.
+
+        Backed by a registered buffer, so the flag is preserved across
+        ``state_dict`` / ``load_state_dict`` round-trips.
         """
-        return self._is_fitted
+        return bool(self._is_fitted.item())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """
@@ -195,7 +207,8 @@ class ReadoutLayer(nn.Linear):
             use a subclass such as :class:`CGReadoutLayer`.
         ValueError
             If ``states`` and ``targets`` disagree on the sample dimension
-            after flattening, or if the target's feature dimension does not
+            after flattening, if the state's feature dimension does not match
+            ``self.in_features``, or if the target's feature dimension does not
             match ``self.out_features``.
 
         Notes
@@ -220,6 +233,12 @@ class ReadoutLayer(nn.Linear):
                 f"States have {states.shape[0]} samples after flattening, "
                 f"targets have {targets.shape[0]}."
             )
+        if states.shape[1] != self.in_features:
+            raise ValueError(
+                f"{type(self).__name__}.fit({readout_id}): state feature dimension "
+                f"({states.shape[1]}) does not match readout in_features "
+                f"({self.in_features})."
+            )
         if targets.shape[1] != self.out_features:
             raise ValueError(
                 f"{type(self).__name__}.fit({readout_id}): target feature dimension "
@@ -233,7 +252,7 @@ class ReadoutLayer(nn.Linear):
         if self.bias is not None and intercept is not None:
             self.bias.copy_(intercept.to(self.bias.dtype))
 
-        self._is_fitted = True
+        self._is_fitted.fill_(True)
 
     def _fit_impl(
         self,

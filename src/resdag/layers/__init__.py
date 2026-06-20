@@ -35,6 +35,8 @@ SelectiveDropout
     Dropout with per-feature selectivity.
 SelectiveExponentiation
     Per-feature exponentiation layer.
+Standardize
+    Per-feature z-score standardization with fit and inverse.
 
 Examples
 --------
@@ -66,6 +68,7 @@ from .transforms import (
     Power,
     SelectiveDropout,
     SelectiveExponentiation,
+    Standardize,
 )
 
 __all__ = [
@@ -90,4 +93,5 @@ __all__ = [
     "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",
+    "Standardize",
 ]

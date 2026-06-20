@@ -3,8 +3,12 @@
 Pins down the deterministic tensor transforms used inside premade models:
 ``FeaturePartitioner`` (circular feature grouping), ``SelectiveDropout``
 (per-feature masking), ``SelectiveExponentiation`` (even/odd-index state
-augmentation), and the ``OutliersFilteredMean`` ensemble aggregator.
+augmentation), ``Standardize`` (per-feature z-score with fit/inverse), and the
+``OutliersFilteredMean`` ensemble aggregator.
 """
+
+import tempfile
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,6 +19,7 @@ from resdag.layers.transforms import (
     FeaturePartitioner,
     SelectiveDropout,
     SelectiveExponentiation,
+    Standardize,
 )
 
 
@@ -588,3 +593,231 @@ class TestSelectiveExponentiation:
         output = layer(x)
 
         assert output.dtype == torch.float64
+
+
+class TestStandardize:
+    """Tests for the Standardize per-feature z-score transform."""
+
+    def test_default_is_identity(self) -> None:
+        """Before fit, mean=0 and std=1 make forward an identity map."""
+        layer = Standardize(num_features=3)
+        x = torch.randn(2, 5, 3)
+
+        assert torch.allclose(layer(x), x, atol=1e-7)
+
+    def test_fit_computes_per_feature_stats(self) -> None:
+        """fit stores the per-feature mean and population std."""
+        layer = Standardize(num_features=3)
+        # Per-feature constants offset and scaled so stats are predictable.
+        base = torch.randn(4, 50, 3)
+        x = base * torch.tensor([2.0, 5.0, 0.5]) + torch.tensor([1.0, -3.0, 10.0])
+
+        layer.fit(x)
+
+        flat = x.reshape(-1, 3)
+        assert torch.allclose(layer.mean, flat.mean(dim=0), atol=1e-5)
+        assert torch.allclose(layer.std, flat.std(dim=0, unbiased=False), atol=1e-5)
+
+    def test_fit_returns_self_for_chaining(self) -> None:
+        """fit returns the layer so calls can be chained."""
+        layer = Standardize(num_features=2)
+        x = torch.randn(3, 10, 2)
+
+        assert layer.fit(x) is layer
+
+    def test_forward_standardizes_to_zero_mean_unit_std(self) -> None:
+        """After fit, the output has ~zero mean and ~unit std per feature."""
+        layer = Standardize(num_features=3)
+        x = torch.randn(8, 200, 3) * 4.0 + 7.0
+        layer.fit(x)
+
+        z = layer(x).reshape(-1, 3)
+
+        assert torch.allclose(z.mean(dim=0), torch.zeros(3), atol=1e-5)
+        assert torch.allclose(z.std(dim=0, unbiased=False), torch.ones(3), atol=1e-4)
+
+    def test_inverse_round_trip(self) -> None:
+        """inverse(forward(x)) reconstructs x to floating-point tolerance."""
+        layer = Standardize(num_features=4)
+        x = torch.randn(6, 30, 4) * 3.0 - 2.0
+        layer.fit(x)
+
+        assert torch.allclose(layer.inverse(layer(x)), x, atol=1e-5)
+
+    def test_forward_inverse_round_trip_float64(self) -> None:
+        """Round trip is exact within tight tolerance in double precision."""
+        layer = Standardize(num_features=3).double()
+        x = (torch.randn(5, 20, 3) * 10.0 + 1.0).double()
+        layer.fit(x)
+
+        assert torch.allclose(layer.inverse(layer(x)), x, atol=1e-10)
+
+    def test_constant_feature_eps_stability(self) -> None:
+        """A zero-variance feature does not produce nan/inf (eps floor)."""
+        layer = Standardize(num_features=2)
+        # Feature 0 is constant (std=0); feature 1 varies.
+        x = torch.stack([torch.full((4, 10), 5.0), torch.randn(4, 10)], dim=-1)
+        layer.fit(x)
+
+        z = layer(x)
+        assert torch.isfinite(z).all()
+        # Centered constant feature collapses to 0 (within eps).
+        assert torch.allclose(z[..., 0], torch.zeros(4, 10), atol=1e-6)
+        # Round trip still recovers the original constant.
+        assert torch.allclose(layer.inverse(z), x, atol=1e-5)
+
+    def test_explicit_stats_at_construction(self) -> None:
+        """Mean/std supplied at construction are used without fitting."""
+        mean = torch.tensor([1.0, 2.0])
+        std = torch.tensor([2.0, 4.0])
+        layer = Standardize(num_features=2, mean=mean, std=std, eps=0.0)
+        x = torch.tensor([[3.0, 10.0]])
+
+        # (3 - 1) / 2 = 1.0 ; (10 - 2) / 4 = 2.0
+        assert torch.allclose(layer(x), torch.tensor([[1.0, 2.0]]))
+
+    def test_gradient_flows_through_forward(self) -> None:
+        """forward is differentiable; stored stats act as constants."""
+        layer = Standardize(num_features=3)
+        layer.fit(torch.randn(4, 20, 3) * 2.0 + 1.0)
+        x = torch.randn(2, 5, 3, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # d/dx (x - mean)/(std + eps) = 1/(std + eps), broadcast over leading dims.
+        expected = (1.0 / (layer.std + layer.eps)).expand_as(x)
+        assert torch.allclose(x.grad, expected, atol=1e-6)
+
+    def test_gradient_flows_through_inverse(self) -> None:
+        """inverse is differentiable with finite gradients."""
+        layer = Standardize(num_features=3)
+        layer.fit(torch.randn(4, 20, 3) * 3.0)
+        x = torch.randn(2, 5, 3, requires_grad=True)
+
+        layer.inverse(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        expected = (layer.std + layer.eps).expand_as(x)
+        assert torch.allclose(x.grad, expected, atol=1e-6)
+
+    def test_gradcheck_forward(self) -> None:
+        """Double-precision gradcheck of the forward map."""
+        layer = Standardize(num_features=3).double()
+        layer.fit(torch.randn(4, 30, 3, dtype=torch.float64) * 2.0 + 1.0)
+        x = torch.randn(2, 3, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_stats_registered_as_buffers(self) -> None:
+        """mean and std are buffers (in state_dict, not parameters)."""
+        layer = Standardize(num_features=3)
+
+        buffer_names = {name for name, _ in layer.named_buffers()}
+        assert {"mean", "std"} <= buffer_names
+        # No learnable parameters.
+        assert list(layer.parameters()) == []
+
+    def test_state_dict_round_trip(self) -> None:
+        """Fitted stats survive a state_dict save/load."""
+        layer = Standardize(num_features=3)
+        layer.fit(torch.randn(4, 40, 3) * 5.0 + 2.0)
+
+        clone = Standardize(num_features=3)
+        clone.load_state_dict(layer.state_dict())
+
+        assert torch.allclose(clone.mean, layer.mean)
+        assert torch.allclose(clone.std, layer.std)
+
+    def test_to_moves_buffers_dtype(self) -> None:
+        """.to(dtype) / .double() move the stat buffers with the module."""
+        layer = Standardize(num_features=3)
+        layer.fit(torch.randn(4, 20, 3))
+
+        layer = layer.double()
+
+        assert layer.mean.dtype == torch.float64
+        assert layer.std.dtype == torch.float64
+        # Forward now operates in double precision end-to-end.
+        x = torch.randn(2, 5, 3, dtype=torch.float64)
+        assert layer(x).dtype == torch.float64
+
+    def test_to_moves_buffers_device_cuda(self) -> None:
+        """.to(device) moves the stat buffers (CUDA-gated)."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        layer = Standardize(num_features=3)
+        layer.fit(torch.randn(4, 20, 3))
+
+        layer = layer.to("cuda")
+
+        assert layer.mean.is_cuda
+        assert layer.std.is_cuda
+
+    def test_save_full_load_full_pipeline_round_trip(self) -> None:
+        """Standardize stats travel with ESNModel.save_full / load_full."""
+        import pytorch_symbolic as ps
+
+        from resdag import CGReadoutLayer, ESNLayer, ESNModel
+
+        norm = Standardize(num_features=3)
+        norm.fit(torch.randn(4, 100, 3) * 6.0 - 1.0)
+
+        inp = ps.Input((100, 3))
+        normed = norm(inp)
+        reservoir = ESNLayer(40, feedback_size=3)(normed)
+        readout = CGReadoutLayer(40, 3, name="output")(reservoir)
+        model = ESNModel(inp, readout)
+
+        x = torch.randn(2, 100, 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "full.pt"
+            model.save_full(path)
+            restored = ESNModel.load_full(path)
+
+            model.reset_reservoirs()
+            restored.reset_reservoirs()
+            assert torch.allclose(model(x), restored(x), atol=1e-5)
+
+    def test_fit_feature_dim_mismatch_raises(self) -> None:
+        """fit rejects inputs whose last dim is not num_features."""
+        layer = Standardize(num_features=3)
+        with pytest.raises(ValueError, match="does not match"):
+            layer.fit(torch.randn(2, 5, 4))
+
+    def test_forward_feature_dim_mismatch_raises(self) -> None:
+        """forward rejects inputs whose last dim is not num_features."""
+        layer = Standardize(num_features=3)
+        with pytest.raises(ValueError, match="does not match"):
+            layer(torch.randn(2, 5, 4))
+
+    def test_inverse_feature_dim_mismatch_raises(self) -> None:
+        """inverse rejects inputs whose last dim is not num_features."""
+        layer = Standardize(num_features=3)
+        with pytest.raises(ValueError, match="does not match"):
+            layer.inverse(torch.randn(2, 5, 4))
+
+    def test_invalid_num_features_raises(self) -> None:
+        """num_features must be positive."""
+        with pytest.raises(ValueError, match="must be positive"):
+            Standardize(num_features=0)
+
+    def test_invalid_mean_shape_raises(self) -> None:
+        """A 2D mean is rejected."""
+        with pytest.raises(ValueError, match="mean must be 1D"):
+            Standardize(num_features=2, mean=torch.zeros(2, 2))
+
+    def test_invalid_std_length_raises(self) -> None:
+        """A std of the wrong length is rejected."""
+        with pytest.raises(ValueError, match="std length"):
+            Standardize(num_features=3, std=torch.ones(2))
+
+    def test_extra_repr(self) -> None:
+        """String representation reports num_features and eps."""
+        layer = Standardize(num_features=5, eps=1e-6)
+        repr_str = layer.extra_repr()
+
+        assert "num_features=5" in repr_str
+        assert "eps=1e-06" in repr_str

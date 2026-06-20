@@ -18,20 +18,45 @@ mechanics; the design rationale lives in the
 ```bash
 git clone https://github.com/El3ssar/ResDAG && cd ResDAG
 uv sync --extra hpo          # dev tools come from the default dependency group
-uv run pytest --no-cov -q    # 470 tests, ~30 s on CPU
+uv run pytest --no-cov -q    # full suite — ~1,400 tests, a few minutes on CPU
 ```
 
 `pip install -e ".[dev,hpo]"` works too if you don't use uv.
 
 ## Quality gate
 
-Run before pushing — CI runs exactly this on every pull request:
+Run before pushing:
 
 ```bash
 uv run ruff check src/ tests/
 uv run black --check src/ tests/
-uv run pytest --no-cov -q
+uv run mypy src/resdag/
+uv run pytest --no-cov -q          # full suite
 ```
+
+### Fast local iteration — run only the affected tests
+
+The full suite takes a few minutes. While iterating, run only the tests that
+your change can affect, computed from a static first-party import graph:
+
+```bash
+# What would run for your branch vs. main, and why:
+uv run python tools/affected_tests.py --explain
+
+# Run exactly that subset:
+uv run pytest --no-cov -q $(uv run python tools/affected_tests.py --format args)
+```
+
+The selector errs toward running *more* tests, never fewer (broad-impact
+changes such as `pyproject.toml`, `conftest.py`, or a package `__init__` fan
+out to the whole suite). Still do one full `pytest` run before you push.
+
+### Selective CI
+
+Pull-request CI runs the **same** selector and tests only the affected subset,
+so a typical single-module PR finishes in seconds instead of minutes. The full
+suite is the safety net and still runs on every merge to `main` and on a nightly
+schedule. To force a full run on a PR, add the **`ci-full`** label.
 
 The test suite mirrors `src/resdag/`. Markers:
 

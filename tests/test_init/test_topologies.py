@@ -24,7 +24,9 @@ import resdag.init.graphs as graphs_pkg
 from resdag.init.graphs import (
     barabasi_albert_graph,
     dendrocycle_graph,
+    dendrocycle_with_chords_graph,
     erdos_renyi_graph,
+    regular_graph,
     ring_chord_graph,
 )
 from resdag.init.topology import (
@@ -940,3 +942,238 @@ class TestPrescaledRegimeAndWarning:
 
         w = layer.weight_hh.data
         assert torch.allclose(w @ w.T, torch.eye(16), atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Registry-driven sweep over every topology (issue #207)
+# ---------------------------------------------------------------------------
+
+# A reservoir size that satisfies *every* registered topology's arithmetic
+# constraint simultaneously, so a single value can drive the whole sweep:
+#
+# - ``kleinberg_small_world`` needs a perfect square (it lives on a
+#   ``sqrt(n) x sqrt(n)`` torus),
+# - ``spectral_cascade`` needs a triangular number (``N(N+1)/2``),
+# - ``multi_cycle`` (default ``k=3``) needs ``n`` divisible by ``k``.
+#
+# 36 = 6**2 = 8*9/2 = 12*3 hits all three; new entries with looser constraints
+# build at 36 too.
+_SWEEP_N = 36
+_SWEEP_FEEDBACK = 3
+_SWEEP_SR = 0.9
+_SWEEP_SEED = 1234
+
+# Some topologies bake their own spectral structure into the recurrent matrix
+# (``prescaled=True`` on the registry entry): the layer ``spectral_radius`` is
+# ignored (with a warning), so the achieved radius is the builder's own, not
+# ``_SWEEP_SR``. Whether a topology is pre-scaled is read from the registry at
+# assert time (``get_topology(name).prescaled``), so a newly registered
+# pre-scaled topology is handled automatically with no edit here.
+
+
+def _full_spectral_radius(weight: torch.Tensor) -> float:
+    """Largest ``|eigenvalue|`` of a square matrix via the dense decomposition."""
+    return float(np.max(np.abs(np.linalg.eigvals(weight.detach().cpu().numpy()))))
+
+
+def _build_swept_layer(name: str) -> ESNLayer:
+    """Build a small seeded ``ESNLayer`` for a named topology.
+
+    Pre-scaled topologies warn that the layer ``spectral_radius`` is ignored;
+    that warning is suppressed here because the sweep tests the build itself,
+    not the (separately covered) pre-scaled collision semantics.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return ESNLayer(
+            reservoir_size=_SWEEP_N,
+            feedback_size=_SWEEP_FEEDBACK,
+            topology=name,
+            seed=_SWEEP_SEED,
+            spectral_radius=_SWEEP_SR,
+        )
+
+
+class TestEveryTopologyBuildsAndForwards:
+    """Every registered topology builds a working, finite ``ESNLayer``.
+
+    Data-driven coverage for the ~20 graph/matrix builders that the targeted
+    tests above never touch (``barabasi_albert``, ``chord_dendrocycle``,
+    ``kleinberg_small_world``, ``multi_cycle``, ``newman_watts_strogatz``,
+    ``regular``, ``simple_cycle_jumps``, ``spectral_cascade``, ...). Iterating
+    over :func:`show_topologies` rather than a hard-coded list means a newly
+    registered topology is swept automatically (issue #207).
+    """
+
+    @pytest.mark.parametrize("name", show_topologies())
+    def test_topology_produces_finite_forward_pass(self, name: str) -> None:
+        """A layer built from each topology forward-passes to a finite output."""
+        layer = _build_swept_layer(name)
+
+        feedback = torch.randn(2, 5, _SWEEP_FEEDBACK)
+        output = layer(feedback)
+
+        assert output.shape == (2, 5, _SWEEP_N)
+        assert torch.isfinite(output).all(), f"{name} produced non-finite output"
+
+    @pytest.mark.parametrize("name", show_topologies())
+    def test_recurrent_weight_is_square_and_finite(self, name: str) -> None:
+        """``weight_hh`` is a finite ``(n, n)`` matrix for every topology."""
+        layer = _build_swept_layer(name)
+        weight = layer.weight_hh.data
+
+        assert weight.shape == (_SWEEP_N, _SWEEP_N), f"{name} weight not square"
+        assert torch.isfinite(weight).all(), f"{name} weight has non-finite entries"
+
+    @pytest.mark.parametrize("name", show_topologies())
+    def test_post_scaling_spectral_radius_matches_request(self, name: str) -> None:
+        """Post-scaling spectral radius matches ``_SWEEP_SR`` per topology.
+
+        The contract is per-topology (issue #207 acceptance criterion):
+
+        - ordinary topologies are rescaled to the requested radius,
+        - ``zeros`` has no spectral structure to scale, so it stays at 0,
+        - pre-scaled topologies own their radius (the layer one is ignored).
+        """
+        layer = _build_swept_layer(name)
+        radius = _full_spectral_radius(layer.weight_hh.data)
+
+        if name == "zeros":
+            assert radius == pytest.approx(0.0, abs=1e-6)
+        elif get_topology(name).prescaled:
+            # Owns its own radius (registry ``prescaled=True``): the layer rescale
+            # was intentionally skipped, so just assert a finite, positive scale.
+            assert radius > 0.0
+        else:
+            assert radius == pytest.approx(
+                _SWEEP_SR, abs=1e-2
+            ), f"{name} post-scaling radius {radius} != {_SWEEP_SR}"
+
+    @pytest.mark.parametrize("name", show_topologies())
+    def test_sweep_is_seeded_and_reproducible(self, name: str) -> None:
+        """Two layers built with the same seed share identical recurrent weights."""
+        a = _build_swept_layer(name)
+        b = _build_swept_layer(name)
+
+        assert torch.equal(a.weight_hh, b.weight_hh), f"{name} not reproducible under a fixed seed"
+
+
+# ---------------------------------------------------------------------------
+# Targeted builder-branch coverage (issue #207)
+# ---------------------------------------------------------------------------
+#
+# The registry sweep above builds every topology with its *registry-default*
+# parameters, so builder branches gated on non-default flags (``directed``,
+# ``self_loops``, weighting modes, optional chords) and the input-validation
+# guards are never exercised. These tests drive those branches directly through
+# the graph functions — the deeper structural tests issue #207 calls for.
+
+_DENDROCYCLE_BUILDERS = [dendrocycle_graph, dendrocycle_with_chords_graph]
+
+
+class TestDendrocycleChordBranches:
+    """Chord + validation branches shared by ``dendrocycle`` and ``chord_dendrocycle``.
+
+    Both builders carry an identical optional-chord section and the same
+    parameter-validation guards. The default sweep leaves ``L=None``, so the
+    whole chord block and the error paths stay uncovered. With ``c=0.5`` and
+    ``n=40`` the core ring has ``C = round(0.5 * 40) = 20`` nodes.
+    """
+
+    @pytest.mark.parametrize("builder", _DENDROCYCLE_BUILDERS)
+    def test_integer_chord_adds_core_feedback(self, builder) -> None:
+        """An int ``L`` adds backward chords ``i -> (i - L) % C`` on the core ring."""
+        g = builder(40, c=0.5, d=0.2, L=2, w=0.5, alpha=0.9, seed=0)
+
+        assert g.number_of_nodes() == 40
+        assert g.has_edge(0, (0 - 2) % 20)  # the L=2 backward chord, not a ring edge
+
+    @pytest.mark.parametrize("builder", _DENDROCYCLE_BUILDERS)
+    def test_iterable_chords_with_zero_weight_skipped(self, builder) -> None:
+        """A list ``L`` is accepted; ``w=0`` makes every chord weight zero and skipped."""
+        g = builder(40, c=0.5, d=0.2, L=[1, 2], w=0.0, alpha=0.5, seed=0)
+
+        assert g.number_of_nodes() == 40  # wk == 0 -> continue skips the chord edges
+
+    @pytest.mark.parametrize("builder", _DENDROCYCLE_BUILDERS)
+    def test_iterable_chords_with_alpha_decay(self, builder) -> None:
+        """Multiple delays with geometric ``alpha`` decay add extra core feedback."""
+        g = builder(40, c=0.5, d=0.2, L=[1, 2], w=0.5, alpha=0.5, seed=0)
+
+        assert g.has_edge(0, (0 - 1) % 20)
+        assert g.has_edge(0, (0 - 2) % 20)
+
+    @pytest.mark.parametrize("builder", _DENDROCYCLE_BUILDERS)
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            ({"c": 1.5, "d": 0.2}, "c must be in"),
+            ({"c": 0.5, "d": 0.7}, "d must satisfy"),  # c + d > 1
+            ({"c": 0.5, "d": 0.2, "L": []}, "empty iterable"),
+            ({"c": 0.5, "d": 0.2, "L": 100}, "Chord L_k must be in"),  # > C // 2 = 10
+            ({"c": 0.5, "d": 0.2, "L": 1, "alpha": 2.0}, "alpha must be in"),
+        ],
+    )
+    def test_validation_errors(self, builder, kwargs: dict, match: str) -> None:
+        with pytest.raises(ValueError, match=match):
+            builder(40, **kwargs)
+
+
+class TestRegularGraphBranches:
+    """Directed / self-loop / deterministic-weight branches of ``regular_graph``.
+
+    The sweep builds ``regular`` undirected, with random weights and no
+    self-loops, so the directed reverse-edge, self-loop, and alternating-weight
+    branches plus the ``k`` validation guard are otherwise never run.
+    """
+
+    def test_directed_with_self_loops_random_weights(self) -> None:
+        g = regular_graph(12, k=4, directed=True, self_loops=True, random_weights=True, seed=0)
+
+        assert g.is_directed()
+        assert any(u == v for u, v in g.edges())  # self-loops added
+
+    def test_undirected_deterministic_weights_with_self_loops(self) -> None:
+        g = regular_graph(12, k=4, directed=False, self_loops=True, random_weights=False, seed=0)
+
+        assert not g.is_directed()
+        assert any(u == v for u, v in g.edges())
+        assert all(w in (-1, 1) for *_, w in g.edges(data="weight"))
+
+    def test_invalid_k_raises(self) -> None:
+        with pytest.raises(ValueError, match="k must be"):
+            regular_graph(6, k=8)  # k > n - (n % 2)
+
+
+class TestRingChordBranches:
+    """Iterable-delay, zero-weight, and validation branches of ``ring_chord_graph``.
+
+    The sweep builds ``ring_chord`` with the default scalar ``L=1``, so the
+    list-of-delays path, the ``wk == 0`` skip, and the four validation guards
+    stay uncovered.
+    """
+
+    def test_iterable_delays(self) -> None:
+        g = ring_chord_graph(12, L=[1, 2], w=0.5, alpha=0.5)
+
+        assert g.number_of_nodes() == 12
+        assert g.has_edge(0, (0 - 1) % 12)
+        assert g.has_edge(0, (0 - 2) % 12)
+
+    def test_zero_weight_chord_skipped(self) -> None:
+        g = ring_chord_graph(12, L=[1, 2], w=0.0, alpha=0.5)
+
+        assert g.number_of_edges() == 12  # only the unit-weight ring; chords skipped
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            ({"n": 2}, "n >= 3 required"),
+            ({"n": 12, "L": []}, "At least one delay"),
+            ({"n": 12, "L": 100}, "Each L_k must satisfy"),  # > n // 2 = 6
+            ({"n": 12, "L": 1, "alpha": 2.0}, "alpha must be in"),
+        ],
+    )
+    def test_validation_errors(self, kwargs: dict, match: str) -> None:
+        with pytest.raises(ValueError, match=match):
+            ring_chord_graph(**kwargs)

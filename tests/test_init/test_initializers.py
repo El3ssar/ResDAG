@@ -9,6 +9,9 @@ Pins down:
 - custom initializer objects driving an ESNLayer on every device.
 """
 
+import inspect
+import warnings
+
 import numpy as np
 import pytest
 import torch
@@ -656,3 +659,275 @@ class TestDendrocycleDrawWidthVsScaling:
             scaled
         )
         assert torch.allclose(scaled, 0.25 * raw, atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Registry-driven sweep over every input/feedback initializer (issue #207)
+# ---------------------------------------------------------------------------
+
+_SWEEP_RESERVOIR = 36
+# Feedback and driving-input widths are kept equal so a single per-name
+# override (notably ``chain_of_neurons_input``'s ``features``, which must equal
+# the weight's column count) is valid for both the feedback and the input
+# weight matrices the forward-pass test fills.
+_SWEEP_FEEDBACK = 4
+_SWEEP_INPUT = 4
+_SWEEP_SEED = 1234
+
+# A handful of initializers declare *required* constructor parameters that the
+# registry defaults leave unset (they default to ``None`` and the initializer
+# rejects that). Supply minimal valid values keyed by name so the sweep can
+# build them; every other initializer uses its registry defaults, so a newly
+# registered one is swept with no edit here.
+_REQUIRED_KWARGS: dict[str, dict[str, object]] = {
+    # ``features`` must equal the weight's column count (the feedback/input width).
+    "chain_of_neurons_input": {"features": _SWEEP_FEEDBACK},
+    # Exactly one of ``c`` / ``C`` is required.
+    "dendrocycle_input": {"c": 0.5},
+    # ``c`` and ``window`` are both required.
+    "ring_window": {"c": 0.5, "window": 0.5},
+}
+
+
+def _accepts_seed(initializer: InputFeedbackInitializer) -> bool:
+    """Return ``True`` when the initializer's constructor names a ``seed`` param."""
+    return "seed" in inspect.signature(type(initializer).__init__).parameters
+
+
+def _build_swept_initializer(name: str, *, seed: int | None) -> InputFeedbackInitializer:
+    """Build a fully-resolved initializer for the sweep via the registry.
+
+    The required-kwarg overrides are merged in, and ``seed`` is forwarded only
+    to initializers whose constructor accepts it (so deterministic builders are
+    left untouched). The resolved *object* is returned so callers can pass it to
+    ``ESNLayer`` directly, side-stepping the ``(name, params)`` tuple-spec path.
+    """
+    kwargs = dict(_REQUIRED_KWARGS.get(name, {}))
+    probe = get_input_feedback(name, **kwargs)
+    if seed is not None and _accepts_seed(probe):
+        return get_input_feedback(name, seed=seed, **kwargs)
+    return probe
+
+
+class TestEveryInitializerBuildsAndForwards:
+    """Every registered input/feedback initializer drives a working ``ESNLayer``.
+
+    Data-driven coverage for the initializers the targeted tests above never
+    exercise end to end (``binary_balanced``, ``chain_of_neurons_input``,
+    ``chessboard``, ``dendrocycle_input``, ``opposite_anchors``,
+    ``random_binary``, ``ring_window``, ...). Iterating over
+    :func:`show_input_initializers` means a newly registered initializer is
+    swept automatically (issue #207).
+    """
+
+    @pytest.mark.parametrize("name", show_input_initializers())
+    def test_initializer_produces_finite_weight(self, name: str) -> None:
+        """A direct ``initialize`` fills a finite ``(reservoir, feedback)`` weight."""
+        initializer = _build_swept_initializer(name, seed=_SWEEP_SEED)
+        weight = torch.empty(_SWEEP_RESERVOIR, _SWEEP_FEEDBACK)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            initializer.initialize(weight)
+
+        assert weight.shape == (_SWEEP_RESERVOIR, _SWEEP_FEEDBACK)
+        assert torch.isfinite(weight).all(), f"{name} produced non-finite weight"
+
+    @pytest.mark.parametrize("name", show_input_initializers())
+    def test_initializer_drives_finite_forward_pass(self, name: str) -> None:
+        """Each initializer wires both feedback and input weights of a layer.
+
+        The resolved object is passed for *both* the feedback and the driving
+        input weights, so a single forward pass exercises the initializer on the
+        two rectangular weight matrices it is meant to fill.
+        """
+        feedback_init = _build_swept_initializer(name, seed=_SWEEP_SEED)
+        input_init = _build_swept_initializer(name, seed=_SWEEP_SEED)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            layer = ESNLayer(
+                reservoir_size=_SWEEP_RESERVOIR,
+                feedback_size=_SWEEP_FEEDBACK,
+                input_size=_SWEEP_INPUT,
+                feedback_initializer=feedback_init,
+                input_initializer=input_init,
+                seed=_SWEEP_SEED,
+            )
+
+        feedback = torch.randn(2, 5, _SWEEP_FEEDBACK)
+        driving = torch.randn(2, 5, _SWEEP_INPUT)
+        output = layer(feedback, driving)
+
+        assert output.shape == (2, 5, _SWEEP_RESERVOIR)
+        assert torch.isfinite(output).all(), f"{name} produced non-finite output"
+        assert torch.isfinite(layer.weight_feedback).all()
+        assert torch.isfinite(layer.weight_input).all()
+
+    @pytest.mark.parametrize("name", show_input_initializers())
+    def test_sweep_is_seeded_and_reproducible(self, name: str) -> None:
+        """Two builds with the same seed produce identical weights for every name.
+
+        Deterministic initializers pass trivially; the seeded random ones
+        (``random``, ``random_binary``, ``pseudo_diagonal``, ...) require the
+        forwarded seed to make this hold.
+        """
+        wa = torch.empty(_SWEEP_RESERVOIR, _SWEEP_FEEDBACK)
+        wb = torch.empty(_SWEEP_RESERVOIR, _SWEEP_FEEDBACK)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            _build_swept_initializer(name, seed=_SWEEP_SEED).initialize(wa)
+            _build_swept_initializer(name, seed=_SWEEP_SEED).initialize(wb)
+
+        assert torch.equal(wa, wb), f"{name} not reproducible under a fixed seed"
+
+
+# ---------------------------------------------------------------------------
+# Targeted initializer-branch coverage (issue #207)
+# ---------------------------------------------------------------------------
+#
+# The sweep above builds every initializer with default parameters and an even,
+# reservoir-shaped weight (tall: out_features >> in_features). That leaves
+# several builder branches unreached: the odd-row balancing paths of
+# ``BinaryBalancedInitializer`` and the binarize / wide-matrix paths of
+# ``PseudoDiagonalInitializer``.
+
+
+class TestBinaryBalancedOddRowBranches:
+    """Odd-row balancing paths of ``BinaryBalancedInitializer``.
+
+    An even row count takes the ``n_work == rows`` fast path, so the
+    row-deletion and global-column-balancing branches only run for an odd
+    ``out_features``.
+    """
+
+    def test_odd_rows_with_global_balance(self) -> None:
+        """Odd rows + ``balance_global`` exercises delete-row and column rebalancing."""
+        init = BinaryBalancedInitializer(balance_global=True, seed=0)
+        weight = torch.empty(7, 4)
+
+        init.initialize(weight)
+
+        assert weight.shape == (7, 4)
+        assert torch.isfinite(weight).all()
+        assert set(torch.unique(weight).tolist()) <= {-1.0, 1.0}
+
+    def test_odd_rows_wide_with_global_balance(self) -> None:
+        """A second odd-row shape covers the opposite column-count rebalance branch."""
+        init = BinaryBalancedInitializer(balance_global=True, seed=0)
+        weight = torch.empty(9, 6)
+
+        init.initialize(weight)
+
+        assert weight.shape == (9, 6)
+        assert torch.isfinite(weight).all()
+
+    def test_odd_rows_without_global_balance(self) -> None:
+        """Odd rows with ``balance_global=False`` skips the global rebalance."""
+        init = BinaryBalancedInitializer(balance_global=False, seed=0)
+        weight = torch.empty(9, 5)
+
+        init.initialize(weight)
+
+        assert weight.shape == (9, 5)
+        assert torch.isfinite(weight).all()
+
+    def test_input_scaling_scales_entries(self) -> None:
+        """A float ``input_scaling`` rescales the ``{-1, +1}`` entries."""
+        init = BinaryBalancedInitializer(input_scaling=0.5, balance_global=True, seed=0)
+        weight = torch.empty(7, 4)
+
+        init.initialize(weight)
+
+        assert set(torch.unique(weight).tolist()) <= {-0.5, 0.5}
+
+    def test_preferred_coprime_step(self) -> None:
+        """An explicit coprime ``step`` takes the preferred-step branch of ``_choose_step``."""
+        init = BinaryBalancedInitializer(step=3, seed=0)
+        weight = torch.empty(8, 4)
+
+        init.initialize(weight)
+
+        assert torch.isfinite(weight).all()
+
+
+class TestPseudoDiagonalBranches:
+    """Binarize and wide-matrix (``out_features < in_features``) branches."""
+
+    def test_binarize_tall_matrix(self) -> None:
+        """``binarize=True`` collapses each block to ``{-scaling, +scaling}``."""
+        init = PseudoDiagonalInitializer(binarize=True, input_scaling=1.0, seed=0)
+        weight = torch.empty(36, 4)
+
+        init.initialize(weight)
+
+        nonzero = weight[weight != 0]
+        assert set(torch.unique(nonzero).tolist()) <= {-1.0, 1.0}
+
+    def test_wide_matrix_out_lt_in(self) -> None:
+        """``out_features < in_features`` routes through the per-row block branch."""
+        init = PseudoDiagonalInitializer(seed=0)
+        weight = torch.empty(3, 12)
+
+        init.initialize(weight)
+
+        assert weight.shape == (3, 12)
+        assert torch.isfinite(weight).all()
+        assert (weight != 0).any()
+
+    def test_wide_matrix_binarize(self) -> None:
+        """The wide path also honours ``binarize``."""
+        init = PseudoDiagonalInitializer(binarize=True, input_scaling=1.0, seed=0)
+        weight = torch.empty(3, 12)
+
+        init.initialize(weight)
+
+        nonzero = weight[weight != 0]
+        assert set(torch.unique(nonzero).tolist()) <= {-1.0, 1.0}
+
+
+class TestBinaryBalancedHelpers:
+    """Deterministic coverage of the column-balancing helpers + degenerate shape.
+
+    The registry sweep cannot reach the negative-sum column flip, the global
+    rebalance branches (positive and negative total), or the zero-dimension
+    early return, so these drive the helpers directly with crafted inputs.
+    """
+
+    def test_balance_columns_zero_sum_positive_and_negative(self) -> None:
+        """Both the positive- and negative-sum flip branches drive a column to zero."""
+        vw = np.array(
+            [[1, -1], [1, -1], [-1, 1], [1, -1]],
+            dtype=np.int8,
+        )
+        # column 0 sums to +2 (positive flip), column 1 sums to -2 (negative flip)
+        BinaryBalancedInitializer._balance_columns_zero_sum(vw)
+
+        assert int(vw[:, 0].sum()) == 0
+        assert int(vw[:, 1].sum()) == 0
+
+    def test_balance_global_positive_total(self) -> None:
+        """A positive global total flips a ``+1`` column toward the target."""
+        v = np.array([[1, 1, 1, -1]], dtype=np.int8)  # col sums [1,1,1,-1], total +2
+
+        BinaryBalancedInitializer._balance_global_column_counts(v)
+
+        assert int(v.sum()) == 0  # m even -> target 0
+
+    def test_balance_global_negative_total(self) -> None:
+        """A negative global total flips a ``-1`` column toward the target."""
+        v = np.array([[-1, -1, -1, 1]], dtype=np.int8)  # col sums [-1,-1,-1,1], total -2
+
+        BinaryBalancedInitializer._balance_global_column_counts(v)
+
+        assert int(v.sum()) == 0
+
+    def test_zero_dimension_weight_is_zeroed(self) -> None:
+        """A zero-sized weight short-circuits to an all-zero return."""
+        init = BinaryBalancedInitializer(seed=0)
+        weight = torch.empty(0, 4)
+
+        out = init.initialize(weight)
+
+        assert out.shape == (0, 4)

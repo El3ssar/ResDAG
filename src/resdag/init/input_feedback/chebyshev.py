@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -89,12 +89,14 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         out_features, in_features = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
-        # Initialize matrix
-        values = np.zeros((out_features, in_features), dtype=np.float32)
+        # Initialize matrix at the target precision so float64 weights are not
+        # silently truncated to float32 before the final widening copy.
+        values = np.zeros((out_features, in_features), dtype=compute_dtype)
 
         # First column: sinusoidal initialization
-        row_indices = np.arange(1, out_features + 1, dtype=np.float32)
+        row_indices = np.arange(1, out_features + 1, dtype=compute_dtype)
         values[:, 0] = self.p * np.sin((row_indices / (out_features + 1)) * (np.pi / self.q))
 
         # Apply Chebyshev recurrence column-wise

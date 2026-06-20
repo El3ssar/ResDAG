@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -127,6 +127,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
         n, m = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
         if m <= 0 or n <= 0:
             raise ValueError("m and n must be positive.")
@@ -134,8 +135,10 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
         C = max(1, int(round(self.c * n)))  # core size
         W = self._window_size(C)
 
-        values = np.zeros((n, m), dtype=np.float32)
-        base = self._taper_vector(W, self.taper).astype(np.float32)
+        # Build at the target precision so the float64 taper/norm computation is
+        # not truncated to float32 before reaching a float64 weight.
+        values = np.zeros((n, m), dtype=compute_dtype)
+        base = self._taper_vector(W, self.taper).astype(compute_dtype)
 
         def window_indices(center: int) -> np.ndarray:
             start = center - (W // 2)
@@ -151,7 +154,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             if self.signed == "allpos":
                 signs = 1.0
             elif self.signed == "alt_ring":
-                signs = (1.0 - 2.0 * (cols_core % 2)).astype(np.float32)
+                signs = (1.0 - 2.0 * (cols_core % 2)).astype(compute_dtype)
             else:  # "alt_inputs"
                 signs = 1.0 if (k % 2 == 0) else -1.0
 

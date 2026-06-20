@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -84,6 +84,7 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         n, m = _resolve_shape(weight)  # n=ring nodes, m=input channels
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
         if m <= 0 or n <= 0:
             raise ValueError(f"m and n must be positive; received: (m={m}, n={n})")
@@ -96,7 +97,9 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
                 "reservoir."
             )
 
-        values = np.zeros((n, m), dtype=np.float32)
+        # Build at the target precision so gain / sqrt(2) keeps full precision
+        # in a float64 weight instead of being truncated to float32.
+        values = np.zeros((n, m), dtype=compute_dtype)
         half = n // 2
 
         # Special case: n == 1

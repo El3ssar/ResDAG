@@ -18,6 +18,7 @@ resdag.layers.ESNLayer : Uses these initializers for weight matrices.
 
 from abc import ABC, abstractmethod
 
+import numpy as np
 import torch
 
 
@@ -107,3 +108,44 @@ def _resolve_shape(weight: torch.Tensor) -> tuple[int, int]:
     if weight.ndim != 2:
         raise ValueError(f"Weight must be 2D, got shape {weight.shape}")
     return weight.shape[0], weight.shape[1]
+
+
+def _numpy_compute_dtype(weight_dtype: torch.dtype) -> type[np.floating]:
+    """Pick the NumPy dtype to build initializer intermediates in.
+
+    Structured initializers compute their values in NumPy before copying the
+    result into the target ``weight``. The intermediate dtype must match the
+    target's precision so that no precision is silently truncated: building a
+    ``float32`` intermediate for a ``float64`` weight rounds every value to
+    single precision before the widening ``.to()`` ever runs.
+
+    The mapping mirrors the target precision exactly where NumPy has a matching
+    type, and falls back to ``float64`` for the half-precision torch dtypes
+    (``float16``/``bfloat16``), which have no convenient NumPy compute type — the
+    final ``.to(dtype=weight.dtype)`` narrows the double-precision result down to
+    the target with a single rounding.
+
+    Parameters
+    ----------
+    weight_dtype : torch.dtype
+        Dtype of the target weight tensor.
+
+    Returns
+    -------
+    type of numpy.floating
+        ``numpy.float32`` for ``torch.float32`` targets, otherwise
+        ``numpy.float64``. Computing a ``float32`` target in ``float32`` keeps
+        its result bit-for-bit identical to the historical behavior, while every
+        other target gains genuine double-precision intermediates.
+
+    Examples
+    --------
+    >>> import torch
+    >>> _numpy_compute_dtype(torch.float64) is np.float64
+    True
+    >>> _numpy_compute_dtype(torch.float32) is np.float32
+    True
+    """
+    if weight_dtype == torch.float32:
+        return np.float32
+    return np.float64

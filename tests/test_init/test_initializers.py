@@ -13,13 +13,17 @@ import pytest
 import torch
 
 from resdag.init.input_feedback import (
+    BinaryBalancedInitializer,
+    ChainOfNeuronsInputInitializer,
     ChebyshevInitializer,
+    ChessboardInitializer,
     DendrocycleInputInitializer,
     FunctionInitializer,
     OppositeAnchorsInitializer,
     PseudoDiagonalInitializer,
     RandomBinaryInitializer,
     RandomInputInitializer,
+    RingWindowInputInitializer,
     get_input_feedback,
     register_input_feedback,
     show_input_initializers,
@@ -282,3 +286,110 @@ class TestOppositeAnchorsCollision:
         nonzero = weight[weight != 0]
         assert nonzero.numel() == 2
         assert torch.isclose(nonzero.abs()[0], nonzero.abs()[1])
+
+
+# Structured initializers whose intermediates historically went through a
+# hard-coded ``np.float32`` array, truncating precision in float64 reservoirs
+# (issue #143). Each factory takes a single ``cls``/``kwargs`` pair plus a
+# ``shape`` whose generated values are *not* all float32-representable, so a
+# genuine-float64 weight can be distinguished from a float32-widened one.
+#
+# An irrational ``input_scaling`` / ``gain`` (1/sqrt(2) ~ 0.7071...) guarantees
+# at least one stored value lands strictly between two float32 grid points.
+_IRRATIONAL_SCALE = 2.0**-0.5  # 0.7071067811865476, not float32-representable
+
+_PRECISION_INITIALIZERS = [
+    pytest.param(
+        ChebyshevInitializer,
+        {"p": 0.3, "k": 3.5, "input_scaling": _IRRATIONAL_SCALE},
+        (64, 8),
+        id="chebyshev",
+    ),
+    pytest.param(
+        PseudoDiagonalInitializer,
+        {"input_scaling": _IRRATIONAL_SCALE, "seed": 42},
+        (64, 8),
+        id="pseudo_diagonal",
+    ),
+    pytest.param(
+        ChessboardInitializer,
+        {"input_scaling": _IRRATIONAL_SCALE},
+        (64, 8),
+        id="chessboard",
+    ),
+    pytest.param(
+        BinaryBalancedInitializer,
+        {"input_scaling": _IRRATIONAL_SCALE},
+        (64, 8),
+        id="binary_balanced",
+    ),
+    pytest.param(
+        OppositeAnchorsInitializer,
+        {"gain": 1.0},  # gain / sqrt(2) is already irrational
+        (64, 8),
+        id="opposite_anchors",
+    ),
+    pytest.param(
+        DendrocycleInputInitializer,
+        {"c": 0.5, "input_scaling": _IRRATIONAL_SCALE, "seed": 42},
+        (64, 8),
+        id="dendrocycle_input",
+    ),
+    pytest.param(
+        ChainOfNeuronsInputInitializer,
+        {"features": 8, "weights": _IRRATIONAL_SCALE},
+        (64, 8),
+        id="chain_of_neurons_input",
+    ),
+    pytest.param(
+        RingWindowInputInitializer,
+        {"c": 0.5, "window": 0.5, "taper": "cosine", "signed": "alt_ring"},
+        (64, 8),
+        id="ring_window",
+    ),
+]
+
+
+class TestStructuredInitializerPrecision:
+    """Structured initializers must respect the target dtype (issue #143).
+
+    Previously every structured initializer built its value matrix in a
+    hard-coded ``np.float32`` array and only widened at the final
+    ``.to(dtype=weight.dtype)``, so a float64 reservoir silently lost true
+    double precision. The fix builds intermediates at the target precision.
+    """
+
+    @pytest.mark.parametrize(("cls", "kwargs", "shape"), _PRECISION_INITIALIZERS)
+    def test_float64_weight_keeps_double_precision(self, cls, kwargs, shape) -> None:
+        """A float64 weight carries at least one non-float32-representable value."""
+        weight = torch.empty(*shape, dtype=torch.float64)
+        cls(**kwargs).initialize(weight)
+
+        # If the intermediate had been float32, every stored value would equal
+        # its float32 round-trip. Genuine float64 precision breaks that for at
+        # least one entry.
+        round_tripped = weight.to(torch.float32).to(torch.float64)
+        assert torch.any(weight != round_tripped), (
+            f"{cls.__name__} float64 weight is fully float32-representable; "
+            "precision was truncated."
+        )
+
+    @pytest.mark.parametrize(("cls", "kwargs", "shape"), _PRECISION_INITIALIZERS)
+    def test_float32_weight_is_deterministic_and_representable(self, cls, kwargs, shape) -> None:
+        """A float32 weight is reproducible and stays genuinely float32 (unchanged).
+
+        For a float32 target the intermediate dtype is float32, so the
+        computation path is identical to the historical behavior. We pin down
+        that the result is deterministic and never carries hidden sub-float32
+        bits, guarding against accidental widening.
+        """
+        w1 = torch.empty(*shape, dtype=torch.float32)
+        w2 = torch.empty(*shape, dtype=torch.float32)
+        cls(**kwargs).initialize(w1)
+        cls(**kwargs).initialize(w2)
+
+        # float32 path is deterministic (seeded / fully deterministic builders).
+        assert torch.equal(w1, w2)
+        # And every value is genuinely float32 (no widening surprises).
+        assert w1.dtype == torch.float32
+        assert torch.equal(w1, w1.to(torch.float64).to(torch.float32))

@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -57,11 +57,13 @@ class ChessboardInitializer(InputFeedbackInitializer):
         out_features, in_features = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
-        # Create chessboard pattern
+        # Create chessboard pattern at the target precision so any scaling that
+        # is not float32-representable survives a float64 weight intact.
         i = np.arange(out_features)[:, None]
         j = np.arange(in_features)[None, :]
-        values = (-1.0) ** (i + j)
+        values = ((-1.0) ** (i + j)).astype(compute_dtype)
 
         # Apply scaling if provided
         if self.input_scaling is not None:

@@ -5,7 +5,7 @@ from math import gcd
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _resolve_shape
+from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
 
@@ -159,6 +159,7 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
         out_features, in_features = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+        compute_dtype = _numpy_compute_dtype(dtype)
 
         rows, cols = out_features, in_features
 
@@ -189,7 +190,9 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
             if self.balance_global:
                 self._balance_global_column_counts(V)
 
-        values = V.astype(np.float32)
+        # Build at the target precision so a non-float32-representable
+        # input_scaling survives a float64 weight intact.
+        values = V.astype(compute_dtype)
 
         if self.input_scaling is not None:
             values *= float(self.input_scaling)

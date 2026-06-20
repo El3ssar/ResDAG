@@ -13,6 +13,10 @@ resdag.layers.cells.ngrc_cell : Single-step NG-RC cell (NGCell).
 resdag.layers.reservoirs.base_reservoir : Abstract base (BaseReservoirLayer).
 """
 
+from typing import cast
+
+import torch
+
 from resdag.layers.cells.ngrc_cell import NGCell
 
 from .base_reservoir import BaseReservoirLayer
@@ -114,6 +118,75 @@ class NGReservoir(BaseReservoirLayer):
             include_linear=include_linear,
         )
         super().__init__(cell)
+
+    # ------------------------------------------------------------------
+    # Forward (vectorized whole-sequence fast path)
+    # ------------------------------------------------------------------
+
+    def forward(
+        self,
+        feedback: torch.Tensor,
+        *driving_inputs: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Process an input sequence through the NG-RC feature map in one pass.
+
+        NG-RC is a feedforward map, so the whole sequence is vectorized: there
+        is **no per-timestep Python loop** on this path.  The output is
+        numerically identical to scanning the cell step-by-step (``0.0``
+        max-abs-diff, including the warmup region); the per-step
+        :meth:`~resdag.layers.cells.ngrc_cell.NGCell.forward` is retained for
+        streaming / stateful use and continues seamlessly after a batch call.
+
+        Parameters
+        ----------
+        feedback : torch.Tensor
+            Input sequence of shape ``(batch, timesteps, input_dim)``.
+        *driving_inputs : torch.Tensor
+            Ignored — NG-RC has no driving inputs.  Accepted for interface
+            parity with :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
+
+        Returns
+        -------
+        torch.Tensor
+            NG-RC features for all timesteps, shape
+            ``(batch, timesteps, feature_dim)``.
+
+        Raises
+        ------
+        ValueError
+            If ``feedback`` is not 3-D.
+
+        Notes
+        -----
+        The layer maintains internal state across forward calls (the FIFO delay
+        buffer).  Use :meth:`reset_state` to clear it between independent
+        sequences.  As in the base class, the stored state is detached from the
+        autograd graph at call boundaries when
+        :attr:`detach_state_between_calls` is ``True`` (truncated BPTT).
+        """
+        if feedback.dim() != 3:
+            raise ValueError(f"Feedback must be 3D (B, T, F), got shape {feedback.shape}")
+
+        batch_size = feedback.shape[0]
+        self._maybe_init_state(batch_size, feedback.device, feedback.dtype)
+
+        # mypy: state is guaranteed non-None after _maybe_init_state.
+        assert self.state is not None
+        cell = cast(NGCell, self.cell)  # narrow from Tensor | Module for the type checker
+        outputs, self.state = cell.forward_sequence(feedback, self.state)
+
+        # Truncated BPTT at call boundaries (mirrors BaseReservoirLayer.forward):
+        # gradients flow through the returned features within this call, but the
+        # stored state must not keep the graph alive for a later forward+backward.
+        if (
+            self.detach_state_between_calls
+            and self.state is not None
+            and self.state.grad_fn is not None
+        ):
+            self.state = self.state.detach()
+
+        return outputs
 
     # ------------------------------------------------------------------
     # Properties (delegated to inner cell for convenience)

@@ -21,6 +21,7 @@ resdag.layers.cells.esn_cell : Concrete ESN cell (ESNCell).
 
 import itertools
 import warnings
+from typing import cast
 
 import torch
 
@@ -308,6 +309,101 @@ class NGCell(ReservoirCell):
             parts.append(o_nonlin)
 
         o_total = torch.cat(parts, dim=-1)  # (batch, feature_dim)
+
+        return o_total, new_state
+
+    def forward_sequence(
+        self,
+        x: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute NG-RC features for a whole sequence in a single vectorized pass.
+
+        This is the batch-forward fast path used by
+        :meth:`~resdag.layers.reservoirs.ngrc.NGReservoir.forward`.  It is
+        numerically identical to scanning :meth:`forward` step-by-step
+        (``0.0`` max-abs-diff, including the warmup region), but contains no
+        per-timestep Python loop: the delay-embedded linear features are built
+        from shifted, front-zero-padded slices of the input, every monomial is
+        gathered over the full ``(batch, timesteps, *)`` tensor at once, and the
+        constant-ones block is allocated a single time.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input sequence of shape ``(batch, timesteps, input_dim)``.
+        state : torch.Tensor
+            Incoming delay buffer of shape ``(batch, state_size, input_dim)``,
+            chronologically oldest-first.  This holds the ``(k-1)*s`` inputs
+            immediately preceding ``x[:, 0]`` and supplies the delay taps for
+            the first timesteps (zeros for a cold start).
+
+        Returns
+        -------
+        features : torch.Tensor
+            Output features ``O_total`` of shape
+            ``(batch, timesteps, feature_dim)``.
+        new_state : torch.Tensor
+            Updated delay buffer of shape ``(batch, state_size, input_dim)``,
+            holding the last ``state_size`` inputs of ``x`` (or, when the
+            sequence is shorter than the buffer, carried-over history), so a
+            subsequent streaming :meth:`forward` continues seamlessly.
+
+        See Also
+        --------
+        NGCell.forward : Single-step counterpart driving the streaming path.
+        """
+        batch, seq_len, _ = x.shape
+        pad = self.state_size  # == (k - 1) * s
+
+        # ------------------------------------------------------------------
+        # 1. Build O_lin for the whole sequence (Eq. 5).
+        #
+        # Prepend the incoming delay buffer (oldest-first) so the first
+        # timesteps draw their delay taps from carried-over history; a cold
+        # start contributes zeros, matching the per-step loop's empty buffer.
+        # For delay tap j (0..k-1), X_{i-j*s} at output index i lives at
+        # padded[:, pad + i - j*s, :], i.e. the length-T window starting at
+        # column (pad - j*s).
+        # ------------------------------------------------------------------
+        if self.k > 1:
+            padded = torch.cat([state, x], dim=1)  # (batch, pad + T, input_dim)
+            taps = [
+                padded[:, pad - j * self.s : pad - j * self.s + seq_len, :] for j in range(self.k)
+            ]
+            o_lin = torch.cat(taps, dim=-1)  # (batch, T, k * input_dim)
+        else:
+            # k=1: no delay taps, O_lin is just the current input.
+            o_lin = x  # (batch, T, input_dim)
+
+        # ------------------------------------------------------------------
+        # 2. Updated delay buffer: the last ``pad`` rows of the padded stream
+        #    (FIFO drop-oldest / append-current applied to the full sequence).
+        # ------------------------------------------------------------------
+        if pad > 0:
+            new_state = torch.cat([state, x], dim=1)[:, -pad:, :]
+        else:
+            new_state = state  # empty buffer, unchanged
+
+        # ------------------------------------------------------------------
+        # 3. Assemble O_total = [c] + O_lin + O_nonlin (Eq. 9 / Eq. 10).
+        #    The constant-ones block is allocated once for the whole sequence;
+        #    monomials are gathered over the full (batch, T, *) tensor in one op.
+        # ------------------------------------------------------------------
+        parts: list[torch.Tensor] = []
+        if self.include_constant:
+            parts.append(torch.ones(batch, seq_len, 1, device=x.device, dtype=x.dtype))
+        if self.include_linear:
+            parts.append(o_lin)
+        if self._emit_nonlinear:
+            # o_lin[..., monomial_indices]: (batch, T, n_monomials, p)
+            # .prod(dim=-1):                (batch, T, n_monomials)
+            monomial_indices = cast(torch.Tensor, self.monomial_indices)
+            o_nonlin = o_lin[..., monomial_indices].prod(dim=-1)
+            parts.append(o_nonlin)
+
+        o_total = torch.cat(parts, dim=-1)  # (batch, T, feature_dim)
 
         return o_total, new_state
 

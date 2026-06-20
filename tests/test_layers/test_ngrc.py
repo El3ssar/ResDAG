@@ -789,6 +789,190 @@ class TestNGReservoirCausality:
 
 
 # ---------------------------------------------------------------------------
+# NGReservoir — vectorized whole-sequence forward (issue #255)
+# ---------------------------------------------------------------------------
+
+
+def _manual_cell_scan(layer: NGReservoir, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Reference per-step scan over the inner cell from a fresh zero buffer."""
+    cell = layer.cell
+    batch = x.shape[0]
+    state = cell.init_state(batch, x.device, x.dtype)
+    outs = []
+    for t in range(x.shape[1]):
+        feats, state = cell([x[:, t, :]], state)
+        outs.append(feats)
+    return torch.stack(outs, dim=1), state
+
+
+class TestNGReservoirVectorizedForward:
+    """The whole-sequence forward must match the per-step loop exactly."""
+
+    @pytest.mark.parametrize("k", [1, 2, 3, 5])
+    @pytest.mark.parametrize("s", [1, 2, 3])
+    @pytest.mark.parametrize("p", [1, 2, 3])
+    @pytest.mark.parametrize("const", [True, False])
+    @pytest.mark.parametrize("lin", [True, False])
+    def test_zero_max_diff_vs_per_step_loop(
+        self, k: int, s: int, p: int, const: bool, lin: bool
+    ) -> None:
+        """``0.0`` max-abs-diff vs the per-step loop, including the warmup region.
+
+        Covers ``k>=1, s>=1, p>=1`` and both ``include_constant`` /
+        ``include_linear`` flag combinations.  float64 makes any non-bit-exact
+        path visible.
+        """
+        d = 3
+        layer = NGReservoir(input_dim=d, k=k, s=s, p=p, include_constant=const, include_linear=lin)
+        torch.manual_seed(k * 100 + s * 10 + p)
+        # seq_len exceeds the warmup length for every k here, so the comparison
+        # spans both the unfilled-buffer (warmup) region and the filled region.
+        x = torch.randn(2, 13, d, dtype=torch.float64)
+
+        layer.reset_state()
+        vectorized = layer(x)
+        manual, _ = _manual_cell_scan(layer, x)
+
+        max_diff = (vectorized - manual).abs().max().item()
+        assert max_diff == 0.0, f"max-abs-diff {max_diff} != 0.0 for k={k} s={s} p={p}"
+
+    def test_final_state_matches_per_step_loop(self) -> None:
+        """Final delay buffer after a batch forward equals the per-step buffer."""
+        d, k, s, p = 3, 3, 2, 2
+        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        torch.manual_seed(7)
+        x = torch.randn(2, 15, d, dtype=torch.float64)
+
+        layer.reset_state()
+        layer(x)
+        _, manual_state = _manual_cell_scan(layer, x)
+
+        assert layer.state is not None
+        assert torch.equal(layer.state, manual_state)
+
+    def test_warmup_region_exact(self) -> None:
+        """The first ``warmup_length`` steps (unfilled buffer) match exactly."""
+        d, k, s, p = 2, 3, 2, 2
+        layer = NGReservoir(input_dim=d, k=k, s=s, p=p, include_constant=False, include_linear=True)
+        torch.manual_seed(3)
+        x = torch.randn(1, 8, d, dtype=torch.float64)
+
+        layer.reset_state()
+        vectorized = layer(x)
+        manual, _ = _manual_cell_scan(layer, x)
+
+        warm = layer.warmup_length
+        assert warm > 0
+        assert torch.equal(vectorized[:, :warm, :], manual[:, :warm, :])
+
+    def test_streaming_step_continues_after_batch_forward(self) -> None:
+        """A per-step cell stream continues seamlessly after a batch forward.
+
+        Run the batch fast path over a prefix, then drive the remaining steps
+        through the per-step ``cell.forward`` starting from the layer's stored
+        delay buffer.  The streamed tail must match the fully-vectorized run.
+        """
+        d, k, s, p = 3, 3, 2, 2
+        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        torch.manual_seed(11)
+        full = torch.randn(2, 30, d, dtype=torch.float64)
+
+        # Reference: vectorized run over the whole sequence.
+        layer.reset_state()
+        reference = layer(full)
+
+        # Batch forward over the prefix, then stream the tail via the cell.
+        layer.reset_state()
+        layer(full[:, :20, :])
+        cell = layer.cell
+        state = layer.get_state()
+        assert state is not None
+        streamed = []
+        for t in range(20, 30):
+            feats, state = cell([full[:, t, :]], state)
+            streamed.append(feats)
+        streamed_tail = torch.stack(streamed, dim=1)
+
+        assert torch.equal(streamed_tail, reference[:, 20:, :])
+
+    def test_continued_batch_forward_matches_single_pass(self) -> None:
+        """Two consecutive batch forwards equal one batch forward over the join."""
+        d, k, s, p = 2, 2, 1, 3
+        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        torch.manual_seed(5)
+        x = torch.randn(2, 24, d, dtype=torch.float64)
+
+        layer.reset_state()
+        single = layer(x)
+
+        layer.reset_state()
+        first = layer(x[:, :10, :])
+        second = layer(x[:, 10:, :])
+        joined = torch.cat([first, second], dim=1)
+
+        assert torch.equal(joined, single)
+
+    def test_no_python_loop_on_batch_forward_path(self) -> None:
+        """No per-step Python loop runs on the batch-forward path.
+
+        ``NGReservoir.forward`` is a single vectorized call, so a sequence of
+        any length triggers exactly one ``NGCell.forward_sequence`` invocation
+        and zero per-step ``NGCell.forward`` calls.
+        """
+        d = 3
+        layer = NGReservoir(input_dim=d, k=2, s=1, p=2)
+        x = torch.randn(1, 64, d)
+
+        seq_calls = 0
+        step_calls = 0
+        orig_seq = NGCell.forward_sequence
+        orig_step = NGCell.forward
+
+        def counting_seq(self, *a, **kw):  # type: ignore[no-untyped-def]
+            nonlocal seq_calls
+            seq_calls += 1
+            return orig_seq(self, *a, **kw)
+
+        def counting_step(self, *a, **kw):  # type: ignore[no-untyped-def]
+            nonlocal step_calls
+            step_calls += 1
+            return orig_step(self, *a, **kw)
+
+        NGCell.forward_sequence = counting_seq  # type: ignore[method-assign]
+        NGCell.forward = counting_step  # type: ignore[method-assign]
+        try:
+            layer.reset_state()
+            layer(x)
+        finally:
+            NGCell.forward_sequence = orig_seq  # type: ignore[method-assign]
+            NGCell.forward = orig_step  # type: ignore[method-assign]
+
+        assert seq_calls == 1
+        assert step_calls == 0
+
+    def test_state_3d_validation_intact(self) -> None:
+        """set_state / get_state 3-D validation survives the vectorized path."""
+        d, k, s = 3, 3, 2
+        layer = NGReservoir(input_dim=d, k=k, s=s)
+        layer(torch.randn(2, 20, d))
+
+        # get_state returns a 3-D clone.
+        state = layer.get_state()
+        assert state is not None
+        assert state.dim() == 3
+        assert state.shape == (2, layer.state_size, d)
+
+        # set_state accepts a correctly-shaped 3-D buffer.
+        good = torch.randn(2, layer.state_size, d)
+        layer.set_state(good)
+        assert torch.allclose(layer.state, good)
+
+        # set_state rejects a wrong-shaped buffer.
+        with pytest.raises(ValueError, match="validate_state"):
+            layer.set_state(torch.randn(2, layer.state_size + 1, d))
+
+
+# ---------------------------------------------------------------------------
 # NGReservoir — gradients
 # ---------------------------------------------------------------------------
 

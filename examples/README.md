@@ -1,6 +1,6 @@
 # ResDAG Examples
 
-Eleven self-contained, runnable scripts covering the whole library. Every
+Twelve self-contained, runnable scripts covering the whole library. Every
 script is deterministic (fixed seeds), prints what it is doing in numbered
 sections, and finishes in well under a minute on CPU — except the GPU
 benchmark, which takes a couple of minutes.
@@ -17,6 +17,7 @@ uv run python examples/01_quickstart.py --plot
 
 | # | Script | What it teaches | Runtime (CPU) |
 |---|--------|-----------------|---------------|
+| 00 | `00_easiest_api.py` | The headline one-liner: `rd.ESN(...).fit(series).forecast(horizon=N)`; numpy round-trip; dropping down to `esn.model` | ~3 s |
 | 01 | `01_quickstart.py` | Smallest end-to-end flow: data → `classic_esn` → `ESNTrainer` → `forecast` → MSE | ~5 s |
 | 02 | `02_premade_models.py` | All six factories incl. `coupled_ensemble_esn`; one comparison table on a shared Lorenz task | ~5 s |
 | 03 | `03_functional_api.py` | Building DAGs by hand: minimal, input-driven, ott-style augmentation, parallel reservoirs, multi-readout | ~3 s |
@@ -31,8 +32,10 @@ uv run python examples/01_quickstart.py --plot
 
 ## Suggested order
 
-Start with **01** to see the complete workflow in fifty lines, then **02**
-to learn which premade architecture fits your problem. When the factories
+Start with **00** for the easiest possible API — the whole train-and-forecast
+workflow as a single expression — then **01** to see the same flow spelled out
+explicitly with the composable building blocks, and **02** to learn which
+premade architecture fits your problem. When the factories
 are not enough, **03** shows how to compose arbitrary DAGs and **04** how to
 shape the weight matrices that go inside them. **05** and **06** are the
 core skills — how models are trained and how forecasting actually works

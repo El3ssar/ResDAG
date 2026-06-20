@@ -33,6 +33,14 @@ utils
 
 Examples
 --------
+Easiest API — train and forecast a series in a few lines:
+
+>>> import numpy as np
+>>> from resdag import ESN
+>>> series = np.cumsum(np.random.randn(2000, 3), axis=0)  # (time, features)
+>>> esn = ESN(reservoir_size=300, spectral_radius=0.9).fit(series)
+>>> prediction = esn.forecast(horizon=200)  # (200, 3), numpy in -> numpy out
+
 Basic reservoir usage:
 
 >>> import torch
@@ -81,6 +89,7 @@ from . import core, ensemble, init, layers, models, training, utils
 from .core import ESNModel, reservoir_input
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
+from .facade import ESN
 
 # Convenience submodule imports
 from .init import graphs, input_feedback, topology
@@ -126,6 +135,8 @@ __all__ = [
     "graphs",
     "topology",
     "input_feedback",
+    # High-level facade
+    "ESN",
     # Composition helpers
     "ESNModel",
     "reservoir_input",

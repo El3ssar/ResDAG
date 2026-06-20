@@ -55,10 +55,14 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
         self.input_scaling = input_scaling
         self.binarize = binarize
         self.seed = seed
-        self.rng = np.random.default_rng(seed)
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor with pseudo-diagonal structure.
+
+        The RNG is constructed from ``self.seed`` on every call, so the produced
+        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
+        same instance with equal shapes therefore yield identical matrices.
+        Pass ``seed=None`` for a fresh draw on each call.
 
         Parameters
         ----------
@@ -73,6 +77,8 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
         out_features, in_features = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
+
+        rng = np.random.default_rng(self.seed)
 
         # Create sparse block-diagonal structure
         values = np.zeros((out_features, in_features), dtype=np.float32)
@@ -89,7 +95,7 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
                 end_row = start_row + block_size + (1 if col < remainder else 0)
 
                 # Fill this block
-                block_values = self.rng.uniform(-1.0, 1.0, size=(end_row - start_row,))
+                block_values = rng.uniform(-1.0, 1.0, size=(end_row - start_row,))
                 if self.binarize:
                     block_values = np.sign(block_values)
 
@@ -108,7 +114,7 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
                 end_col = start_col + block_size + (1 if row < remainder else 0)
 
                 # Fill this block
-                block_values = self.rng.uniform(-1.0, 1.0, size=(end_col - start_col,))
+                block_values = rng.uniform(-1.0, 1.0, size=(end_col - start_col,))
                 if self.binarize:
                     block_values = np.sign(block_values)
 

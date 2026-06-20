@@ -52,10 +52,14 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
         self.C = C
         self.input_scaling = input_scaling
         self.seed = seed
-        self.rng = np.random.default_rng(seed)
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor for dendrocycle topology.
+
+        The RNG is constructed from ``self.seed`` on every call, so the produced
+        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
+        same instance with equal shapes therefore yield identical matrices.
+        Pass ``seed=None`` for a fresh draw on each call.
 
         Parameters
         ----------
@@ -73,6 +77,8 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
         device = weight.device
         dtype = weight.dtype
 
+        rng = np.random.default_rng(self.seed)
+
         C = self.C
         if C is None:
             if not (0 < self.c <= 1):
@@ -87,16 +93,12 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
         if M <= C:
             mapping = [int(np.floor(i * M / C)) for i in range(C)]
             for core_idx, input_idx in enumerate(mapping):
-                values[core_idx, input_idx] = self.rng.uniform(
-                    -self.input_scaling, self.input_scaling
-                )
+                values[core_idx, input_idx] = rng.uniform(-self.input_scaling, self.input_scaling)
         # Case 2: more inputs than cores
         else:
             mapping = [int(np.floor(i * C / M)) for i in range(M)]
             for input_idx, core_idx in enumerate(mapping):
-                values[core_idx, input_idx] = self.rng.uniform(
-                    -self.input_scaling, self.input_scaling
-                )
+                values[core_idx, input_idx] = rng.uniform(-self.input_scaling, self.input_scaling)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

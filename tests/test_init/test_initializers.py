@@ -14,7 +14,10 @@ import torch
 
 from resdag.init.input_feedback import (
     ChebyshevInitializer,
+    DendrocycleInputInitializer,
     FunctionInitializer,
+    PseudoDiagonalInitializer,
+    RandomBinaryInitializer,
     RandomInputInitializer,
     get_input_feedback,
     register_input_feedback,
@@ -117,6 +120,82 @@ class TestInitializerResolverCallables:
         weight = torch.empty(6, 3)
         resolved.initialize(weight)
         assert torch.all(weight == 0.25)
+
+
+# Seeded randomized initializers and the constructor kwargs to exercise them.
+# Each entry produces a *fresh* instance so repeated-call determinism is tested
+# on a single object, while two-instance agreement is tested across objects.
+_SEEDED_INITIALIZERS = [
+    pytest.param(RandomInputInitializer, {"input_scaling": 1.0}, id="random"),
+    pytest.param(RandomBinaryInitializer, {"input_scaling": 0.5}, id="random_binary"),
+    pytest.param(
+        PseudoDiagonalInitializer,
+        {"input_scaling": 1.0, "binarize": False},
+        id="pseudo_diagonal",
+    ),
+    pytest.param(
+        DendrocycleInputInitializer,
+        {"c": 0.2, "input_scaling": 0.5},
+        id="dendrocycle_input",
+    ),
+]
+
+
+class TestSeededInitializerDeterminism:
+    """Seeded initializers are a pure function of ``(seed, shape)``.
+
+    Regression coverage for the stateful-RNG bug: the RNG must be constructed
+    inside ``initialize()`` so repeated calls on one instance agree.
+    """
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _SEEDED_INITIALIZERS)
+    def test_repeated_calls_same_instance_are_identical(self, cls, kwargs) -> None:
+        """A second ``initialize()`` on the same instance reproduces the first."""
+        init = cls(seed=42, **kwargs)
+
+        w1 = torch.empty(100, 10)
+        w2 = torch.empty(100, 10)
+        init.initialize(w1)
+        init.initialize(w2)
+
+        assert torch.allclose(w1, w2)
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _SEEDED_INITIALIZERS)
+    def test_two_instances_same_seed_agree(self, cls, kwargs) -> None:
+        """Two separate instances with the same seed produce identical matrices."""
+        init_a = cls(seed=7, **kwargs)
+        init_b = cls(seed=7, **kwargs)
+
+        wa = torch.empty(100, 10)
+        wb = torch.empty(100, 10)
+        init_a.initialize(wa)
+        init_b.initialize(wb)
+
+        assert torch.allclose(wa, wb)
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _SEEDED_INITIALIZERS)
+    def test_seed_none_draws_fresh_each_call(self, cls, kwargs) -> None:
+        """With ``seed=None`` repeated calls draw fresh (non-identical) matrices."""
+        init = cls(seed=None, **kwargs)
+
+        w1 = torch.empty(200, 5)
+        w2 = torch.empty(200, 5)
+        init.initialize(w1)
+        init.initialize(w2)
+
+        assert not torch.allclose(w1, w2)
+
+    def test_get_input_feedback_two_instances_agree(self) -> None:
+        """Two ``get_input_feedback('random', seed=42)`` instances still agree."""
+        init_a = get_input_feedback("random", seed=42)
+        init_b = get_input_feedback("random", seed=42)
+
+        wa = torch.empty(100, 10)
+        wb = torch.empty(100, 10)
+        init_a.initialize(wa)
+        init_b.initialize(wb)
+
+        assert torch.allclose(wa, wb)
 
 
 class TestInitializersOnDevice:

@@ -12,17 +12,36 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
     """Initializer that connects each input to two opposite anchors on an n-node ring.
 
     Each input channel connects to two anchor nodes on opposite sides of the ring,
-    with equal weights on both anchors (gain normalized by sqrt(2), so total channel
-    energy equals 'gain'). If the two anchors coincide (n=1), all weight goes to that
-    single node.
+    with equal-magnitude bipolar weights on both anchors (gain normalized by sqrt(2),
+    so total channel energy equals 'gain'). If the two anchors coincide (n=1), all
+    weight goes to that single node.
 
-    This is useful for ring/cycle topologies where you want inputs to be distributed
-    evenly around the ring with bipolar activation patterns.
+    The first (positive) anchor of channel ``i`` is placed at ``round(i * n / m) % n``,
+    spreading the ``m`` anchors evenly around the **full** ring; the second (negative)
+    anchor is the diametrically opposite node ``(anchor + n // 2) % n``. Spreading over
+    the full ring (rather than a semicircle) keeps the columns distinct for any
+    ``in_features <= reservoir_size``, so ``W_in``/``W_fb`` stays full column rank.
+
+    This is useful for ring/cycle topologies where you want inputs distributed evenly
+    around the ring with bipolar activation patterns.
+
+    Capacity limit
+    --------------
+    The ring has only ``n = reservoir_size`` nodes, so at most ``n`` channels can be
+    assigned distinct anchors. ``initialize`` raises ``ValueError`` when
+    ``in_features > reservoir_size`` (more channels than nodes), since duplicate
+    columns would be unavoidable.
 
     Parameters
     ----------
     gain : float, default=1.0
         Global input gain per channel.
+
+    Raises
+    ------
+    ValueError
+        If ``gain`` is not a positive finite float (at construction), or if
+        ``in_features > reservoir_size`` when :meth:`initialize` is called.
 
     Examples
     --------
@@ -55,6 +74,12 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         -------
         torch.Tensor
             Initialized weight tensor
+
+        Raises
+        ------
+        ValueError
+            If ``m`` or ``n`` is non-positive, or if ``m > n`` (more input channels
+            than ring nodes), which would force duplicate columns.
         """
         n, m = _resolve_shape(weight)  # n=ring nodes, m=input channels
         device = weight.device
@@ -63,6 +88,14 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         if m <= 0 or n <= 0:
             raise ValueError(f"m and n must be positive; received: (m={m}, n={n})")
 
+        if m > n:
+            raise ValueError(
+                "opposite_anchors requires in_features <= reservoir_size: the ring has "
+                f"only n={n} nodes, so at most {n} channels can be assigned distinct "
+                f"anchors, but received in_features={m}. Reduce in_features or grow the "
+                "reservoir."
+            )
+
         values = np.zeros((n, m), dtype=np.float32)
         half = n // 2
 
@@ -70,8 +103,10 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         if n == 1:
             values[0, :] = self.gain
         else:
-            # Evenly spaced anchors on the semicircle
-            j0 = np.floor((np.arange(m) + 0.5) * half / m).astype(int)
+            # Spread the positive anchors evenly around the *full* ring so distinct
+            # channels never collide while m <= n. The negative anchor is the
+            # diametrically opposite node.
+            j0 = np.round(np.arange(m) * n / m).astype(int) % n
             j1 = (j0 + half) % n
 
             w = self.gain / np.sqrt(2.0)

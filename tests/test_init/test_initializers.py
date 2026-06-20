@@ -16,6 +16,7 @@ from resdag.init.input_feedback import (
     ChebyshevInitializer,
     DendrocycleInputInitializer,
     FunctionInitializer,
+    OppositeAnchorsInitializer,
     PseudoDiagonalInitializer,
     RandomBinaryInitializer,
     RandomInputInitializer,
@@ -226,3 +227,58 @@ class TestInitializersOnDevice:
 
         assert output.device.type == device.type
         assert output.shape == (2, 10, 100)
+
+
+class TestOppositeAnchorsCollision:
+    """Regression coverage for the duplicate-column bug (issue #142).
+
+    The original semicircle anchor placement mapped distinct input channels to
+    the same ``(j0, j1)`` anchor pair once ``in_features > reservoir_size // 2``,
+    producing bit-identical columns (a silent rank deficiency in ``W_in``/``W_fb``).
+    The fix spreads anchors around the full ring so columns stay distinct for any
+    ``in_features <= reservoir_size``, and raises when ``in_features > reservoir_size``.
+    """
+
+    def test_regression_n6_m5_distinct_columns(self) -> None:
+        """The reported case ``n=6, m=5`` yields five distinct columns."""
+        init = OppositeAnchorsInitializer(gain=1.0)
+        weight = torch.empty(6, 5)  # (reservoir_size=6, in_features=5)
+        init.initialize(weight)
+
+        for i in range(5):
+            for j in range(i + 1, 5):
+                assert not torch.allclose(
+                    weight[:, i], weight[:, j]
+                ), f"columns {i} and {j} are identical (n=6, m=5)"
+
+    @pytest.mark.parametrize("n", [6, 7, 16, 17, 50])
+    def test_no_identical_columns_up_to_reservoir_size(self, n: int) -> None:
+        """No two columns are identical for ``in_features`` up to ``reservoir_size``."""
+        for m in range(1, n + 1):
+            weight = torch.empty(n, m)
+            OppositeAnchorsInitializer(gain=1.0).initialize(weight)
+
+            for i in range(m):
+                for j in range(i + 1, m):
+                    assert not torch.allclose(
+                        weight[:, i], weight[:, j]
+                    ), f"columns {i} and {j} are identical (n={n}, m={m})"
+
+    def test_in_features_exceeds_reservoir_size_raises(self) -> None:
+        """``in_features > reservoir_size`` raises a clear ``ValueError``."""
+        init = OppositeAnchorsInitializer(gain=1.0)
+        weight = torch.empty(6, 7)  # (reservoir_size=6, in_features=7)
+
+        with pytest.raises(ValueError, match="in_features <= reservoir_size"):
+            init.initialize(weight)
+
+    def test_single_channel_full_ring(self) -> None:
+        """A single channel (``m=1``) still produces a valid bipolar column."""
+        init = OppositeAnchorsInitializer(gain=1.0)
+        weight = torch.empty(8, 1)
+        init.initialize(weight)
+
+        # Exactly one positive and one negative anchor, equal magnitude.
+        nonzero = weight[weight != 0]
+        assert nonzero.numel() == 2
+        assert torch.isclose(nonzero.abs()[0], nonzero.abs()[1])

@@ -123,6 +123,43 @@ class NGReservoir(BaseReservoirLayer):
     # Forward (vectorized whole-sequence fast path)
     # ------------------------------------------------------------------
 
+    def forward_stateless(
+        self,
+        inputs: list[torch.Tensor],
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Pure whole-sequence NG-RC feature map: thread ``state`` in and out.
+
+        Overrides the per-step loop of
+        :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.forward_stateless`
+        with the vectorized
+        :meth:`~resdag.layers.cells.ngrc_cell.NGCell.forward_sequence`, which
+        builds every delay-embedded and monomial feature in one pass.  Like the
+        base method it never reads or writes :attr:`state` and contains no
+        per-timestep Python loop or data-dependent branch, so it slots into the
+        compile-scan / vmap / export paths.
+
+        Parameters
+        ----------
+        inputs : list[torch.Tensor]
+            ``inputs[0]`` is the input sequence of shape
+            ``(batch, timesteps, input_dim)``.  Any further elements are
+            ignored — NG-RC has no driving inputs.
+        state : torch.Tensor
+            Incoming delay buffer of shape ``(batch, state_size, input_dim)``.
+
+        Returns
+        -------
+        outputs : torch.Tensor
+            NG-RC features for all timesteps, shape
+            ``(batch, timesteps, feature_dim)``.
+        new_state : torch.Tensor
+            Updated delay buffer of shape ``(batch, state_size, input_dim)``.
+        """
+        cell = cast(NGCell, self.cell)  # narrow from Tensor | Module for the type checker
+        return cell.forward_sequence(inputs[0], state)
+
     def forward(
         self,
         feedback: torch.Tensor,
@@ -137,6 +174,8 @@ class NGReservoir(BaseReservoirLayer):
         max-abs-diff, including the warmup region); the per-step
         :meth:`~resdag.layers.cells.ngrc_cell.NGCell.forward` is retained for
         streaming / stateful use and continues seamlessly after a batch call.
+        This is a thin stateful wrapper over the pure
+        :meth:`forward_stateless`, mirroring the base layer.
 
         Parameters
         ----------
@@ -173,19 +212,17 @@ class NGReservoir(BaseReservoirLayer):
 
         # mypy: state is guaranteed non-None after _maybe_init_state.
         assert self.state is not None
-        cell = cast(NGCell, self.cell)  # narrow from Tensor | Module for the type checker
-        outputs, self.state = cell.forward_sequence(feedback, self.state)
+        outputs, new_state = self.forward_stateless([feedback, *driving_inputs], self.state)
 
         # Truncated BPTT at call boundaries (mirrors BaseReservoirLayer.forward):
         # gradients flow through the returned features within this call, but the
         # stored state must not keep the graph alive for a later forward+backward.
-        if (
-            self.detach_state_between_calls
-            and self.state is not None
-            and self.state.grad_fn is not None
-        ):
-            self.state = self.state.detach()
+        # The data-dependent ``grad_fn`` branch lives here, never inside the pure
+        # ``forward_stateless``.
+        if self.detach_state_between_calls and new_state.grad_fn is not None:
+            new_state = new_state.detach()
 
+        self.state = new_state
         return outputs
 
     # ------------------------------------------------------------------

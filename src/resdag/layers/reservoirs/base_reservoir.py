@@ -73,6 +73,77 @@ class BaseReservoirLayer(nn.Module, ABC):
         self.state: torch.Tensor | None
         self.detach_state_between_calls: bool = True
 
+    def forward_stateless(
+        self,
+        inputs: list[torch.Tensor],
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Run the time loop purely: thread ``state`` in and out, touch no ``self`` state.
+
+        This is the functional core of the reservoir.  It takes the initial
+        state as an explicit argument, threads it through the per-timestep
+        loop, and returns the per-step outputs together with the final state.
+        It never reads or writes :attr:`state`, performs no in-place tensor
+        writes (per-step outputs are collected with :func:`torch.stack`), and
+        the loop body contains no data-dependent Python branch.  Those three
+        properties are what make it ``torch.compile``-scan, :func:`torch.func.vmap`,
+        and TorchScript/ONNX-export friendly, unlike the stateful
+        :meth:`forward` wrapper that drives it.
+
+        Parameters
+        ----------
+        inputs : list[torch.Tensor]
+            Feedback tensor first, then at most one driving-input tensor, each
+            of shape ``(batch, timesteps, features)``.
+        state : torch.Tensor
+            Initial reservoir state, shape ``(batch, ...)`` as produced by
+            ``self.cell.init_state``.
+
+        Returns
+        -------
+        outputs : torch.Tensor
+            Per-step outputs, shape ``(batch, timesteps, cell.output_size)``.
+        new_state : torch.Tensor
+            Final reservoir state after the last timestep.
+
+        Notes
+        -----
+        The cross-call detach applied by :meth:`forward` (truncated BPTT) lives
+        in that wrapper, *outside* this method — gradients flow through the
+        returned ``new_state`` here, so callers that backpropagate through state
+        carried across calls are free to do so.
+        """
+        feedback = inputs[0]
+        seq_len = feedback.shape[1]
+
+        # Fast path: cells that split their update into input-dependent and
+        # state-dependent parts precompute the former for the whole sequence
+        # in one batched matmul, leaving only the recurrent term in the loop.
+        # Choosing the path is a per-cell static decision made once, outside
+        # the loop, so the loop body itself stays branch-free.
+        projected = self.cell.project_inputs(inputs)
+
+        outputs: list[torch.Tensor] = []
+        if projected is not None:
+            for t in range(seq_len):
+                output, state = self.cell.step(projected[:, t, :], state)
+                outputs.append(output)
+        else:
+            for t in range(seq_len):
+                inputs_t = [stream[:, t, :] for stream in inputs]
+                output, state = self.cell(inputs_t, state)
+                outputs.append(output)
+
+        if not outputs:
+            # Degenerate empty sequence (T == 0): torch.stack rejects an empty
+            # list, so return the (batch, 0, output_size) tensor the previous
+            # preallocating loop produced, with the input ``state`` untouched.
+            empty = feedback.new_empty(feedback.shape[0], 0, self.cell.output_size)
+            return empty, state
+
+        return torch.stack(outputs, dim=1), state
+
     def forward(
         self,
         feedback: torch.Tensor,
@@ -82,7 +153,10 @@ class BaseReservoirLayer(nn.Module, ABC):
         Process an input sequence through the reservoir.
 
         Computes reservoir states for each timestep using the feedback
-        signal and optional driving inputs.
+        signal and optional driving inputs.  This is a thin stateful wrapper
+        over the pure :meth:`forward_stateless`: it validates inputs, lazily
+        initialises :attr:`state`, runs the functional loop, stores the
+        returned state, and applies the cross-call detach.
 
         Parameters
         ----------
@@ -96,7 +170,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         -------
         torch.Tensor
             Reservoir states for all timesteps, shape
-            ``(batch, timesteps, cell.state_size)``.
+            ``(batch, timesteps, cell.output_size)``.
 
         Raises
         ------
@@ -109,6 +183,8 @@ class BaseReservoirLayer(nn.Module, ABC):
         -----
         The layer maintains internal state across forward calls.  Use
         :meth:`reset_state` to clear the state between independent sequences.
+        For a pure, ``self``-free variant (used by the compile-scan, vmap, and
+        export paths) call :meth:`forward_stateless` directly.
         """
         if feedback.dim() != 3:
             raise ValueError(f"Feedback must be 3D (B, T, F), got shape {feedback.shape}")
@@ -126,44 +202,20 @@ class BaseReservoirLayer(nn.Module, ABC):
                 )
 
         self._maybe_init_state(batch_size, feedback.device, feedback.dtype)
+        assert self.state is not None  # guaranteed by _maybe_init_state; narrows for mypy
 
-        outputs = torch.empty(
-            batch_size,
-            seq_len,
-            self.cell.output_size,
-            device=feedback.device,
-            dtype=feedback.dtype,
-        )
+        outputs, new_state = self.forward_stateless([feedback, *driving_inputs], self.state)
 
-        # Fast path: cells that split their update into input-dependent and
-        # state-dependent parts precompute the former for the whole sequence
-        # in one batched matmul, leaving only the recurrent term in the loop.
-        projected = self.cell.project_inputs([feedback, *driving_inputs])
+        # Truncated BPTT at call boundaries: gradients flow through the returned
+        # states within this call, but the *stored* state must not keep the
+        # graph alive — a later forward + backward would otherwise try to
+        # backprop through this call's already-freed graph.  This data-dependent
+        # ``grad_fn`` branch lives here, in the wrapper, never inside the pure
+        # loop of ``forward_stateless``.
+        if self.detach_state_between_calls and new_state.grad_fn is not None:
+            new_state = new_state.detach()
 
-        if projected is not None:
-            for t in range(seq_len):
-                output, self.state = self.cell.step(projected[:, t, :], self.state)
-                outputs[:, t, :] = output
-        else:
-            for t in range(seq_len):
-                inputs_t: list[torch.Tensor] = [feedback[:, t, :]]
-                for di in driving_inputs:  # at most one tensor
-                    inputs_t.append(di[:, t, :])
-
-                output, self.state = self.cell(inputs_t, self.state)
-                outputs[:, t, :] = output
-
-        # Truncated BPTT at call boundaries: gradients flow through the
-        # returned states within this call, but the *stored* state must not
-        # keep the graph alive — a later forward + backward would otherwise
-        # try to backprop through this call's already-freed graph.
-        if (
-            self.detach_state_between_calls
-            and self.state is not None
-            and self.state.grad_fn is not None
-        ):
-            self.state = self.state.detach()
-
+        self.state = new_state
         return outputs
 
     # ------------------------------------------------------------------

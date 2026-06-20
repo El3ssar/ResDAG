@@ -6,10 +6,10 @@ mechanics; the design rationale lives in the
 [documentation](https://el3ssar.github.io/ResDAG/).
 
 > **Looking for something to work on?** The roadmap is tracked as a
-> dependency-ordered set of issues (see the
-> [master roadmap, #109](https://github.com/El3ssar/ResDAG/issues/109)).
-> Pick any issue labelled `status:ready`. If you're running multiple parallel
-> (agent or human) sessions, follow
+> dependency-ordered set of issues, grouped under the `type:epic` tracking
+> issues and organized by the `pillar:*` labels (correctness, speed, api,
+> pipeline, hpo). Pick any issue labelled `status:ready`. If you're running
+> multiple parallel (agent or human) sessions, follow
 > [PARALLEL_DEVELOPMENT.md](https://github.com/El3ssar/ResDAG/blob/main/PARALLEL_DEVELOPMENT.md)
 > for the worktree → branch → PR protocol and how dependencies/`status:ready` are maintained.
 
@@ -40,6 +40,14 @@ The test suite mirrors `src/resdag/`. Markers:
   (`pytest -m benchmark` to run; they assert the GPU beats the CPU at scale)
 
 ## Commit messages and releases
+
+> **⚠️ Releases are frozen until 1.0.** We are deliberately accumulating
+> breaking changes toward a single major release. The `release` job is gated by
+> the `RELEASE_FROZEN` repository variable, so merging to `main` runs CI but
+> **publishes nothing** (no tag, no GitHub release, no PyPI upload). To cut 1.0:
+> `gh variable delete RELEASE_FROZEN` (or set it `false`), then merge a release
+> commit. **Never rename `release.yml`** — PyPI trusted publishing is bound to
+> that filename. The mechanics below describe what resumes once the freeze lifts.
 
 Releases are fully automated from **conventional commits** — there are no
 manual tags or version edits. On every push to `main`,

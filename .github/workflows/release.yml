@@ -49,7 +49,11 @@ jobs:
 
   release:
     needs: test
-    if: github.repository == 'El3ssar/resdag'
+    # Releases are FROZEN until 1.0 while breaking changes accumulate on main.
+    # The repo variable RELEASE_FROZEN=true skips publishing; CI (the `test` job) still runs.
+    # To cut 1.0: `gh variable delete RELEASE_FROZEN` (or set false), then merge a release commit.
+    # Do NOT rename this file — PyPI trusted publishing is bound to release.yml.
+    if: ${{ github.repository == 'El3ssar/resdag' && vars.RELEASE_FROZEN != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

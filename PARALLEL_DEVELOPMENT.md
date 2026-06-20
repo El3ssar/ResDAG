@@ -1,13 +1,20 @@
 # Parallel Development Protocol
 
-This repository's roadmap lives as a **dependency-ordered set of GitHub issues**. The work is
-designed to be picked up by **multiple parallel Claude Code (or human) sessions**, each taking one
-unblocked issue, doing it on its own git worktree + branch, and opening a PR. This document is the
-contract those sessions follow.
+This repository's roadmap is a **dependency-ordered set of GitHub issues**, mirrored locally in the
+private, gitignored **`ROADMAP.md`** (the living source of truth that planning sessions maintain).
+The work is designed to be picked up by **multiple parallel Claude Code (or human) sessions**, each
+taking one unblocked issue, doing it on its own git worktree + branch, and opening a PR into `main`.
+This document is the contract those sessions follow.
 
 > TL;DR for a new session: **clean merged worktrees → grab the highest-priority `status:ready`,
-> unassigned issue → branch in a fresh worktree → implement with tests + docs → run checks → open a
-> PR that closes the issue.** Then flip any newly-unblocked dependents to `status:ready`.
+> unassigned issue → branch in a fresh worktree under `.claude/worktrees/` → implement with tests +
+> docs → run checks → open a PR that closes the issue.** Then flip any newly-unblocked dependents to
+> `status:ready`.
+
+> ⚠️ **Releases are frozen until 1.0.** We are deliberately accumulating breaking changes toward a
+> single major. Merging to `main` runs CI but **publishes nothing** (the `release` job is gated by the
+> `RELEASE_FROZEN` repo variable — see `infra-freeze-releases`). Breaking changes are expected; add a
+> cheap deprecation shim only when it's nearly free. Do **not** rename `.github/workflows/release.yml`.
 
 ---
 
@@ -19,25 +26,23 @@ piece of work autonomously:
 ```
 Follow PARALLEL_DEVELOPMENT.md. Do ONE issue end to end:
 
-1. Sync and clean: `git fetch --prune origin`, then remove any worktree/branch whose branch is
-   already merged into origin/main or is gone on the remote (see §3). Never touch main or a
-   worktree with uncommitted changes.
-2. Pick work: from `gh issue list --state open --label status:ready` choose the UNASSIGNED issue
-   with the highest priority (P0 > P1 > P2 > P3), breaking ties by lowest `wave`, then lowest
-   issue number. Re-read its body and confirm every `Blocked by` issue is CLOSED. If none qualify,
-   stop and report.
-3. Claim it: assign it to me (`gh issue edit <n> --add-assignee @me`) and comment that you are
-   starting.
-4. Branch + worktree: `git worktree add ../resdag-wt/<n>-<slug> -b <type>/<n>-<slug> origin/main`
-   (type ∈ fix|feat|perf|refactor|docs|test|chore). Work ONLY inside that worktree.
-5. Implement the full "Proposed solution" and satisfy EVERY "Acceptance criteria" checkbox,
-   including tests, docs, and __all__/public-API updates. Match house style (NumPy docstrings,
-   black line length 100, ruff, mypy).
-6. Verify: `uv run pytest -q` (or `pytest`), `uv run ruff check src tests`,
-   `uv run black --check src tests`, `uv run mypy src`. All must pass. Report any you skip and why.
-7. PR: commit, push, and open a PR whose body contains `Closes #<n>` and a short summary mapping
-   each acceptance-criteria checkbox to the change that satisfies it.
-8. Hand off: in a comment on the issue, list the issues this one BLOCKS (from its body) so the next
+1. Sync and clean: `git fetch --prune origin`, then remove any worktree/branch already merged into
+   origin/main or gone on the remote (see §3). Never touch main or a worktree with uncommitted changes.
+2. Pick work: from `gh issue list --state open --label status:ready` choose the UNASSIGNED issue with
+   the highest priority (P0 > P1 > P2 > P3), breaking ties by lowest `wave`, then lowest issue number.
+   Re-read its body and confirm every `Blocked by` issue is CLOSED. If none qualify, stop and report.
+3. Claim it: `gh issue edit <n> --add-assignee @me` and comment that you are starting.
+4. Branch + worktree: `git worktree add .claude/worktrees/<type>-<slug> -b <type>/<slug> origin/main`
+   (type ∈ fix|feat|perf|refactor|docs|test|chore; <slug> is the ticket slug from the issue title /
+   the deps footer). Work ONLY inside that worktree.
+5. Implement the full "Proposed solution" and satisfy EVERY "Acceptance criteria" checkbox, including
+   tests, docs, and __all__/public-API updates. Match house style (NumPy docstrings, black line
+   length 100, ruff, mypy).
+6. Verify: `uv run pytest -q`, `uv run ruff check src tests`, `uv run black --check src tests`,
+   `uv run mypy src`. All must pass. Report any you skip and why.
+7. PR: commit, push, and open a PR into `main` whose body contains `Closes #<n>` and a checklist
+   mapping each acceptance criterion to the change that satisfies it.
+8. Hand off: in a comment on the issue, list the issues this one BLOCKS (from its footer) so the next
    session can flip them to status:ready once this PR merges (see §6).
 
 Do not start a second issue. Keep the change scoped to this one issue.
@@ -48,38 +53,44 @@ issue."**
 
 ---
 
-## 2. How issues are organized
+## 2. How the work is organized
+
+Every issue maps 1:1 to a **ticket slug** in `ROADMAP.md`. The ROADMAP carries the strategic framing
+(five pillars, the wave plan, the critical path); the GitHub issues carry the actionable detail.
 
 | Dimension | Encoding | Notes |
 |---|---|---|
-| **Epic / theme** | `type:epic` tracking issues | One per epic (foundation, core-correctness, readouts, reservoirs, init, transforms, training, models, hpo, data-ergonomics, docs-tests). Each lists its child issues and a Mermaid DAG. |
-| **Area** | `area:*` label | foundation, core, readouts, reservoirs, init, transforms, training, models, hpo, data, docs, tests. |
+| **Pillar** | `pillar:*` label | `correctness`, `speed`, `api`, `pipeline`, `hpo`, `docs`, `infra` — which north-star goal the ticket advances. |
+| **Epic / theme** | `type:epic` tracking issues | One per subsystem: foundation, core, reservoirs, readouts, init, transforms, models, data, speed, pipeline, hpo, docs-tests. Each lists its child issues. |
+| **Area** | `area:*` label | foundation, core, readouts, reservoirs, init, transforms, training, models, hpo, data, ensemble, docs, tests. |
 | **Kind** | `type:*` label | bug, feature, cleanup, refactor, perf, docs, test, chore. |
-| **Priority** | `priority:P0..P3` | P0 = unblocker / verified blocker; reserve for foundation + verified high-severity bugs. |
+| **Priority** | `priority:P0..P3` | P0 = unblocker / verified high-severity bug. Reserve for the critical path. |
 | **Effort** | `size:S..XL` | rough estimate. |
-| **Readiness** | `status:ready` / `status:blocked` | `ready` = all dependency issues are closed; `blocked` = at least one open blocker. |
+| **Readiness** | `status:ready` / `status:blocked` | `ready` = all `blocked_by` issues are closed; `blocked` = at least one is open. |
 
-**Dependencies** are encoded in each issue body as human-readable `**Blocked by:** #a, #b` /
-`**Blocks:** #m, #n` lines, mirrored in a machine-readable footer:
+**Dependencies** live in each issue body as human-readable `Blocked by:` / `Blocks:` lines, mirrored
+in a machine footer that references **ticket slugs** (stable across renumbering):
 
 ```
-<!-- resdag-deps: blocked_by=#12,#15 blocks=#40,#41 wave=2 epic=readouts -->
+<!-- resdag-deps: blocked_by=<slugs|-> blocks=<slugs|-> wave=N epic=X pillar=Y -->
 ```
 
-- `blocked_by` — issues that must be **merged/closed before** this one starts (`-` if none).
-- `blocks` — issues this one unblocks (`-` if none); present only on issues that block something.
-- `wave` — longest dependency-path depth (wave 0 = no blockers). A scheduling hint, not a hard gate;
-  the source of truth is "are all `blocked_by` issues closed?".
+- `blocked_by` — tickets that must be **merged/closed before** this one starts (`-` if none).
+- `blocks` — tickets this one unblocks (`-` if none).
+- `wave` — longest dependency-path depth (wave 0 = no blockers). A scheduling hint; the source of
+  truth is "are all `blocked_by` issues closed?".
 
-The current dependency graph is rendered as Mermaid diagrams in the **master roadmap issue
-[#109](https://github.com/El3ssar/ResDAG/issues/109)** (epic-level graph + "start here" list) and
-per-epic in each `type:epic` tracking issue (#98–#108).
+The **critical path** (the handful of cross-cutting unblockers — e.g. `core-forward-stateless-refactor`,
+`init-fast-spectral-radius`, `init-shared-scaling-contract`, `hpo-trial-runner-picklable-core`,
+`models-shared-esn-builder`) is listed at the top of `ROADMAP.md`. Clear these early: they gate
+disproportionately many tickets.
 
 ---
 
 ## 3. Cleaning merged worktrees (always step 1)
 
-Run before grabbing new work so stale worktrees from merged PRs don't pile up:
+Worktrees live under `.claude/worktrees/` (git-excluded). Run this before grabbing new work so stale
+worktrees from merged PRs don't pile up:
 
 ```bash
 git fetch --prune origin
@@ -88,9 +99,9 @@ git fetch --prune origin
 # Skips the main checkout and anything with uncommitted changes.
 git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
   [ "$wt" = "$(git rev-parse --show-toplevel)" ] && continue
+  case "$wt" in *"/.claude/worktrees/"*) : ;; *) continue ;; esac
   br=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null) || continue
-  # uncommitted changes? leave it alone
-  [ -n "$(git -C "$wt" status --porcelain)" ] && continue
+  [ -n "$(git -C "$wt" status --porcelain)" ] && continue   # uncommitted changes? leave it.
   if git branch --merged origin/main | grep -qx "  $br" \
      || ! git show-ref --verify --quiet "refs/remotes/origin/$br"; then
     echo "removing merged/gone worktree: $wt ($br)"
@@ -100,7 +111,6 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 done
 
 git worktree prune
-# Prune local branches whose upstream is gone:
 git branch -vv | awk '/: gone]/{print $1}' | grep -vx main | xargs -r git branch -D
 ```
 
@@ -127,8 +137,9 @@ before starting — the `status:ready` label can lag reality.
 
 ## 5. Branch, implement, verify, PR
 
-- **Worktree + branch:** `git worktree add ../resdag-wt/<n>-<slug> -b <type>/<n>-<slug> origin/main`.
-  Branch types: `fix/`, `feat/`, `perf/`, `refactor/`, `docs/`, `test/`, `chore/`.
+- **Worktree + branch:** `git worktree add .claude/worktrees/<type>-<slug> -b <type>/<slug> origin/main`.
+  Branch types: `fix/`, `feat/`, `perf/`, `refactor/`, `docs/`, `test/`, `chore/`. `<slug>` is the
+  ticket slug.
 - **Scope:** do exactly one issue. If you discover adjacent work, file a follow-up issue rather than
   expanding the PR.
 - **Checks (must pass):**
@@ -138,8 +149,9 @@ before starting — the `status:ready` label can lag reality.
   uv run black --check src tests
   uv run mypy src
   ```
-- **PR:** body must contain `Closes #<n>`, plus a checklist mapping each acceptance criterion to the
-  change. The `commit-commands:commit-push-pr` skill automates commit → push → PR.
+- **PR into `main`:** body must contain `Closes #<n>`, plus a checklist mapping each acceptance
+  criterion to the change. The `commit-commands:commit-push-pr` skill automates commit → push → PR.
+  Remember: merging publishes nothing (releases frozen) — it just lands the change on `main`.
 
 ---
 
@@ -147,23 +159,27 @@ before starting — the `status:ready` label can lag reality.
 
 When a PR merges and its issue #X closes, flip every issue it unblocked to `status:ready` **iff all
 that issue's other blockers are now closed**. The just-closed issue's `blocks=` footer lists the
-candidates:
+candidates (slugs); resolve each slug to its issue number via `gh issue list --search "<slug>"`:
 
 ```bash
 X=<just-closed issue number>
-# Candidates this issue unblocks (from its blocks= footer):
-cands=$(gh issue view "$X" -R El3ssar/ResDAG --json body --jq .body \
-        | grep -oP 'blocks=\K[#0-9,-]+' | tr ',#' ' ')
-for D in $cands; do
-  blockers=$(gh issue view "$D" -R El3ssar/ResDAG --json body --jq .body \
-             | grep -oP 'blocked_by=\K[#0-9,-]+' | tr ',#' ' ')
+slugs=$(gh issue view "$X" -R El3ssar/resdag --json body --jq .body \
+        | grep -oP 'blocks=\K[^ ]+' | tr ',' ' ')
+for slug in $slugs; do
+  [ "$slug" = "-" ] && continue
+  D=$(gh issue list -R El3ssar/resdag --state open --search "$slug in:body" --json number --jq '.[0].number')
+  [ -z "$D" ] && continue
+  blockers=$(gh issue view "$D" -R El3ssar/resdag --json body --jq .body \
+             | grep -oP 'blocked_by=\K[^ ]+' | tr ',' ' ')
   still_open=0
   for b in $blockers; do
-    [ "$(gh issue view "$b" -R El3ssar/ResDAG --json state --jq .state)" = "OPEN" ] && still_open=1
+    [ "$b" = "-" ] && continue
+    n=$(gh issue list -R El3ssar/resdag --search "$b in:body" --json number,state --jq '.[0]|select(.state=="OPEN")|.number')
+    [ -n "$n" ] && still_open=1
   done
   if [ "$still_open" -eq 0 ]; then
-    gh issue edit "$D" -R El3ssar/ResDAG --remove-label status:blocked --add-label status:ready
-    echo "unblocked #$D"
+    gh issue edit "$D" -R El3ssar/resdag --remove-label status:blocked --add-label status:ready
+    echo "unblocked #$D ($slug)"
   fi
 done
 ```
@@ -178,6 +194,6 @@ trustworthy.)
 - Python ≥ 3.11, `src/` layout, NumPy-style docstrings, black line length **100**, ruff (E,F,I,N,W),
   mypy (`disallow_untyped_defs`). Tests mirror `src/` under `tests/`.
 - Public-API changes update **both** the import and `__all__` in `src/resdag/__init__.py`.
-- Breaking changes are acceptable pre-1.0 when they improve adoption; add a cheap deprecation shim
-  when it's not free.
-- Version lives only in `src/resdag/__init__.py`.
+- Breaking changes are expected pre-1.0; add a cheap deprecation shim only when it's nearly free.
+- Version lives only in `src/resdag/__init__.py`. **Releases are frozen until 1.0** — never re-enable
+  publishing or rename `release.yml` without an explicit 1.0 cut decision.

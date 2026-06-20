@@ -1,11 +1,27 @@
-# Pull-request gate: lint + tests. (Docs build correctness is checked by
-# docs.yml, which also runs on pull requests.)
+# Pull-request gate: lint + type-check + tests. (Docs build correctness is
+# checked by docs.yml, which also runs on pull requests.)
+#
+# Tests are SELECTIVE on pull requests: `tools/affected_tests.py` diffs the PR
+# against its base and runs only the test files that the change can affect, via
+# a static first-party import graph (see that script's docstring). This turns a
+# ~4-minute full run into seconds for a typical single-module PR.
+#
+# Safety nets — selection is never the last line of defence before a release:
+#   * The FULL suite runs on every push to main (release.yml) and nightly here.
+#   * Broad-impact changes (pyproject, conftest, package __init__, the selector
+#     itself, ...) force a full run; the selector fails safe to "run everything".
+#   * Add the `ci-full` label to a PR to force a full run on demand.
 
 name: CI
 
 on:
   pull_request:
     branches: [main]
+  schedule:
+    # Nightly full-suite safety net (04:17 UTC) — catches any selection gap or
+    # environment drift that a PR's selective run could have missed.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,6 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the selector can diff against the PR base commit.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -40,5 +59,37 @@ jobs:
         # pyproject.toml ([[tool.mypy.overrides]]) that is being burned down.
         run: mypy src/resdag/
 
+      - name: Select affected tests
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # Anything that is not a PR (nightly schedule, manual dispatch), or a
+          # PR carrying the `ci-full` label, runs the whole suite.
+          FORCE_FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+        run: |
+          if [ "$FORCE_FULL" = "true" ]; then
+            echo "Running the FULL suite (${{ github.event_name }}${{ contains(github.event.pull_request.labels.*.name, 'ci-full') && ' / ci-full label' || '' }})."
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "tests=tests" >> "$GITHUB_OUTPUT"
+          elif SEL=$(python tools/affected_tests.py --base "$BASE_SHA" --no-dirty --format args --explain); then
+            if [ -z "$SEL" ]; then
+              echo "mode=none" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=selected" >> "$GITHUB_OUTPUT"
+              echo "tests=$SEL" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::warning::affected-tests selector failed — falling back to the full suite."
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "tests=tests" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Tests
-        run: pytest --no-cov -q
+        if: steps.select.outputs.mode != 'none'
+        run: pytest --no-cov -q ${{ steps.select.outputs.tests }}
+
+      - name: No tests affected
+        if: steps.select.outputs.mode == 'none'
+        run: |
+          echo "No source or test changes affect the suite — skipping pytest."
+          echo "The full suite still runs on merge to main and nightly."

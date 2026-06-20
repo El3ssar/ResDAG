@@ -21,10 +21,12 @@ class RandomInputInitializer(InputFeedbackInitializer):
     Parameters
     ----------
     input_scaling : float, optional
-        Scaling factor applied to all weights. Controls the strength of input
-        signals entering the reservoir. If None, no scaling is applied (weights
-        remain in [-1, 1]). Typical values: 0.1-5.0. Higher values create
-        stronger input signals.
+        Uniform magnitude knob from the shared scaling contract (see
+        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
+        (the default) applies no scaling, leaving entries in ``[-1, 1]``; a float
+        ``s`` multiplies every entry by ``s``, so ``max|W|`` scales linearly with
+        ``s`` (``input_scaling=0.5`` halves it). Controls the strength of input
+        signals entering the reservoir. Typical values: 0.1-5.0.
     seed : int, optional
         Random seed for reproducibility. Ensures the same weight matrix is
         generated for the same seed and matrix size.
@@ -77,8 +79,7 @@ class RandomInputInitializer(InputFeedbackInitializer):
         seed: int | None = None,
     ) -> None:
         """Initialize the RandomInputInitializer."""
-        self.input_scaling = input_scaling
-        self.seed = seed
+        super().__init__(input_scaling=input_scaling, seed=seed)
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor with uniform random values.
@@ -107,9 +108,8 @@ class RandomInputInitializer(InputFeedbackInitializer):
         # Generate random values in [-1, 1]
         values = rng.uniform(-1.0, 1.0, size=(out_features, in_features))
 
-        # Apply scaling if provided
-        if self.input_scaling is not None:
-            values *= self.input_scaling
+        # Apply the shared uniform scaling contract as the documented final transform.
+        values = self._apply_scaling(values)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

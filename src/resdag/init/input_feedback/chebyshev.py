@@ -35,7 +35,11 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         Control parameter of the Chebyshev map. Must be in (2, 4) for chaotic
         behavior.
     input_scaling : float, optional
-        Additional scaling factor applied after generation.
+        Uniform magnitude knob from the shared scaling contract (see
+        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
+        (the default) applies no scaling; a float ``s`` multiplies every entry by
+        ``s`` as the documented final transform, so ``max|W|`` scales linearly
+        with ``s`` (``input_scaling=0.5`` halves it).
 
     Raises
     ------
@@ -68,10 +72,10 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         if not (2.0 < k < 4.0):
             raise ValueError(f"Parameter k={k} must be in range (2, 4) for chaotic behavior")
 
+        super().__init__(input_scaling=input_scaling)
         self.p = p
         self.q = q
         self.k = k
-        self.input_scaling = input_scaling
 
     def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
         """Initialize weight tensor using Chebyshev mapping.
@@ -103,9 +107,8 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         for j in range(1, in_features):
             values[:, j] = np.cos(self.k * np.arccos(np.clip(values[:, j - 1], -1.0, 1.0)))
 
-        # Apply additional scaling if provided
-        if self.input_scaling is not None:
-            values *= self.input_scaling
+        # Apply the shared uniform scaling contract as the documented final transform.
+        values = self._apply_scaling(values)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

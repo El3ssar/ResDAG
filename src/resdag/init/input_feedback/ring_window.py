@@ -1,14 +1,27 @@
 """Ring window initializer for dendrocycle+chords topologies."""
 
+from typing import Any
+
 import numpy as np
 import torch
 
-from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
+from .base import (
+    InputFeedbackInitializer,
+    _numpy_compute_dtype,
+    _resolve_scaling_alias,
+    _resolve_shape,
+)
 from .registry import register_input_feedback
 
 
 @register_input_feedback(
-    "ring_window", c=None, window=None, taper="flat", signed="allpos", gain=1.0
+    "ring_window",
+    c=None,
+    window=None,
+    taper="flat",
+    signed="allpos",
+    input_scaling=None,
+    gain=None,
 )
 class RingWindowInputInitializer(InputFeedbackInitializer):
     """Deterministic windowed input initializer for ring-based topologies.
@@ -16,6 +29,14 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
     Feeds each input channel into a contiguous window on the core ring of a
     dendrocycle(+chords) reservoir. Only the first C = round(c * n) columns (core)
     receive nonzeros.
+
+    Scaling
+    -------
+    For this structured initializer the magnitude statistic governed by the shared
+    contract is the **per-channel L2 norm**, which equals ``input_scaling``: each
+    channel's window vector is renormalized so its L2 norm is exactly
+    ``input_scaling``. Hence ``input_scaling=0.5`` makes every channel's column have
+    L2 norm ``0.5``; the per-channel L2 norm scales linearly with ``input_scaling``.
 
     Parameters
     ----------
@@ -28,15 +49,19 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
         Weight profile within a channel's window centered on its center index.
     signed : {"allpos", "alt_ring", "alt_inputs"}, default="allpos"
         Sign policy for weights.
-    gain : float, default=1.0
-        Per-channel L2-norm after taper/sign are applied.
+    input_scaling : float, optional
+        Per-channel L2-norm after taper/sign are applied. Defaults to ``1.0`` when
+        neither ``input_scaling`` nor the deprecated ``gain`` is given.
+    gain : float, optional
+        Deprecated alias for ``input_scaling`` (same meaning). Emits a
+        ``DeprecationWarning``; passing both ``input_scaling`` and ``gain`` raises.
 
     Examples
     --------
     >>> from resdag.init.input_feedback import RingWindowInputInitializer
     >>>
     >>> init = RingWindowInputInitializer(
-    ...     c=0.5, window=10, taper="cosine", signed="alt_ring", gain=1.0
+    ...     c=0.5, window=10, taper="cosine", signed="alt_ring", input_scaling=1.0
     ... )
     >>> weight = torch.empty(100, 5)  # (reservoir_size, num_inputs)
     >>> init.initialize(weight)
@@ -50,7 +75,8 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
         window: int | float,
         taper: str = "flat",
         signed: str = "allpos",
-        gain: float = 1.0,
+        input_scaling: float | None = None,
+        gain: float | None = None,
     ) -> None:
         """Initialize the RingWindowInputInitializer."""
         if not (0 < c <= 1):
@@ -74,12 +100,19 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             raise ValueError("taper must be 'flat', 'triangle', or 'cosine'.")
         if signed not in {"allpos", "alt_ring", "alt_inputs"}:
             raise ValueError("signed must be 'allpos', 'alt_ring', or 'alt_inputs'.")
-        if not (np.isfinite(gain) and gain > 0):
-            raise ValueError("gain must be a positive finite float.")
+
+        resolved = _resolve_scaling_alias(input_scaling, gain, default=1.0)
+        if resolved is None or not (np.isfinite(resolved) and resolved > 0):
+            raise ValueError("input_scaling must be a positive finite float.")
+        super().__init__(input_scaling=resolved)
 
         self.taper = taper
         self.signed = signed
-        self.gain = float(gain)
+
+    @property
+    def gain(self) -> float | None:
+        """Deprecated alias for :attr:`input_scaling`."""
+        return self.input_scaling
 
     def _window_size(self, C: int) -> int:
         """Compute window size."""
@@ -109,7 +142,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             raise RuntimeError("unreachable")
         return np.clip(w, 0.0, None)
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with ring window pattern.
 
         Parameters
@@ -134,6 +167,11 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
 
         C = max(1, int(round(self.c * n)))  # core size
         W = self._window_size(C)
+
+        # ``input_scaling`` is the per-channel L2 norm target (never None here:
+        # the constructor resolves the alias and defaults it to 1.0).
+        assert self.input_scaling is not None
+        scaling = float(self.input_scaling)
 
         # Build at the target precision so the float64 taper/norm computation is
         # not truncated to float32 before reaching a float64 weight.
@@ -160,7 +198,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
 
             row_vals = row_vals * signs
             norm = float(np.linalg.norm(row_vals))
-            scaled = row_vals if norm == 0.0 else (self.gain / norm) * row_vals
+            scaled = row_vals if norm == 0.0 else (scaling / norm) * row_vals
 
             values[cols_core, k] = scaled  # Only core; rest stay zero
 
@@ -175,5 +213,5 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
     def __repr__(self) -> str:
         return (
             f"RingWindowInputInitializer(c={self.c}, window={self.window}, "
-            f"taper={self.taper}, signed={self.signed}, gain={self.gain})"
+            f"taper={self.taper}, signed={self.signed}, input_scaling={self.input_scaling})"
         )

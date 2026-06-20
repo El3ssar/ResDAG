@@ -102,11 +102,14 @@ from .layers import (
     FeaturePartitioner,
     NGCell,
     NGReservoir,
+    PinvReadoutLayer,
     Power,
     ReadoutLayer,
     ReservoirCell,
+    RidgeReadoutLayer,
     SelectiveDropout,
     SelectiveExponentiation,
+    SVDReadoutLayer,
 )
 from .models import (
     classic_esn,
@@ -150,6 +153,9 @@ __all__ = [
     # Readouts
     "CGReadoutLayer",
     "ReadoutLayer",
+    "RidgeReadoutLayer",
+    "SVDReadoutLayer",
+    "PinvReadoutLayer",
     # Custom / utility layers
     "Concatenate",
     "FeaturePartitioner",

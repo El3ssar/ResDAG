@@ -19,6 +19,12 @@ ReadoutLayer
     Per-timestep linear layer with custom fitting interface.
 CGReadoutLayer
     ReadoutLayer with Conjugate Gradient ridge regression solver.
+RidgeReadoutLayer
+    Direct ridge readout (Cholesky / LU solve of the normal equations).
+SVDReadoutLayer
+    SVD filter-factor readout; robust to rank-deficient Gram matrices.
+PinvReadoutLayer
+    Least-squares readout via ``lstsq`` / pseudo-inverse with ``rcond``.
 Concatenate
     Layer for concatenating multiple inputs along feature dimension.
 FeaturePartitioner
@@ -46,7 +52,13 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
 from .cells import ESNCell, NGCell, ReservoirCell
-from .readouts import CGReadoutLayer, ReadoutLayer
+from .readouts import (
+    CGReadoutLayer,
+    PinvReadoutLayer,
+    ReadoutLayer,
+    RidgeReadoutLayer,
+    SVDReadoutLayer,
+)
 from .reservoirs import BaseReservoirLayer, ESNLayer, NGReservoir
 from .transforms import (
     Concatenate,
@@ -69,6 +81,9 @@ __all__ = [
     # Readouts
     "ReadoutLayer",
     "CGReadoutLayer",
+    "RidgeReadoutLayer",
+    "SVDReadoutLayer",
+    "PinvReadoutLayer",
     # Custom layers
     "Concatenate",
     "FeaturePartitioner",

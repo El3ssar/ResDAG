@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from resdag.init.topology import estimate_spectral_radius, scale_to_spectral_radius
 from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer, resolve_topology
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
@@ -561,14 +562,38 @@ class ESNCell(ReservoirCell):
                 self._scale_spectral_radius()
 
     def _scale_spectral_radius(self) -> None:
-        """Scale recurrent weights to target spectral radius."""
-        with torch.no_grad():
-            eigenvalues = torch.linalg.eigvals(self.weight_hh.data)
-            current_spectral_radius = torch.max(torch.abs(eigenvalues)).item()
+        """Scale recurrent weights to the target spectral radius.
 
-            if current_spectral_radius > 0:
-                scale = self.spectral_radius / current_spectral_radius
-                self.weight_hh.data *= scale
+        Delegates to the single shared
+        :func:`resdag.init.topology.scale_to_spectral_radius` implementation,
+        so the cell and the topology base never drift apart.  That routine
+        picks the cheapest accurate estimator (power iteration for dense
+        matrices, scipy sparse ``eigs`` for sparse ones, a tiny-N dense
+        ``eigvals`` fallback) instead of always paying for a full dense
+        eigendecomposition.
+        """
+        assert self.spectral_radius is not None
+        with torch.no_grad():
+            scaled = scale_to_spectral_radius(self.weight_hh.data, self.spectral_radius)
+            self.weight_hh.data.copy_(scaled)
+
+    @property
+    def spectral_radius_achieved(self) -> float:
+        """float : Realized largest absolute eigenvalue of ``weight_hh``.
+
+        Returns the spectral radius actually present in the recurrent matrix
+        after initialization/scaling, as opposed to the *requested*
+        :attr:`spectral_radius` target.  Computed lazily via the shared
+        :func:`resdag.init.topology.estimate_spectral_radius` (power iteration /
+        sparse ``eigs`` / tiny-N dense fallback), so it stays cheap even for
+        large reservoirs and is GPU-resident for dense matrices.
+
+        For a freshly built cell with a non-``None`` ``spectral_radius`` this
+        sits within the estimator's tolerance of the target; it differs once
+        the recurrent weights are trained or otherwise modified.
+        """
+        with torch.no_grad():
+            return estimate_spectral_radius(self.weight_hh.data)
 
     def __repr__(self) -> str:
         """Return string representation."""

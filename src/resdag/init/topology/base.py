@@ -31,12 +31,205 @@ import networkx as nx
 import numpy as np
 import torch
 
+# Below this size the dense ``eigvals`` path is already cheap and exact, so it
+# is used directly rather than the (approximate) power iteration.
+_DENSE_EIGVALS_MAX_N = 64
+
+# A matrix is treated as "sparse" (routed through scipy's Lanczos/Arnoldi
+# ``eigs``) when at most this fraction of its entries are non-zero.  Most
+# reservoir topologies (Erdős–Rényi, small-world, ...) sit far below this.
+_SPARSE_DENSITY_THRESHOLD = 0.1
+
+# Number of Arnoldi/Lanczos basis vectors scipy's ``eigs`` builds per restart.
+# The default (``max(2*k+1, 20)``) is too small to converge the dominant
+# eigenvalue of a circular-law reservoir matrix; a slightly larger subspace
+# makes the iteration both faster and accurate to ~1e-8.
+_EIGS_NCV = 48
+
+# Power-iteration controls (dense GPU-resident fallback).  Reservoir matrices
+# from the circular law have a tight spectral gap, so a generous fixed budget
+# with an early-exit tolerance trades a few cheap matmuls for accuracy.
+_POWER_ITER_MAX_ITERS = 1000
+_POWER_ITER_TOL = 1e-7
+
+
+def estimate_spectral_radius(matrix: torch.Tensor) -> float:
+    """Estimate the spectral radius (largest ``|eigenvalue|``) of a matrix.
+
+    Routes to the cheapest accurate method for the matrix at hand:
+
+    - **Tiny matrices** (``n <= 64``) use the exact dense
+      :func:`torch.linalg.eigvals` — it is already negligible there and avoids
+      any approximation error.
+    - **Sparse matrices** (density ``<= 0.1``) use
+      :func:`scipy.sparse.linalg.eigs` with ``k=1, which='LM'`` on a CSR copy,
+      i.e. an Arnoldi iteration that never densifies the operator.
+    - **Dense matrices** use power iteration on ``A`` (largest ``|lambda|`` of a
+      possibly non-symmetric operator), which is GPU-resident — every matmul
+      stays on ``matrix.device`` — and avoids the ``O(n^3)`` dense
+      eigendecomposition.
+
+    Parameters
+    ----------
+    matrix : torch.Tensor
+        Square matrix whose spectral radius is wanted.
+
+    Returns
+    -------
+    float
+        The estimated largest absolute eigenvalue ``max|lambda|``.
+
+    See Also
+    --------
+    scale_to_spectral_radius : Uses this to rescale a matrix to a target radius.
+    """
+    n = matrix.shape[0]
+
+    if n <= _DENSE_EIGVALS_MAX_N:
+        return _dense_eigvals_radius(matrix)
+
+    if _is_sparse(matrix):
+        radius = _sparse_eigs_radius(matrix)
+        if radius is not None:
+            return radius
+
+    return _power_iteration_radius(matrix)
+
+
+def _dense_eigvals_radius(matrix: torch.Tensor) -> float:
+    """Exact spectral radius via the dense (non-symmetric) eigendecomposition."""
+    eigenvalues = torch.linalg.eigvals(matrix)
+    return float(torch.max(torch.abs(eigenvalues)).item())
+
+
+def _is_sparse(matrix: torch.Tensor) -> bool:
+    """Return ``True`` when the matrix is sparse enough for the ``eigs`` path."""
+    n = matrix.shape[0]
+    nnz = int(torch.count_nonzero(matrix).item())
+    return nnz <= _SPARSE_DENSITY_THRESHOLD * n * n
+
+
+def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
+    """Spectral radius of a sparse matrix via ``scipy.sparse.linalg.eigs``.
+
+    Builds a CSR copy on the CPU and runs an Arnoldi iteration for the single
+    largest-magnitude eigenvalue (``k=1, which='LM'``).  Returns ``None`` when
+    scipy is unavailable or the iteration fails to converge, so the caller can
+    fall back to power iteration.
+
+    Parameters
+    ----------
+    matrix : torch.Tensor
+        Square (sparse) matrix.
+
+    Returns
+    -------
+    float or None
+        ``max|lambda|`` if scipy succeeds, otherwise ``None``.
+    """
+    try:
+        import scipy.sparse as sp
+        from scipy.sparse.linalg import eigs
+    except ImportError:
+        return None
+
+    n = matrix.shape[0]
+    # ``eigs`` requires ``k < n - 1`` and a Krylov subspace ``ncv`` with
+    # ``k < ncv <= n``; for the small matrices that slip past the tiny-N guard
+    # this can fail, so fall back to power iteration in that case.
+    if n <= 2:
+        return None
+
+    dense = matrix.detach().to(device="cpu", dtype=torch.float64).numpy()
+    sparse = sp.csr_matrix(dense)
+    ncv = min(n, max(2 * 1 + 1, _EIGS_NCV))
+
+    try:
+        eigenvalues = eigs(
+            sparse,
+            k=1,
+            which="LM",
+            ncv=ncv,
+            maxiter=n * 10,
+            tol=1e-9,
+            return_eigenvectors=False,
+        )
+    except Exception:
+        return None
+
+    return float(np.max(np.abs(eigenvalues)))
+
+
+def _power_iteration_radius(
+    matrix: torch.Tensor,
+    max_iters: int = _POWER_ITER_MAX_ITERS,
+    tol: float = _POWER_ITER_TOL,
+) -> float:
+    """Estimate ``max|lambda|`` of a dense matrix by power iteration.
+
+    Iterates ``v <- A v / ||A v||`` and tracks the dominant eigenvalue
+    magnitude via the Rayleigh-style quotient ``||A v||`` (the operator's
+    largest singular response converges to the dominant eigenvalue magnitude
+    for a power-iterated vector).  All work stays on ``matrix.device`` and in
+    ``matrix.dtype`` (promoted to at least ``float32``), so the estimate is
+    GPU-resident.
+
+    Parameters
+    ----------
+    matrix : torch.Tensor
+        Square matrix.
+    max_iters : int, optional
+        Maximum number of iterations (fixed budget).
+    tol : float, optional
+        Relative-change early-exit tolerance on the eigenvalue estimate.
+
+    Returns
+    -------
+    float
+        Estimated largest absolute eigenvalue.
+    """
+    n = matrix.shape[0]
+    device = matrix.device
+    # Power iteration needs floating point; promote integer/half matrices to a
+    # stable working precision without forcing a host round-trip.
+    work_dtype = matrix.dtype if matrix.dtype in (torch.float32, torch.float64) else torch.float32
+    a = matrix.detach().to(dtype=work_dtype)
+
+    generator = torch.Generator(device=device)
+    generator.manual_seed(0)
+    v = torch.randn(n, generator=generator, device=device, dtype=work_dtype)
+    v_norm = torch.linalg.vector_norm(v)
+    if v_norm == 0:
+        return 0.0
+    v = v / v_norm
+
+    prev = torch.zeros((), device=device, dtype=work_dtype)
+    estimate = prev
+    for _ in range(max_iters):
+        av = a @ v
+        estimate = torch.linalg.vector_norm(av)
+        if estimate <= 0:
+            return 0.0
+        v = av / estimate
+        if torch.abs(estimate - prev) <= tol * estimate:
+            break
+        prev = estimate
+
+    return float(estimate.item())
+
 
 def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torch.Tensor:
     """Rescale a square matrix so its spectral radius equals ``target_radius``.
 
-    Returns the matrix unchanged when its current spectral radius is
-    (numerically) zero — e.g. the ``zero`` topology or a nilpotent matrix.
+    The current spectral radius is obtained from
+    :func:`estimate_spectral_radius`, which picks power iteration, scipy sparse
+    ``eigs``, or a tiny-N dense ``eigvals`` fallback automatically.  Returns the
+    matrix unchanged when its current spectral radius is (numerically) zero —
+    e.g. the ``zero`` topology or a nilpotent matrix.
+
+    This is the single shared rescale implementation used by both
+    :class:`GraphTopology`/:class:`MatrixTopology` and
+    :class:`resdag.layers.cells.esn_cell.ESNCell`.
 
     Parameters
     ----------
@@ -50,8 +243,7 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
     torch.Tensor
         The rescaled matrix (new tensor).
     """
-    eigenvalues = torch.linalg.eigvals(matrix)
-    current_radius = torch.max(torch.abs(eigenvalues)).item()
+    current_radius = estimate_spectral_radius(matrix)
 
     if current_radius > 1e-8:
         matrix = matrix * (target_radius / current_radius)

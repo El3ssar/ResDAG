@@ -12,6 +12,9 @@ Functions
 ---------
 orthogonal_matrix
     Haar-random orthogonal matrix via QR decomposition (``"orthogonal"``).
+fast_spectral_initialization
+    Recurrent matrix built at a target spectral radius analytically, with no
+    eigendecomposition (``"fast_spectral_initialization"``).
 
 See Also
 --------
@@ -19,8 +22,10 @@ resdag.init.graphs : Graph-based topology generators.
 resdag.init.topology : Registry and initializer classes.
 """
 
+from .fsi import fast_spectral_initialization
 from .orthogonal import orthogonal_matrix
 
 __all__ = [
+    "fast_spectral_initialization",
     "orthogonal_matrix",
 ]

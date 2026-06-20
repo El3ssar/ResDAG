@@ -27,6 +27,9 @@ register_matrix_topology
     Decorator to register matrix-builder topologies.
 scale_to_spectral_radius
     Rescale a square matrix to a target spectral radius.
+estimate_spectral_radius
+    Estimate a matrix's largest absolute eigenvalue (power iteration / sparse
+    ``eigs`` / tiny-N dense fallback).
 
 Examples
 --------
@@ -64,7 +67,13 @@ resdag.init.matrices : Direct matrix-construction functions.
 resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
-from .base import GraphTopology, MatrixTopology, TopologyInitializer, scale_to_spectral_radius
+from .base import (
+    GraphTopology,
+    MatrixTopology,
+    TopologyInitializer,
+    estimate_spectral_radius,
+    scale_to_spectral_radius,
+)
 from .registry import (
     get_topology,
     register_graph_topology,
@@ -76,6 +85,7 @@ __all__ = [
     "GraphTopology",
     "MatrixTopology",
     "TopologyInitializer",
+    "estimate_spectral_radius",
     "get_topology",
     "register_graph_topology",
     "register_matrix_topology",

@@ -23,6 +23,8 @@ import torch
 
 from resdag.layers import NGCell, NGReservoir
 
+cuda_required = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -560,6 +562,105 @@ class TestNGReservoirStateManagement:
     def test_warmup_length_k3_s2(self) -> None:
         layer = NGReservoir(input_dim=3, k=3, s=2)
         assert layer.warmup_length == 4
+
+
+# ---------------------------------------------------------------------------
+# NGReservoir — state is a non-persistent buffer (issue #132)
+# ---------------------------------------------------------------------------
+
+
+class TestNGReservoirStateBuffer:
+    """The 3-D NG-RC delay buffer is a non-persistent buffer (issue #132).
+
+    The delay buffer must move with the module under ``.to()`` / ``.double()``
+    (so a warmed-up buffer survives a device/dtype change instead of being
+    silently zero-reinitialised) while staying out of ``state_dict()``.
+    """
+
+    def test_state_is_registered_buffer(self) -> None:
+        """``state`` lives in ``named_buffers()`` but not ``state_dict()``."""
+        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer(torch.randn(2, 20, 3))  # warm up so the buffer fills
+
+        assert "state" in dict(layer.named_buffers())
+        assert "state" not in layer.state_dict()
+
+    def test_state_not_in_state_dict_before_warmup(self) -> None:
+        """A ``None`` delay buffer never appears in ``state_dict()``."""
+        layer = NGReservoir(input_dim=3, k=3, s=2)
+        assert layer.state is None
+        assert "state" not in layer.state_dict()
+
+    def test_state_does_not_require_grad(self) -> None:
+        """The delay buffer must not carry gradients by default."""
+        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer(torch.randn(2, 20, 3))
+        assert layer.state.requires_grad is False
+
+    def test_double_preserves_warmed_3d_buffer(self) -> None:
+        """``.double()`` moves and preserves the 3-D buffer (no zero-reinit)."""
+        layer = NGReservoir(input_dim=3, k=3, s=2)  # state_size = (k-1)*s = 4
+        layer(torch.randn(2, 20, 3))  # warm up on CPU/float32
+        warmed = layer.get_state().clone()
+
+        assert layer.state.dtype == torch.float32
+        assert layer.state.shape == (2, 4, 3)
+        layer = layer.double()
+
+        # 3-D shape and values preserved; dtype cast to float64.
+        assert layer.state.dtype == torch.float64
+        assert layer.state.shape == (2, 4, 3)
+        assert (layer.state != 0).any()
+        assert torch.allclose(layer.state, warmed.double())
+
+    def test_double_then_forward_keeps_continuity(self) -> None:
+        """Warm → ``.double()`` → forward continues from the moved buffer.
+
+        The NG-RC delay buffer holds recent inputs, so continuity is observed in
+        the *output features*: the first step of the post-move forward consumes
+        the warmed delay tap, which must differ from a cold (zero-buffer) start.
+        Comparing buffers directly would be misleading here — a buffer that only
+        holds the last input is content-addressed by recent inputs.
+        """
+        torch.manual_seed(0)
+        layer = NGReservoir(input_dim=2, k=2, s=1)  # state_size = 1
+        warm = torch.randn(1, 6, 2)
+        probe = torch.randn(1, 4, 2)
+
+        layer(warm)  # warm the delay buffer on CPU/float32
+        layer = layer.double()
+        out_warm = layer(probe.double())  # consumes the moved warmed buffer
+
+        # Cold reference: same probe from a zero buffer.
+        layer.reset_state()
+        out_cold = layer(probe.double())
+
+        assert out_warm.dtype == torch.float64
+        # The first feature step must reflect the warmed buffer (no zero-reinit);
+        # a silently re-zeroed state would make the warm and cold runs identical.
+        assert not torch.allclose(out_warm[:, 0], out_cold[:, 0])
+
+    def test_maybe_init_state_reinits_on_batch_change(self) -> None:
+        """A genuine batch-size change still triggers a fresh zero buffer."""
+        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer(torch.randn(2, 20, 3))
+        assert layer.state.shape[0] == 2
+
+        layer(torch.randn(5, 20, 3))  # different batch
+        assert layer.state.shape[0] == 5
+
+    @pytest.mark.gpu
+    @cuda_required
+    def test_to_cuda_preserves_warmed_buffer(self) -> None:
+        """Warm on CPU, ``.to('cuda')``: the 3-D buffer moves with values intact."""
+        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer(torch.randn(2, 20, 3))
+        warmed = layer.get_state().clone()
+
+        layer = layer.to("cuda")
+        assert layer.state.device.type == "cuda"
+        assert layer.state.shape == (2, 4, 3)
+        assert torch.allclose(layer.state.cpu(), warmed)
 
 
 # ---------------------------------------------------------------------------

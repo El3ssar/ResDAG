@@ -10,6 +10,15 @@ ReadoutLayer
     Base per-timestep linear layer with fitting interface.
 CGReadoutLayer
     Readout with Conjugate Gradient ridge regression solver.
+RidgeReadoutLayer
+    Direct ridge readout via Cholesky (``solver='cholesky'``) or LU
+    (``solver='solve'``) factorisation of the normal equations.
+SVDReadoutLayer
+    Readout solved via SVD with Tikhonov filter factors; robust to
+    rank-deficient Gram matrices and ``alpha=0``.
+PinvReadoutLayer
+    Least-squares readout via ``torch.linalg.lstsq`` / ``pinv`` with an
+    ``rcond`` cutoff.
 
 Examples
 --------
@@ -32,5 +41,14 @@ resdag.layers.ESNLayer : ESN layer for generating states.
 
 from .base import ReadoutLayer
 from .cg_readout import CGReadoutLayer
+from .pinv_readout import PinvReadoutLayer
+from .ridge_readout import RidgeReadoutLayer
+from .svd_readout import SVDReadoutLayer
 
-__all__ = ["ReadoutLayer", "CGReadoutLayer"]
+__all__ = [
+    "ReadoutLayer",
+    "CGReadoutLayer",
+    "RidgeReadoutLayer",
+    "SVDReadoutLayer",
+    "PinvReadoutLayer",
+]

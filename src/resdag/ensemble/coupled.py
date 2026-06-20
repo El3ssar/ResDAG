@@ -90,7 +90,13 @@ class CoupledEnsembleESNModel(nn.Module):
         Raises
         ------
         ValueError
-            If ``models`` is empty or ``aggregator`` is an unknown string.
+            If ``models`` is empty, if ``aggregator`` is an unknown string, or
+            if any sub-model's first output dimension does not match its
+            feedback (first input) dimension.  The latter rejects headless /
+            linear sub-models, whose output is the raw reservoir state rather
+            than a feedback-dimensioned readout, since the coupled
+            autoregressive loop feeds the aggregated output back as the next
+            feedback input.
         """
         super().__init__()
         if len(models) == 0:
@@ -100,6 +106,8 @@ class CoupledEnsembleESNModel(nn.Module):
                 f"aggregator must be 'mean', 'median', or an nn.Module; got '{aggregator}'."
             )
 
+        self._validate_feedback_output_dims(models)
+
         self.models = nn.ModuleList(models)
 
         if isinstance(aggregator, nn.Module):
@@ -108,6 +116,58 @@ class CoupledEnsembleESNModel(nn.Module):
         else:
             self.aggregator_module = None
             self._aggregator_str = aggregator
+
+    @staticmethod
+    def _validate_feedback_output_dims(models: list[ESNModel]) -> None:
+        """Check that every sub-model can be driven autoregressively.
+
+        The coupled loop feeds each sub-model's aggregated output back as its
+        next feedback input, so the first output dimension must equal the
+        feedback (first input) dimension.  Headless / linear sub-models emit
+        the raw reservoir state (e.g. ``reservoir_size``) instead of a
+        feedback-dimensioned readout and would silently break the loop — those
+        are rejected here with a clear, sub-model-naming error.
+
+        Parameters
+        ----------
+        models : list of ESNModel
+            Candidate sub-models.
+
+        Raises
+        ------
+        ValueError
+            If any sub-model's first output dimension does not match its
+            feedback (first input) dimension, naming the offending sub-model
+            and the mismatched dimensions.
+        """
+        for i, model in enumerate(models):
+            input_shape = model.input_shape
+            output_shape = model.output_shape
+
+            # Multi-input / multi-output models expose a tuple of torch.Size;
+            # the feedback signal is always the first input and the
+            # autoregressive feedback is always the first output.
+            multi_input = isinstance(input_shape, tuple) and isinstance(input_shape[0], torch.Size)
+            feedback_dim = input_shape[0][-1] if multi_input else input_shape[-1]
+
+            multi_output = isinstance(output_shape, tuple) and isinstance(
+                output_shape[0], torch.Size
+            )
+            output_dim = output_shape[0][-1] if multi_output else output_shape[-1]
+
+            if output_dim != feedback_dim:
+                raise ValueError(
+                    f"Sub-model {i} is not autoregressively coupleable: its first "
+                    f"output dimension ({output_dim}) does not match its feedback "
+                    f"(first input) dimension ({feedback_dim}). The coupled ensemble "
+                    f"feeds each model's aggregated output back as its next feedback "
+                    f"input, so they must be equal. Headless / linear factories "
+                    f"(headless_esn, linear_esn) emit raw reservoir states rather "
+                    f"than a feedback-dimensioned readout and cannot be used here; "
+                    f"use a readout-bearing factory such as classic_esn, ott_esn, or "
+                    f"power_augmented (or build a sub-model whose first output matches "
+                    f"the feedback dimension)."
+                )
 
     # ------------------------------------------------------------------
     # Properties

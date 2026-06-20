@@ -50,8 +50,15 @@ def coupled_ensemble_esn(
         Factory that creates one :class:`~resdag.core.ESNModel`.
         All keyword arguments not consumed by ``coupled_ensemble_esn`` itself
         (i.e. ``model_kwargs``) are forwarded verbatim to every call of this
-        factory.  All premade factories (``ott_esn``, ``classic_esn``,
-        ``power_augmented``, etc.) are compatible.
+        factory.  The factory must return a **readout-bearing** model whose
+        first output dimension equals the feedback input dimension, so the
+        aggregated output can be fed back autoregressively.  The readout-bearing
+        premade factories — ``classic_esn``, ``ott_esn`` and ``power_augmented``
+        — satisfy this.  The headless factories (``headless_esn``,
+        ``linear_esn``) emit raw reservoir states rather than a
+        feedback-dimensioned output and are rejected by
+        :class:`~resdag.ensemble.CoupledEnsembleESNModel` (see its ``__init__``
+        for the exact check).
     aggregate : str or nn.Module, default ``"mean"``
         Aggregation strategy applied to the N model outputs at each
         autoregressive step:
@@ -64,11 +71,16 @@ def coupled_ensemble_esn(
           :class:`~resdag.ensemble.aggregators.OutliersFilteredMean`.
     seed : int, optional
         Master seed for deterministic sub-model construction.  Sub-model
-        ``i`` is built with ``torch.manual_seed(seed + i)`` set immediately
-        before the factory call.  If ``model_factory`` itself accepts a
-        ``seed`` keyword argument, ``seed + i`` is also forwarded as that
-        argument so initialisers downstream of pytorch's global RNG (e.g.
-        graph topologies that take an explicit seed) become reproducible.
+        ``i`` is seeded with ``seed + i`` immediately before the factory call.
+        If ``model_factory`` itself accepts a ``seed`` keyword argument,
+        ``seed + i`` is also forwarded as that argument so initialisers that
+        take an explicit seed (e.g. graph topologies) become reproducible.
+
+        The process-global default RNG is **not** clobbered: its state is
+        captured before the construction loop and restored on exit (even if a
+        factory raises), so building a seeded ensemble does not perturb a
+        subsequent global ``torch.randn`` draw.  Ensemble construction is
+        therefore composable inside an otherwise-reproducible pipeline.
 
     **model_kwargs
         All remaining keyword arguments are forwarded verbatim to each
@@ -145,21 +157,35 @@ def coupled_ensemble_esn(
     """
     # Detect whether the factory accepts a ``seed`` kwarg so we can forward
     # the per-model seed to initialisers that take an explicit one (graph
-    # topologies, etc.). When it doesn't, the global torch RNG seed below
-    # still controls every non-seeded random draw.
+    # topologies, etc.). When it doesn't, the per-model RNG seed below still
+    # controls every non-seeded random draw.
     factory_accepts_seed = (
         seed is not None and "seed" in inspect.signature(model_factory).parameters
     )
 
     models: list[ESNModel] = []
-    for i in range(n_models):
-        if seed is not None:
+    if seed is None:
+        # No seeding requested: nothing touches the global RNG beyond what the
+        # factory itself draws, so no save/restore dance is needed.
+        for _ in range(n_models):
+            models.append(model_factory(**model_kwargs))
+        return CoupledEnsembleESNModel(models, aggregator=aggregate)
+
+    # Seeded path. Most reservoir/feedback initialisers draw from PyTorch's
+    # process-global default generator, so we still seed it per sub-model with
+    # ``seed + i``. To keep ensemble construction composable inside a larger
+    # reproducible pipeline we snapshot the global RNG state up front and
+    # restore it in ``finally`` — building the ensemble leaves the global
+    # generator exactly where it was, even if a factory call raises.
+    global_rng_state = torch.get_rng_state()
+    try:
+        for i in range(n_models):
             sub_seed = seed + i
             torch.manual_seed(sub_seed)
             kwargs = dict(model_kwargs)
             if factory_accepts_seed:
                 kwargs.setdefault("seed", sub_seed)
             models.append(model_factory(**kwargs))
-        else:
-            models.append(model_factory(**model_kwargs))
+    finally:
+        torch.set_rng_state(global_rng_state)
     return CoupledEnsembleESNModel(models, aggregator=aggregate)

@@ -20,7 +20,12 @@ import pytest
 import torch
 
 import resdag.init.graphs as graphs_pkg
-from resdag.init.graphs import dendrocycle_graph, erdos_renyi_graph, ring_chord_graph
+from resdag.init.graphs import (
+    barabasi_albert_graph,
+    dendrocycle_graph,
+    erdos_renyi_graph,
+    ring_chord_graph,
+)
 from resdag.init.topology import (
     GraphTopology,
     MatrixTopology,
@@ -597,3 +602,106 @@ class TestResolverGeneratorSeed:
         initializer = resolve_initializer("random", seed=gen)
 
         assert initializer.seed == 99  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Barabási-Albert generator correctness (issue #138)
+# ---------------------------------------------------------------------------
+
+
+class TestBarabasiAlbertGraph:
+    """The BA generator must produce valid scale-free graphs.
+
+    Regression guard for the multiset bug where ``rng.choice(targets,
+    replace=False)`` over a degree-frequency multiset only guaranteed distinct
+    *positions* (not distinct node ids), so a new node could draw the same id
+    twice and end up with fewer than ``m`` neighbours, leaving the graph
+    edge-deficient and not scale-free (issue #138).
+    """
+
+    def test_undirected_edge_count_exact_over_100_seeds(self) -> None:
+        """Every undirected BA graph at n=30, m=3 has exactly 3 + 3*(n-3) edges.
+
+        The BA model adds an ``m``-clique (``m*(m-1)//2`` edges) and then ``m``
+        edges per remaining node, so the undirected edge count is fixed at
+        ``m*(m-1)//2 + m*(n-m)``. For n=30, m=3 that is ``3 + 3*27 = 84``.
+        """
+        n, m = 30, 3
+        expected = m * (m - 1) // 2 + m * (n - m)  # 84 == 3 + 3*(n-3)
+        assert expected == 3 + 3 * (n - 3)
+
+        for seed in range(100):
+            graph = barabasi_albert_graph(n, m=m, directed=False, seed=seed)
+            assert graph.number_of_edges() == expected, f"seed {seed} edge-deficient"
+
+    def test_each_new_node_has_m_distinct_neighbors(self) -> None:
+        """Each node added after the seed clique has exactly ``m`` distinct neighbours."""
+        n, m = 40, 4
+        for seed in range(20):
+            graph = barabasi_albert_graph(n, m=m, directed=False, seed=seed)
+            # Nodes 0..m-1 form the initial clique; nodes m..n-1 are grown in.
+            for node in range(m, n):
+                # An undirected node's neighbour set already de-duplicates ids,
+                # but a missing edge would show up as degree < m here.
+                assert graph.degree(node) >= m, f"node {node} under-connected (seed {seed})"
+                # The m edges this node *created* must point at m distinct ids: a
+                # repeated draw would leave its created-edge count below m, which
+                # the exact total edge count cross-checks.
+            assert graph.number_of_edges() == m * (m - 1) // 2 + m * (n - m)
+
+    def test_degree_distribution_approximately_power_law(self) -> None:
+        """On a large graph the degree distribution is heavy-tailed (scale-free).
+
+        A valid BA graph has a power-law tail ``P(k) ~ k^-3``: a small fraction of
+        hubs accumulate very high degree while most nodes stay near ``m``. The
+        broken multiset generator collapsed toward a far narrower distribution, so
+        we assert a heavy tail via the max/mean degree ratio and a sane mean.
+        """
+        n, m = 2000, 3
+        graph = barabasi_albert_graph(n, m=m, directed=False, seed=0)
+
+        degrees = np.array([d for _, d in graph.degree()], dtype=float)
+
+        # Mean undirected degree is 2*E/n -> 2*m as n grows.
+        mean_degree = degrees.mean()
+        assert mean_degree == pytest.approx(2 * m, abs=0.1)
+
+        # Every grown node attaches m distinct neighbours, so min degree >= m.
+        assert degrees.min() >= m
+
+        # Heavy tail: at least one hub far above the mean (uniform attachment
+        # would keep this ratio small).
+        assert degrees.max() / mean_degree > 5.0
+
+    def test_seed_is_reproducible(self) -> None:
+        """The same seed yields identical edge sets; different seeds differ."""
+        a = barabasi_albert_graph(50, m=3, directed=False, seed=7)
+        b = barabasi_albert_graph(50, m=3, directed=False, seed=7)
+        c = barabasi_albert_graph(50, m=3, directed=False, seed=8)
+
+        assert set(a.edges()) == set(b.edges())
+        assert set(a.edges()) != set(c.edges())
+
+    def test_directed_doubles_edges(self) -> None:
+        """``directed=True`` adds both i->t and t->i, doubling the edge count."""
+        n, m = 30, 3
+        undirected_edges = m * (m - 1) // 2 + m * (n - m)
+        graph = barabasi_albert_graph(n, m=m, directed=True, seed=0)
+
+        assert isinstance(graph, nx.DiGraph)
+        assert graph.number_of_edges() == 2 * undirected_edges
+
+    def test_m_equals_one_is_a_tree(self) -> None:
+        """``m=1`` produces a connected tree (n-1 edges), the BA chain limit."""
+        n = 25
+        graph = barabasi_albert_graph(n, m=1, directed=False, seed=3)
+
+        assert graph.number_of_edges() == n - 1
+        assert nx.is_connected(graph)
+
+    def test_invalid_m_raises(self) -> None:
+        """``m < 1`` or ``m >= n`` raises ValueError."""
+        with pytest.raises(ValueError, match="m must be"):
+            barabasi_albert_graph(10, m=0)
+        with pytest.raises(ValueError, match="m must be"):
+            barabasi_albert_graph(10, m=10)

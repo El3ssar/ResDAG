@@ -21,3 +21,8 @@ from .aggregators import OutliersFilteredMean
 from .coupled import CoupledEnsembleESNModel
 
 __all__ = ["CoupledEnsembleESNModel", "OutliersFilteredMean", "aggregators"]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

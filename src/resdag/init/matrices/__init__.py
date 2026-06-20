@@ -29,3 +29,8 @@ __all__ = [
     "fast_spectral_initialization",
     "orthogonal_matrix",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

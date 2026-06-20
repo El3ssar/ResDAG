@@ -214,3 +214,8 @@ def __getattr__(name: str) -> Any:
 
         return get_study_summary
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

@@ -39,6 +39,7 @@ __all__ = [
     "expected_forecast_horizon",
     "forecast_horizon",
     "lyapunov_weighted",
+    "soft_valid_horizon",
     "standard_loss",
 ]
 

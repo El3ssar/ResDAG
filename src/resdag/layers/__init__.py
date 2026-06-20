@@ -11,6 +11,11 @@ ESNLayer
     Stateful RNN reservoir layer for Echo State Networks (public-facing).
 ESNCell
     Single-timestep ESN state update cell.
+NGReservoir
+    Next-Generation Reservoir Computing layer (delay-embedded polynomial
+    features; no recurrent weights).
+NGCell
+    Single-timestep NG-RC feature-construction cell.
 BaseReservoirLayer
     Abstract sequence-loop base with state management.
 ReservoirCell
@@ -29,8 +34,8 @@ Concatenate
     Layer for concatenating multiple inputs along feature dimension.
 FeaturePartitioner
     Layer for partitioning features into groups.
-OutliersFilteredMean
-    Layer for computing mean with outlier filtering.
+Power
+    Per-feature exponentiation by a fixed power.
 SelectiveDropout
     Dropout with per-feature selectivity.
 SelectiveExponentiation
@@ -91,3 +96,8 @@ __all__ = [
     "SelectiveDropout",
     "SelectiveExponentiation",
 ]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

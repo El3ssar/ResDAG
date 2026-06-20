@@ -29,3 +29,8 @@ resdag.core.ESNModel : ESN model class.
 from .trainer import ESNTrainer
 
 __all__ = ["ESNTrainer"]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

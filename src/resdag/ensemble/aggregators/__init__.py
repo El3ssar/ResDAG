@@ -26,3 +26,8 @@ resdag.ensemble.CoupledEnsembleESNModel : Coupled ensemble that consumes
 from .outliers_filtered_mean import OutliersFilteredMean
 
 __all__ = ["OutliersFilteredMean"]
+
+
+def __dir__() -> list[str]:
+    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    return list(__all__)

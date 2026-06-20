@@ -34,10 +34,11 @@ jobs:
           ruff check src/ tests/
           black --check src/ tests/
 
-      - name: Type check (core model)
-        # Scoped to model.py (the forecast/warmup typing gate); --follow-imports=silent
-        # uses imported modules for type info without reporting their pre-existing errors.
-        run: mypy --follow-imports=silent src/resdag/core/model.py
+      - name: Type check (whole package)
+        # Type-checks the entire package. New/changed code is gated immediately;
+        # pre-existing violations are held in a tracked per-module baseline in
+        # pyproject.toml ([[tool.mypy.overrides]]) that is being burned down.
+        run: mypy src/resdag/
 
       - name: Tests
         run: pytest --no-cov -q

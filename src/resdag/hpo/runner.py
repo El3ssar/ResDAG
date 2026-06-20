@@ -289,6 +289,7 @@ class TrialRunner:
         preds, val = self._forecast(model, data)
 
         raw_loss = self._evaluate_with_checkpoints(trial, preds, val)
+        raw_loss = self._penalize_nonfinite(trial, raw_loss)
 
         trial.set_user_attr("raw_loss", raw_loss)
         loss = self._apply_clipping(trial, raw_loss)
@@ -404,6 +405,47 @@ class TrialRunner:
                     f"pruned at horizon checkpoint step={step} (loss={raw_loss:.6f})"
                 )
         return raw_loss
+
+    def _penalize_nonfinite(self, trial: optuna.Trial, raw_loss: float) -> float:
+        """Substitute ``penalty_value`` for a non-finite (NaN/inf) loss.
+
+        A non-finite loss is a *value*, not an exception, so it bypasses the
+        ``catch_exceptions`` / ``penalty_value`` machinery and Optuna rejects it
+        — recording the trial as ``FAIL`` and excluding it from the study's best
+        value and summaries.  Diverged forecasts are the primary failure mode of
+        the chaotic-system use case this module targets, so non-finite losses are
+        common; failing them starves the sampler of the signal that the region is
+        bad.  This guard turns a non-finite loss into a *completed* trial scored
+        at ``penalty_value`` (sign-flipped for ``maximize`` studies so the
+        penalty is genuinely the worst possible value) and records the original
+        non-finiteness as the ``nonfinite_loss`` user attribute for diagnosis.
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+            The trial being evaluated.
+        raw_loss : float
+            The raw (unclipped) loss returned by the loss function.
+
+        Returns
+        -------
+        float
+            ``raw_loss`` unchanged when finite; otherwise the direction-aware
+            penalty value (``penalty_value`` for minimize, ``-penalty_value`` for
+            maximize).
+        """
+        if np.isfinite(raw_loss):
+            return raw_loss
+
+        trial.set_user_attr("nonfinite_loss", True)
+        penalty = self.penalty_value
+        if trial.study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            penalty = -penalty
+        logger.warning(
+            f"Trial {trial.number}: non-finite loss ({raw_loss}); "
+            f"substituting penalty_value={penalty}."
+        )
+        return penalty
 
     def _apply_clipping(self, trial: optuna.Trial, raw_loss: float) -> float:
         """Clamp or prune based on ``clip_value`` / ``prune_on_clip``."""

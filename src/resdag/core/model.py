@@ -278,11 +278,33 @@ class ESNModel(ps.SymbolicModel):
             contains keys that don't match any reservoir.  Set to ``False``
             to silently ignore both kinds of mismatch (legacy behaviour).
 
+        Notes
+        -----
+        Each restored tensor is routed through
+        :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_state`,
+        which clones the tensor and validates its shape against the target
+        cell's contract (e.g. the 2-D ``(batch, reservoir_size)`` layout of an
+        ESN).  Before validation the tensor is coerced to the target
+        reservoir's reference device and dtype (its first floating-point
+        parameter/buffer) so that a state saved on one device/dtype is not
+        silently re-zeroed by ``_maybe_init_state`` on the next forward pass —
+        the canonical save-on-GPU / load-on-CPU round-trip therefore preserves
+        the warmed-up state values.
+
         Raises
         ------
         KeyError
             If ``strict=True`` and the keys of ``states`` do not exactly
             match the set of reservoir layer names in the model.
+        ValueError
+            If a restored tensor does not match the target cell's state-shape
+            contract.  The error names the cell class and the offending shape.
+
+        Warns
+        -----
+        UserWarning
+            If a restored state had to be moved to a different device or cast
+            to a different dtype to match its target reservoir.
 
         Examples
         --------
@@ -290,6 +312,8 @@ class ESNModel(ps.SymbolicModel):
         >>> # ... do something ...
         >>> model.set_reservoir_states(states)  # Restore states
         """
+        import warnings
+
         reservoir_names = {
             name for name, module in self.named_modules() if isinstance(module, BaseReservoirLayer)
         }
@@ -308,7 +332,21 @@ class ESNModel(ps.SymbolicModel):
 
         for name, module in self.named_modules():
             if isinstance(module, BaseReservoirLayer) and name in states:
-                module.state = states[name].clone()
+                state = states[name]
+                ref_device, ref_dtype = module.reference_device_dtype()
+                if state.device != ref_device or state.dtype != ref_dtype:
+                    warnings.warn(
+                        f"set_reservoir_states: state for reservoir '{name}' was "
+                        f"coerced from (device={state.device}, dtype={state.dtype}) to "
+                        f"(device={ref_device}, dtype={ref_dtype}) to match the "
+                        f"target reservoir.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    state = state.to(device=ref_device, dtype=ref_dtype)
+                # set_state clones and validates the tensor via the cell's
+                # state-shape contract.
+                module.set_state(state)
 
     def save(
         self,

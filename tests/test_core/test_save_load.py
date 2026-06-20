@@ -182,6 +182,39 @@ class TestReservoirStates:
             with pytest.warns(UserWarning, match="no reservoir states found"):
                 model.load(path, load_states=True)
 
+    def test_load_states_coerces_dtype(self) -> None:
+        """load(load_states=True) coerces a mismatched-dtype state, preserving values.
+
+        Exercises the save-as-one-dtype / load-as-another path: a float64 state
+        in the checkpoint must be cast back to the model's float32 dtype instead
+        of being silently re-zeroed on the next forward pass.
+        """
+        model = headless_esn(50, 1)
+
+        x = torch.randn(2, 10, 1)
+        model(x)
+        states_before = model.get_reservoir_states()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "model.pt"
+            model.save(path, include_states=True)
+
+            # Rewrite the checkpoint so the stored states are float64.
+            checkpoint = torch.load(path, weights_only=False)
+            checkpoint["reservoir_states"] = {
+                k: v.double() for k, v in checkpoint["reservoir_states"].items()
+            }
+            torch.save(checkpoint, path)
+
+            model.reset_reservoirs()
+            with pytest.warns(UserWarning, match="coerced"):
+                model.load(path, load_states=True)
+
+            states_after = model.get_reservoir_states()
+            for key in states_before:
+                assert states_after[key].dtype == torch.float32
+                assert torch.allclose(states_before[key], states_after[key], rtol=1e-5, atol=1e-6)
+
 
 class TestModelArchitecture:
     """Test save/load with different model architectures."""

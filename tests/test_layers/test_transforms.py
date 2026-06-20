@@ -373,4 +373,157 @@ class TestSelectiveExponentiation:
 
         assert "index=3" in repr_str
         assert "exponent=2.5" in repr_str
+        assert "sign_preserving=False" in repr_str
         assert "applies_to=odd_indices" in repr_str  # 3 % 2 == 1 (odd)
+
+    def test_fractional_exponent_finite_gradients(self) -> None:
+        """Fractional exponent must yield finite gradients at every position.
+
+        Regression for the mask-multiply-then-pow formulation, which routed
+        unselected positions through ``pow(0, e)`` and produced ``nan``/``inf``
+        gradients for ``e < 1`` (issue #130, acceptance criterion 1).
+        """
+        layer = SelectiveExponentiation(index=2, exponent=0.5)
+        x = torch.tensor([[4.0, 4.0, 9.0, 16.0]], requires_grad=True)
+
+        output = layer(x)
+        output.sum().backward()
+
+        # Forward is unchanged: sqrt at even indices, identity elsewhere.
+        assert torch.allclose(output, torch.tensor([[2.0, 4.0, 3.0, 16.0]]))
+        # All four gradients finite (previously nan at masked indices 1 and 3).
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # d/dx 0.5*x^-0.5 at selected; identity (grad 1) at unselected.
+        expected_grad = torch.tensor([[0.25, 1.0, 1.0 / 6.0, 1.0]])
+        assert torch.allclose(x.grad, expected_grad)
+
+    def test_negative_unselected_base_finite_gradients(self) -> None:
+        """A negative *unselected* base must not poison the gradient.
+
+        ``torch.where(mask, input.pow(e), input)`` evaluates ``pow`` for every
+        element, so a negative unselected base under a fractional exponent would
+        back-propagate ``0 * nan`` without input masking. Grad must stay finite.
+        """
+        layer = SelectiveExponentiation(index=0, exponent=0.5)
+        x = torch.tensor([[4.0, -4.0, 9.0, -16.0]], requires_grad=True)
+
+        output = layer(x)
+        output.sum().backward()
+
+        # Unselected (odd) negative bases pass through untouched.
+        assert torch.allclose(output, torch.tensor([[2.0, -4.0, 3.0, -16.0]]))
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+
+    def test_negative_selected_base_default_mode_is_nan_forward(self) -> None:
+        """Default mode documents torch.pow semantics: negative^fraction = nan.
+
+        Issue #130 verified ``SelectiveExponentiation(index=0, exponent=0.5)``
+        on ``[[-4, 2, -9, 3]]`` returns ``[[nan, 2, nan, 3]]``. Unselected
+        positions stay finite.
+        """
+        layer = SelectiveExponentiation(index=0, exponent=0.5)
+        x = torch.tensor([[-4.0, 2.0, -9.0, 3.0]])
+
+        output = layer(x)
+
+        # Selected (even) negative bases are nan; unselected pass through.
+        assert torch.isnan(output[0, 0])
+        assert torch.isnan(output[0, 2])
+        assert output[0, 1] == 2.0
+        assert output[0, 3] == 3.0
+
+    def test_negative_selected_base_default_mode_unselected_grad_finite(self) -> None:
+        """Even when selected bases are nan, unselected gradients stay finite."""
+        layer = SelectiveExponentiation(index=0, exponent=0.5)
+        x = torch.tensor([[-4.0, 2.0, -9.0, 3.0]], requires_grad=True)
+
+        output = layer(x)
+        output.nansum().backward()
+
+        assert x.grad is not None
+        # Unselected (odd) positions must have finite gradient.
+        assert torch.isfinite(x.grad[0, [1, 3]]).all()
+
+    def test_sign_preserving_negative_base_finite_forward(self) -> None:
+        """Sign-preserving mode keeps negative selected bases finite.
+
+        Acceptance criterion 2: negative selected bases with a fractional
+        exponent no longer produce a nan forward.
+        """
+        layer = SelectiveExponentiation(index=0, exponent=0.5, sign_preserving=True)
+        x = torch.tensor([[-4.0, 2.0, -9.0, 3.0]])
+
+        output = layer(x)
+
+        # sign(x) * |x|^0.5 at selected even indices, identity elsewhere.
+        expected = torch.tensor([[-2.0, 2.0, -3.0, 3.0]])
+        assert torch.allclose(output, expected)
+        assert torch.isfinite(output).all()
+
+    def test_sign_preserving_negative_base_finite_gradients(self) -> None:
+        """Sign-preserving mode yields finite gradients on negative bases."""
+        layer = SelectiveExponentiation(index=0, exponent=0.5, sign_preserving=True)
+        x = torch.tensor([[-4.0, 2.0, -9.0, 3.0]], requires_grad=True)
+
+        output = layer(x)
+        output.sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+
+    def test_gradcheck_fractional_exponent(self) -> None:
+        """Double-precision gradcheck for the fractional-exponent path."""
+        layer = SelectiveExponentiation(index=2, exponent=1.5)
+        # Strictly positive bases keep the analytic gradient well-defined.
+        x = torch.rand(2, 4, dtype=torch.float64, requires_grad=True) + 0.5
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_gradcheck_sign_preserving(self) -> None:
+        """Gradcheck the sign-preserving path away from the x=0 kink."""
+        layer = SelectiveExponentiation(index=0, exponent=1.5, sign_preserving=True)
+        # Push bases away from 0 (the |x| kink) for a well-defined gradient.
+        x = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+        x = (x + torch.sign(x) * 1.0).detach().requires_grad_(True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_ott_path_exponent_two_unchanged(self) -> None:
+        """Default ott_esn path (exponent=2.0) keeps forward and grad identical.
+
+        Acceptance criterion 4. Verified against the analytic result of the old
+        mask-multiply-then-pow formulation.
+        """
+        layer = SelectiveExponentiation(index=0, exponent=2.0)
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0]], requires_grad=True)
+
+        output = layer(x)
+        output.sum().backward()
+
+        # Even indices squared, odd unchanged.
+        assert torch.allclose(output, torch.tensor([[1.0, 2.0, 9.0, 4.0]]))
+        # Selected grad = 2x; unselected grad = 1.
+        assert x.grad is not None
+        assert torch.allclose(x.grad, torch.tensor([[2.0, 1.0, 6.0, 1.0]]))
+
+    def test_zero_base_gradients_finite(self) -> None:
+        """Selected zero bases give finite gradients (no pow(0, e) blow-up)."""
+        layer = SelectiveExponentiation(index=0, exponent=2.0)
+        x = torch.zeros(1, 4, requires_grad=True)
+
+        output = layer(x)
+        output.sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+
+    def test_dtype_preserved(self) -> None:
+        """Output dtype matches input dtype."""
+        layer = SelectiveExponentiation(index=2, exponent=0.5)
+        x = torch.tensor([[4.0, 4.0, 9.0, 16.0]], dtype=torch.float64)
+
+        output = layer(x)
+
+        assert output.dtype == torch.float64

@@ -126,6 +126,134 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
 
+# ---------------------------------------------------------------------------
+# mypy baseline (whole-package lane — see `.github/workflows/ci.yml`).
+# CI type-checks the entire package with `mypy src/resdag/`. New and changed
+# code is gated immediately; the per-module `disable_error_code` entries below
+# are a *tracked baseline* of pre-existing violations, kept only so the lane
+# exits 0 while they are burned down (tickets #83, #295). They are NOT a
+# standing exemption. Rules of engagement:
+#   * Do NOT add modules here — fix the type error in new/changed code instead.
+#   * When a module's last violation of a code is fixed, delete that code from
+#     its list (and drop the whole block once its list is empty).
+# Burning this list down to nothing is the goal.
+# ---------------------------------------------------------------------------
+[[tool.mypy.overrides]]
+module = "resdag.core"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.ensemble.coupled"
+disable_error_code = ["arg-type", "no-any-return", "operator", "union-attr"]
+
+[[tool.mypy.overrides]]
+module = "resdag.hpo.losses"
+disable_error_code = ["dict-item", "no-any-return", "no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.hpo.run"
+disable_error_code = ["arg-type"]
+
+[[tool.mypy.overrides]]
+module = "resdag.hpo.runners"
+disable_error_code = ["arg-type", "assignment"]
+
+[[tool.mypy.overrides]]
+module = "resdag.hpo.utils"
+disable_error_code = ["arg-type", "return-value"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.graphs.kleinberg_small_world"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.binary_balanced"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.chain_of_neurons_input"
+disable_error_code = ["arg-type", "no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.chebyshev"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.chessboard"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.dendrocycle_input"
+disable_error_code = ["operator"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.pseudo_diagonal"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.random"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.random_binary"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.ring_window"
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.input_feedback.zero"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.matrices.orthogonal"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.topology.base"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "resdag.init.utils.graph_tools"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.layers.cells.esn_cell"
+disable_error_code = ["misc", "valid-type"]
+
+[[tool.mypy.overrides]]
+module = "resdag.layers.cells.ngrc_cell"
+disable_error_code = ["index"]
+
+[[tool.mypy.overrides]]
+module = "resdag.layers.reservoirs.base_reservoir"
+disable_error_code = ["arg-type", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = "resdag.layers.reservoirs.esn"
+disable_error_code = ["override"]
+
+[[tool.mypy.overrides]]
+module = "resdag.layers.reservoirs.ngrc"
+disable_error_code = ["override", "return-value"]
+
+[[tool.mypy.overrides]]
+module = "resdag.layers.transforms.selective_dropout"
+disable_error_code = ["arg-type", "index", "operator"]
+
+[[tool.mypy.overrides]]
+module = "resdag.training.trainer"
+disable_error_code = ["no-untyped-def"]
+
+[[tool.mypy.overrides]]
+module = "resdag.utils.data.io"
+disable_error_code = ["arg-type", "no-any-return", "no-untyped-def", "operator", "return-value"]
+
+[[tool.mypy.overrides]]
+module = "resdag.utils.data.prepare"
+disable_error_code = ["no-untyped-def"]
+
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*", "**/__pycache__/*"]

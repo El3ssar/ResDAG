@@ -144,6 +144,58 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         return torch.stack(outputs, dim=1), state
 
+    def step_stateless(
+        self,
+        inputs: list[torch.Tensor],
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Single-timestep analogue of :meth:`forward_stateless`: state in, state out.
+
+        Where :meth:`forward_stateless` consumes whole
+        ``(batch, timesteps, features)`` sequences and runs the time loop, this
+        consumes a single ``(batch, features)`` slice per stream and performs
+        exactly one cell update.  It is the per-step primitive that the
+        flattened autoregressive engine
+        (:meth:`resdag.core.ESNModel.forecast`) drives, sidestepping the
+        sequence-loop bookkeeping (``torch.stack``, ``shape[1]`` reads) that
+        :meth:`forward` / :meth:`forward_stateless` pay even for a length-1
+        sequence.
+
+        Parameters
+        ----------
+        inputs : list[torch.Tensor]
+            Feedback slice first, then at most one driving-input slice, each of
+            shape ``(batch, features)``.
+        state : torch.Tensor
+            Current reservoir state, shape ``(batch, ...)`` as produced by
+            ``self.cell.init_state``.
+
+        Returns
+        -------
+        output : torch.Tensor
+            Per-step output, shape ``(batch, cell.output_size)``.
+        new_state : torch.Tensor
+            Updated reservoir state.
+
+        Notes
+        -----
+        The project-vs-fallback choice is the same per-cell static decision made
+        in :meth:`forward_stateless` (no data-dependent branch in the hot path),
+        so this method stays ``torch.compile``-fullgraph friendly.  Like
+        :meth:`forward_stateless` it never reads or writes :attr:`state`, and it
+        applies no cross-call detach — the forecast engine runs under
+        :func:`torch.no_grad`, so the threaded state never carries a graph.
+        """
+        projected = self.cell.project_inputs(inputs)
+        if projected is not None:
+            return self.cell.step(projected, state)
+        # ``nn.Module.__call__`` is typed ``Any``; unpack then return a tuple
+        # literal so the declared ``tuple[Tensor, Tensor]`` is honoured (mirrors
+        # ``forward_stateless``).
+        output, new_state = self.cell(inputs, state)
+        return output, new_state
+
     def forward(
         self,
         feedback: torch.Tensor,

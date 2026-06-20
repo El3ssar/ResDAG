@@ -12,11 +12,18 @@ The contract under test (see :meth:`resdag.core.ESNModel.forecast`):
   after the warmup window and must supply at least ``horizon`` timesteps.
 """
 
+import sys
+
 import pytest
 import torch
 
 from resdag.core import ESNModel, Input
-from resdag.layers import CGReadoutLayer, ESNLayer
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
+from resdag.layers.transforms import FeaturePartitioner, SelectiveDropout
+
+# torch.compile is unsupported on Python 3.15+ (mirrors tests/test_core/test_compile_and_precision.py).
+COMPILE_SUPPORTED = torch.__version__ >= "2.0.0" and sys.version_info < (3, 15)
+requires_compile = pytest.mark.skipif(not COMPILE_SUPPORTED, reason="torch.compile not supported")
 
 
 def _build_driven_model(feedback_size: int = 1, driver_size: int = 2) -> tuple[ESNModel, ESNLayer]:
@@ -175,9 +182,16 @@ class TestReturnWarmupSeam:
 class TestDriverAlignment:
     """The autoregressive loop consumes drivers in training-consistent order."""
 
-    def test_drivers_consumed_in_order_starting_after_warmup(self) -> None:
+    def test_drivers_consumed_in_order_starting_after_warmup(self, monkeypatch) -> None:
         """Step ``t`` must see ``forecast_inputs[:, t]`` — the driver series
-        continuing exactly where the warmup drivers ended."""
+        continuing exactly where the warmup drivers ended.
+
+        The flat forecast engine drives the reservoir through ``step_stateless``
+        (which calls ``cell.project_inputs``) rather than the layer's
+        ``__call__``, so the driver alignment is probed on ``project_inputs``:
+        one 3-D call for the whole teacher-forced warmup, then one 2-D call per
+        autoregressive step.
+        """
         model, reservoir_layer = _build_driven_model()
         horizon = 6
 
@@ -192,35 +206,34 @@ class TestDriverAlignment:
         )
 
         seen_drivers: list[torch.Tensor] = []
+        original = reservoir_layer.cell.project_inputs
 
-        def probe(module, args):
-            # args = (feedback_slice, driver_slice)
-            seen_drivers.append(args[1].detach().clone())
+        def probe(inputs):
+            # inputs = [feedback_slice, driver_slice]
+            seen_drivers.append(inputs[1].detach().clone())
+            return original(inputs)
 
-        handle = reservoir_layer.register_forward_pre_hook(probe)
-        try:
-            model.forecast(
-                (warmup_feedback, warmup_driver),
-                forecast_inputs=(forecast_driver.contiguous(),),
-                horizon=horizon,
-            )
-        finally:
-            handle.remove()
+        monkeypatch.setattr(reservoir_layer.cell, "project_inputs", probe)
+        model.forecast(
+            (warmup_feedback, warmup_driver),
+            forecast_inputs=(forecast_driver.contiguous(),),
+            horizon=horizon,
+        )
 
-        # First captured call is the teacher-forced warmup pass.
+        # First captured call is the (3-D, whole-sequence) teacher-forced warmup.
         assert seen_drivers[0].shape[1] == 20
         # The horizon autoregressive steps consume the forecast drivers in
-        # order, with no gap and no skipped first value.
+        # order, with no gap and no skipped first value (2-D per-step slices).
         autoregressive = seen_drivers[1:]
         assert len(autoregressive) == horizon
         for t, captured in enumerate(autoregressive):
-            expected = forecast_driver[:, t : t + 1, :]
+            expected = forecast_driver[:, t, :]
             assert torch.equal(captured, expected), (
                 f"autoregressive step {t} consumed driver {captured.flatten()[0].item()}, "
                 f"expected {expected.flatten()[0].item()}"
             )
 
-    def test_accepts_extra_driver_steps_and_consumes_first_horizon(self) -> None:
+    def test_accepts_extra_driver_steps_and_consumes_first_horizon(self, monkeypatch) -> None:
         """A longer driver tensor is accepted; only the first ``horizon`` are used."""
         model, reservoir_layer = _build_driven_model()
         horizon = 5
@@ -230,22 +243,23 @@ class TestDriverAlignment:
         forecast_driver = torch.randn(1, horizon + 4, 2)
 
         seen_drivers: list[torch.Tensor] = []
-        handle = reservoir_layer.register_forward_pre_hook(
-            lambda module, args: seen_drivers.append(args[1].detach().clone())
+        original = reservoir_layer.cell.project_inputs
+
+        def probe(inputs):
+            seen_drivers.append(inputs[1].detach().clone())
+            return original(inputs)
+
+        monkeypatch.setattr(reservoir_layer.cell, "project_inputs", probe)
+        model.forecast(
+            (warmup_feedback, warmup_driver),
+            forecast_inputs=(forecast_driver,),
+            horizon=horizon,
         )
-        try:
-            model.forecast(
-                (warmup_feedback, warmup_driver),
-                forecast_inputs=(forecast_driver,),
-                horizon=horizon,
-            )
-        finally:
-            handle.remove()
 
         autoregressive = seen_drivers[1:]
         assert len(autoregressive) == horizon
         for t, captured in enumerate(autoregressive):
-            assert torch.equal(captured, forecast_driver[:, t : t + 1, :])
+            assert torch.equal(captured, forecast_driver[:, t, :])
 
     def test_rejects_too_few_driver_steps(self) -> None:
         model, _ = _build_driven_model()
@@ -340,3 +354,394 @@ class TestMultiOutputForecast:
         assert not torch.allclose(
             full[0][:, warmup_steps - 1, :], full[0][:, warmup_steps, :], atol=1e-6
         )
+
+
+# ======================================================================
+# Flattened single-step inference engine (issue #254)
+# ======================================================================
+#
+# ``forecast`` is driven by a flat, graph-free per-step engine
+# (:mod:`resdag.core._flat_inference`) instead of re-walking the symbolic graph
+# each step. The contract is: the flat path is *numerically identical* to the
+# old per-step ``self(*step_inputs)`` graph re-execution, the opt-in
+# ``compile=True`` path matches the eager path and falls back cleanly, and the
+# reset / detach / multi-reservoir state semantics are preserved.
+
+
+def _build_multi_reservoir_model(feedback_size: int = 2) -> ESNModel:
+    """Two parallel reservoirs feeding a shared readout (multi-reservoir DAG)."""
+    torch.manual_seed(42)
+    inp = Input(shape=(20, feedback_size))
+    r1 = ESNLayer(reservoir_size=24, feedback_size=feedback_size, spectral_radius=0.9)(inp)
+    r2 = ESNLayer(reservoir_size=16, feedback_size=feedback_size, spectral_radius=0.8)(inp)
+    merged = Concatenate()(r1, r2)
+    out = CGReadoutLayer(24 + 16, feedback_size, name="output")(merged)
+    return ESNModel(inp, out)
+
+
+def _legacy_graph_forecast(
+    model: ESNModel,
+    warmup_inputs: tuple[torch.Tensor, ...],
+    horizon: int,
+    forecast_inputs: tuple[torch.Tensor, ...] | None = None,
+    *,
+    reset: bool = True,
+) -> tuple[torch.Tensor, ...]:
+    """Reference forecast via the *old* per-step graph re-execution path.
+
+    Mirrors the pre-#254 loop exactly: reset, teacher-forced warmup, then one
+    full ``self(*step_inputs)`` graph walk per autoregressive step on 3-D
+    ``(batch, 1, features)`` tensors. Returns a tuple of per-output tensors so a
+    single comparison helper covers single- and multi-output models.
+    """
+    if reset:
+        model.reset_reservoirs()
+    drivers = forecast_inputs if forecast_inputs is not None else ()
+    has_drivers = len(warmup_inputs) > 1
+    with torch.no_grad():
+        warm = model.warmup(*warmup_inputs, return_outputs=True, reset=reset)
+        warm_tuple = warm if isinstance(warm, tuple) else (warm,)
+        current = warm_tuple[0][:, -1:, :]
+        acc: list[list[torch.Tensor]] = [[] for _ in warm_tuple]
+        for t in range(horizon):
+            if has_drivers:
+                step_inputs = (current, *(d[:, t : t + 1, :] for d in drivers))
+            else:
+                step_inputs = (current,)
+            out = model(*step_inputs)
+            outs = out if isinstance(out, tuple) else (out,)
+            for i, o in enumerate(outs):
+                acc[i].append(o)
+            current = outs[0]
+    return tuple(torch.cat(steps, dim=1) for steps in acc)
+
+
+def _as_tuple(result: object) -> tuple[torch.Tensor, ...]:
+    return result if isinstance(result, tuple) else (result,)
+
+
+class TestFlatEngineParity:
+    """Flat forecast must equal the legacy graph-re-execution path to 1e-10."""
+
+    def test_feedback_only_bit_parity(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(2, 25, 3, dtype=torch.float64)
+        model.double()
+        warmup = warmup.double()
+
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=60)
+        ref = _legacy_graph_forecast(model, (warmup,), 60)
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+
+    def test_driven_bit_parity(self) -> None:
+        model, _ = _build_driven_model(feedback_size=2, driver_size=3)
+        model.double()
+        warm_fb = torch.randn(2, 20, 2, dtype=torch.float64)
+        warm_drv = torch.randn(2, 20, 3, dtype=torch.float64)
+        fut_drv = torch.randn(2, 80, 3, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        flat = model.forecast((warm_fb, warm_drv), forecast_inputs=(fut_drv,), horizon=70)
+        ref = _legacy_graph_forecast(model, (warm_fb, warm_drv), 70, (fut_drv,))
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+
+    def test_multi_output_bit_parity(self) -> None:
+        model = _build_multi_output_model(feedback_size=2, aux_size=3)
+        model.double()
+        warmup = torch.randn(2, 20, 2, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        flat = _as_tuple(model.forecast(warmup, horizon=55))
+        ref = _legacy_graph_forecast(model, (warmup,), 55)
+        for f, r in zip(flat, ref):
+            assert (f - r).abs().max().item() < 1e-10
+
+    def test_multi_reservoir_dag_bit_parity(self) -> None:
+        model = _build_multi_reservoir_model(feedback_size=2).double()
+        warmup = torch.randn(2, 20, 2, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=50)
+        ref = _legacy_graph_forecast(model, (warmup,), 50)
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+        # The DAG really does carry two reservoirs through the engine.
+        assert len(model._get_flat_step().reservoir_layers) == 2
+
+    def test_selective_dropout_in_path_bit_parity(self) -> None:
+        """A feature-wise transform (``SelectiveDropout``) in the AR path.
+
+        Guards that a transform applied per step matches the legacy graph
+        re-execution exactly — regression coverage for transforms that must
+        accept the engine's single-step slice.
+        """
+        torch.manual_seed(0)
+        inp = Input(shape=(20, 3))
+        states = ESNLayer(reservoir_size=16, feedback_size=3, spectral_radius=0.9)(inp)
+        dropped = SelectiveDropout([True, False] * 8)(states)
+        out = CGReadoutLayer(16, 3, name="output")(dropped)
+        model = ESNModel(inp, out).double()
+        warmup = torch.randn(2, 25, 3, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=40)
+        ref = _legacy_graph_forecast(model, (warmup,), 40)
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+
+    def test_multi_output_unpack_layer_bit_parity(self) -> None:
+        """A graph with an unpacked (sibling) node + a shape-sensitive transform.
+
+        ``FeaturePartitioner`` returns a list and the ``a, b = parts`` unpack
+        creates ``UnpackLayer`` siblings, exercising the multi-output codegen
+        branch in ``build_flat_step`` (the only built-in layer that triggers it).
+        ``FeaturePartitioner`` is also rank-agnostic, so this confirms the engine
+        feeds it a usable single-step slice.
+        """
+        torch.manual_seed(0)
+        inp = Input(shape=(20, 4))
+        states = ESNLayer(reservoir_size=32, feedback_size=4, spectral_radius=0.9)(inp)
+        first, second = FeaturePartitioner(partitions=2, overlap=0)(states)
+        merged = Concatenate()(first, second)
+        out = CGReadoutLayer(32, 4, name="output")(merged)
+        model = ESNModel(inp, out).double()
+        warmup = torch.randn(2, 25, 4, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=40)
+        ref = _legacy_graph_forecast(model, (warmup,), 40)
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+        # The generated source took the multi-output sibling branch: only that
+        # branch splats its single parent (``_C[k](*parent)``).
+        assert "(*" in model._get_flat_step().source
+
+    def test_initial_feedback_bit_parity(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3).double()
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+        seed = torch.randn(1, 1, 3, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        warm = model.warmup(warmup, return_outputs=True)
+        assert isinstance(warm, torch.Tensor)
+        # Reference loop seeded with the same custom feedback.
+        model.reset_reservoirs()
+        model.warmup(warmup)
+        ref_steps = []
+        cur = seed
+        with torch.no_grad():
+            for _ in range(30):
+                cur = model(cur)
+                ref_steps.append(cur)
+        ref = torch.cat(ref_steps, dim=1)
+
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=30, initial_feedback=seed)
+        assert (flat - ref).abs().max().item() < 1e-10
+
+
+class TestFlatEngineStateSemantics:
+    """reset / detach / state-writeback semantics survive the flat engine."""
+
+    def test_reset_true_makes_calls_independent(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        first = model.forecast(warmup, horizon=20)
+        second = model.forecast(warmup, horizon=20)  # reset=True default
+        assert torch.allclose(first, second)
+
+    def test_reset_false_continues_from_state(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        with_reset = model.forecast(warmup, horizon=20, reset=True)
+        # A second reset=False forecast continues from the mutated state, so it
+        # must differ from the fresh-reset result.
+        no_reset = model.forecast(warmup, horizon=20, reset=False)
+        assert not torch.allclose(with_reset, no_reset)
+
+    def test_state_written_back_matches_legacy(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3).double()
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+
+        model.reset_reservoirs()
+        model.forecast(warmup, horizon=40)
+        flat_states = model.get_reservoir_states()
+
+        _legacy_graph_forecast(model, (warmup,), 40)
+        ref_states = model.get_reservoir_states()
+
+        assert flat_states.keys() == ref_states.keys()
+        for name in flat_states:
+            assert (flat_states[name] - ref_states[name]).abs().max().item() < 1e-10
+
+    def test_detach_flag_does_not_break_forecast(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3).double()
+        for module in model.modules():
+            if hasattr(module, "detach_state_between_calls"):
+                module.detach_state_between_calls = False
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+        model.reset_reservoirs()
+        flat = model.forecast(warmup, horizon=30)
+        ref = _legacy_graph_forecast(model, (warmup,), 30)
+        assert (flat - ref[0]).abs().max().item() < 1e-10
+
+
+class TestFlatStepCache:
+    """The compiled step is cached and rebuilt only when the graph changes."""
+
+    def test_step_cached_across_forecasts(self, make_tiny_model) -> None:
+        model = make_tiny_model(feedback_size=3)
+        assert model._get_flat_step() is model._get_flat_step()
+
+    def test_cache_rebuilt_on_add_output(self) -> None:
+        torch.manual_seed(0)
+        inp = Input(shape=(20, 2))
+        states = ESNLayer(reservoir_size=16, feedback_size=2, spectral_radius=0.9)(inp)
+        main = CGReadoutLayer(16, 2, name="main")(states)
+        model = ESNModel(inp, main)
+        first = model._get_flat_step()
+        assert first.n_outputs == 1
+
+        # Promote an existing in-graph node (the reservoir states) to an extra
+        # output; the cache, keyed on ``self.outputs`` identity, must rebuild.
+        model.add_output(states)
+        rebuilt = model._get_flat_step()
+        assert rebuilt is not first
+        assert rebuilt.n_outputs == 2
+
+    def test_deepcopy_after_forecast_is_independent(self, make_tiny_model) -> None:
+        """A copy taken after the cache is populated rebuilds on its own layers.
+
+        The cache holds an ``exec``-built closure that ``deepcopy`` would treat
+        as atomic (keeping the original layers); it must be excluded so the copy
+        forecasts against its own weights.
+        """
+        import copy
+
+        model = make_tiny_model(feedback_size=3).double()
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+        model.forecast(warmup, horizon=10)  # populate the cache
+
+        clone = copy.deepcopy(model)
+        assert torch.equal(model.forecast(warmup, horizon=15), clone.forecast(warmup, horizon=15))
+
+        # Perturbing the original must not affect the independent clone.
+        before = clone.forecast(warmup, horizon=15)
+        for param in model.parameters():
+            param.data.add_(1.0)
+        assert torch.equal(clone.forecast(warmup, horizon=15), before)
+        assert not torch.allclose(model.forecast(warmup, horizon=15), before)
+
+    def test_save_full_round_trip_after_forecast(self, make_tiny_model, tmp_path) -> None:
+        """save_full / load_full survive a forecast having populated the cache."""
+        model = make_tiny_model(feedback_size=3).double()
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+        expected = model.forecast(warmup, horizon=15)
+
+        path = tmp_path / "model_full.pt"
+        model.save_full(path)  # would raise PicklingError if the cache leaked
+        restored = ESNModel.load_full(path)
+        assert (restored.forecast(warmup, horizon=15) - expected).abs().max().item() < 1e-10
+
+
+class TestStepStateless:
+    """The per-step reservoir primitive matches a length-1 forward_stateless."""
+
+    def test_matches_forward_stateless_single_step(self) -> None:
+        torch.manual_seed(0)
+        layer = ESNLayer(reservoir_size=32, feedback_size=3, input_size=2, spectral_radius=0.9)
+        layer.double()
+        fb = torch.randn(4, 3, dtype=torch.float64)
+        drv = torch.randn(4, 2, dtype=torch.float64)
+        state = layer.cell.init_state(4, fb.device, torch.float64)
+
+        out_step, state_step = layer.step_stateless([fb, drv], state)
+        out_seq, state_seq = layer.forward_stateless([fb.unsqueeze(1), drv.unsqueeze(1)], state)
+        assert (out_step - out_seq[:, 0, :]).abs().max().item() < 1e-12
+        assert (state_step - state_seq).abs().max().item() < 1e-12
+
+
+@requires_compile
+class TestCompiledForecast:
+    """``compile=True`` matches eager, spans chunks, and falls back cleanly."""
+
+    def test_compile_matches_eager(self, device: torch.device) -> None:
+        torch.manual_seed(1)
+        inp = Input(shape=(20, 3))
+        states = ESNLayer(reservoir_size=64, feedback_size=3, spectral_radius=0.9)(inp)
+        out = CGReadoutLayer(64, 3, name="output")(states)
+        model = ESNModel(inp, out).to(device)
+        warmup = torch.randn(1, 30, 3, device=device)
+
+        model.reset_reservoirs()
+        eager = model.forecast(warmup, horizon=40)
+        model.reset_reservoirs()
+        compiled = model.forecast(warmup, horizon=40, compile=True)
+        assert (eager - compiled).abs().max().item() < 1e-4
+
+    def test_compile_spans_chunks_and_remainder(self, device: torch.device) -> None:
+        # horizon deliberately not a multiple of the chunk size, to exercise
+        # both the compiled chunk loop and the eager remainder.
+        from resdag.core._flat_inference import DEFAULT_COMPILE_CHUNK
+
+        torch.manual_seed(2)
+        inp = Input(shape=(20, 2))
+        states = ESNLayer(reservoir_size=48, feedback_size=2, spectral_radius=0.9)(inp)
+        out = CGReadoutLayer(48, 2, name="output")(states)
+        model = ESNModel(inp, out).to(device)
+        warmup = torch.randn(1, 25, 2, device=device)
+        horizon = DEFAULT_COMPILE_CHUNK + 7
+
+        model.reset_reservoirs()
+        eager = model.forecast(warmup, horizon=horizon)
+        model.reset_reservoirs()
+        compiled = model.forecast(warmup, horizon=horizon, compile=True)
+        assert compiled.shape == (1, horizon, 2)
+        assert (eager - compiled).abs().max().item() < 1e-4
+
+    def test_compile_driven_model(self, device: torch.device) -> None:
+        model, _ = _build_driven_model(feedback_size=2, driver_size=3)
+        model = model.to(device)
+        warm_fb = torch.randn(1, 20, 2, device=device)
+        warm_drv = torch.randn(1, 20, 3, device=device)
+        fut_drv = torch.randn(1, 90, 3, device=device)
+
+        model.reset_reservoirs()
+        eager = model.forecast((warm_fb, warm_drv), forecast_inputs=(fut_drv,), horizon=80)
+        model.reset_reservoirs()
+        compiled = model.forecast(
+            (warm_fb, warm_drv), forecast_inputs=(fut_drv,), horizon=80, compile=True
+        )
+        assert (eager - compiled).abs().max().item() < 1e-4
+
+    def test_falls_back_to_eager_when_compile_raises(self, make_tiny_model, monkeypatch) -> None:
+        import resdag.core._flat_inference as fi
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("inductor said no")
+
+        monkeypatch.setattr(fi.torch, "compile", _boom)
+
+        model = make_tiny_model(feedback_size=3).double()
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+        model.reset_reservoirs()
+        eager = model.forecast(warmup, horizon=30)
+        model.reset_reservoirs()
+        with pytest.warns(RuntimeWarning, match="falling back to the eager flat step"):
+            fellback = model.forecast(warmup, horizon=30, compile=True)
+        # Fallback path is numerically identical to the eager flat path.
+        assert (eager - fellback).abs().max().item() < 1e-10
+
+    def test_falls_back_when_torch_too_old(self, make_tiny_model, monkeypatch) -> None:
+        from torch.torch_version import TorchVersion
+
+        import resdag.core._flat_inference as fi
+
+        monkeypatch.setattr(fi.torch, "__version__", TorchVersion("2.9.0"))
+
+        model = make_tiny_model(feedback_size=3).double()
+        warmup = torch.randn(1, 20, 3, dtype=torch.float64)
+        model.reset_reservoirs()
+        eager = model.forecast(warmup, horizon=20)
+        model.reset_reservoirs()
+        with pytest.warns(RuntimeWarning, match="needs torch>="):
+            result = model.forecast(warmup, horizon=20, compile=True)
+        assert (eager - result).abs().max().item() < 1e-10

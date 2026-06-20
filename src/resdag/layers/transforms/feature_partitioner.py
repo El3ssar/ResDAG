@@ -26,11 +26,15 @@ class FeaturePartitioner(nn.Module):
         overlap: Overlap size (in feature units) for each partition
 
     Input Shape:
-        (batch_size, sequence_length, features)
+        (..., features) — rank-agnostic on the feature (last) dimension. Both
+        (batch, features) and (batch, sequence_length, features) are accepted;
+        the leading dimensions are preserved. The 2-D rank lets the layer sit in
+        the autoregressive ``forecast`` path, where the flattened engine feeds
+        single-step slices.
 
     Output:
-        List of `partitions` tensors, each of shape
-        (batch_size, sequence_length, partition_width), where
+        List of `partitions` tensors, each with the same leading dimensions as
+        the input and a last dimension of
         partition_width = features // partitions + 2 * overlap
 
     Raises:
@@ -61,12 +65,19 @@ class FeaturePartitioner(nn.Module):
     def forward(self, input: torch.Tensor) -> list[torch.Tensor]:
         """Split the feature dimension into overlapping partitions with circular wrapping.
 
+        Operates purely on the feature (last) dimension, so it is rank-agnostic:
+        both 2-D ``(batch, features)`` and 3-D ``(batch, sequence_length, features)``
+        inputs are accepted (the latter is the usual sequence layout; the former
+        is what the flattened single-step forecast engine feeds per step). The
+        leading dimensions are preserved unchanged.
+
         Args:
-            input: Input tensor of shape (batch_size, sequence_length, features)
+            input: Input tensor whose last dimension is the feature dimension,
+                e.g. (batch, features) or (batch, sequence_length, features)
 
         Returns:
-            List of length `self.partitions`, each of shape
-            (batch_size, sequence_length, partition_width)
+            List of length `self.partitions`, each with the same leading
+            dimensions as `input` and a last dimension of `partition_width`
 
         Raises:
             ValueError: If feature dimension is not divisible by partitions
@@ -76,7 +87,7 @@ class FeaturePartitioner(nn.Module):
         if self.partitions == 1:
             return [input]
 
-        batch_size, seq_len, features = input.shape
+        features = input.shape[-1]
 
         # Validate shape
         if features % self.partitions != 0:

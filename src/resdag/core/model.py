@@ -49,6 +49,12 @@ import pytorch_symbolic as ps
 import torch
 from pytorch_symbolic.symbolic_data import SymbolicData
 
+from resdag.core._flat_inference import (
+    DEFAULT_COMPILE_CHUNK,
+    FlatStep,
+    build_flat_step,
+    resolve_chunk_step,
+)
 from resdag.layers.reservoirs import BaseReservoirLayer
 
 # Re-export for convenience
@@ -174,8 +180,28 @@ class ESNModel(ps.SymbolicModel):
             shell.__dict__.update(copy.deepcopy(node_dict, memo))
 
         for key, value in self.__dict__.items():
+            if key == "_flat_step_cache":
+                # The flattened-step cache holds an ``exec``-built closure that
+                # ``copy.deepcopy`` treats as atomic (it would keep closing over
+                # the *original* layers). Skip it; the copy rebuilds lazily on
+                # its next forecast against its own layers.
+                continue
             obj.__dict__[key] = copy.deepcopy(value, memo)
         return obj
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Drop the unpicklable flattened-step cache before pickling.
+
+        The cache holds an ``exec``-built step closure (and layer-bound methods)
+        that cannot be pickled — like the generated ``forward`` that
+        ``pytorch_symbolic.SymbolicModel.__getstate__`` already removes.  It is
+        rebuilt lazily on the next :meth:`forecast`, so nothing is lost; this
+        keeps :meth:`save_full` / ``torch.save(model)`` working after a forecast
+        has populated the cache.
+        """
+        state: dict[str, Any] = super().__getstate__()
+        state.pop("_flat_step_cache", None)
+        return state
 
     def _graph_nodes(self) -> list[SymbolicData]:
         """Collect every symbolic graph node reachable from inputs/outputs."""
@@ -910,6 +936,26 @@ class ESNModel(ps.SymbolicModel):
 
         return output if return_outputs else None
 
+    def _get_flat_step(self) -> FlatStep:
+        """
+        Return the cached flattened single-step executor, building it on demand.
+
+        The flattened step (see :mod:`resdag.core._flat_inference`) compiles the
+        symbolic graph into a straight-line per-step function that drives the
+        autoregressive :meth:`forecast` loop without re-walking the graph each
+        step.  It is cached and reused; the cache is keyed on the identity of
+        ``self.outputs`` so it is transparently rebuilt if the graph's outputs
+        change (e.g. via :meth:`add_output`).
+        """
+        cache: tuple[tuple[SymbolicData, ...], FlatStep] | None = getattr(
+            self, "_flat_step_cache", None
+        )
+        if cache is not None and cache[0] is self.outputs:
+            return cache[1]
+        flat = build_flat_step(self)
+        self._flat_step_cache: tuple[tuple[SymbolicData, ...], FlatStep] = (self.outputs, flat)
+        return flat
+
     @torch.no_grad()
     def forecast(
         self,
@@ -920,6 +966,7 @@ class ESNModel(ps.SymbolicModel):
         initial_feedback: torch.Tensor | None = None,
         return_warmup: bool = False,
         reset: bool = True,
+        compile: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
         """
         Two-phase forecast: teacher-forced warmup + autoregressive generation.
@@ -958,6 +1005,15 @@ class ESNModel(ps.SymbolicModel):
             If True, reservoir states are reset to ``None`` before warmup.
             Set to ``False`` only if you want to continue from a previously
             saved state.
+        compile : bool, default=False
+            If ``True``, wrap the flattened per-step engine in
+            :func:`torch.compile` (``mode="reduce-overhead"``, ``fullgraph=True``)
+            to fuse the autoregressive step and cut Python/launch overhead —
+            most useful for long horizons on GPU.  Requires ``torch>=2.10``;
+            on older torch, or if compilation fails, it transparently falls
+            back to the eager flat step (emitting a :class:`RuntimeWarning`).
+            The default eager path is already a flat, graph-free step engine,
+            so ``compile=False`` is fast; ``compile=True`` is an opt-in extra.
 
         Returns
         -------
@@ -994,6 +1050,17 @@ class ESNModel(ps.SymbolicModel):
         to the first step after the warmup window, so ``forecast_inputs`` must
         hold the driver series beginning right after the warmup drivers (no
         overlap) and provide at least ``horizon`` timesteps.
+
+        **Flat single-step engine.** The autoregressive loop is driven by a
+        flattened, graph-free step compiled once from the model graph (see
+        :mod:`resdag.core._flat_inference`) — numerically identical to the
+        per-step graph re-execution it replaces but without the per-step
+        ``nn.Module.__call__`` dispatch and reservoir sequence-loop bookkeeping.
+        Because it calls each layer's ``forward`` (and the reservoir's
+        :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`)
+        directly, **module forward/pre-hooks do not fire during the
+        autoregressive steps** (the teacher-forced warmup still uses the full
+        graph path).  The teacher-forced warmup runs the standard graph forward.
 
         Examples
         --------
@@ -1113,62 +1180,111 @@ class ESNModel(ps.SymbolicModel):
             )
 
         # Drivers narrowed to a concrete tuple for the loop (empty for the
-        # feedback-only path). Step ``t`` consumes ``drivers[i][:, t, :]``.
+        # feedback-only path). Step ``t`` consumes ``drivers[i][:, t:t+1, :]``.
         drivers: tuple[torch.Tensor, ...] = forecast_inputs if forecast_inputs is not None else ()
 
-        # Phase 2: Autoregressive forecast. Every slot is produced by feeding the
-        # model its own previous output, seeded by ``initial_feedback`` (if given)
-        # or the last warmup output. No teacher-forced frame is emitted, so slot 0
-        # is a genuine forecast step and the warmup/forecast seam is not duplicated.
+        # Phase 2: Autoregressive forecast, driven by the flattened single-step
+        # engine instead of re-walking the symbolic graph each step. Every slot
+        # is produced by feeding the model its own previous output, seeded by
+        # ``initial_feedback`` (if given) or the last warmup output — no
+        # teacher-forced frame is emitted, so slot 0 is a genuine forecast step
+        # and the warmup/forecast seam is not duplicated.
+        flat = self._get_flat_step()
+
+        # Resolve reservoir states (warmup leaves them set; init any that are
+        # somehow missing). They are threaded through ``step`` explicitly rather
+        # than mutated in place each iteration.
+        states: list[torch.Tensor] = []
+        for reservoir in flat.reservoir_layers:
+            if reservoir.state is None:
+                reservoir._maybe_init_state(batch_size, device, dtype)
+            assert reservoir.state is not None  # narrows for mypy
+            states.append(reservoir.state)
+
+        # Per-output feature dimensions and the (batch, 1, feedback_dim) seed.
+        # The engine threads 3-D single-step slices so every non-reservoir layer
+        # sees exactly what the graph path would; only the reservoir update is
+        # squeezed to 2-D internally.
         if multi_output:
             assert isinstance(warmup_outputs, tuple)  # guaranteed by multi_output
-            if initial_feedback is not None:
-                current_feedback = initial_feedback
-            else:
-                current_feedback = warmup_outputs[0][:, -1:, :]
-
-            forecast_multi = tuple(
-                torch.empty(batch_size, horizon, out.shape[-1], dtype=dtype, device=device)
-                for out in warmup_outputs
+            out_dims = [out.shape[-1] for out in warmup_outputs]
+            seed = (
+                initial_feedback if initial_feedback is not None else warmup_outputs[0][:, -1:, :]
             )
-            for t in range(horizon):
-                if has_drivers:
-                    step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
-                else:
-                    step_inputs = (current_feedback,)
-                outputs = self(*step_inputs)
-                for i, out in enumerate(outputs):
-                    forecast_multi[i][:, t, :] = out.squeeze(1)
-                current_feedback = outputs[0]
-
-            if return_warmup:
-                return tuple(
-                    torch.cat([warmup_outputs[i], forecast_multi[i]], dim=1)
-                    for i in range(len(forecast_multi))
-                )
-            return forecast_multi
-
-        assert isinstance(warmup_outputs, torch.Tensor)  # guaranteed by single output
-        if initial_feedback is not None:
-            current_feedback = initial_feedback
         else:
-            current_feedback = warmup_outputs[:, -1:, :]
+            assert isinstance(warmup_outputs, torch.Tensor)  # guaranteed by single output
+            out_dims = [warmup_outputs.shape[-1]]
+            seed = initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
+        current_feedback = seed  # (batch, 1, feedback_dim)
 
-        forecast_single = torch.empty(
-            batch_size, horizon, warmup_outputs.shape[-1], dtype=dtype, device=device
-        )
-        for t in range(horizon):
+        n_out = len(out_dims)
+        forecast_buffers = [
+            torch.empty(batch_size, horizon, dim, dtype=dtype, device=device) for dim in out_dims
+        ]
+
+        # Optionally compile a chunked step. ``done`` tracks how many steps the
+        # compiled path has produced; the eager single-step loop below fills the
+        # rest (the whole horizon when not compiling, or the < chunk remainder).
+        done = 0
+        if compile:
+            chunk = min(DEFAULT_COMPILE_CHUNK, horizon)
+            compiled_chunk = resolve_chunk_step(
+                flat,
+                chunk=chunk,
+                n_outputs=n_out,
+                mode="reduce-overhead",
+                trial_feedback=current_feedback,
+                trial_drivers=tuple(d[:, 0:chunk, :] for d in drivers),
+                trial_states=states,
+            )
+            if compiled_chunk is not None:
+                for _ in range(horizon // chunk):
+                    driver_chunk = tuple(d[:, done : done + chunk, :] for d in drivers)
+                    # cudagraph trees reuse static output buffers; mark a new
+                    # step so this replay's outputs may feed the next, and clone
+                    # the tensors carried across the chunk boundary.
+                    torch.compiler.cudagraph_mark_step_begin()
+                    blocks, states, current_feedback = compiled_chunk(
+                        current_feedback, driver_chunk, states
+                    )
+                    for i in range(n_out):
+                        forecast_buffers[i][:, done : done + chunk, :] = blocks[i]
+                    current_feedback = current_feedback.clone()
+                    states = [state.clone() for state in states]
+                    done += chunk
+
+        # Eager single-step loop: the whole horizon when not compiling, or the
+        # trailing remainder the chunked path could not cover.
+        for t in range(done, horizon):
             if has_drivers:
                 step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
             else:
                 step_inputs = (current_feedback,)
-            output = self(*step_inputs)
-            forecast_single[:, t, :] = output.squeeze(1)
-            current_feedback = output
+            step_outputs, states = flat.step(step_inputs, states)
+            for i in range(n_out):
+                forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
+            current_feedback = step_outputs[0]
+
+        # Persist the final reservoir states so a follow-up ``forecast(reset=False)``
+        # or ``get_reservoir_states()`` sees them, mirroring the in-place mutation
+        # of the legacy per-step loop. Clone so a compiled step's static output
+        # buffers cannot be overwritten under the stored state.
+        for reservoir, state in zip(flat.reservoir_layers, states):
+            reservoir.state = state.clone()
+
+        if multi_output:
+            if return_warmup:
+                assert isinstance(warmup_outputs, tuple)
+                return tuple(
+                    torch.cat([warmup_outputs[i], forecast_buffers[i]], dim=1)
+                    for i in range(len(forecast_buffers))
+                )
+            return tuple(forecast_buffers)
 
         if return_warmup:
-            return torch.cat([warmup_outputs, forecast_single], dim=1)
-        return forecast_single
+            assert isinstance(warmup_outputs, torch.Tensor)
+            return torch.cat([warmup_outputs, forecast_buffers[0]], dim=1)
+        return forecast_buffers[0]
 
 
 __all__ = ["Input", "ESNModel"]

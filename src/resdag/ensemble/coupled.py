@@ -210,6 +210,7 @@ class CoupledEnsembleESNModel(nn.Module):
         outputs = [model(*inputs) for model in self.models]
         return self._aggregate(outputs)
 
+    @torch.no_grad()
     def warmup(self, *inputs: torch.Tensor) -> None:
         """Teacher-forced warmup: synchronize every sub-model's reservoir state.
 
@@ -336,6 +337,7 @@ class CoupledEnsembleESNModel(nn.Module):
     # Forecasting
     # ------------------------------------------------------------------
 
+    @torch.no_grad()
     def forecast(
         self,
         warmup_inputs: tuple[torch.Tensor, ...] | torch.Tensor,

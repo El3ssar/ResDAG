@@ -390,6 +390,139 @@ class TestFitForecast:
 
 
 # ---------------------------------------------------------------------------
+# Autograd isolation (no_grad on forecast / warmup)
+# ---------------------------------------------------------------------------
+
+
+def _trainable_ensemble(n_models: int = 2, seed: int = 0) -> CoupledEnsembleESNModel:
+    """Build a coupled ensemble whose sub-models carry trainable parameters.
+
+    ``classic_esn(trainable=True)`` makes every sub-model's reservoir weights
+    ``requires_grad=True`` — the exact condition under which an un-guarded
+    autoregressive loop would build a full-horizon autograd graph.
+    """
+    return rd.coupled_ensemble_esn(
+        n_models=n_models,
+        model_factory=rd.classic_esn,
+        reservoir_size=20,
+        feedback_size=2,
+        output_size=2,
+        trainable=True,
+        seed=seed,
+    )
+
+
+class TestForecastNoGrad:
+    """``forecast``/``warmup`` are wrapped in ``@torch.no_grad()``.
+
+    Without the guard, every sub-model call inside the autoregressive loop
+    requires grad (trainable reservoirs), so the loop accumulates a
+    full-horizon autograd graph — leaking memory linearly in ``horizon`` and
+    risking version-counter corruption on the in-place ``torch.empty`` writes.
+    These tests pin the guard via structural ``requires_grad`` / ``grad_fn``
+    assertions, which hold regardless of available memory.
+    """
+
+    def test_submodels_actually_trainable(self):
+        """Guard the guard: the fixture really does have trainable parameters.
+
+        If this regressed to non-trainable sub-models the no-grad assertions
+        below would pass vacuously, so assert the precondition explicitly.
+        """
+        ens = _trainable_ensemble()
+        trainable = [p for m in ens.models for p in m.parameters() if p.requires_grad]
+        assert len(trainable) > 0
+
+    def test_forecast_output_has_no_grad(self):
+        """``forecast`` output is detached even with trainable sub-models."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = _trainable_ensemble()
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        out = ens.forecast(f_warm, horizon=15)
+        assert out.requires_grad is False
+        assert out.grad_fn is None
+
+    def test_forecast_individuals_have_no_grad(self):
+        """Per-model trajectories from ``return_individuals`` are also detached."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = _trainable_ensemble(n_models=3)
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        agg, indiv = ens.forecast(f_warm, horizon=10, return_individuals=True)
+        assert agg.requires_grad is False and agg.grad_fn is None
+        for buf in indiv:
+            assert buf.requires_grad is False
+            assert buf.grad_fn is None
+
+    def test_forecast_return_warmup_has_no_grad(self):
+        """The warmup-prepended forecast output is detached too."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = _trainable_ensemble()
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        out = ens.forecast(f_warm, horizon=12, return_warmup=True)
+        assert out.requires_grad is False
+        assert out.grad_fn is None
+
+    def test_warmup_does_not_accumulate_graph(self):
+        """``warmup`` advances reservoir states without retaining a graph.
+
+        After a teacher-forced warmup with trainable sub-models, the stored
+        reservoir states must be detached — a retained ``grad_fn`` here would
+        be the leaked graph the guard is meant to prevent.
+        """
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = _trainable_ensemble()
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        ens.warmup(f_warm)
+        for state_dict in ens.get_reservoir_states():
+            for state in state_dict.values():
+                assert state.requires_grad is False
+                assert state.grad_fn is None
+
+    def test_long_horizon_forecast_retains_no_graph(self):
+        """A long-horizon forecast retains no autograd graph (no per-step growth).
+
+        A structural ``grad_fn``/``requires_grad`` check is sufficient: with the
+        guard the loop never links steps into a graph, so memory cannot grow
+        with ``horizon``. Without it, the output would carry a ``grad_fn``
+        chaining all ``horizon`` steps.
+        """
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = _trainable_ensemble()
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        out = ens.forecast(f_warm, horizon=200)
+        assert out.shape == (1, 200, 2)
+        assert out.requires_grad is False
+        assert out.grad_fn is None
+
+    def test_forecast_does_not_disable_grad_globally(self):
+        """The guard is scoped: grad tracking is restored after ``forecast``."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = _trainable_ensemble()
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        assert torch.is_grad_enabled()
+        ens.forecast(f_warm, horizon=5)
+        assert torch.is_grad_enabled()
+
+
+# ---------------------------------------------------------------------------
 # Driven (input-driven) forecast
 # ---------------------------------------------------------------------------
 

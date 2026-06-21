@@ -1286,5 +1286,217 @@ class ESNModel(ps.SymbolicModel):
             return torch.cat([warmup_outputs, forecast_buffers[0]], dim=1)
         return forecast_buffers[0]
 
+    @torch.no_grad()
+    def windowed_forecast(
+        self,
+        series: torch.Tensor,
+        *driver_series: torch.Tensor,
+        predict_len: int,
+        teacher_len: int,
+        warmup_len: int | None = None,
+        reset: bool = True,
+        return_mask: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """
+        Gap-filling reconstruction by alternating re-sync and free-running.
+
+        Reconstruct a long trajectory that is only *observed* in periodic
+        windows: the reservoir is repeatedly re-synchronized on a short window
+        of real data (teacher forcing) and then left to forecast autonomously
+        across the unobserved gap.  Because the Echo State Property gives the
+        reservoir fading memory, every teacher-forced window pulls its state
+        back onto the true trajectory, no matter how far the previous free run
+        had drifted — so per-window error does not compound across windows
+        (accuracy *within* a gap still depends on keeping ``predict_len`` short
+        relative to the system's predictability horizon).
+
+        The reservoir state is carried across the whole pass (it is reset only
+        once, at the start, and only when ``reset=True``).  Each cycle is one
+        :meth:`forecast` call: its warmup phase is the re-sync window and its
+        autoregressive phase is the gap.
+
+        Timeline (``W = warmup_len``, ``F = teacher_len``, ``P = predict_len``)::
+
+            [== warmup W ==][~~ gap P ~~][= teacher F =][~~ gap P ~~][= F =]...
+              observed         filled       observed       filled      obs
+            (teacher-forced)  (forecast)  (teacher-forced) (forecast)
+
+        Observed segments are copied verbatim from ``series``; gap segments are
+        replaced by the model's autonomous forecast.  Any trailing steps that
+        cannot host a full re-sync window plus at least one forecast step are
+        left as observed.
+
+        Parameters
+        ----------
+        series : torch.Tensor
+            Ground-truth feedback series of shape ``(batch, T, feedback_dim)``.
+            It is both the source of every teacher-forced window and the value
+            returned on observed segments.
+        *driver_series : torch.Tensor
+            Exogenous driver series, one per driver input of the model, each of
+            shape ``(batch, T, driver_dim)`` spanning the full timeline.  Omit
+            for feedback-only models.  Unlike :meth:`forecast` (which takes
+            *separate* warmup and ``forecast_inputs`` driver tuples), here each
+            driver covers the whole ``T``-step timeline and is sliced internally
+            per cycle.
+        predict_len : int, keyword-only
+            Length ``P`` of each autonomous forecast window (the gap to fill).
+            Must be ``>= 1``.
+        teacher_len : int, keyword-only
+            Length ``F`` of each teacher-forced re-synchronization window.
+            Must be ``>= 1``.  Longer windows re-sync more reliably; shorter
+            windows observe less of the signal.
+        warmup_len : int, optional
+            Length ``W`` of the initial teacher-forced window.  Defaults to
+            ``teacher_len``.
+        reset : bool, default=True
+            If True, reservoir states are reset before the first window.  Set
+            False to continue from the current (already warmed) state.
+        return_mask : bool, default=False
+            If True, also return a 1-D boolean mask of length ``T`` that is
+            True where the reconstruction is a real value and False where it is
+            a model forecast (see Returns).
+
+        Returns
+        -------
+        reconstruction : torch.Tensor
+            Reconstructed series of shape ``(batch, T, feedback_dim)``: real
+            values on observed segments, forecasts on the gaps.
+        mask : torch.Tensor
+            Only if ``return_mask=True``.  Boolean tensor of shape ``(T,)``,
+            True where the step is a real value (a teacher-forced window, or the
+            untouched trailing remainder copied verbatim from ``series``) and
+            False where it is a model forecast.
+
+        Raises
+        ------
+        ValueError
+            If ``series`` is not 3-D, if ``predict_len``/``teacher_len``/
+            ``warmup_len`` are not positive, if the number of ``driver_series``
+            does not match the model's drivers, if any driver does not span
+            ``T`` steps, or if ``series`` is too short for even one cycle.
+
+        Notes
+        -----
+        - The forecast steps to score are exactly ``reconstruction[:, ~mask]``
+          against ``series[:, ~mask]`` — the values the model had to infer
+          without ever seeing them.
+        - For multi-output models the first output is fed back (as in
+          :meth:`forecast`) and only that channel is reconstructed.
+
+        Examples
+        --------
+        Reconstruct a Lorenz trajectory observed 40 steps out of every 240,
+        filling 200-step gaps:
+
+        >>> recon, mask = model.windowed_forecast(
+        ...     series,                 # (1, T, 3) ground truth
+        ...     predict_len=200,
+        ...     teacher_len=40,
+        ...     return_mask=True,
+        ... )
+        >>> gap_rmse = ((recon[:, ~mask] - series[:, ~mask]) ** 2).mean().sqrt()
+
+        With an exogenous driver:
+
+        >>> recon = model.windowed_forecast(
+        ...     feedback_series, driver_series,
+        ...     predict_len=100, teacher_len=50,
+        ... )
+
+        See Also
+        --------
+        forecast : A single warmup + autoregressive forecast cycle.
+        warmup : Teacher-forced state synchronization only.
+        """
+        if series.dim() != 3:
+            raise ValueError(
+                f"series must be 3-D (batch, T, feedback_dim); got shape {tuple(series.shape)}."
+            )
+        if predict_len < 1:
+            raise ValueError(f"predict_len must be a positive integer, got {predict_len}")
+        if teacher_len < 1:
+            raise ValueError(f"teacher_len must be a positive integer, got {teacher_len}")
+        if warmup_len is None:
+            warmup_len = teacher_len
+        if warmup_len < 1:
+            raise ValueError(f"warmup_len must be a positive integer, got {warmup_len}")
+
+        num_drivers = len(driver_series)
+        expected_drivers = len(self.inputs) - 1
+        if num_drivers != expected_drivers:
+            raise ValueError(
+                f"model has {expected_drivers} driver input(s) but {num_drivers} "
+                f"driver_series were given. Pass one full-timeline driver series per "
+                f"driver input (the feedback is supplied by `series`)."
+            )
+
+        _, total_steps, _ = series.shape
+        for i, driver in enumerate(driver_series):
+            if driver.dim() != 3:
+                raise ValueError(
+                    f"driver_series[{i}] must be 3-D (batch, T, driver_dim); "
+                    f"got shape {tuple(driver.shape)}."
+                )
+            if driver.shape[1] != total_steps:
+                raise ValueError(
+                    f"driver_series[{i}] spans {driver.shape[1]} steps but series spans "
+                    f"{total_steps}; drivers must cover the full timeline."
+                )
+
+        reconstruction = series.clone()
+        mask = torch.ones(total_steps, dtype=torch.bool, device=series.device)
+
+        pos = 0
+        window_len = warmup_len
+        ran_a_cycle = False
+        while True:
+            teacher_end = pos + window_len
+            # Stop once a full re-sync window leaves no room to forecast. The
+            # guard guarantees ``teacher_end < total_steps`` below, so the gap
+            # (clamped to whatever remains) is always at least one step.
+            if teacher_end >= total_steps:
+                break
+            gap = min(predict_len, total_steps - teacher_end)
+
+            teacher_window = series[:, pos:teacher_end, :]
+            if num_drivers:
+                warmup_inputs: tuple[torch.Tensor, ...] = (
+                    teacher_window,
+                    *(d[:, pos:teacher_end, :] for d in driver_series),
+                )
+                forecast_inputs: tuple[torch.Tensor, ...] | None = tuple(
+                    d[:, teacher_end : teacher_end + gap, :] for d in driver_series
+                )
+            else:
+                warmup_inputs = (teacher_window,)
+                forecast_inputs = None
+
+            preds = self.forecast(
+                warmup_inputs,
+                forecast_inputs=forecast_inputs,
+                horizon=gap,
+                reset=reset and not ran_a_cycle,
+            )
+            feedback_preds = preds[0] if isinstance(preds, tuple) else preds
+            reconstruction[:, teacher_end : teacher_end + gap, :] = feedback_preds
+            mask[teacher_end : teacher_end + gap] = False
+
+            ran_a_cycle = True
+            pos = teacher_end + gap
+            window_len = teacher_len
+
+        if not ran_a_cycle:
+            raise ValueError(
+                f"series length ({total_steps}) is too short for even one cycle: the "
+                f"initial warmup window (warmup_len={warmup_len}) leaves no room to "
+                f"forecast (need at least warmup_len + 1 = {warmup_len + 1} steps; the "
+                f"final gap is clamped to whatever remains)."
+            )
+
+        if return_mask:
+            return reconstruction, mask
+        return reconstruction
+
 
 __all__ = ["Input", "ESNModel"]

@@ -90,6 +90,65 @@ index.
 
 ---
 
+## Windowed reconstruction
+
+`windowed_forecast()` fills the gaps in a sparsely-observed trajectory.
+You hold the *full* ground-truth series but only trust it in periodic
+windows; between them the model free-runs. Each cycle re-synchronizes the
+reservoir on a short teacher-forced window, then forecasts across the
+unobserved gap — and because the Echo State Property re-anchors the state
+on every observed window, per-window error does not compound across
+windows, so gaps can be filled indefinitely. It is a thin
+`@torch.no_grad()` loop over `forecast()`: the reservoir is reset once (on
+the first window, and only when `reset=True`) and its state is carried
+across the whole pass.
+
+```text
+[== warmup W ==][~~ gap P ~~][= teacher F =][~~ gap P ~~][= F =] ...
+   observed        filled        observed       filled       obs
+ (teacher-forced) (forecast)  (teacher-forced) (forecast)
+```
+
+<div class="nb-specimen" data-label="windowed_forecast.py" markdown>
+
+```python
+recon, mask = model.windowed_forecast(
+    series,            # (batch, T, feedback_dim) ground truth
+    predict_len=200,   # P: autonomous steps per gap
+    teacher_len=40,    # F: real steps teacher-forced to re-sync
+    warmup_len=200,    # initial sync window (defaults to teacher_len)
+    return_mask=True,  # mask[t] True where observed, False where forecast
+)
+# recon: real values on observed steps, forecasts on the gaps.
+# Score the steps the model never saw:
+gap_rmse = ((recon[:, ~mask] - series[:, ~mask]) ** 2).mean().sqrt()
+```
+
+</div>
+
+The returned `mask` is a 1-D boolean of length `T`: `True` on observed
+(teacher-forced) steps and any untouched trailing remainder, `False` on
+the forecast gaps. The gaps are *exactly* what you score —
+`recon[:, ~mask]` against `series[:, ~mask]` — the values the model had to
+infer without ever seeing them. Observed segments are copied verbatim, so
+`recon[:, mask]` equals `series[:, mask]`.
+
+For **driven models**, pass one full-timeline driver series per driver
+*positionally*; each is sliced per cycle internally (unlike `forecast()`,
+which takes separate warmup and forecast driver tuples):
+
+```python
+recon = model.windowed_forecast(feedback, driver, predict_len=100, teacher_len=50)
+```
+
+Keep `predict_len` short relative to the system's predictability horizon
+(a few Lyapunov times for chaotic systems): sparse sampling still rebuilds
+the attractor, but phase tracking degrades before the attractor *shape*
+does. For multi-output models the first output is fed back, as in
+`forecast()`, and only that channel is reconstructed.
+
+---
+
 ## Coupled ensembles
 
 A coupled ensemble runs N independently initialized models, trained

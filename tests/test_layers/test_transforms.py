@@ -1,10 +1,17 @@
 """Transform-layer contracts.
 
 Pins down the deterministic tensor transforms used inside premade models:
-``FeaturePartitioner`` (circular feature grouping), ``SelectiveDropout``
-(per-feature masking), ``SelectiveExponentiation`` (even/odd-index state
-augmentation), ``Standardize`` (per-feature z-score with fit/inverse), and the
+``Concatenate`` (feature-dim joining), ``FeaturePartitioner`` (circular feature
+grouping), ``Power`` (uniform exponentiation), ``SelectiveDropout`` (per-feature
+masking), ``SelectiveExponentiation`` (even/odd-index state augmentation),
+``Standardize`` (per-feature z-score with fit/inverse), and the
 ``OutliersFilteredMean`` ensemble aggregator.
+
+Every transform is exercised through its backward pass as well as its forward
+pass: gradients must be finite and route correctly back to the inputs, since
+end-to-end SGD through these ``nn.Module``s is a core library pillar. Where the
+map is smooth and the inputs can be kept away from kinks, the analytic gradient
+is cross-checked numerically with :func:`torch.autograd.gradcheck`.
 """
 
 import tempfile
@@ -16,7 +23,9 @@ import torch
 
 from resdag.ensemble.aggregators import OutliersFilteredMean
 from resdag.layers.transforms import (
+    Concatenate,
     FeaturePartitioner,
+    Power,
     SelectiveDropout,
     SelectiveExponentiation,
     Standardize,
@@ -118,6 +127,71 @@ class TestFeaturePartitioner:
         parts3 = layer(x2.unsqueeze(1))
         for p2, p3 in zip(parts2, parts3):
             assert torch.equal(p2, p3.squeeze(1))
+
+    def test_gradients_route_to_wrapped_indices(self) -> None:
+        """Each feature gets one gradient per slice it appears in (incl. wraps).
+
+        Summing every partition output is a pure copy of the input, so a feature
+        copied into ``c`` slices accumulates a gradient of exactly ``c``. With
+        ``partitions=2, overlap=1`` over 12 features the slices are
+        ``p0 = [x11, x0..x6]`` and ``p1 = [x5..x11, x0]``: the features at the
+        partition boundary (``x0, x5, x6, x11``) land in two slices and so carry
+        grad 2, while the interior features appear once and carry grad 1. This
+        pins the exact circular-overlap routing, not just "grads are finite".
+        """
+        layer = FeaturePartitioner(partitions=2, overlap=1)
+        x = torch.arange(12, dtype=torch.float64).reshape(1, 12).requires_grad_(True)
+
+        outputs = layer(x)
+        torch.stack([o.sum() for o in outputs]).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # Boundary features (0, 5, 6, 11) appear in two slices; the rest in one.
+        expected = torch.ones(1, 12, dtype=torch.float64)
+        expected[0, [0, 5, 6, 11]] = 2.0
+        assert torch.equal(x.grad, expected)
+
+    def test_no_overlap_gradient_is_one_everywhere(self) -> None:
+        """With no overlap every feature lands in exactly one partition (grad 1)."""
+        layer = FeaturePartitioner(partitions=3, overlap=0)
+        x = torch.randn(2, 12, dtype=torch.float64, requires_grad=True)
+
+        outputs = layer(x)
+        torch.stack([o.sum() for o in outputs]).sum().backward()
+
+        assert x.grad is not None
+        assert torch.equal(x.grad, torch.ones_like(x))
+
+    def test_gradient_routes_only_to_wrapped_source(self) -> None:
+        """A gradient on a wrapped slice position flows to its source feature.
+
+        The first ``overlap`` columns of partition 0 are the *last* ``overlap``
+        features wrapped around. Back-propagating a unit gradient through only
+        that wrapped column must land on the original (last) feature, proving the
+        circular routing is wired to the right source index.
+        """
+        layer = FeaturePartitioner(partitions=2, overlap=1)
+        x = torch.arange(12, dtype=torch.float64).reshape(1, 12).requires_grad_(True)
+
+        # Partition 0, column 0 is the wrapped copy of the last input feature.
+        layer(x)[0][0, 0].backward()
+
+        assert x.grad is not None
+        expected = torch.zeros(1, 12, dtype=torch.float64)
+        expected[0, -1] = 1.0
+        assert torch.equal(x.grad, expected)
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck over the partition list output."""
+        layer = FeaturePartitioner(partitions=2, overlap=1)
+        x = torch.randn(2, 8, dtype=torch.float64, requires_grad=True)
+
+        # gradcheck wants a tuple of tensors; the layer returns a list.
+        def wrapped(t: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return tuple(layer(t))
+
+        assert torch.autograd.gradcheck(wrapped, (x,), eps=1e-6, atol=1e-4)
 
     def test_extra_repr(self) -> None:
         """Test string representation."""
@@ -266,6 +340,68 @@ class TestOutliersFilteredMean:
         with pytest.raises(ValueError, match="Unsupported method"):
             OutliersFilteredMean(method="invalid", threshold=2.0)
 
+    def test_per_member_gradient_no_outliers_is_uniform(self) -> None:
+        """With no outliers the layer is a plain mean: grad 1/N per member.
+
+        The outlier mask is a hard ``< threshold`` comparison and carries no
+        gradient, so with all members retained the aggregate is ``mean over
+        samples`` and each member receives an equal share ``1/N`` of the upstream
+        gradient.
+        """
+        n = 4
+        layer = OutliersFilteredMean(method="z_score", threshold=10.0)  # keep all
+        # All members identical -> nobody is an outlier; mean path is active.
+        x = torch.ones(n, 2, 3, 4, dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        assert torch.allclose(x.grad, torch.full_like(x, 1.0 / n))
+
+    def test_per_member_gradient_skips_dropped_member(self) -> None:
+        """A filtered-out member receives zero gradient; inliers split the rest.
+
+        One blatant outlier is dropped, so it sits behind the (gradient-free)
+        mask and gets no gradient, while each of the surviving ``N-1`` inliers
+        receives ``1/(N-1)``.
+        """
+        layer = OutliersFilteredMean(method="z_score")  # default threshold
+        inliers = [torch.ones(2, 3, 4, dtype=torch.float64) for _ in range(3)]
+        outlier = torch.ones(2, 3, 4, dtype=torch.float64) * 1000.0
+        x = torch.stack(inliers + [outlier], dim=0).requires_grad_(True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # Three inliers each carry 1/3; the dropped outlier carries 0.
+        assert torch.allclose(x.grad[:3], torch.full((3, 2, 3, 4), 1.0 / 3, dtype=torch.float64))
+        assert torch.allclose(x.grad[3], torch.zeros(2, 3, 4, dtype=torch.float64))
+
+    def test_gradient_finite_list_input(self) -> None:
+        """Per-member gradients flow back through the list-input path."""
+        layer = OutliersFilteredMean(method="z_score", threshold=2.0)
+        members = [torch.randn(2, 5, 4, dtype=torch.float64, requires_grad=True) for _ in range(3)]
+
+        layer(members).sum().backward()
+
+        for member in members:
+            assert member.grad is not None
+            assert torch.isfinite(member.grad).all()
+
+    def test_gradcheck_no_outliers(self) -> None:
+        """Gradcheck on a stable-mask config (high threshold -> always plain mean).
+
+        A threshold large enough that no member is ever flagged makes the mask
+        constant under the small ``gradcheck`` perturbations, so the map is the
+        smooth ``mean`` and the analytic gradient matches the numeric one.
+        """
+        layer = OutliersFilteredMean(method="z_score", threshold=1e9)
+        x = torch.randn(3, 2, 3, 4, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
     def test_extra_repr(self) -> None:
         """Test string representation."""
         layer = OutliersFilteredMean(method="iqr", threshold=1.5)
@@ -384,6 +520,41 @@ class TestSelectiveDropout:
 
         assert "mask" in state_dict
         assert torch.equal(state_dict["mask"], torch.tensor(mask))
+
+    def test_gradient_zero_at_dropped_identity_elsewhere(self) -> None:
+        """Gradient is zero at dropped indices and one at the kept indices.
+
+        The layer is ``where(mask, 0, x)``: dropped positions are a constant zero
+        (no upstream gradient flows in), kept positions are the identity (grad 1).
+        """
+        mask = [False, True, False, True]  # drop indices 1 and 3
+        layer = SelectiveDropout(mask)
+        x = torch.randn(2, 5, 4, dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        expected = torch.ones_like(x)
+        expected[..., [1, 3]] = 0.0
+        assert torch.equal(x.grad, expected)
+
+    def test_gradient_all_dropped_is_zero(self) -> None:
+        """Dropping every feature yields an all-zero gradient (constant output)."""
+        layer = SelectiveDropout([True, True, True, True])
+        x = torch.randn(2, 5, 4, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.equal(x.grad, torch.zeros_like(x))
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck for the masked-identity map."""
+        layer = SelectiveDropout([False, True, False, True])
+        x = torch.randn(3, 4, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
 
     def test_extra_repr(self) -> None:
         """Test string representation."""
@@ -855,3 +1026,113 @@ class TestStandardize:
 
         assert "num_features=5" in repr_str
         assert "eps=1e-06" in repr_str
+
+
+class TestConcatenate:
+    """Forward and backward contracts for the Concatenate transform."""
+
+    def test_forward_joins_feature_dim(self) -> None:
+        """Inputs are concatenated along the last dimension."""
+        layer = Concatenate()
+        a = torch.randn(2, 5, 3)
+        b = torch.randn(2, 5, 4)
+
+        out = layer(a, b)
+
+        assert out.shape == (2, 5, 7)
+        assert torch.equal(out[..., :3], a)
+        assert torch.equal(out[..., 3:], b)
+
+    def test_gradient_splits_across_inputs(self) -> None:
+        """Upstream gradient is split back to the matching input slices.
+
+        ``cat`` simply views each input as a contiguous block of the output, so
+        a per-feature upstream weight routes verbatim to the source tensor and
+        each input sees only the slice it contributed.
+        """
+        layer = Concatenate()
+        a = torch.randn(2, 5, 3, dtype=torch.float64, requires_grad=True)
+        b = torch.randn(2, 5, 4, dtype=torch.float64, requires_grad=True)
+
+        out = layer(a, b)
+        # Distinct per-feature weights so a mis-routed gradient would be caught.
+        weight = torch.arange(1, out.shape[-1] + 1, dtype=torch.float64)
+        (out * weight).sum().backward()
+
+        assert a.grad is not None and b.grad is not None
+        assert torch.isfinite(a.grad).all() and torch.isfinite(b.grad).all()
+        # First 3 weights land on a; the remaining 4 land on b.
+        assert torch.allclose(a.grad, weight[:3].expand_as(a))
+        assert torch.allclose(b.grad, weight[3:].expand_as(b))
+
+    def test_gradient_three_inputs(self) -> None:
+        """Variadic input: every input receives a finite slice of the gradient."""
+        layer = Concatenate()
+        xs = [torch.randn(2, 5, 2, dtype=torch.float64, requires_grad=True) for _ in range(3)]
+
+        layer(*xs).sum().backward()
+
+        for x in xs:
+            assert x.grad is not None
+            assert torch.equal(x.grad, torch.ones_like(x))
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck across the variadic inputs."""
+        layer = Concatenate()
+        a = torch.randn(2, 3, dtype=torch.float64, requires_grad=True)
+        b = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (a, b), eps=1e-6, atol=1e-4)
+
+
+class TestPower:
+    """Forward and backward contracts for the Power transform."""
+
+    def test_forward_squares_all_features(self) -> None:
+        """Every element is raised to the exponent."""
+        layer = Power(exponent=2.0)
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
+
+        assert torch.allclose(layer(x), torch.tensor([[1.0, 4.0, 9.0, 16.0]]))
+
+    def test_gradient_matches_power_rule(self) -> None:
+        """Gradient is the analytic ``e * x**(e-1)`` and stays finite."""
+        layer = Power(exponent=3.0)
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # d/dx x^3 = 3 x^2.
+        assert torch.allclose(x.grad, 3.0 * x.detach() ** 2)
+
+    def test_gradient_fractional_exponent_positive_base(self) -> None:
+        """Fractional exponent on strictly positive bases gives finite grads."""
+        layer = Power(exponent=0.5)
+        x = torch.tensor([[4.0, 9.0, 16.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # d/dx x^0.5 = 0.5 x^-0.5.
+        assert torch.allclose(x.grad, 0.5 * x.detach() ** -0.5)
+
+    def test_gradcheck_integer_exponent(self) -> None:
+        """Double-precision gradcheck for an integer exponent (any real base)."""
+        layer = Power(exponent=3.0)
+        x = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_gradcheck_fractional_exponent_positive_base(self) -> None:
+        """Gradcheck the fractional path on strictly positive bases."""
+        layer = Power(exponent=1.5)
+        x = torch.rand(2, 4, dtype=torch.float64, requires_grad=True) + 0.5
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_extra_repr(self) -> None:
+        """String representation reports the exponent."""
+        assert "exponent=2.0" in Power(exponent=2.0).extra_repr()

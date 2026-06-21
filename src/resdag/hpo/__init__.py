@@ -112,6 +112,7 @@ def _require_optuna() -> None:
 # Lazy imports for optuna-dependent functions
 if TYPE_CHECKING:
     from .run import run_hpo as run_hpo
+    from .transfer import export_best_config as export_best_config
     from .utils import get_best_params as get_best_params
     from .utils import get_study_summary as get_study_summary
     from .utils import make_study_name as make_study_name
@@ -143,6 +144,12 @@ def __getattr__(name: str) -> Any:
 
         return get_best_params
 
+    if name == "export_best_config":
+        _require_optuna()
+        from .transfer import export_best_config
+
+        return export_best_config
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -162,6 +169,8 @@ __all__ = [
     "get_best_params",
     "get_study_summary",
     "make_study_name",
+    # Warm-start / transfer (require optuna)
+    "export_best_config",
 ]
 
 

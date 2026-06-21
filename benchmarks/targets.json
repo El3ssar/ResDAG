@@ -1,0 +1,68 @@
+{
+  "$schema-note": "Committed performance targets for resdag. The 'internal_ratios' block is the hard gate enforced by tests/test_benchmarks/test_perf_regression.py: hardware-portable INTERNAL speedups that hold on any CPU with no external library installed (resdag's own fast path vs its own naive path). The 'external_floors' block is INFORMATIONAL ONLY (cross-library numbers transcribed from benchmarks/results/REPORT.md); it is never asserted in the test suite because reservoirpy / ReservoirComputing.jl may be absent. Re-running 'python -m rc_bench.run --report' regenerates REPORT.md and is how external_floors are refreshed.",
+  "version": 1,
+  "generated_note": "internal_ratios are intrinsic algorithmic speedups (#254 flat forecast, #255 vectorized NG-RC, #185 fast spectral radius); external_floors snapshot REPORT.md generated 2026-06-14.",
+  "internal_ratios": {
+    "note": "Each cell carries two numbers. 'enforced_min_ratio' is the HARD floor asserted by tests/test_benchmarks/test_perf_regression.py on CPU — conservative so it never flakes on a slow/loaded CI runner, but still large enough to catch an algorithmic regression (a fast path silently reverting to the naive path). 'aspirational_ratio' is the headline speedup from the audit / REPORT.md on favorable hardware (GPU and/or large N), recorded for documentation; it is NOT enforced because it is not hardware-portable.",
+    "flat_forecast_vs_graph_reexec": {
+      "enforced_min_ratio": 1.8,
+      "aspirational_ratio": 6.0,
+      "metric": "best-of-N wall time(per-step graph re-execution) / best-of-N wall time(flat single-step forecast engine); interleaved A/B, small reservoir (size 20, H=2000)",
+      "ticket": "core-forecast-flat-inference-engine (#254)",
+      "rationale": "The flat single-step engine (resdag.core._flat_inference) sidesteps a full pytorch_symbolic graph walk per autoregressive step. The gate uses a deliberately small reservoir (size 20, H=2000) so the fixed per-step graph-walk overhead — exactly what #254 removed — dominates the per-step matmul; this isolates the algorithmic win and makes the floor independent of CPU matmul speed (a big reservoir would dilute the ratio with compute and flake on slow boxes). On CPU it clears 1.8x at this config (measured ~1.9-2.0x); the GPU cudagraph path reaches ~5-6x (#254 audit), recorded as the aspirational ratio. Hardware-portable: an interleaved same-machine A/B ratio, no external libraries."
+    },
+    "vectorized_ngrc_vs_stepwise": {
+      "enforced_min_ratio": 5.0,
+      "aspirational_ratio": 30.0,
+      "metric": "median wall time(per-step NGCell.forward scan) / median wall time(vectorized NGCell.forward_sequence)",
+      "ticket": "reservoir-vectorize-ngrc (#255)",
+      "rationale": "NGReservoir builds delay-embedded + polynomial features over the whole sequence in one vectorized pass (forward_sequence) instead of a Python loop over forward(). The vectorized pass must be at least 5x faster than the step-by-step scan for numerically-identical output (measured ~40x at 400 steps); the floor is conservative against short-sequence Python-loop noise. Hardware-portable same-machine A/B ratio."
+    },
+    "fast_spectral_radius_vs_dense_eigvals": {
+      "enforced_min_ratio": 2.0,
+      "aspirational_ratio": 10.0,
+      "metric": "median wall time(dense torch.linalg.eigvals radius) / median wall time(estimate_spectral_radius fast path)",
+      "ticket": "init-fast-spectral-radius (#185)",
+      "rationale": "estimate_spectral_radius replaces the O(n^3) dense eigendecomposition with an O(n^2)-per-step power iteration (dense) or scipy Arnoldi eigs (sparse). On CPU at portable sizes the dense power-iteration path beats dense eigvals by ~3-5x, so the enforced floor is a conservative 2.0x; the 10x aspirational ratio is reached on GPU and at large N where the O(n^3) eigvals cost dominates (#185 audit). Hardware-portable same-machine A/B ratio on the pure-torch power-iteration path (no external library)."
+    }
+  },
+  "external_floors": {
+    "note": "INFORMATIONAL ONLY — transcribed from benchmarks/results/REPORT.md (2026-06-14, RTX 3060 Laptop / 16-thread CPU, python 3.14.2, resdag 0.6.0, reservoirpy 0.4.2, torch 2.10.0+cu128). Speedups are relative to reservoirpy (=1.00x). NOT asserted by the test suite: these depend on external libraries and specific hardware. They document the headline claims and let `python -m rc_bench.run --report` flag drift on the benchmark machine.",
+    "baseline_library": "reservoirpy",
+    "train_size": {
+      "axis": "reservoir_size",
+      "cells": {
+        "250": {"resdag_cpu_x": 1.0, "resdag_gpu_x": 0.5, "rcjl_x": 0.2},
+        "500": {"resdag_cpu_x": 1.1, "resdag_gpu_x": 0.8, "rcjl_x": 0.1},
+        "1000": {"resdag_cpu_x": 1.3, "resdag_gpu_x": 2.3, "rcjl_x": 0.1},
+        "2000": {"resdag_cpu_x": 0.6, "resdag_gpu_x": 16.4, "rcjl_x": null}
+      }
+    },
+    "train_data": {
+      "axis": "train_len",
+      "cells": {
+        "1000": {"resdag_cpu_x": 2.0, "resdag_gpu_x": 2.5, "rcjl_x": 0.1},
+        "5000": {"resdag_cpu_x": 1.2, "resdag_gpu_x": 2.1, "rcjl_x": 0.1},
+        "20000": {"resdag_cpu_x": 1.0, "resdag_gpu_x": 1.8, "rcjl_x": null}
+      }
+    },
+    "forecast": {
+      "axis": "horizon",
+      "note": "resdag forecast rows use the flat single-step engine (#254). The resdag-gpu H=5000 floor of 0.6x reservoirpy is the post-flat-engine number recorded in REPORT.md and is the cell the ticket calls out.",
+      "cells": {
+        "1000": {"resdag_cpu_x": 0.8, "resdag_gpu_x": 1.1, "rcjl_x": 0.1},
+        "5000": {"resdag_cpu_x": 0.4, "resdag_gpu_x": 0.6, "rcjl_x": 0.0},
+        "10000": {"resdag_cpu_x": 0.4, "resdag_gpu_x": 0.6, "rcjl_x": 0.0}
+      }
+    },
+    "precision_vpt_steps": {
+      "axis": "reservoir_size",
+      "note": "Valid prediction time in steps (higher is better): closed-loop steps tracked before normalized error exceeds 0.5. Predictive skill, not speed.",
+      "cells": {
+        "500": {"reservoirpy": 52, "resdag_cpu": 146, "resdag_gpu": 148, "rcjl": 89},
+        "1000": {"reservoirpy": 143, "resdag_cpu": 146, "resdag_gpu": 144, "rcjl": 27},
+        "2000": {"reservoirpy": 342, "resdag_cpu": 147, "resdag_gpu": 149, "rcjl": null}
+      }
+    }
+  }
+}

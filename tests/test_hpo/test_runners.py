@@ -221,7 +221,11 @@ class TestCooperativeInterruption:
 
         proc = ctx.Process(
             target=_worker_process,
-            args=("mp_interrupt", storage_path, objective, 100, 100, 0, stop_event),
+            # Signature: (study_name, storage, objective, n_trials, local_budget,
+            #             worker_seed, pruner, stop_event). ``None`` pruner =
+            #             Optuna default (no pruning); this test exercises the
+            #             cooperative-stop path, not pruning.
+            args=("mp_interrupt", storage_path, objective, 100, 100, 0, None, stop_event),
             daemon=False,
         )
         proc.start()

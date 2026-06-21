@@ -24,6 +24,19 @@ get_loss
     Get a loss function by name.
 get_study_summary
     Generate summary of completed study.
+resolve_pruner
+    Resolve a pruner key/instance to an :class:`optuna.pruners.BasePruner`.
+
+Pruners
+-------
+Pass ``pruner=`` to :func:`run_hpo` to enable Optuna early stopping, fed by the
+per-trial intermediate forecast-horizon reports. Registry keys (``PRUNERS``):
+
+- ``"asha"``: ASHA / SuccessiveHalvingPruner
+- ``"hyperband"``: Hyperband pruner
+- ``"median"``: Median pruner (recommended starting point)
+- ``"threshold"``: Threshold pruner
+- ``"none"``: NopPruner (no pruning, the default)
 
 Loss Functions
 --------------
@@ -111,6 +124,8 @@ def _require_optuna() -> None:
 
 # Lazy imports for optuna-dependent functions
 if TYPE_CHECKING:
+    from .pruners import PRUNERS as PRUNERS
+    from .pruners import resolve_pruner as resolve_pruner
     from .run import run_hpo as run_hpo
     from .transfer import export_best_config as export_best_config
     from .utils import get_best_params as get_best_params
@@ -150,6 +165,18 @@ def __getattr__(name: str) -> Any:
 
         return export_best_config
 
+    if name == "resolve_pruner":
+        _require_optuna()
+        from .pruners import resolve_pruner
+
+        return resolve_pruner
+
+    if name == "PRUNERS":
+        _require_optuna()
+        from .pruners import PRUNERS
+
+        return PRUNERS
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -171,6 +198,9 @@ __all__ = [
     "make_study_name",
     # Warm-start / transfer (require optuna)
     "export_best_config",
+    # Pruners (require optuna)
+    "PRUNERS",
+    "resolve_pruner",
 ]
 
 

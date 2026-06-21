@@ -177,6 +177,7 @@ def _worker_process(
     target_total: int,
     local_budget: int,
     worker_seed: int | None,
+    pruner: "optuna.pruners.BasePruner | None",
     stop_event: "mp.synchronize.Event",
 ) -> None:
     """Execute trials in a worker process (``fork`` *or* ``spawn``).
@@ -208,6 +209,10 @@ def _worker_process(
         from :func:`worker_budget`).
     worker_seed : int or None
         Seed for the worker's ``TPESampler``.  ``None`` for unseeded sampling.
+    pruner : optuna.pruners.BasePruner or None
+        Pruner to attach to the worker's loaded study so it honors the same
+        early-stopping policy as the parent process.  ``None`` leaves Optuna's
+        default (no pruning) in place.
     stop_event : multiprocessing.Event
         Shared event; when set by the parent (e.g. on ``KeyboardInterrupt``),
         the worker stops cooperatively after its current trial rather than being
@@ -239,6 +244,7 @@ def _worker_process(
         study_name=study_name,
         storage=worker_storage,
         sampler=sampler,
+        pruner=pruner,
     )
 
     def _stop_callback(
@@ -321,7 +327,8 @@ def run_multiprocess(
     completed_trials: int,
     n_workers: int,
     seed: int | None,
-    verbosity: int,
+    pruner: "optuna.pruners.BasePruner | None" = None,
+    verbosity: int = 1,
 ) -> None:
     """Run optimization with multiple OS processes sharing storage.
 
@@ -351,7 +358,12 @@ def run_multiprocess(
         Number of parallel worker processes to spawn.
     seed : int or None
         Base random seed.  Each worker receives ``seed + i * 7919``.
-    verbosity : int
+    pruner : optuna.pruners.BasePruner or None, optional
+        Early-stopping pruner attached to each worker's loaded study so the
+        multi-process run honors the same policy as the parent.  ``None``
+        (default) leaves Optuna's default (no pruning) in place.  Must be
+        picklable for the ``spawn`` start method; Optuna's built-in pruners are.
+    verbosity : int, default=1
         Logging verbosity: ``0`` = silent, ``>= 1`` = show progress bar.
 
     Raises
@@ -399,7 +411,16 @@ def run_multiprocess(
         # workers can finish their in-flight storage write on shutdown.
         p: mp.process.BaseProcess = ctx.Process(
             target=_worker_process,
-            args=(study_name, storage, objective, n_trials, local_budget, worker_seed, stop_event),
+            args=(
+                study_name,
+                storage,
+                objective,
+                n_trials,
+                local_budget,
+                worker_seed,
+                pruner,
+                stop_event,
+            ),
             daemon=False,
         )
         p.start()

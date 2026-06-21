@@ -7,6 +7,8 @@ See Also
 resdag.hpo.run : High-level HPO orchestrator that uses these utilities.
 """
 
+import functools
+import hashlib
 import inspect
 from pathlib import Path
 from typing import Callable
@@ -16,21 +18,58 @@ import optuna
 __all__ = ["make_study_name", "get_study_summary"]
 
 
-def make_study_name(model_creator: Callable) -> str:
-    """Generate a study name from the model creator function.
+def _unwrap_callable(fn: Callable) -> Callable:
+    """Recover the underlying callable from a wrapper such as ``functools.partial``.
 
-    Creates a unique study name based on the source file and function name.
-    Useful for identifying studies in storage backends.
+    ``functools.partial`` objects (and other wrappers) hide the actual factory
+    behind a ``func`` attribute and carry no usable ``__name__``. Following the
+    ``func`` chain restores the original callable so its name and source file can
+    be recovered. ``functools.wraps``-style wrappers already expose ``__name__``,
+    so they are left untouched.
+
+    Parameters
+    ----------
+    fn : Callable
+        The callable to unwrap.
+
+    Returns
+    -------
+    Callable
+        The innermost callable reachable via ``func`` attributes, or ``fn`` if it
+        is not a recognised wrapper.
+    """
+    seen: set[int] = set()
+    while isinstance(fn, functools.partial) and id(fn) not in seen:
+        seen.add(id(fn))
+        fn = fn.func
+    return fn
+
+
+def make_study_name(model_creator: Callable) -> str:
+    """Generate a stable study name from the model creator callable.
+
+    Creates a study name based on the callable's source file and name. It is
+    robust to callables that lack the usual introspection metadata:
+
+    - ``functools.partial`` objects are unwrapped to their underlying function so
+      the wrapped factory's name and source file are used (a bare ``partial``
+      raises ``TypeError`` in :func:`inspect.getsourcefile`).
+    - Callables without a usable ``__name__`` (e.g. lambdas or callable class
+      instances) fall back to their type name plus a short stable hash of their
+      ``repr``, so two logically-distinct creators do not collide onto the same
+      study name and silently share persisted storage.
 
     Parameters
     ----------
     model_creator : Callable
-        The model creator function to generate a name from.
+        The model creator callable to generate a name from. May be a plain
+        function, a :class:`functools.partial`, a lambda, or any callable object.
 
     Returns
     -------
     str
-        Study name in format "filename:function_name".
+        Study name in the format ``"filename:identifier"``. ``filename`` is
+        ``"<unknown>"`` when the source file cannot be determined.
 
     Example
     -------
@@ -39,9 +78,19 @@ def make_study_name(model_creator: Callable) -> str:
     >>> make_study_name(my_model_creator)
     'script:my_model_creator'
     """
-    src = inspect.getsourcefile(model_creator) or "<interactive>"
-    func = getattr(model_creator, "__name__", "model_creator")
-    return f"{Path(src).stem}:{func}"
+    fn = _unwrap_callable(model_creator)
+
+    try:
+        src = inspect.getsourcefile(fn) or "<interactive>"
+    except (TypeError, OSError):
+        src = "<unknown>"
+
+    name = getattr(fn, "__name__", None)
+    if not name or name == "<lambda>":
+        digest = hashlib.sha1(repr(model_creator).encode("utf-8")).hexdigest()[:8]
+        name = f"{type(fn).__name__}-{digest}"
+
+    return f"{Path(src).stem}:{name}"
 
 
 def get_study_summary(study: optuna.Study, top_n: int = 5) -> str:

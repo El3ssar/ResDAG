@@ -174,6 +174,23 @@ def test_save_csv_rejects_non_2d() -> None:
         save_csv(data, "unused.csv")
 
 
+@pytest.mark.parametrize("delimiter", [";", "\t", "|"])
+def test_save_load_csv_custom_delimiter_round_trip(tmp_path: Path, delimiter: str) -> None:
+    """The ``delimiter`` argument round-trips through both ``save_csv`` and ``load_csv``."""
+    data = _grid()
+    path = tmp_path / "delim.csv"
+    save_csv(data, path, delimiter=delimiter)
+
+    # The chosen delimiter is actually used on disk (default comma is absent).
+    text = path.read_text()
+    assert delimiter in text
+    assert "," not in text
+
+    out = load_csv(path, delimiter=delimiter, dtype=torch.float64)
+    assert out.shape == data.shape
+    assert torch.allclose(out, data)
+
+
 # ---------------------------------------------------------------------------
 # load_file dispatch + dtype handling
 # ---------------------------------------------------------------------------
@@ -287,6 +304,21 @@ def test_save_load_nc_round_trip(tmp_path: Path) -> None:
     out = load_file(path, dtype=torch.float64)
     assert out.shape == data.shape
     assert torch.allclose(out, data)
+
+
+@pytest.mark.skipif(not _HAS_XARRAY, reason="xarray not installed")
+def test_load_nc_1d_warns_and_is_univariate(tmp_path: Path) -> None:
+    """A 1D NetCDF array is read as a univariate series (T,) -> (1, T, 1), with a warning."""
+    import xarray as xr
+
+    path = tmp_path / "series.nc"
+    xr.DataArray(np.arange(4, dtype=np.float64)).to_netcdf(path)
+
+    with pytest.warns(UserWarning, match="univariate series"):
+        out = load_nc(path, dtype=torch.float64)
+
+    assert out.shape == (1, 4, 1)
+    assert torch.allclose(out[0, :, 0], torch.tensor([0.0, 1.0, 2.0, 3.0], dtype=out.dtype))
 
 
 # ---------------------------------------------------------------------------

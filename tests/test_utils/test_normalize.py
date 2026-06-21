@@ -223,6 +223,29 @@ def test_standard_reference_values() -> None:
     assert torch.allclose(normalized.std(dim=(0, 1)), torch.ones(2, dtype=torch.float64))
 
 
+def test_standard_uses_sample_std_ddof_one() -> None:
+    """``standard`` divides by the *sample* (Bessel-corrected, ddof=1) std.
+
+    This pins the degrees-of-freedom convention with hand-computed constants so
+    the test fails if the implementation ever switches to the population std
+    (ddof=0). For the per-feature data here (N = 4 observations):
+
+    - col0 = [1, 3, 5, 7]: mean 4, sum of squared deviations 20
+      -> sample std = sqrt(20 / (N-1)) = sqrt(20/3); population = sqrt(20/4).
+    - col1 = [-3, 1, 5, 9]: mean 3, sum of squared deviations 80
+      -> sample std = sqrt(80 / (N-1)) = sqrt(80/3); population = sqrt(80/4).
+    """
+    data = _reference_data()  # (1, 4, 2): N = 4 observations per feature
+    _, stats = normalize_data(data, method="standard")
+
+    sample_std = torch.tensor([(20.0 / 3.0) ** 0.5, (80.0 / 3.0) ** 0.5], dtype=torch.float64)
+    population_std = torch.tensor([(20.0 / 4.0) ** 0.5, (80.0 / 4.0) ** 0.5], dtype=torch.float64)
+
+    assert torch.allclose(stats["std"].flatten(), sample_std)
+    # Guard: it must be the sample std, never the (smaller) population std.
+    assert not torch.allclose(stats["std"].flatten(), population_std)
+
+
 def test_noncentered_reference_values() -> None:
     """``noncentered`` divides by the per-feature max-abs, leaving zero fixed."""
     data = _reference_data()

@@ -438,6 +438,20 @@ class BaseReservoirLayer(nn.Module, ABC):
         are not pinned — the state moves with the module under ``.to()`` and is
         cast to match an incoming forward.
 
+        Autograd contract
+        -----------------
+        The stored state honours :attr:`detach_state_between_calls`, exactly as
+        the cross-call truncated-BPTT detach in :meth:`forward` does.  Under the
+        default (``True``) a restored state is treated as a fresh initial
+        condition: it is stored as ``state.detach().clone()`` so it carries no
+        ``grad_fn`` and a later forward + backward cannot try to backprop
+        through ``state``'s already-freed graph (the "backward through the graph
+        a second time" / retained-memory failure that
+        :attr:`detach_state_between_calls` exists to prevent).  Set
+        ``detach_state_between_calls=False`` to store ``state.clone()`` with its
+        graph intact, when you intentionally backprop through state carried in
+        across calls (and manage the retained graph yourself).
+
         Parameters
         ----------
         state : torch.Tensor
@@ -471,7 +485,17 @@ class BaseReservoirLayer(nn.Module, ABC):
                 f"Tip: call reset_state(batch_size=...) before set_state() "
                 f"to materialise an empty state of the expected layout."
             ) from None
-        self.state = state.clone()
+        # Honour the truncated-BPTT contract on restore, just as ``forward``
+        # does for the evolved state (see lines around the cross-call detach
+        # there): a restored state is a fresh initial condition by default, so
+        # under ``detach_state_between_calls`` strip any incoming ``grad_fn``
+        # before storing it — otherwise restoring a graph-bearing tensor leaks
+        # an autograd graph across calls (#146).  ``clone`` always runs so the
+        # stored state is an independent copy regardless of the detach choice.
+        if self.detach_state_between_calls and state.grad_fn is not None:
+            self.state = state.detach().clone()
+        else:
+            self.state = state.clone()
         # Mark this as a deliberate restore: a later forward at a mismatched
         # batch size must raise rather than silently zero-reinit (see #145).
         self._state_user_set = True

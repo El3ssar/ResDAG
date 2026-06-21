@@ -34,6 +34,35 @@ __all__ = ["run_hpo"]
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging(verbosity: int) -> None:
+    """Set log levels for resdag and Optuna without touching the root logger.
+
+    Maps the *verbosity* knob onto the ``resdag`` package logger and Optuna's
+    own logging facade.  Unlike :func:`logging.basicConfig`, this does **not**
+    add handlers to or otherwise mutate the host application's root logger, so
+    importing and running HPO has no global logging side effects.
+
+    Parameters
+    ----------
+    verbosity : int
+        ``0`` = errors only, ``1`` = info, ``>= 2`` = debug.
+    """
+    if verbosity == 0:
+        level = logging.ERROR
+        optuna_level = optuna.logging.ERROR
+    elif verbosity == 1:
+        level = logging.INFO
+        optuna_level = optuna.logging.INFO
+    else:
+        level = logging.DEBUG
+        optuna_level = optuna.logging.DEBUG
+
+    # Scope the level change to the ``resdag`` package logger (parent of
+    # ``resdag.hpo.*``) rather than the global root logger.
+    logging.getLogger("resdag").setLevel(level)
+    optuna.logging.set_verbosity(optuna_level)
+
+
 def run_hpo(
     model_creator: Callable[..., ESNModel],
     search_space: Callable[[optuna.Trial], dict[str, Any]],
@@ -215,15 +244,10 @@ def run_hpo(
     ESNTrainer : Training interface.
     """
     # ── Configure logging ────────────────────────────────────────────
-    if verbosity == 0:
-        logging.basicConfig(level=logging.ERROR)
-        optuna.logging.set_verbosity(optuna.logging.ERROR)
-    elif verbosity == 1:
-        logging.basicConfig(level=logging.INFO)
-        optuna.logging.set_verbosity(optuna.logging.INFO)
-    else:
-        logging.basicConfig(level=logging.DEBUG)
-        optuna.logging.set_verbosity(optuna.logging.DEBUG)
+    # Set levels on the ``resdag`` and Optuna loggers only; never call
+    # ``logging.basicConfig`` here, which would mutate the host application's
+    # root logger and attach handlers as a global side effect.
+    _configure_logging(verbosity)
 
     # ── Validate inputs ──────────────────────────────────────────────
     if n_trials <= 0:
@@ -240,7 +264,10 @@ def run_hpo(
         device = torch.device(device)
 
     # ── Resolve storage ──────────────────────────────────────────────
-    resolved_storage = resolve_storage(storage, n_workers)
+    # ``return_path=True`` hands back the concrete journal/SQLite path so that
+    # multi-process dispatch can reconnect workers without reaching into
+    # Optuna's private ``_backend._file_path`` attribute.
+    resolved_storage, storage_path = resolve_storage(storage, n_workers, return_path=True)
 
     # ── Resolve loss function ────────────────────────────────────────
     loss_params = loss_params or {}
@@ -327,7 +354,7 @@ def run_hpo(
             study, resolved_storage = _dispatch_multiprocess(
                 study=study,
                 resolved_storage=resolved_storage,
-                storage=storage,
+                storage_path=storage_path,
                 study_name=study_name,
                 objective=objective,
                 n_trials=n_trials,
@@ -361,7 +388,7 @@ def run_hpo(
 def _dispatch_multiprocess(
     study: optuna.Study,
     resolved_storage: optuna.storages.BaseStorage | None,
-    storage: str | None,
+    storage_path: str | None,
     study_name: str,
     objective: Callable[[optuna.Trial], float],
     n_trials: int,
@@ -382,9 +409,11 @@ def _dispatch_multiprocess(
     study : optuna.Study
         The study created in the parent process (will be deleted before fork).
     resolved_storage : BaseStorage or None
-        The storage object created in the parent (will be disposed).
-    storage : str or None
-        Original user-provided storage specifier.
+        The storage object created in the parent (will be released).
+    storage_path : str or None
+        Concrete journal/SQLite path that workers reconnect to, as returned by
+        :func:`resolve_storage` with ``return_path=True`` (no private Optuna
+        attributes are accessed to recover it).
     study_name : str
         Study name for reconnection after workers finish.
     objective : Callable[[Trial], float]
@@ -412,19 +441,24 @@ def _dispatch_multiprocess(
     os.environ["MKL_NUM_THREADS"] = "1"
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-    # Determine the raw storage path for workers to reconnect.
-    storage_path = storage  # user-provided path
+    # ``storage_path`` is supplied by ``resolve_storage(..., return_path=True)``;
+    # for the auto-temp-journal case this is the temp file path without touching
+    # Optuna's private ``_backend._file_path``.
     if storage_path is None:
-        # Auto-created temp journal — extract the file path
-        journal_backend = resolved_storage._backend  # type: ignore[union-attr]
-        storage_path = journal_backend._file_path
+        raise RuntimeError(
+            "Multi-process HPO requires a file-backed storage path, but none "
+            "was resolved. This indicates an in-memory storage was selected "
+            "for n_workers > 1, which is not supported."
+        )
 
     # Force schema creation + commit before releasing
     _ = study.get_trials(deepcopy=False)
 
-    # Dispose engine cleanly if using SQLite
+    # Release the parent's storage resources before forking, using public APIs
+    # only (no private attributes). ``remove_session`` closes the SQLAlchemy
+    # scoped session for RDB storages so children do not inherit live handles.
     if isinstance(resolved_storage, optuna.storages.RDBStorage):
-        resolved_storage.engine.dispose()
+        resolved_storage.remove_session()
 
     # Drop the parent's storage references before forking
     del study, resolved_storage

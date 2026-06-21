@@ -213,6 +213,44 @@ class TestStudySummary:
         assert "Top 2" in summary
 
 
+class TestRunHPONoLoggingSideEffects:
+    """AC4: run_hpo must not mutate the host application's root logger."""
+
+    def test_does_not_call_basic_config(self):
+        """run_hpo never calls logging.basicConfig (which mutates root logger)."""
+        import logging
+        from unittest import mock
+
+        with mock.patch.object(logging, "basicConfig") as basic_config:
+            run_hpo(
+                model_creator=simple_model_creator,
+                search_space=simple_search_space,
+                data_loader=simple_data_loader,
+                n_trials=1,
+                verbosity=1,
+            )
+        basic_config.assert_not_called()
+
+    def test_root_logger_untouched(self):
+        """The root logger's level and handlers are unchanged after run_hpo."""
+        import logging
+
+        root = logging.getLogger()
+        before_level = root.level
+        before_handlers = list(root.handlers)
+
+        run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=simple_data_loader,
+            n_trials=1,
+            verbosity=2,
+        )
+
+        assert root.level == before_level
+        assert list(root.handlers) == before_handlers
+
+
 class TestRunHPOLossParams:
     """Test loss_params functionality."""
 

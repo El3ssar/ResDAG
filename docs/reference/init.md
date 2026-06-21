@@ -33,16 +33,19 @@ callables, or configured objects interchangeably.
         - get_input_feedback
         - register_input_feedback
         - show_input_initializers
+        - BernoulliInputInitializer
         - BinaryBalancedInitializer
         - ChainOfNeuronsInputInitializer
         - ChebyshevInitializer
         - ChessboardInitializer
         - DendrocycleInputInitializer
+        - NormalInputInitializer
         - OppositeAnchorsInitializer
         - PseudoDiagonalInitializer
         - RandomBinaryInitializer
         - RandomInputInitializer
         - RingWindowInputInitializer
+        - UniformInputInitializer
         - ZeroInitializer
 
 ---

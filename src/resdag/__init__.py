@@ -86,7 +86,7 @@ from typing import Any
 from . import core, ensemble, init, layers, models, training, utils
 
 # Convenience imports for common use cases
-from .core import ESNModel, reservoir_input
+from .core import ESNModel, ReservoirFeatureExtractor, reservoir_input
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
 from .facade import ESN
@@ -148,6 +148,7 @@ __all__ = [
     "ESN",
     # Composition helpers
     "ESNModel",
+    "ReservoirFeatureExtractor",
     "reservoir_input",
     # Core reservoir layers / cells
     "BaseReservoirLayer",

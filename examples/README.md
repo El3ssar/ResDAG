@@ -1,6 +1,6 @@
 # ResDAG Examples
 
-Twelve self-contained, runnable scripts covering the whole library. Every
+Thirteen self-contained, runnable scripts covering the whole library. Every
 script is deterministic (fixed seeds), prints what it is doing in numbered
 sections, and finishes in well under a minute on CPU — except the GPU
 benchmark, which takes a couple of minutes.
@@ -29,6 +29,7 @@ uv run python examples/01_quickstart.py --plot
 | 09 | `09_visualization.py` | `summary()` and graphviz `plot_model()` (shapes, trainable markers, layouts, file output) | ~3 s |
 | 10 | `10_hpo.py` | Minimal Optuna study via `run_hpo` (needs `pip install resdag[hpo]`; skips cleanly otherwise) | ~10 s |
 | 11 | `11_gpu_benchmark.py` | CPU vs GPU timing of forward/fit/forecast at three scales; skips cleanly without CUDA | ~30 s – 2 min |
+| 12 | `12_feature_extractor.py` | `ReservoirFeatureExtractor` in `nn.Sequential`: frozen features → Adam regression head, a classification head, and `from_model` reuse | ~5 s |
 
 ## Suggested order
 

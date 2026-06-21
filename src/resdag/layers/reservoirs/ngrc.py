@@ -154,8 +154,9 @@ class NGReservoir(BaseReservoirLayer):
         ----------
         inputs : list[torch.Tensor]
             ``inputs[0]`` is the input sequence of shape
-            ``(batch, timesteps, input_dim)``.  Any further elements are
-            ignored — NG-RC has no driving inputs.
+            ``(batch, timesteps, input_dim)``.  NG-RC has no driving inputs;
+            :meth:`forward` rejects them before reaching this method, so only
+            ``inputs[0]`` is consumed.
         state : torch.Tensor
             Incoming delay buffer of shape ``(batch, state_size, input_dim)``.
 
@@ -192,8 +193,10 @@ class NGReservoir(BaseReservoirLayer):
         feedback : torch.Tensor
             Input sequence of shape ``(batch, timesteps, input_dim)``.
         *driving_inputs : torch.Tensor
-            Ignored — NG-RC has no driving inputs.  Accepted for interface
-            parity with :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
+            **Rejected.** NG-RC is a weightless feedforward feature map with no
+            input weight matrix, so it cannot consume driving inputs.  Passing
+            any raises :class:`ValueError` rather than silently discarding them
+            and producing a misconfigured-but-running model.
 
         Returns
         -------
@@ -204,7 +207,9 @@ class NGReservoir(BaseReservoirLayer):
         Raises
         ------
         ValueError
-            If ``feedback`` is not 3-D.
+            If ``feedback`` is not 3-D, if any ``driving_inputs`` are passed, or
+            if ``feedback``'s feature dimension does not equal
+            :attr:`input_dim`.
 
         Notes
         -----
@@ -217,12 +222,23 @@ class NGReservoir(BaseReservoirLayer):
         if feedback.dim() != 3:
             raise ValueError(f"Feedback must be 3D (B, T, F), got shape {feedback.shape}")
 
+        if driving_inputs:
+            raise ValueError(
+                f"NGReservoir is a weightless feedforward feature map and does not "
+                f"accept driving inputs, but {len(driving_inputs)} were passed. "
+                f"NG-RC has no input weight matrix to consume them; wire only the "
+                f"feedback sequence (shape (batch, timesteps, input_dim={self.input_dim})) "
+                f"into this layer."
+            )
+
         batch_size = feedback.shape[0]
         self._maybe_init_state(batch_size, feedback.device, feedback.dtype)
 
         # mypy: state is guaranteed non-None after _maybe_init_state.
+        # driving_inputs are rejected above, so only the feedback stream is
+        # threaded through the stateless feature map.
         assert self.state is not None
-        outputs, new_state = self.forward_stateless([feedback, *driving_inputs], self.state)
+        outputs, new_state = self.forward_stateless([feedback], self.state)
 
         # Truncated BPTT at call boundaries (mirrors BaseReservoirLayer.forward):
         # gradients flow through the returned features within this call, but the

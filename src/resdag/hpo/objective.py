@@ -8,6 +8,12 @@ evaluation).  Keeping ``build_objective`` as a wrapper preserves backward
 compatibility for existing callers while the picklable runner powers
 ``spawn``-based distribution and Optuna pruners.
 
+For multi-output models, :meth:`~resdag.core.ESNModel.forecast` returns a *tuple*
+of tensors (the first being the autoregression feedback output).  The runner
+normalizes that tuple to its first element before indexing the forecast, so a
+multi-output ``model_creator`` produces ``COMPLETE`` trials scored on the
+feedback output rather than crashing on ``preds.shape``.
+
 See Also
 --------
 resdag.hpo.runner : The picklable :class:`TrialRunner` doing the real work.

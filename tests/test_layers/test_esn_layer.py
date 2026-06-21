@@ -569,6 +569,70 @@ class TestStateDetachBetweenCalls:
             out = reservoir(x)
             out.sum().backward()
 
+    @staticmethod
+    def _graphed_state() -> torch.Tensor:
+        """Produce a state tensor that carries an autograd graph (``grad_fn``).
+
+        A grad-enabled forward through a trainable reservoir threads the state
+        through the cell's weights, so the returned final state has a
+        ``grad_fn``.  ``get_state`` clones it (preserving the graph), giving a
+        graph-bearing tensor suitable for exercising ``set_state``'s detach.
+        """
+        source = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        source.detach_state_between_calls = False  # keep the graph on the state
+        source(torch.randn(2, 6, 3))
+        state = source.get_state()
+        assert state is not None
+        assert state.grad_fn is not None  # precondition: a real graph is attached
+        return state
+
+    def test_set_state_detaches_graph_by_default(self) -> None:
+        """set_state of a graphed tensor drops grad_fn under the default contract."""
+        graphed = self._graphed_state()
+        reservoir = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        assert reservoir.detach_state_between_calls is True  # default contract
+
+        reservoir.set_state(graphed)
+
+        assert reservoir.state is not None
+        assert reservoir.state.grad_fn is None
+        assert reservoir.state.requires_grad is False
+
+    def test_set_state_opt_out_preserves_graph(self) -> None:
+        """detach_state_between_calls=False keeps the restored state's graph."""
+        graphed = self._graphed_state()
+        reservoir = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        reservoir.detach_state_between_calls = False
+
+        reservoir.set_state(graphed)
+
+        assert reservoir.state is not None
+        assert reservoir.state.grad_fn is not None
+
+    def test_set_state_no_cross_call_graph_leak(self) -> None:
+        """Restoring then training over two batches must not re-enter a freed graph.
+
+        A graph leaked by ``set_state`` would make the second ``backward`` try to
+        traverse the first call's already-freed graph, raising "backward through
+        the graph a second time".  Under the default detach contract the restored
+        state is severed, so the loop completes cleanly.
+        """
+        graphed = self._graphed_state()
+        reservoir = ESNLayer(reservoir_size=32, feedback_size=3, trainable=True)
+        reservoir.set_state(graphed)
+
+        x = torch.randn(2, 5, 3)
+        for _ in range(2):
+            out = reservoir(x)
+            out.sum().backward()
+
+    def test_set_state_docstring_documents_autograd_contract(self) -> None:
+        """set_state docstring documents the detach/autograd-graph contract."""
+        doc = ESNLayer.set_state.__doc__
+        assert doc is not None
+        assert "detach_state_between_calls" in doc
+        assert "grad_fn" in doc
+
 
 class TestESNLayerStateBuffer:
     """The reservoir state is a non-persistent buffer (issue #132).

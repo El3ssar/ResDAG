@@ -88,8 +88,11 @@ class ESNCell(ReservoirCell):
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
     leak_rate : float, default=1.0
-        Leaky integration rate in [0, 1].  A value of 1.0 means no leaking
-        (standard RNN update); smaller values create slower dynamics.
+        Leaky integration rate in ``(0, 1]``.  A value of 1.0 means no leaking
+        (standard RNN update); smaller values create slower dynamics.  Values
+        outside ``(0, 1]`` are rejected at construction with a ``ValueError``:
+        ``0.0`` would freeze the state entirely and values ``> 1.0`` (or ``< 0``)
+        produce ill-defined dynamics.
     noise : float, default=0.0
         Standard deviation of additive Gaussian state noise injected after the
         activation, following the classical ESN regularizer (Jaeger 2001;
@@ -178,6 +181,9 @@ class ESNCell(ReservoirCell):
 
         if noise < 0.0:
             raise ValueError(f"noise must be non-negative, got {noise}")
+
+        if not 0.0 < leak_rate <= 1.0:
+            raise ValueError(f"leak_rate must be in (0, 1], got {leak_rate}")
 
         # Store configuration
         self.reservoir_size = reservoir_size
@@ -298,7 +304,11 @@ class ESNCell(ReservoirCell):
         new_state = self.activation_fn(projected + recurrent_contrib)
         new_state = self._apply_noise(new_state)
 
-        if self.leak_rate < 1.0:
+        # leak_rate is validated to (0, 1] at construction, so ``!= 1.0`` here
+        # applies the leaky mix whenever there is actual leaking and never hits
+        # the silent no-leak surprise that ``< 1.0`` allowed for out-of-range
+        # values.  Kept byte-identical to :meth:`step` so the two paths agree.
+        if self.leak_rate != 1.0:
             new_state = torch.lerp(state, new_state, self.leak_rate)
         return new_state, new_state
 
@@ -387,7 +397,9 @@ class ESNCell(ReservoirCell):
         new_state = self.activation_fn(pre_activation)
         new_state = self._apply_noise(new_state)
 
-        if self.leak_rate < 1.0:
+        # Identical leak semantics to :meth:`forward` (see the note there):
+        # ``!= 1.0`` over the construction-validated (0, 1] range.
+        if self.leak_rate != 1.0:
             new_state = torch.lerp(state, new_state, self.leak_rate)
         return new_state, new_state
 

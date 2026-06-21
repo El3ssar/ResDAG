@@ -1,6 +1,6 @@
 # ResDAG Examples
 
-Thirteen self-contained, runnable scripts covering the whole library. Every
+Fourteen self-contained, runnable scripts covering the whole library. Every
 script is deterministic (fixed seeds), prints what it is doing in numbered
 sections, and finishes in well under a minute on CPU — except the GPU
 benchmark, which takes a couple of minutes.
@@ -9,7 +9,7 @@ benchmark, which takes a couple of minutes.
 # Run any example
 uv run python examples/01_quickstart.py
 
-# Optional plots in 01 and 06 (only if matplotlib is installed)
+# Optional plots in 01, 06, and 13 (only if matplotlib is installed)
 uv run python examples/01_quickstart.py --plot
 ```
 
@@ -30,6 +30,7 @@ uv run python examples/01_quickstart.py --plot
 | 10 | `10_hpo.py` | Minimal Optuna study via `run_hpo` (needs `pip install resdag[hpo]`; skips cleanly otherwise) | ~10 s |
 | 11 | `11_gpu_benchmark.py` | CPU vs GPU timing of forward/fit/forecast at three scales; skips cleanly without CUDA | ~30 s – 2 min |
 | 12 | `12_feature_extractor.py` | `ReservoirFeatureExtractor` in `nn.Sequential`: frozen features → Adam regression head, a classification head, and `from_model` reuse | ~5 s |
+| 13 | `13_windowed_forecast.py` | `windowed_forecast`: gap-filling reconstruction of a sparsely-observed Lorenz trajectory (alternate teacher-force re-sync + autonomous free-run); scoring the unseen gaps | ~10 s |
 
 ## Suggested order
 
@@ -40,10 +41,11 @@ premade architecture fits your problem. When the factories
 are not enough, **03** shows how to compose arbitrary DAGs and **04** how to
 shape the weight matrices that go inside them. **05** and **06** are the
 core skills — how models are trained and how forecasting actually works
-(read 06 carefully if you use exogenous drivers). After that, the rest are
-independent: **07** (ensembles) and **10** (hyperparameter search) when you
-want better forecasts, **08** and **09** when you need persistence and
-architecture inspection, and **11** when deciding whether your workload
+(read 06 carefully if you use exogenous drivers), and **13** extends 06 to
+gap-filling reconstruction of sparsely-observed signals. After that, the
+rest are independent: **07** (ensembles) and **10** (hyperparameter search)
+when you want better forecasts, **08** and **09** when you need persistence
+and architecture inspection, and **11** when deciding whether your workload
 belongs on a GPU.
 
 ## More

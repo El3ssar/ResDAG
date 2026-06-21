@@ -25,6 +25,7 @@ from resdag.core import ESNModel
 
 from .losses import LossProtocol, get_loss
 from .objective import build_objective
+from .pruners import resolve_pruner
 from .runners import run_multiprocess, run_single
 from .storage import enable_sqlite_wal, resolve_storage
 from .transfer import apply_warm_start, transfer_trials
@@ -107,6 +108,7 @@ def run_hpo(
     warm_start: list[dict[str, Any]] | None = None,
     transfer_from: "optuna.Study | str | None" = None,
     sampler: optuna.samplers.BaseSampler | None = None,
+    pruner: "str | optuna.pruners.BasePruner | None" = None,
     seed: int | None = None,
     device: str | torch.device | None = None,
     n_workers: int = 1,
@@ -194,6 +196,20 @@ def run_hpo(
         with ``n_workers > 1``.
     sampler : BaseSampler, optional
         Optuna sampler. Defaults to ``TPESampler`` with ``multivariate=True``.
+    pruner : str or optuna.pruners.BasePruner, optional
+        Early-stopping policy fed by the per-trial intermediate
+        forecast-horizon reports.  Accepts a registry key — ``"asha"`` (ASHA /
+        :class:`~optuna.pruners.SuccessiveHalvingPruner`), ``"hyperband"``,
+        ``"median"``, ``"threshold"``, or ``"none"`` — a fully-configured
+        :class:`optuna.pruners.BasePruner` instance, or ``None``.  ``None`` (the
+        default) and ``"none"`` disable pruning (:class:`optuna.pruners.NopPruner`);
+        ``"median"`` is a good first choice for forecasting studies because it
+        stops trials whose intermediate loss is worse than the running median.
+        A diverging configuration reports a large loss at an early
+        forecast-horizon checkpoint and is pruned before the full horizon is
+        evaluated, saving compute.  Pruning is honored in both single- and
+        multi-process modes and coexists with the ``clip_value`` /
+        ``prune_on_clip`` path.
     seed : int, optional
         Random seed for reproducibility. Seeds the Optuna sampler and, per
         trial, PyTorch / NumPy / Python ``random`` (``seed + trial.number``).
@@ -361,6 +377,13 @@ def run_hpo(
         )
         logger.info("Using TPESampler with multivariate optimization")
 
+    # ── Configure pruner ─────────────────────────────────────────────
+    # Resolved once here and threaded into the workers so single- and
+    # multi-process runs share the same early-stopping policy.  Defaults to
+    # ``NopPruner`` (no pruning) when ``pruner is None``.
+    resolved_pruner = resolve_pruner(pruner)
+    logger.info(f"Using pruner: {type(resolved_pruner).__name__}")
+
     # ── Create or load study ─────────────────────────────────────────
     if study_name is None:
         study_name = make_study_name(model_creator)
@@ -372,6 +395,7 @@ def run_hpo(
         storage=resolved_storage,
         load_if_exists=True,
         sampler=sampler,
+        pruner=resolved_pruner,
     )
 
     completed_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
@@ -436,6 +460,7 @@ def run_hpo(
                 completed_trials=baseline_completed,
                 n_workers=n_workers,
                 seed=seed,
+                pruner=resolved_pruner,
                 verbosity=verbosity,
             )
         else:
@@ -470,6 +495,7 @@ def _dispatch_multiprocess(
     completed_trials: int,
     n_workers: int,
     seed: int | None,
+    pruner: optuna.pruners.BasePruner,
     verbosity: int,
 ) -> tuple[optuna.Study, optuna.storages.BaseStorage | None]:
     """Prepare the environment and delegate to :func:`run_multiprocess`.
@@ -502,6 +528,9 @@ def _dispatch_multiprocess(
         Number of worker processes.
     seed : int or None
         Base random seed.
+    pruner : optuna.pruners.BasePruner
+        Resolved pruner threaded into each worker's loaded study so the
+        early-stopping policy matches the parent process.
     verbosity : int
         Logging verbosity.
 
@@ -549,6 +578,7 @@ def _dispatch_multiprocess(
         completed_trials=completed_trials,
         n_workers=n_workers,
         seed=seed,
+        pruner=pruner,
         verbosity=verbosity,
     )
 

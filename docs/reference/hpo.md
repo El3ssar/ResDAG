@@ -67,6 +67,58 @@ reproducible but their order — and therefore `best_value` — may differ.
 
 ---
 
+## Pruning (early stopping)
+
+Each trial forecasts **once** and is scored at a handful of growing
+forecast-horizon checkpoints, reporting the prefix loss at every one. A diverging
+configuration already shows a large loss at an early checkpoint — so an Optuna
+**pruner** can terminate it before paying for the full horizon. Pass `pruner=` to
+turn this on:
+
+```python
+from resdag.hpo import run_hpo
+
+study = run_hpo(
+    model_creator, search_space, data_loader,
+    n_trials=100,
+    pruner="median",   # stop trials worse than the running median at each checkpoint
+)
+
+# Pruned trials are recorded but excluded from `best_value`:
+print(get_study_summary(study))   # the summary lists the Pruned count
+```
+
+`pruner` accepts a registry key, a fully-configured
+[`optuna.pruners.BasePruner`](https://optuna.readthedocs.io/en/stable/reference/pruners.html)
+instance, or `None`:
+
+| Key | Pruner | When to reach for it |
+|---|---|---|
+| `"none"` (default) | `NopPruner` | No pruning. |
+| `"median"` | `MedianPruner` | Good default — prunes trials worse than the running median. |
+| `"asha"` | `SuccessiveHalvingPruner` (ASHA) | Aggressive, scales well with many parallel workers. |
+| `"hyperband"` | `HyperbandPruner` | ASHA across several budgets; strong when the right budget is unknown. |
+| `"threshold"` | `ThresholdPruner` | Prune on an absolute loss bound (default `upper=1.0`; pass a configured instance for a different bound). |
+
+Need to tune a pruner's knobs? Build the instance and pass it in:
+
+```python
+import optuna
+
+study = run_hpo(
+    model_creator, search_space, data_loader, n_trials=100,
+    pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=2),
+)
+```
+
+Pruning is honored in both single- and multi-process (`n_workers > 1`) runs — the
+resolved pruner is attached to every worker's study. It also composes with the
+[`clip_value` / `prune_on_clip`](#hpo) bound: the clip path prunes on the *raw*
+loss exceeding a ceiling, while the pruner reacts to the *intermediate* horizon
+reports; both can be active at once.
+
+---
+
 ::: resdag.hpo.losses
     options:
       members:

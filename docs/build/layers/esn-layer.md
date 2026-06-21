@@ -58,6 +58,45 @@ The three structural arguments — `topology`, `feedback_initializer`,
     `bias_scaling=0.0` to reproduce pre-0.5 runs, where the bias was
     zero-initialized and therefore a silent no-op.
 
+## Reproducibility
+
+`seed` is the single knob that fixes the *entire* reservoir — the recurrent
+(topology) matrix, the feedback and input weights, and the random bias —
+including the default `uniform(-1, 1)` draws used when no explicit
+initializer or topology is given. Two layers built with the same seed are
+byte-identical down to the last entry; no global `torch.manual_seed` is
+needed. **This is the canonical reproducible-layer recipe:**
+
+```python
+import torch
+from resdag.layers import ESNLayer
+
+a = ESNLayer(500, feedback_size=3, input_size=2, spectral_radius=0.9, seed=42)
+b = ESNLayer(500, feedback_size=3, input_size=2, spectral_radius=0.9, seed=42)
+
+assert torch.equal(a.weight_hh, b.weight_hh)
+assert torch.equal(a.weight_feedback, b.weight_feedback)
+assert torch.equal(a.weight_input, b.weight_input)
+assert torch.equal(a.bias_h, b.bias_h)
+```
+
+`seed` accepts a plain `int` or a `torch.Generator` (handy for threading a
+per-trial generator from an HPO loop); a generator is reduced to its
+`initial_seed()`, so `seed=7` and `seed=torch.Generator().manual_seed(7)`
+agree. An explicit seed inside a `(name, {"seed": ...})` spec always wins
+over the layer `seed`. With `seed=None` (the default) the reservoir is still
+reproducible under a global `torch.manual_seed`, because every generator —
+NumPy (graph topologies) and torch (weight draws) — is derived from torch's
+global RNG.
+
+!!! note "Device-native draws"
+    The torch-native weight draws (the default `uniform(-1, 1)` path and the
+    `random`/`random_binary` initializers) happen **directly on the layer's
+    device** — no CPU build and copy — so a seeded reservoir built on CUDA is
+    reproducible on CUDA. Because torch's CPU and CUDA RNG streams differ, the
+    *same* seed yields a different matrix on each backend; each backend is
+    reproducible on its own.
+
 ## State
 
 The state persists across `forward` calls. It silently re-initializes to

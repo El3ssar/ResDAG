@@ -2,8 +2,9 @@
 
 from typing import Any
 
-import numpy as np
 import torch
+
+from resdag.utils.general import SeedLike
 
 from .base import InputFeedbackInitializer, _resolve_shape
 from .registry import register_input_feedback
@@ -29,9 +30,15 @@ class RandomInputInitializer(InputFeedbackInitializer):
         ``s`` multiplies every entry by ``s``, so ``max|W|`` scales linearly with
         ``s`` (``input_scaling=0.5`` halves it). Controls the strength of input
         signals entering the reservoir. Typical values: 0.1-5.0.
-    seed : int, optional
-        Random seed for reproducibility. Ensures the same weight matrix is
-        generated for the same seed and matrix size.
+    seed : int, torch.Generator, or None, optional
+        Reproducibility seed for the uniform draw. Accepts a plain ``int``, a
+        :class:`torch.Generator` (whose ``initial_seed()`` is used, so a
+        generator and the equivalent int agree), or ``None`` (defer to torch's
+        global RNG). The draw is **device-native**: it happens directly on the
+        target weight's device via a torch generator, so the same ``seed`` is
+        reproducible per device (CPU and CUDA each reproduce, though their RNG
+        streams differ from each other). Ensures the same weight matrix is
+        generated for the same seed, shape, *and* device.
 
     Notes
     -----
@@ -78,7 +85,7 @@ class RandomInputInitializer(InputFeedbackInitializer):
     def __init__(
         self,
         input_scaling: float | None = None,
-        seed: int | None = None,
+        seed: SeedLike = None,
     ) -> None:
         """Initialize the RandomInputInitializer."""
         super().__init__(input_scaling=input_scaling, seed=seed)
@@ -86,10 +93,12 @@ class RandomInputInitializer(InputFeedbackInitializer):
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with uniform random values.
 
-        The RNG is constructed from ``self.seed`` on every call, so the produced
-        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
-        same instance with equal shapes therefore yield identical matrices.
-        Pass ``seed=None`` for a fresh draw on each call.
+        The draw uses a :class:`torch.Generator` built from ``self.seed`` on the
+        target weight's **device** (no CPU build + copy), so the produced matrix
+        is a pure function of ``(seed, shape, device)``. Repeated calls on the
+        same instance with equal shapes on the same device therefore yield
+        identical matrices. Pass ``seed=None`` for a draw tied to torch's global
+        RNG (reproducible under ``torch.manual_seed``).
 
         Parameters
         ----------
@@ -105,19 +114,18 @@ class RandomInputInitializer(InputFeedbackInitializer):
         device = weight.device
         dtype = weight.dtype
 
-        rng = np.random.default_rng(self.seed)
+        generator = self._torch_generator_for(device)
 
-        # Generate random values in [-1, 1]
-        values = rng.uniform(-1.0, 1.0, size=(out_features, in_features))
+        # Draw uniform values in [-1, 1] directly on the target device.
+        values = torch.empty(out_features, in_features, device=device, dtype=dtype)
+        values.uniform_(-1.0, 1.0, generator=generator)
 
-        # Apply the shared uniform scaling contract as the documented final transform.
+        # Apply the shared uniform scaling contract as the documented final
+        # transform (torch-native, staying on-device).
         values = self._apply_scaling(values)
 
-        # Convert to tensor and copy to weight
-        weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)
-
         with torch.no_grad():
-            weight.copy_(weight_data)
+            weight.copy_(values)
 
         return weight
 

@@ -238,6 +238,75 @@ class TestInitializersOnDevice:
         assert output.shape == (2, 10, 100)
 
 
+class TestRandomInitializersDeviceNativeSeed:
+    """Issue #188: torch-native, device-native, ``torch.Generator``-aware seed.
+
+    The ``random``/``random_binary`` initializers used to draw via NumPy on CPU
+    and copy to the device, accepting only an ``int`` seed. They now draw with a
+    :class:`torch.Generator` directly on the target tensor's device and accept a
+    generator seed as well, so reproducible draws are possible on any device.
+    """
+
+    _CLASSES = [
+        pytest.param(RandomInputInitializer, {"input_scaling": 1.0}, id="random"),
+        pytest.param(RandomBinaryInitializer, {"input_scaling": 0.5}, id="random_binary"),
+    ]
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _CLASSES)
+    def test_draws_on_target_device(self, cls, kwargs, device: torch.device) -> None:
+        """The filled weight stays on the device it was passed in on."""
+        init = cls(seed=42, **kwargs)
+        weight = torch.empty(50, 8, device=device)
+        init.initialize(weight)
+
+        assert weight.device.type == device.type
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _CLASSES)
+    def test_reproducible_per_device(self, cls, kwargs, device: torch.device) -> None:
+        """Two seeded draws on the same device are byte-identical."""
+        a = torch.empty(50, 8, device=device)
+        b = torch.empty(50, 8, device=device)
+        cls(seed=7, **kwargs).initialize(a)
+        cls(seed=7, **kwargs).initialize(b)
+
+        assert torch.equal(a, b)
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _CLASSES)
+    def test_accepts_torch_generator_seed(self, cls, kwargs) -> None:
+        """A ``torch.Generator`` seed is accepted and reproducible."""
+        g1 = torch.Generator().manual_seed(123)
+        g2 = torch.Generator().manual_seed(123)
+        a = torch.empty(40, 6)
+        b = torch.empty(40, 6)
+        cls(seed=g1, **kwargs).initialize(a)
+        cls(seed=g2, **kwargs).initialize(b)
+
+        assert torch.equal(a, b)
+
+    @pytest.mark.parametrize(("cls", "kwargs"), _CLASSES)
+    def test_generator_seed_matches_equivalent_int(self, cls, kwargs) -> None:
+        """A generator seeded with ``N`` draws the same matrix as ``seed=N``.
+
+        The generator is reduced to its ``initial_seed()``, so the two seed
+        forms must agree on the produced weights.
+        """
+        g = torch.Generator().manual_seed(99)
+        a = torch.empty(40, 6)
+        b = torch.empty(40, 6)
+        cls(seed=g, **kwargs).initialize(a)
+        cls(seed=99, **kwargs).initialize(b)
+
+        assert torch.equal(a, b)
+
+    def test_random_binary_values_are_signed_scaled(self) -> None:
+        """``random_binary`` stays a ``{-s, +s}`` matrix after the torch draw."""
+        init = RandomBinaryInitializer(input_scaling=0.5, seed=0)
+        weight = torch.empty(64, 8)
+        init.initialize(weight)
+
+        assert set(torch.unique(weight).tolist()) <= {-0.5, 0.5}
+
+
 class TestOppositeAnchorsCollision:
     """Regression coverage for the duplicate-column bug (issue #142).
 

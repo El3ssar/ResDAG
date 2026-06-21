@@ -5,6 +5,8 @@ from typing import Any
 import numpy as np
 import torch
 
+from resdag.utils.general import coerce_seed_to_int
+
 from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
 
@@ -116,7 +118,7 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
         dtype = weight.dtype
         compute_dtype = _numpy_compute_dtype(dtype)
 
-        rng = np.random.default_rng(self.seed)
+        rng = np.random.default_rng(coerce_seed_to_int(self.seed))
 
         C = self.C
         if C is None:

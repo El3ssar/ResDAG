@@ -54,6 +54,8 @@ from typing import Any, TypeVar, cast
 import numpy as np
 import torch
 
+from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
+
 # ``_apply_scaling`` / ``_apply_connectivity`` are dtype-preserving on the two
 # array kinds initializers build with: ``numpy.ndarray`` and ``torch.Tensor``.
 ArrayT = TypeVar("ArrayT", np.ndarray, torch.Tensor)
@@ -97,9 +99,14 @@ class InputFeedbackInitializer(ABC):
     connectivity : float, optional
         Fraction of nonzero entries to keep per column, in ``(0, 1]``. ``None``
         (the default) leaves the produced sparsity pattern untouched.
-    seed : int, optional
-        Random seed for the connectivity mask (and any subclass randomness that
-        chooses to use it).
+    seed : int, torch.Generator, or None, optional
+        Reproducibility seed for any subclass randomness (the uniform/binary
+        draws of the random initializers) and the connectivity mask. Accepts a
+        plain ``int``, a :class:`torch.Generator` (whose ``initial_seed()`` is
+        used so a generator and the equivalent int agree), or ``None`` (defer to
+        the global RNG). The torch-native random initializers draw on the target
+        tensor's device via :meth:`_torch_generator_for`, so the same ``seed``
+        is reproducible per device — including on CUDA.
 
     Examples
     --------
@@ -136,7 +143,7 @@ class InputFeedbackInitializer(ABC):
         self,
         input_scaling: float | None = None,
         connectivity: float | None = None,
-        seed: int | None = None,
+        seed: SeedLike = None,
     ) -> None:
         """Store and validate the shared scaling/connectivity parameters."""
         self.input_scaling = _validate_input_scaling(input_scaling)
@@ -219,7 +226,9 @@ class InputFeedbackInitializer(ABC):
         if self.connectivity is None:
             return values
         if rng is None:
-            rng = np.random.default_rng(self.seed)
+            # Reduce a torch.Generator/int/None seed to the int/None NumPy
+            # default_rng accepts, so a generator seed still masks reproducibly.
+            rng = np.random.default_rng(coerce_seed_to_int(self.seed))
 
         n_rows = int(values.shape[0])
         n_cols = int(values.shape[1])
@@ -234,6 +243,40 @@ class InputFeedbackInitializer(ABC):
             return np.where(mask, values, np.zeros_like(values))
         torch_mask = torch.from_numpy(mask).to(device=values.device)
         return torch.where(torch_mask, values, torch.zeros_like(values))
+
+    def _torch_generator_for(self, device: torch.device) -> torch.Generator:
+        """Build a device-native :class:`torch.Generator` seeded from ``self.seed``.
+
+        This is the single torch-RNG entry point the torch-native random
+        initializers use, so every draw happens **on the target tensor's
+        device** (no CPU build + copy) and is reproducible per device under the
+        same ``seed``.
+
+        The seed is first reduced to a plain ``int`` via
+        :func:`~resdag.utils.general.coerce_seed_to_int` so that an ``int`` seed
+        ``k`` and a ``torch.Generator().manual_seed(k)`` agree; the resulting
+        generator is then created freshly on ``device``. When ``self.seed is
+        None`` the generator is seeded from torch's global RNG, so global
+        ``torch.manual_seed`` still propagates.
+
+        Parameters
+        ----------
+        device : torch.device
+            Device the draws must happen on (the target weight's device).
+
+        Returns
+        -------
+        torch.Generator
+            A generator on ``device``, deterministic in ``self.seed``.
+
+        Notes
+        -----
+        torch's CPU and CUDA RNG streams differ, so the *same* seed yields a
+        different (but per-device reproducible) matrix on each backend. Two
+        builds on the **same** device with the same seed are byte-identical.
+        """
+        seed_int = coerce_seed_to_int(self.seed)
+        return create_torch_generator(seed_int, device=device)
 
     def __call__(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """

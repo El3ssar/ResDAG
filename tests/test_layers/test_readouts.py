@@ -6,15 +6,29 @@ Pins down:
   properties, gradients, state-dict round-trips, and repr,
 - ``CGReadoutLayer``: the conjugate-gradient ridge solver against the
   closed-form solution, ``fit()`` for 2D/3D inputs, bias-free fitting,
-  convergence behaviour, and predictions on every device.
+  convergence behaviour, and predictions on every device,
+- ``CholeskyReadoutLayer``: the single-shot Cholesky ridge solver matching CG
+  to ``< 1e-5``, the auto ``gram_dtype`` policy, and ``ESNTrainer`` use,
+- ``IncrementalRidgeReadout``: chunked ``partial_fit`` / ``finalize`` matching a
+  full-batch fit to ``< 1e-5``, the ``is_fitted``-after-``finalize`` /
+  forward-before-``finalize`` lifecycle, and end-to-end fitting over a
+  ``DataLoader`` of windowed chunks via ``ESNTrainer.fit_stream``.
 """
 
 import pytest
+import pytorch_symbolic as ps
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 
+from resdag import ESNLayer, ESNModel
 from resdag.layers import ReadoutLayer
-from resdag.layers.readouts import CGReadoutLayer
+from resdag.layers.readouts import (
+    CGReadoutLayer,
+    CholeskyReadoutLayer,
+    IncrementalRidgeReadout,
+)
+from resdag.training import ESNTrainer
 
 
 def solve_ridge_closed_form(
@@ -1000,3 +1014,566 @@ class TestReadoutLayerIsFittedPersistence:
         readout.fit(torch.randn(30, 10, device=device), torch.randn(30, 3, device=device))
         assert readout.is_fitted is True
         assert readout._is_fitted.device.type == device.type
+
+
+# ===========================================================================
+# CholeskyReadoutLayer + IncrementalRidgeReadout (issue #176, the streaming /
+# DataLoader path). One test class per acceptance criterion.
+# ===========================================================================
+
+
+def _make_streaming_model(readout: ReadoutLayer, seq_len: int = 40) -> ESNModel:
+    """A tiny reservoir -> readout model wired for streaming/forecast tests."""
+    torch.manual_seed(0)
+    inp = ps.Input((seq_len, 3))
+    states = ESNLayer(50, feedback_size=3, spectral_radius=0.9)(inp)
+    out = readout(states)
+    return ESNModel(inp, out)
+
+
+# ---------------------------------------------------------------------------
+# CholeskyReadoutLayer
+# ---------------------------------------------------------------------------
+
+
+class TestCholeskyReadoutInstantiation:
+    """Construction, inheritance, and constructor validation."""
+
+    def test_is_readout_subclass(self) -> None:
+        """CholeskyReadoutLayer is a ReadoutLayer (so ESNTrainer accepts it)."""
+        readout = CholeskyReadoutLayer(in_features=20, out_features=3)
+        assert isinstance(readout, ReadoutLayer)
+        assert readout.in_features == 20
+        assert readout.out_features == 3
+        assert not readout.is_fitted
+
+    def test_negative_alpha_rejected(self) -> None:
+        """alpha < 0 raises at construction."""
+        with pytest.raises(ValueError, match="alpha must be non-negative"):
+            CholeskyReadoutLayer(10, 2, alpha=-1e-6)
+
+    def test_repr_contains_alpha(self) -> None:
+        """repr surfaces the name and alpha."""
+        r = repr(CholeskyReadoutLayer(10, 2, name="out", alpha=1e-4))
+        assert "CholeskyReadoutLayer" in r
+        assert "alpha=0.0001" in r
+        assert "name='out'" in r
+
+
+class TestCholeskyMatchesCG:
+    """Acceptance: Cholesky matches CG within 1e-5 on a well-conditioned fit."""
+
+    def test_matches_cg_within_1e5(self) -> None:
+        """Cholesky ridge matches a tightly-converged CG fit to < 1e-5."""
+        torch.manual_seed(7)
+        X = torch.randn(300, 30, dtype=torch.float64)
+        y = torch.randn(300, 4, dtype=torch.float64)
+        alpha = 1e-4
+
+        chol = CholeskyReadoutLayer(30, 4, alpha=alpha)
+        coefs_c, intercept_c = chol._fit_impl(X, y)
+
+        cg = CGReadoutLayer(30, 4, alpha=alpha, max_iter=5000, tol=1e-14)
+        coefs_cg, intercept_cg = cg._solve_ridge_cg(X, y, alpha)
+
+        assert torch.allclose(coefs_c, coefs_cg, atol=1e-5, rtol=1e-5)
+        assert intercept_c is not None and intercept_cg is not None
+        assert torch.allclose(intercept_c, intercept_cg, atol=1e-5, rtol=1e-5)
+
+    def test_matches_closed_form(self) -> None:
+        """Cholesky equals the closed-form ridge-with-intercept solution."""
+        torch.manual_seed(42)
+        X = torch.randn(200, 20, dtype=torch.float64)
+        y = torch.randn(200, 5, dtype=torch.float64)
+        alpha = 1e-3
+
+        chol = CholeskyReadoutLayer(20, 5, alpha=alpha)
+        coefs, intercept = chol._fit_impl(X, y)
+
+        coefs_cf, intercept_cf = solve_ridge_closed_form(X, y, alpha)
+        assert torch.allclose(coefs, coefs_cf, atol=1e-8, rtol=1e-7)
+        assert intercept is not None
+        assert torch.allclose(intercept, intercept_cf, atol=1e-8, rtol=1e-7)
+
+    def test_no_bias_solves_raw_normal_equations(self) -> None:
+        """bias=False solves the uncentered ridge system (no intercept)."""
+        torch.manual_seed(3)
+        alpha = 1e-2
+        X = torch.randn(300, 10, dtype=torch.float64) + 1.0
+        y = torch.randn(300, 4, dtype=torch.float64)
+
+        chol = CholeskyReadoutLayer(10, 4, bias=False, alpha=alpha)
+        coefs, intercept = chol._fit_impl(X, y)
+
+        assert intercept is None
+        gram = X.T @ X + alpha * torch.eye(10, dtype=torch.float64)
+        expected = torch.linalg.solve(gram, X.T @ y)
+        assert torch.allclose(coefs, expected, atol=1e-8)
+
+
+class TestCholeskyTrainerCompatibility:
+    """CholeskyReadoutLayer trains end-to-end through ESNTrainer, keyed by name."""
+
+    def test_trainer_fits_and_forecasts(self) -> None:
+        """ESNTrainer fits the named readout via its pre-hook, then forecasts."""
+        readout = CholeskyReadoutLayer(50, 3, name="output", alpha=1e-6)
+        model = _make_streaming_model(readout)
+
+        warmup = torch.randn(1, 40, 3)
+        train = torch.randn(1, 40, 3)
+        targets = torch.randn(1, 40, 3)
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(warmup,),
+            train_inputs=(train,),
+            targets={"output": targets},
+        )
+        assert readout.is_fitted
+        pred = model.forecast(warmup, horizon=20)
+        assert pred.shape == (1, 20, 3)
+        assert torch.isfinite(pred).all()
+
+
+# ---------------------------------------------------------------------------
+# Shared auto gram_dtype policy (acceptance criterion 3)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoGramDtypePolicy:
+    """Both readouts reuse the auto gram_dtype policy: float64 on CPU."""
+
+    @pytest.mark.parametrize("cls", [CholeskyReadoutLayer, IncrementalRidgeReadout])
+    def test_gram_dtype_default_is_none(self, cls) -> None:
+        """The auto policy is the default (gram_dtype is None until overridden)."""
+        readout = cls(10, 2)
+        assert readout.gram_dtype is None
+        assert readout.use_float64 is True
+
+    def test_cholesky_cpu_float32_input_solves_in_float64(self) -> None:
+        """A float32 CPU fit reaches float64-grade accuracy (auto gram policy).
+
+        With the auto policy the heavy CPU matmuls run in float64, so even a
+        float32-input fit matches the float64 closed-form solution far tighter
+        than a genuinely float32 solve (~1e-3) would. The fitted weights are
+        copied back to the float32 parameters, so we compare in float32.
+        """
+        torch.manual_seed(0)
+        X = torch.randn(300, 12, dtype=torch.float32)
+        y = torch.randn(300, 3, dtype=torch.float32)
+        alpha = 1e-3
+
+        readout = CholeskyReadoutLayer(12, 3, alpha=alpha)  # float32 params
+        assert readout.weight.dtype == torch.float32
+        readout.fit(X, y)
+
+        coefs_cf, _ = solve_ridge_closed_form(X.double(), y.double(), alpha)
+        assert torch.allclose(readout.weight.T.double(), coefs_cf, atol=1e-5, rtol=1e-4)
+
+    def test_incremental_accumulators_are_float64_when_use_float64(self) -> None:
+        """The sufficient-statistic buffers accumulate in float64 by default.
+
+        Float64 accumulation is what keeps the running Gram from drifting across
+        many chunks; it is the streaming counterpart of the auto gram policy.
+        """
+        readout = IncrementalRidgeReadout(10, 3)  # use_float64=True default
+        assert readout.XtX.dtype == torch.float64
+        assert readout.Xty.dtype == torch.float64
+
+        f32 = IncrementalRidgeReadout(10, 3, use_float64=False)
+        assert f32.XtX.dtype == torch.float32
+
+    def test_incremental_cpu_float32_input_matches_float64(self) -> None:
+        """A float32 CPU streaming fit reaches float64-grade accuracy."""
+        torch.manual_seed(1)
+        X = torch.randn(400, 12, dtype=torch.float32)
+        y = torch.randn(400, 3, dtype=torch.float32)
+        alpha = 1e-3
+
+        inc = IncrementalRidgeReadout(12, 3, alpha=alpha)
+        for chunk in torch.chunk(torch.arange(400), 5):
+            inc.partial_fit(X[chunk], y[chunk])
+        inc.finalize()
+
+        coefs_cf, _ = solve_ridge_closed_form(X.double(), y.double(), alpha)
+        assert torch.allclose(inc.weight.T.double(), coefs_cf, atol=1e-5, rtol=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# IncrementalRidgeReadout
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementalInstantiation:
+    """Construction, accumulator buffers, and validation."""
+
+    def test_is_readout_subclass(self) -> None:
+        """IncrementalRidgeReadout is a ReadoutLayer."""
+        readout = IncrementalRidgeReadout(in_features=20, out_features=3)
+        assert isinstance(readout, ReadoutLayer)
+        assert not readout.is_fitted
+        assert readout.n_seen == 0
+
+    def test_negative_alpha_rejected(self) -> None:
+        """alpha < 0 raises at construction."""
+        with pytest.raises(ValueError, match="alpha must be non-negative"):
+            IncrementalRidgeReadout(10, 2, alpha=-1.0)
+
+    def test_accumulator_buffers_registered(self) -> None:
+        """The sufficient-statistic accumulators are registered buffers."""
+        readout = IncrementalRidgeReadout(10, 2)
+        sd = readout.state_dict()
+        for key in ("XtX", "Xty", "sum_x", "sum_y", "_n"):
+            assert key in sd
+        assert readout.XtX.shape == (10, 10)
+        assert readout.Xty.shape == (10, 2)
+
+    def test_repr_contains_alpha(self) -> None:
+        """repr surfaces the name and alpha."""
+        r = repr(IncrementalRidgeReadout(10, 2, name="out", alpha=1e-4))
+        assert "IncrementalRidgeReadout" in r
+        assert "alpha=0.0001" in r
+
+
+class TestIncrementalPartialFitMatchesFullBatch:
+    """Acceptance: K chunks then finalize() matches a single full-batch fit < 1e-5."""
+
+    def test_chunked_matches_full_batch_cholesky(self) -> None:
+        """partial_fit over K chunks then finalize == full-batch Cholesky < 1e-5."""
+        torch.manual_seed(0)
+        X = torch.randn(600, 30, dtype=torch.float64)
+        true_w = torch.randn(30, 4, dtype=torch.float64)
+        y = X @ true_w + 0.01 * torch.randn(600, 4, dtype=torch.float64)
+        alpha = 1e-4
+
+        full = CholeskyReadoutLayer(30, 4, alpha=alpha)
+        coefs_full, intercept_full = full._fit_impl(X, y)
+
+        inc = IncrementalRidgeReadout(30, 4, alpha=alpha)
+        for chunk in torch.chunk(torch.arange(600), 7):
+            inc.partial_fit(X[chunk], y[chunk])
+        assert inc.n_seen == 600
+        inc.finalize()
+
+        coefs_inc = inc.weight.T.to(torch.float64)
+        intercept_inc = inc.bias.to(torch.float64)
+        assert torch.allclose(coefs_inc, coefs_full, atol=1e-5, rtol=1e-5)
+        assert torch.allclose(intercept_inc, intercept_full, atol=1e-5, rtol=1e-5)
+
+    def test_chunked_matches_full_batch_cg(self) -> None:
+        """The accumulated fit also matches a tightly-converged CG fit < 1e-5."""
+        torch.manual_seed(1)
+        X = torch.randn(500, 25, dtype=torch.float64)
+        y = torch.randn(500, 3, dtype=torch.float64)
+        alpha = 1e-3
+
+        cg = CGReadoutLayer(25, 3, alpha=alpha, max_iter=5000, tol=1e-14)
+        coefs_cg, intercept_cg = cg._solve_ridge_cg(X, y, alpha)
+
+        inc = IncrementalRidgeReadout(25, 3, alpha=alpha)
+        for chunk in torch.chunk(torch.arange(500), 11):
+            inc.partial_fit(X[chunk], y[chunk])
+        inc.finalize()
+
+        assert torch.allclose(inc.weight.T.double(), coefs_cg, atol=1e-5, rtol=1e-5)
+        assert torch.allclose(inc.bias.double(), intercept_cg, atol=1e-5, rtol=1e-5)
+
+    def test_chunking_is_invariant_to_chunk_count(self) -> None:
+        """The number of chunks does not change the final fit (additive stats)."""
+        torch.manual_seed(2)
+        X = torch.randn(360, 12, dtype=torch.float64)
+        y = torch.randn(360, 2, dtype=torch.float64)
+
+        def fit_in(k: int) -> torch.Tensor:
+            inc = IncrementalRidgeReadout(12, 2, alpha=1e-4)
+            for chunk in torch.chunk(torch.arange(360), k):
+                inc.partial_fit(X[chunk], y[chunk])
+            inc.finalize()
+            return inc.weight.clone()
+
+        assert torch.allclose(fit_in(1), fit_in(9), atol=1e-6)
+        assert torch.allclose(fit_in(9), fit_in(40), atol=1e-6)
+
+    def test_bias_free_matches_full_batch(self) -> None:
+        """bias=False chunked fit matches the uncentered full-batch solve."""
+        torch.manual_seed(3)
+        X = torch.randn(400, 10, dtype=torch.float64) + 1.0
+        y = torch.randn(400, 3, dtype=torch.float64)
+        alpha = 1e-3
+
+        inc = IncrementalRidgeReadout(10, 3, bias=False, alpha=alpha)
+        for chunk in torch.chunk(torch.arange(400), 5):
+            inc.partial_fit(X[chunk], y[chunk])
+        inc.finalize()
+        assert inc.bias is None
+
+        gram = X.T @ X + alpha * torch.eye(10, dtype=torch.float64)
+        expected = torch.linalg.solve(gram, X.T @ y)
+        assert torch.allclose(inc.weight.T.double(), expected, atol=1e-5, rtol=1e-5)
+
+    def test_partial_fit_accepts_3d_chunks(self) -> None:
+        """3D ``(B, T, F)`` chunks are flattened consistently with full-batch."""
+        torch.manual_seed(4)
+        X3 = torch.randn(2, 50, 8, dtype=torch.float64)
+        y3 = torch.randn(2, 50, 3, dtype=torch.float64)
+
+        inc = IncrementalRidgeReadout(8, 3, alpha=1e-4)
+        inc.partial_fit(X3, y3)
+        inc.finalize()
+        assert inc.n_seen == 2 * 50
+
+        full = CholeskyReadoutLayer(8, 3, alpha=1e-4)
+        coefs_full, _ = full._fit_impl(X3.reshape(-1, 8), y3.reshape(-1, 3))
+        assert torch.allclose(inc.weight.T.double(), coefs_full, atol=1e-5, rtol=1e-5)
+
+
+class TestIncrementalLifecycle:
+    """Acceptance: is_fitted only after finalize; forward before finalize raises."""
+
+    def test_is_fitted_only_after_finalize(self) -> None:
+        """is_fitted is False until finalize() is called."""
+        inc = IncrementalRidgeReadout(10, 3)
+        assert not inc.is_fitted
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        assert not inc.is_fitted  # accumulated, but not solved yet
+        inc.finalize()
+        assert inc.is_fitted
+
+    def test_forward_before_finalize_raises(self) -> None:
+        """Calling forward before finalize raises a clear RuntimeError."""
+        inc = IncrementalRidgeReadout(10, 3)
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        with pytest.raises(RuntimeError, match="not fitted.*finalize"):
+            inc(torch.randn(5, 10))
+
+    def test_forward_after_finalize_works(self) -> None:
+        """forward succeeds once finalize() has run."""
+        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        inc.finalize()
+        out = inc(torch.randn(5, 10))
+        assert out.shape == (5, 3)
+
+    def test_partial_fit_after_finalize_unfits(self) -> None:
+        """New data after finalize clears is_fitted until re-finalized."""
+        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        inc.finalize()
+        assert inc.is_fitted
+        inc.partial_fit(torch.randn(20, 10), torch.randn(20, 3))
+        assert not inc.is_fitted
+        with pytest.raises(RuntimeError, match="not fitted"):
+            inc(torch.randn(5, 10))
+
+    def test_finalize_without_data_raises(self) -> None:
+        """finalize before any partial_fit raises a clear RuntimeError."""
+        inc = IncrementalRidgeReadout(10, 3)
+        with pytest.raises(RuntimeError, match="no data accumulated"):
+            inc.finalize()
+
+    def test_reset_accumulators_clears_state(self) -> None:
+        """reset_accumulators zeroes the statistics and the fitted flag."""
+        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        inc.finalize()
+        inc.reset_accumulators()
+        assert inc.n_seen == 0
+        assert not inc.is_fitted
+        assert torch.count_nonzero(inc.XtX) == 0
+        assert torch.count_nonzero(inc.Xty) == 0
+
+    def test_single_shot_fit_interface(self) -> None:
+        """The inherited fit() works as a single-shot drop-in (resets + solves)."""
+        torch.manual_seed(5)
+        X = torch.randn(120, 10, dtype=torch.float64)
+        y = torch.randn(120, 3, dtype=torch.float64)
+        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc.fit(X, y)
+        assert inc.is_fitted
+        assert inc.n_seen == 120
+
+        full = CholeskyReadoutLayer(10, 3, alpha=1e-4)
+        coefs_full, _ = full._fit_impl(X, y)
+        assert torch.allclose(inc.weight.T.double(), coefs_full, atol=1e-5, rtol=1e-5)
+
+
+class TestIncrementalValidation:
+    """partial_fit validates shapes with the same messages as base fit()."""
+
+    def test_wrong_in_features_raises(self) -> None:
+        """A wrong state feature dimension raises a clear ValueError."""
+        inc = IncrementalRidgeReadout(20, 5)
+        with pytest.raises(ValueError, match="state feature dimension"):
+            inc.partial_fit(torch.randn(100, 16), torch.randn(100, 5))
+
+    def test_wrong_out_features_raises(self) -> None:
+        """A wrong target feature dimension raises a clear ValueError."""
+        inc = IncrementalRidgeReadout(20, 5)
+        with pytest.raises(ValueError, match="target feature dimension"):
+            inc.partial_fit(torch.randn(100, 20), torch.randn(100, 3))
+
+    def test_sample_mismatch_raises(self) -> None:
+        """Mismatched sample counts raise a clear ValueError."""
+        inc = IncrementalRidgeReadout(20, 5)
+        with pytest.raises(ValueError, match="sample count mismatch"):
+            inc.partial_fit(torch.randn(100, 20), torch.randn(50, 5))
+
+
+class TestIncrementalStateDict:
+    """Accumulators and is_fitted survive a state_dict round-trip."""
+
+    def test_round_trip_preserves_fit(self) -> None:
+        """A finalized readout reloads is_fitted=True with identical weights."""
+        torch.manual_seed(6)
+        src = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        src.partial_fit(torch.randn(80, 10), torch.randn(80, 3))
+        src.finalize()
+
+        dst = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        assert not dst.is_fitted
+        dst.load_state_dict(src.state_dict())
+        assert dst.is_fitted
+        assert dst.n_seen == src.n_seen
+        assert torch.allclose(dst.weight, src.weight)
+        assert torch.allclose(dst.XtX, src.XtX)
+
+
+class TestIncrementalDevice:
+    """Incremental fitting works on every available device."""
+
+    def test_partial_fit_finalize_on_device(self, device: torch.device) -> None:
+        """Accumulating and finalizing land on the target device."""
+        torch.manual_seed(0)
+        inc = IncrementalRidgeReadout(20, 5, alpha=1e-4).to(device)
+        for _ in range(3):
+            X = torch.randn(60, 20, device=device)
+            y = torch.randn(60, 5, device=device)
+            inc.partial_fit(X, y)
+        inc.finalize()
+        assert inc.is_fitted
+        assert inc.weight.device.type == device.type
+        pred = inc(torch.randn(10, 20, device=device))
+        assert pred.device.type == device.type
+        assert pred.shape == (10, 5)
+
+
+# ---------------------------------------------------------------------------
+# Acceptance criterion 4: fit over a DataLoader of windowed chunks + forecast
+# ---------------------------------------------------------------------------
+
+
+def _windowed_loader(
+    series: torch.Tensor,
+    targets: torch.Tensor,
+    window: int,
+) -> DataLoader:
+    """Split a contiguous ``(1, T, F)`` series into ordered windows of length ``window``."""
+    xs = series.unfold(1, window, window).permute(0, 1, 3, 2).reshape(-1, window, series.shape[-1])
+    ys = (
+        targets.unfold(1, window, window).permute(0, 1, 3, 2).reshape(-1, window, targets.shape[-1])
+    )
+    ds = TensorDataset(xs, ys)
+    # shuffle=False keeps the windows contiguous in time (required for the
+    # stateful reservoir to stay synchronised across chunk boundaries).
+    return DataLoader(ds, batch_size=1, shuffle=False)
+
+
+class TestFitStreamOverDataLoader:
+    """ESNTrainer.fit_stream trains over a DataLoader of windowed chunks."""
+
+    def test_fit_stream_end_to_end_and_forecast(self) -> None:
+        """Fit a readout over windowed DataLoader chunks, then forecast finitely."""
+        readout = IncrementalRidgeReadout(50, 3, name="output", alpha=1e-6)
+        model = _make_streaming_model(readout, seq_len=50)
+
+        torch.manual_seed(11)
+        warmup = torch.randn(1, 50, 3)
+        series = torch.randn(1, 250, 3)
+        targets = torch.randn(1, 250, 3)
+        loader = _windowed_loader(series, targets, window=50)
+
+        def chunk_stream():
+            for xb, yb in loader:
+                yield (xb,), {"output": yb}
+
+        ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunk_stream())
+        assert readout.is_fitted
+        assert readout.n_seen == 250
+
+        pred = model.forecast(warmup, horizon=20)
+        assert pred.shape == (1, 20, 3)
+        assert torch.isfinite(pred).all()
+
+    def test_fit_stream_matches_full_batch_fit(self) -> None:
+        """Streaming over contiguous chunks == a single full-batch fit() < 1e-5.
+
+        Two identically-seeded models (so reservoir weights match) are trained on
+        the same data: one with a single-shot Cholesky fit, one with the chunked
+        streaming path. The fitted readout weights must agree.
+        """
+        warmup = None
+        train = None
+        target = None
+
+        def build_and_data(readout_cls):
+            torch.manual_seed(0)
+            inp = ps.Input((40, 3))
+            states = ESNLayer(50, feedback_size=3, spectral_radius=0.9)(inp)
+            ro = readout_cls(50, 3, name="output", alpha=1e-6)
+            model = ESNModel(inp, ro(states))
+            return model, ro
+
+        torch.manual_seed(100)
+        warmup = torch.randn(1, 40, 3)
+        train = torch.randn(1, 300, 3)
+        target = torch.randn(1, 300, 3)
+
+        m_ref, ro_ref = build_and_data(CholeskyReadoutLayer)
+        ESNTrainer(m_ref).fit(
+            warmup_inputs=(warmup,),
+            train_inputs=(train,),
+            targets={"output": target},
+        )
+
+        m_str, ro_str = build_and_data(IncrementalRidgeReadout)
+
+        def chunks():
+            for i in range(0, 300, 50):
+                yield (train[:, i : i + 50],), {"output": target[:, i : i + 50]}
+
+        ESNTrainer(m_str).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
+
+        assert torch.allclose(ro_str.weight, ro_ref.weight, atol=1e-5, rtol=1e-4)
+        assert torch.allclose(ro_str.bias, ro_ref.bias, atol=1e-5, rtol=1e-4)
+
+    def test_fit_stream_rejects_non_incremental_readout(self) -> None:
+        """fit_stream requires IncrementalRidgeReadout readouts."""
+        readout = CholeskyReadoutLayer(50, 3, name="output")
+        model = _make_streaming_model(readout, seq_len=40)
+        warmup = torch.randn(1, 40, 3)
+
+        def chunks():
+            yield (torch.randn(1, 40, 3),), {"output": torch.randn(1, 40, 3)}
+
+        with pytest.raises(TypeError, match="IncrementalRidgeReadout"):
+            ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
+
+    def test_fit_stream_empty_chunks_raises(self) -> None:
+        """An empty chunk stream raises rather than finalizing nothing."""
+        readout = IncrementalRidgeReadout(50, 3, name="output")
+        model = _make_streaming_model(readout, seq_len=40)
+        warmup = torch.randn(1, 40, 3)
+
+        with pytest.raises(RuntimeError, match="no chunks"):
+            ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=iter(()))
+
+    def test_fit_stream_target_length_mismatch_raises(self) -> None:
+        """A target whose length differs from its chunk's inputs raises."""
+        readout = IncrementalRidgeReadout(50, 3, name="output")
+        model = _make_streaming_model(readout, seq_len=40)
+        warmup = torch.randn(1, 40, 3)
+
+        def chunks():
+            yield (torch.randn(1, 40, 3),), {"output": torch.randn(1, 30, 3)}
+
+        with pytest.raises(ValueError, match="timesteps"):
+            ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())

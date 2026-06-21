@@ -10,18 +10,29 @@ The trainer uses PyTorch forward hooks to fit each readout layer just
 before its forward method executes, ensuring downstream layers receive
 outputs from already-fitted readouts.
 
+For sequences too long to materialise in memory, :meth:`ESNTrainer.fit_stream`
+fits :class:`~resdag.layers.IncrementalRidgeReadout` readouts over a stream of
+contiguous chunks (e.g. a :class:`torch.utils.data.DataLoader`), accumulating
+ridge sufficient statistics per chunk and solving once at the end.
+
 See Also
 --------
 resdag.ESNModel : ESN model class.
 resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
+resdag.layers.readouts.IncrementalRidgeReadout : Streaming partial_fit readout.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import torch
 
 from resdag.core import ESNModel
-from resdag.layers import ReadoutLayer
+from resdag.layers import IncrementalRidgeReadout, ReadoutLayer
+
+# A streaming chunk: a tuple of contiguous input tensors (feedback, driver1,
+# ...) paired with a dict mapping each readout name to its target tensor for
+# that chunk.
+StreamChunk = tuple[tuple[torch.Tensor, ...], dict[str, torch.Tensor]]
 
 
 class ESNTrainer:
@@ -212,6 +223,173 @@ class ESNTrainer:
             # Always remove hooks
             for h in hooks:
                 h.remove()
+
+    def fit_stream(
+        self,
+        warmup_inputs: tuple[torch.Tensor, ...],
+        chunks: Iterable[StreamChunk],
+    ) -> None:
+        """Fit :class:`IncrementalRidgeReadout` readouts over a stream of chunks.
+
+        The streaming counterpart of :meth:`fit`. Instead of fitting from one
+        in-memory ``(B, T, F)`` block, it warms the reservoir once and then
+        consumes ``chunks`` one at a time — e.g. windows yielded by a
+        :class:`torch.utils.data.DataLoader` — accumulating each readout's ridge
+        sufficient statistics with
+        :meth:`~resdag.layers.IncrementalRidgeReadout.partial_fit` and solving
+        once at the end with
+        :meth:`~resdag.layers.IncrementalRidgeReadout.finalize`. No more than a
+        single chunk's states are ever held in memory, which is what lets a
+        sequence too long to materialise — or one streamed off disk — be fitted.
+
+        Because the reservoir is stateful, the chunks must be **contiguous in
+        time and in order**: state flows from the end of one chunk into the
+        start of the next, exactly as it would in a single long forward pass.
+        Shuffling the chunks would desynchronise the reservoir and is not
+        supported.
+
+        Every readout in the model must be an
+        :class:`~resdag.layers.IncrementalRidgeReadout` (the only readout with a
+        ``partial_fit`` / ``finalize`` interface). The accumulators are reset at
+        the start, so calling ``fit_stream`` again re-fits from scratch.
+
+        Parameters
+        ----------
+        warmup_inputs : tuple of torch.Tensor
+            Warmup sequences for state synchronization, format
+            ``(feedback, driver1, ...)``, each of shape
+            ``(batch, warmup_steps, features)``. The reservoir is reset before
+            this pass (as in :meth:`fit`).
+        chunks : iterable of (tuple of torch.Tensor, dict of str to torch.Tensor)
+            An iterable yielding ``(inputs, targets)`` per chunk. ``inputs`` is
+            an input tuple ``(feedback, driver1, ...)`` of the same arity as
+            ``warmup_inputs``; ``targets`` maps each readout name to its target
+            tensor of shape ``(batch, chunk_steps, out_features)``. Consumed
+            lazily, so a generator or ``DataLoader`` never materialises the whole
+            sequence.
+
+        Raises
+        ------
+        ValueError
+            If no warmup inputs are provided, if a chunk's input arity does not
+            match the warmup arity, if any readout is missing from a chunk's
+            targets, or if a target's sequence length does not match its chunk's
+            input length.
+        TypeError
+            If any readout in the model is not an ``IncrementalRidgeReadout``.
+        RuntimeError
+            If ``chunks`` is empty (no statistics were accumulated, so there is
+            nothing to finalize).
+
+        Notes
+        -----
+        After ``fit_stream`` returns, every readout has ``is_fitted=True`` and
+        the model is ready for inference or forecasting.
+
+        Examples
+        --------
+        >>> from resdag.layers import IncrementalRidgeReadout
+        >>> trainer = ESNTrainer(model)  # model uses IncrementalRidgeReadout
+        >>> def chunk_stream():
+        ...     for x, y in dataloader:  # contiguous windows  # doctest: +SKIP
+        ...         yield (x,), {"output": y}
+        >>> trainer.fit_stream(  # doctest: +SKIP
+        ...     warmup_inputs=(warmup_data,),
+        ...     chunks=chunk_stream(),
+        ... )
+
+        See Also
+        --------
+        fit : Single-pass in-memory fitting.
+        resdag.layers.IncrementalRidgeReadout : The streaming readout.
+        """
+        if len(warmup_inputs) == 0:
+            raise ValueError("At least one warmup input is required")
+
+        readouts = self._discover_readouts()
+        non_incremental = [
+            name for name, ro in readouts if not isinstance(ro, IncrementalRidgeReadout)
+        ]
+        if non_incremental:
+            raise TypeError(
+                f"fit_stream() requires every readout to be an IncrementalRidgeReadout, "
+                f"but these are not: {non_incremental}. Use fit() for single-pass readouts, "
+                f"or rebuild the model with IncrementalRidgeReadout."
+            )
+
+        # Reset accumulators so a re-fit starts clean, then warm up once. The
+        # readouts are unfitted during warmup too, so let their forward flow a
+        # value while the reservoir synchronises.
+        for _, readout in readouts:
+            assert isinstance(readout, IncrementalRidgeReadout)
+            readout.reset_accumulators()
+            readout._allow_unfitted_forward = True
+        try:
+            self.model.warmup(*warmup_inputs)
+        finally:
+            for _, readout in readouts:
+                assert isinstance(readout, IncrementalRidgeReadout)
+                readout._allow_unfitted_forward = False
+
+        # Per-chunk: register pre-hooks that accumulate sufficient statistics
+        # for each readout, then run a forward pass that carries the reservoir
+        # state forward into the next chunk.
+        n_chunks = 0
+        for inputs, targets in chunks:
+            if len(inputs) != len(warmup_inputs):
+                raise ValueError(
+                    f"Chunk {n_chunks} has {len(inputs)} input tensors, but warmup_inputs "
+                    f"has {len(warmup_inputs)}. Must match."
+                )
+            self._validate_targets(targets, readouts)
+            chunk_steps = inputs[0].shape[1]
+
+            hooks: list[torch.utils.hooks.RemovableHandle] = []
+            for name, readout in readouts:
+                target = targets[name]
+                if target.shape[1] != chunk_steps:
+                    for h in hooks:
+                        h.remove()
+                    raise ValueError(
+                        f"Target for '{name}' in chunk {n_chunks} has {target.shape[1]} "
+                        f"timesteps, but the chunk inputs have {chunk_steps}. Must match."
+                    )
+
+                def make_partial_fit_hook(
+                    layer: IncrementalRidgeReadout, tgt: torch.Tensor
+                ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], None]:
+                    def hook(module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
+                        layer.partial_fit(args[0], tgt)
+
+                    return hook
+
+                assert isinstance(readout, IncrementalRidgeReadout)
+                handle = readout.register_forward_pre_hook(make_partial_fit_hook(readout, target))
+                hooks.append(handle)
+                # The readout is unfitted during accumulation; its forward only
+                # needs to flow a value downstream, so bypass the fitted guard.
+                readout._allow_unfitted_forward = True
+
+            try:
+                with torch.no_grad():
+                    self.model(*inputs)
+            finally:
+                for h in hooks:
+                    h.remove()
+                for _, readout in readouts:
+                    assert isinstance(readout, IncrementalRidgeReadout)
+                    readout._allow_unfitted_forward = False
+            n_chunks += 1
+
+        if n_chunks == 0:
+            raise RuntimeError(
+                "fit_stream() received no chunks; nothing was accumulated to finalize."
+            )
+
+        # Solve every readout once from its accumulated statistics.
+        for _, readout in readouts:
+            assert isinstance(readout, IncrementalRidgeReadout)
+            readout.finalize()
 
     def _discover_readouts(self) -> list[tuple[str, ReadoutLayer]]:
         """Return ``(resolved_name, readout)`` pairs for every readout in the model.

@@ -72,6 +72,11 @@ class BaseReservoirLayer(nn.Module, ABC):
         self.register_buffer("state", None, persistent=False)
         self.state: torch.Tensor | None
         self.detach_state_between_calls: bool = True
+        # Distinguishes a state the user restored on purpose (via ``set_state``)
+        # from one that merely accumulated through forward passes or lazy
+        # zero-init.  Only the former is protected against a silent batch-size
+        # re-init in ``_maybe_init_state`` — the latter is free to auto-resize.
+        self._state_user_set: bool = False
 
     def forward_stateless(
         self,
@@ -268,6 +273,11 @@ class BaseReservoirLayer(nn.Module, ABC):
             new_state = new_state.detach()
 
         self.state = new_state
+        # The stored state has now evolved one or more steps past whatever the
+        # user restored; it is no longer the as-set tensor, so drop the
+        # user-set protection — a subsequent batch-size change is back to the
+        # ordinary auto-resize regime.
+        self._state_user_set = False
         return outputs
 
     # ------------------------------------------------------------------
@@ -290,6 +300,14 @@ class BaseReservoirLayer(nn.Module, ABC):
         re-zeroing on a device/dtype mismatch would silently discard a warmed-up
         trajectory — the very bug this guard used to cause.
 
+        When the state was restored **on purpose** via :meth:`set_state`, a
+        batch-size mismatch is treated as a user error and raises rather than
+        silently zero-reinitialising: discarding a deliberately restored state
+        would otherwise produce plausible-looking but wrong forecasts (e.g. the
+        common train-with-``batch>1`` / forecast-with-``batch=1`` pattern).  A
+        state that merely accumulated through forward passes or lazy zero-init
+        still auto-resizes without complaint.
+
         Parameters
         ----------
         batch_size : int
@@ -298,9 +316,29 @@ class BaseReservoirLayer(nn.Module, ABC):
             Target device for a freshly allocated state.
         dtype : torch.dtype
             Target dtype for a freshly allocated state.
+
+        Raises
+        ------
+        RuntimeError
+            If a state restored via :meth:`set_state` has a batch size that does
+            not match the incoming ``batch_size``.  Re-restore at the right batch
+            size or call :meth:`reset_state` to opt back into auto-resizing.
         """
         if self.state is None or self.state.shape[0] != batch_size:
+            if self._state_user_set and self.state is not None:
+                set_batch = self.state.shape[0]
+                raise RuntimeError(
+                    f"{type(self).__name__}: a state restored via set_state has "
+                    f"batch size {set_batch}, but this forward pass uses batch "
+                    f"size {batch_size}. Silently zero-reinitialising would "
+                    f"discard the state you restored on purpose. Restore a state "
+                    f"with batch size {batch_size}, or call reset_state() to opt "
+                    f"back into automatic batch-size re-initialisation."
+                )
             self.state = self.cell.init_state(batch_size, device, dtype)
+            # A fresh zero state is a lazy/natural allocation, never a user-set
+            # one: clear the flag so the new state is free to auto-resize next.
+            self._state_user_set = False
 
     def reference_device_dtype(self) -> tuple[torch.device, torch.dtype]:
         """
@@ -357,6 +395,9 @@ class BaseReservoirLayer(nn.Module, ABC):
             self.state = self.cell.init_state(batch_size, device, dtype)
         else:
             self.state = None
+        # A reset (zeros or back-to-None) is a deliberate opt-in to automatic
+        # batch-size re-initialisation: drop any user-set protection.
+        self._state_user_set = False
 
     def get_state(self) -> torch.Tensor | None:
         """
@@ -384,10 +425,24 @@ class BaseReservoirLayer(nn.Module, ABC):
         each cell type owns its own state-shape contract (2-D for ESNCell,
         3-D delay buffer for NGCell, etc.).
 
+        Batch-size contract
+        -------------------
+        The restored state's batch size (``state.shape[0]``) pins the batch size
+        the **next forward pass must use**.  A restored state is treated as
+        deliberate: if a subsequent ``forward`` is called with a different batch
+        size, :meth:`_maybe_init_state` raises a :class:`RuntimeError` instead of
+        silently zero-reinitialising and discarding the state you restored.  To
+        forecast at a different batch size, restore (or :meth:`reset_state` and
+        re-warm) a state of the matching batch size; to opt back into automatic
+        batch-size re-initialisation, call :meth:`reset_state`.  Device and dtype
+        are not pinned — the state moves with the module under ``.to()`` and is
+        cast to match an incoming forward.
+
         Parameters
         ----------
         state : torch.Tensor
-            New state tensor.
+            New state tensor.  Its batch size (``shape[0]``) becomes the
+            required batch size of the next forward pass.
 
         Raises
         ------
@@ -396,11 +451,16 @@ class BaseReservoirLayer(nn.Module, ABC):
             tensor.  The error includes the cell class name and the
             offending shape.
 
+        See Also
+        --------
+        reset_state : Clear the state and opt back into automatic batch-size
+            re-initialisation.
+
         Examples
         --------
-        >>> saved = layer.get_state()
+        >>> saved = layer.get_state()      # captured at batch size B
         >>> # ... process data ...
-        >>> layer.set_state(saved)  # Restore
+        >>> layer.set_state(saved)         # next forward must also use batch B
         """
         try:
             self.cell.validate_state(state)
@@ -412,6 +472,9 @@ class BaseReservoirLayer(nn.Module, ABC):
                 f"to materialise an empty state of the expected layout."
             ) from None
         self.state = state.clone()
+        # Mark this as a deliberate restore: a later forward at a mismatched
+        # batch size must raise rather than silently zero-reinit (see #145).
+        self._state_user_set = True
 
     def set_random_state(
         self,

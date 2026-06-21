@@ -36,6 +36,8 @@ def esp_index(
     history: bool = False,
     iterations: int = 10,
     transient: int = 0,
+    window: int | None = None,
+    relative: bool = False,
     verbose: bool = True,
 ) -> Union[
     dict[str, list[torch.Tensor]],
@@ -49,6 +51,12 @@ def esp_index(
     :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
     reservoirs are discovered automatically, so the diagnostic applies equally
     to ESN, NG-RC, and any future custom-cell reservoir.
+
+    Random restarts are drawn through each reservoir's public
+    :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`,
+    which samples a **standard-normal** state — the same convention as
+    :meth:`~resdag.core.ESNModel.set_random_reservoir_states`.  The index is
+    therefore directly comparable to states produced elsewhere in the library.
 
     Parameters
     ----------
@@ -64,6 +72,23 @@ def esp_index(
         Number of random initial states to average over.
     transient : int, default=0
         Timesteps to discard from sequence start.
+    window : int or None, default=None
+        Length of the trailing window over which the index is averaged.  By
+        default (``None``) the index is the mean over *every* post-transient
+        timestep, which for a healthy reservoir is dominated by the early
+        convergence transient rather than the asymptotic distance.  Setting
+        ``window=k`` averages only the **last** ``k`` post-transient steps, so
+        the index reflects the asymptotic regime — a far more diagnostic
+        statistic.  Must be a positive integer no larger than the number of
+        post-transient timesteps.  Does not affect the returned ``history``
+        tensors, which always span the full post-transient sequence.
+    relative : bool, default=False
+        If True, normalise each per-step distance by the corresponding
+        base-state norm, ``||base - rand|| / (||base|| + eps)``, yielding a
+        scale-free relative distance that is comparable across reservoir sizes
+        and spectral radii.  If False (default), the raw absolute distance is
+        used.  The normalisation is applied to both the returned index and the
+        ``history`` tensors.
     verbose : bool, default=True
         Print progress and skip messages.
 
@@ -73,7 +98,8 @@ def esp_index(
         If ``history=False``: dict mapping layer names to single-element
         lists containing the ESP index scalar tensor.
         If ``history=True``: tuple of (ESP indices dict, history dict).
-        History tensors have shape ``(iterations, timesteps, batch)``.
+        History tensors have shape ``(iterations, timesteps, batch)`` and span
+        the full post-transient sequence regardless of ``window``.
 
         Reservoirs whose ESP is undefined (no randomisable state) are omitted
         from both dictionaries.
@@ -81,9 +107,10 @@ def esp_index(
     Raises
     ------
     ValueError
-        If ``transient`` is not smaller than the number of timesteps, if the
-        model contains no reservoir layers, or if no reservoir has a
-        well-defined ESP.
+        If ``transient`` is not smaller than the number of timesteps, if
+        ``window`` is not a positive integer no larger than the number of
+        post-transient timesteps, if the model contains no reservoir layers,
+        or if no reservoir has a well-defined ESP.
 
     Notes
     -----
@@ -96,6 +123,17 @@ def esp_index(
     ``res.set_random_state()``, so each cell's own shape contract (2-D for
     ESN, 3-D delay buffer for NG-RC) is honoured and validated by the public
     state-management API.
+
+    Examples
+    --------
+    Score only the asymptotic regime with a scale-free statistic::
+
+        idx = esp_index(model, feedback, window=50, relative=True)
+
+    See Also
+    --------
+    resdag.core.ESNModel.set_random_reservoir_states :
+        Source of the standard-normal restart convention used here.
     """
     from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 
@@ -107,6 +145,13 @@ def esp_index(
         raise ValueError(f"transient ({transient}) >= timesteps ({total_timesteps})")
 
     timesteps = total_timesteps - transient
+
+    if window is not None and not (0 < window <= timesteps):
+        raise ValueError(
+            f"window ({window}) must be a positive integer no larger than the "
+            f"number of post-transient timesteps ({timesteps})."
+        )
+
     inputs = (feedback_seq,) + driving_seqs
 
     # Discover every reservoir layer (cell-agnostic): any BaseReservoirLayer,
@@ -185,11 +230,21 @@ def esp_index(
             # dimension.  Works for any output rank produced by the reservoir.
             dist = torch.norm(base - rand, dim=-1)  # (batch, timesteps)
 
-            # Mean distance for this iteration
-            esp_sums[name] += dist.mean()
+            if relative:
+                # Scale-free relative distance: divide by the base-state norm
+                # so the index is comparable across reservoir sizes / radii.
+                base_norm = torch.norm(base, dim=-1)  # (batch, timesteps)
+                dist = dist / (base_norm + 1e-12)
+
+            # Mean distance for this iteration.  With ``window`` set, average
+            # only over the trailing window (the asymptotic regime); otherwise
+            # over every post-transient timestep.
+            dist_for_index = dist[:, -window:] if window is not None else dist
+            esp_sums[name] += dist_for_index.mean()
 
             if history:
-                # Store: (batch, timesteps) -> row i of (iterations, timesteps, batch)
+                # Store the full post-transient sequence regardless of window:
+                # (batch, timesteps) -> row i of (iterations, timesteps, batch)
                 esp_history[name][i] = dist.T  # Transpose to (timesteps, batch)
 
     if verbose:

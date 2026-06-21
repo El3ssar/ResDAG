@@ -259,6 +259,11 @@ source = ["src"]
 omit = ["tests/*", "**/__pycache__/*"]
 
 [tool.coverage.report]
+# Gate the FULL-suite coverage in CI (full runs only — selective PR runs use
+# --no-cov, see .github/workflows/_test.yml). Held a few points below the
+# measured total so noise across the Python 3.11-3.14 matrix can't trip it;
+# raise it as coverage climbs.
+fail_under = 64
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

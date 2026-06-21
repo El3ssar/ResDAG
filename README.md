@@ -10,6 +10,8 @@ Compose reservoir models as DAGs, train readouts with a single algebraic solve, 
 <p align="center">
   <a href="https://pypi.org/project/resdag/"><img src="https://img.shields.io/pypi/v/resdag" alt="PyPI"></a>
   <a href="https://pypi.org/project/resdag/"><img src="https://img.shields.io/pypi/pyversions/resdag" alt="Python"></a>
+  <a href="https://github.com/El3ssar/ResDAG/actions/workflows/ci.yml"><img src="https://github.com/El3ssar/ResDAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/El3ssar/ResDAG"><img src="https://codecov.io/gh/El3ssar/ResDAG/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://el3ssar.github.io/ResDAG/"><img src="https://img.shields.io/badge/docs-el3ssar.github.io%2FResDAG-2a63d4" alt="Documentation"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
 </p>

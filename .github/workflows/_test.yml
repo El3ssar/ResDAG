@@ -52,7 +52,14 @@ jobs:
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install package with dev extras
-        run: pip install -e ".[dev,hpo]"
+        # numpy is pinned <2.5 for the lint env only. numpy>=2.5.0 ships PEP 695
+        # `type X = ...` aliases in its bundled stubs, which mypy under
+        # python_version = "3.11" (pyproject.toml — intentional, the package
+        # supports 3.11) rejects as a syntax error, aborting type-checking before
+        # it ever reaches src/resdag/. The test matrix is unaffected (it runs
+        # pytest, not mypy, and numpy 2.5 imports/runs fine). Lift this once
+        # mypy/numpy stub interop is fixed for the 3.11 target.
+        run: pip install -e ".[dev,hpo]" "numpy<2.5"
 
       - name: Lint
         run: |

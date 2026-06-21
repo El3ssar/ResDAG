@@ -10,7 +10,12 @@ Examples
 --------
     python -m rc_bench.run                  # full matrix -> results/latest.json
     python -m rc_bench.run --quick          # tiny smoke test
+    python -m rc_bench.run --report         # run, then render results/REPORT.md
     python -m rc_bench.run --only resdag-cpu reservoirpy --contexts forecast precision
+
+Pass ``--report`` to render the Markdown report (``results/REPORT.md`` next to
+``--out``) in the same invocation, so re-running the benchmark and refreshing the
+committed report is a single deterministic step.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from .data import lorenz
 from .metrics import LORENZ_DT, LORENZ_LAMBDA_MAX, lyapunov_times, valid_prediction_time
 
 _DEFAULT_OUT = Path(__file__).resolve().parents[1] / "results" / "latest.json"
+_DEFAULT_REPORT = Path(__file__).resolve().parents[1] / "results" / "REPORT.md"
 
 
 def _p(*a, **k):
@@ -73,6 +79,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repeats", type=int, default=3, help="timed repeats per cell")
     p.add_argument("--warmups", type=int, default=1, help="discarded warmup iterations")
     p.add_argument("--out", type=Path, default=_DEFAULT_OUT, help="results JSON path")
+    p.add_argument(
+        "--report",
+        nargs="?",
+        const=_DEFAULT_REPORT,
+        default=None,
+        type=Path,
+        help="after running, render a Markdown report (default: results/REPORT.md "
+        "next to --out)",
+    )
     args = p.parse_args(argv)
 
     contexts = QUICK_CONTEXTS if args.quick else CONTEXTS
@@ -162,6 +177,20 @@ def main(argv: list[str] | None = None) -> int:
         args.out.write_text(json.dumps(results, indent=2))
 
     _p(f"\nWrote {args.out}  (total {time.perf_counter() - t0:.1f}s)")
+
+    if args.report is not None:
+        from . import report as _report
+
+        # A bare ``--report`` lands the report next to ``--out`` (so a custom
+        # ``--out`` keeps its report alongside it); ``--report PATH`` is explicit.
+        report_path = args.report
+        if report_path == _DEFAULT_REPORT and args.out != _DEFAULT_OUT:
+            report_path = args.out.parent / "REPORT.md"
+        md = _report.render(results)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(md)
+        _p(f"Wrote {report_path}")
+
     return 0
 
 

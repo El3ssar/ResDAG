@@ -14,8 +14,13 @@
 #   * Add the `ci-full` label to a PR to force a full run on demand.
 #
 # Coverage (full runs only) is computed, gated by a `fail_under` floor, and
-# uploaded to Codecov by _test.yml. A nightly CPU benchmark lane guards the
-# performance regressions the fast paths were built to prevent.
+# uploaded to Codecov by _test.yml.
+#
+# The CPU benchmark lane guards the performance regressions the fast paths were
+# built to prevent (#263). It runs nightly, on manual dispatch, and on any PR
+# carrying the `benchmark` label. It gates on the committed floors in
+# `benchmarks/targets.json` (via `pytest -m benchmark`) and re-renders + uploads
+# `benchmarks/results/REPORT.md` as a build artifact. See `benchmarks/README.md`.
 
 name: CI
 
@@ -43,11 +48,18 @@ jobs:
     secrets: inherit
 
   benchmark:
-    # CPU benchmark lane — runs nightly and on manual dispatch (not on PRs).
-    # `-m benchmark` runs the performance assertions deselected by default;
-    # TestFastPathSpeed and the other CPU benchmarks run here, while the @gpu
-    # ones auto-skip without CUDA.
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    # CPU performance-regression lane — runs nightly, on manual dispatch, and on
+    # any PR labelled `benchmark` (so a PR touching a fast path can opt in to the
+    # gate on demand without waiting for the nightly run). `-m benchmark` runs the
+    # performance assertions deselected by default; the internal-ratio gates in
+    # tests/test_benchmarks (gated on benchmarks/targets.json) and the CPU
+    # benchmarks in tests/test_performance run here, while the @gpu ones auto-skip
+    # without CUDA.
+    if: >-
+      ${{ github.event_name == 'schedule'
+          || github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'pull_request'
+              && contains(github.event.pull_request.labels.*.name, 'benchmark')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,5 +76,24 @@ jobs:
       - name: Install package with dev extras
         run: pip install -e ".[dev,hpo]"
 
-      - name: Benchmarks (CPU)
-        run: pytest -m benchmark --no-cov -q tests/test_performance
+      - name: Benchmarks (CPU) — gate on benchmarks/targets.json
+        run: pytest -m benchmark --no-cov -q tests/test_benchmarks tests/test_performance
+
+      - name: Re-render cross-library REPORT.md (resdag-only, deterministic)
+        # reservoirpy / ReservoirComputing.jl are not installed in CI, so this
+        # renders the resdag-only rows; it proves the report regenerates
+        # deterministically with the flat-engine forecast win reflected. The
+        # committed REPORT.md (full cross-library matrix) is regenerated on the
+        # benchmark machine where the external libraries are present.
+        working-directory: benchmarks
+        run: python -m rc_bench.run --quick --report --out results/ci-latest.json
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: |
+            benchmarks/results/REPORT.md
+            benchmarks/results/ci-latest.json
+          if-no-files-found: warn

@@ -46,6 +46,24 @@ def expected_feature_dim(
     return int(include_constant) + int(include_linear) * D + n_monomials(D, p)
 
 
+def expected_cumulative_feature_dim(
+    input_dim: int,
+    k: int,
+    p: int,
+    include_constant: bool = True,
+    include_linear: bool = True,
+) -> int:
+    """feature_dim for the cumulative (degree-up-to-p) convention.
+
+    The nonlinear block spans degrees ``2..p`` when ``include_linear`` is True
+    (degree-1 monomials would duplicate ``O_lin``), else degrees ``1..p``.
+    """
+    D = input_dim * k
+    lo = 2 if include_linear else 1
+    n_nonlin = sum(n_monomials(D, g) for g in range(lo, p + 1))
+    return int(include_constant) + int(include_linear) * D + n_nonlin
+
+
 # ---------------------------------------------------------------------------
 # NGCell — construction
 # ---------------------------------------------------------------------------
@@ -444,6 +462,245 @@ class TestNGCellP1NoDuplicateColumns:
         feats = layer(x)[0]  # (time, feature_dim)
         rank = torch.linalg.matrix_rank(feats.double())
         assert int(rank) == layer.feature_dim
+
+
+# ---------------------------------------------------------------------------
+# NGCell — cumulative-degree mode (issue #152)
+# ---------------------------------------------------------------------------
+
+
+def _monomial_set(D: int, degrees: list[int]) -> set[tuple[int, ...]]:
+    """All combinations-with-replacement index tuples for the given degrees."""
+    out: set[tuple[int, ...]] = set()
+    for g in degrees:
+        for combo in itertools.combinations_with_replacement(range(D), g):
+            out.add(combo)
+    return out
+
+
+class TestNGCellExactDegreeUnchanged:
+    """The default (``cumulative=False``) behaviour must be byte-for-byte
+    identical to the historical exact-degree-``p`` convention (issue #152)."""
+
+    def test_default_is_exact_degree(self) -> None:
+        """``cumulative`` defaults to False on both cell and reservoir."""
+        assert NGCell(input_dim=3).cumulative is False
+        assert NGReservoir(input_dim=3).cumulative is False
+
+    @pytest.mark.parametrize(
+        "input_dim, k, p, const, lin",
+        [
+            (3, 1, 2, True, True),
+            (3, 2, 2, True, True),
+            (3, 3, 2, False, True),
+            (5, 2, 3, True, False),
+            (2, 4, 2, False, False),
+            (3, 2, 3, True, True),
+        ],
+    )
+    def test_exact_feature_dim_unchanged(
+        self, input_dim: int, k: int, p: int, const: bool, lin: bool
+    ) -> None:
+        """Explicit ``cumulative=False`` matches the legacy formula."""
+        cell = NGCell(
+            input_dim=input_dim,
+            k=k,
+            p=p,
+            cumulative=False,
+            include_constant=const,
+            include_linear=lin,
+        )
+        assert cell.feature_dim == expected_feature_dim(input_dim, k, p, const, lin)
+
+    def test_exact_monomials_only_degree_p(self) -> None:
+        """Exact mode emits *only* degree-p monomials (no lower cross terms)."""
+        # d=3, k=1, p=3, no const/linear → exactly the cubic monomials.
+        cell = NGCell(input_dim=3, k=1, p=3, include_constant=False, include_linear=False)
+        D = 3
+        assert cell.feature_dim == n_monomials(D, 3)
+
+        rows = {tuple(r) for r in cell.monomial_indices.tolist()}
+        assert rows == _monomial_set(D, [3])
+        # No quadratic / linear tuples leaked in.
+        assert rows.isdisjoint(_monomial_set(D, [1, 2]))
+
+    def test_exact_output_bitexact_default_vs_explicit_false(self) -> None:
+        """``cumulative`` default and explicit ``False`` give identical output."""
+        torch.manual_seed(0)
+        x = torch.randn(2, 12, 3, dtype=torch.float64)
+        a = NGReservoir(input_dim=3, k=2, p=3)
+        b = NGReservoir(input_dim=3, k=2, p=3, cumulative=False)
+        a.reset_state()
+        b.reset_state()
+        assert torch.equal(a(x), b(x))
+
+
+class TestNGCellCumulativeMode:
+    """Opt-in cumulative-degree (degree-up-to-p) basis (issue #152)."""
+
+    @pytest.mark.parametrize(
+        "input_dim, k, p, const, lin",
+        [
+            (3, 2, 2, True, True),
+            (3, 2, 3, True, True),
+            (3, 2, 3, True, False),
+            (2, 1, 3, False, True),
+            (2, 3, 2, False, False),
+            (4, 2, 4, True, True),
+        ],
+    )
+    def test_cumulative_feature_dim(
+        self, input_dim: int, k: int, p: int, const: bool, lin: bool
+    ) -> None:
+        cell = NGCell(
+            input_dim=input_dim,
+            k=k,
+            p=p,
+            cumulative=True,
+            include_constant=const,
+            include_linear=lin,
+        )
+        assert cell.feature_dim == expected_cumulative_feature_dim(input_dim, k, p, const, lin)
+
+    def test_cumulative_strictly_larger_than_exact(self) -> None:
+        """For p>=3 (and excluding duplicate degree-1), cumulative > exact."""
+        exact = NGCell(input_dim=3, k=2, p=3, include_linear=False)
+        cumulative = NGCell(input_dim=3, k=2, p=3, cumulative=True, include_linear=False)
+        assert cumulative.feature_dim > exact.feature_dim
+
+    def test_cumulative_monomial_degrees_with_linear(self) -> None:
+        """With include_linear, the nonlinear block spans degrees 2..p only."""
+        D = 2 * 1
+        cell = NGCell(
+            input_dim=2, k=1, p=3, cumulative=True, include_constant=False, include_linear=True
+        )
+        rows = {tuple(r) for r in cell.monomial_indices.tolist()}
+        # Rows are right-padded with -1 sentinels; strip them to recover degrees.
+        stripped = {tuple(i for i in r if i != -1) for r in rows}
+        assert stripped == _monomial_set(D, [2, 3])
+        # Degree-1 monomials are excluded (they would duplicate O_lin).
+        assert stripped.isdisjoint(_monomial_set(D, [1]))
+
+    def test_cumulative_monomial_degrees_without_linear(self) -> None:
+        """Without include_linear, the nonlinear block spans degrees 1..p."""
+        D = 2 * 1
+        cell = NGCell(
+            input_dim=2, k=1, p=3, cumulative=True, include_constant=False, include_linear=False
+        )
+        rows = {tuple(r) for r in cell.monomial_indices.tolist()}
+        stripped = {tuple(i for i in r if i != -1) for r in rows}
+        assert stripped == _monomial_set(D, [1, 2, 3])
+
+    def test_cumulative_monomial_values(self) -> None:
+        """Cumulative monomial values: degrees 1..p over a known input."""
+        cell = NGCell(
+            input_dim=2, k=1, p=3, cumulative=True, include_constant=False, include_linear=False
+        )
+        x = torch.tensor([[2.0, 3.0]])
+        state = cell.init_state(1, "cpu", torch.float32)
+        features, _ = cell([x], state)
+        # degree1: 2,3 | degree2: 4,6,9 | degree3: 8,12,18,27
+        expected = torch.tensor([[2.0, 3.0, 4.0, 6.0, 9.0, 8.0, 12.0, 18.0, 27.0]])
+        assert torch.allclose(features, expected)
+
+    def test_cumulative_contains_exact_block_values(self) -> None:
+        """The cumulative output contains every exact-degree-p monomial value."""
+        torch.manual_seed(1)
+        x = torch.randn(1, 2)
+        exact = NGCell(
+            input_dim=2, k=1, p=2, cumulative=False, include_constant=False, include_linear=False
+        )
+        cumulative = NGCell(
+            input_dim=2, k=1, p=2, cumulative=True, include_constant=False, include_linear=False
+        )
+        st = exact.init_state(1, "cpu", torch.float32)
+        exact_feats, _ = exact([x], st)
+        cum_feats, _ = cumulative([x], st)
+        # Every exact-degree value must appear somewhere in the cumulative block.
+        for v in exact_feats[0].tolist():
+            assert any(abs(v - c) < 1e-6 for c in cum_feats[0].tolist())
+
+    def test_cumulative_p1_drops_nonlinear_with_linear(self) -> None:
+        """p=1 + include_linear: nonlinear block omitted (no duplicate cols)."""
+        D = 3 * 2
+        cell = NGCell(input_dim=3, k=2, p=1, cumulative=True, include_constant=True)
+        assert cell.feature_dim == 1 + D
+        assert cell._emit_nonlinear is False
+
+    def test_cumulative_p1_without_linear_keeps_degree1(self) -> None:
+        """p=1 + no linear: cumulative == exact == the degree-1 monomials."""
+        D = 3 * 2
+        cell = NGCell(
+            input_dim=3, k=2, p=1, cumulative=True, include_constant=False, include_linear=False
+        )
+        assert cell.feature_dim == D
+
+    def test_cumulative_full_rank_design_matrix(self) -> None:
+        """No duplicate columns: the cumulative feature matrix is full rank."""
+        layer = NGReservoir(input_dim=3, k=2, p=3, cumulative=True)
+        x = torch.randn(1, 256, 3)
+        feats = layer(x)[0]
+        rank = torch.linalg.matrix_rank(feats.double())
+        assert int(rank) == layer.feature_dim
+
+    def test_cumulative_constant_prepended(self) -> None:
+        cell = NGCell(input_dim=3, k=2, p=3, cumulative=True, include_constant=True)
+        x = torch.randn(4, 3)
+        state = cell.init_state(4, "cpu", torch.float32)
+        _, state = cell([torch.randn(4, 3)], state)
+        features, _ = cell([x], state)
+        assert torch.all(features[:, 0] == 1.0)
+
+    def test_cumulative_repr_reports_flag(self) -> None:
+        cell = NGCell(input_dim=3, k=2, p=2, cumulative=True)
+        assert "cumulative=True" in repr(cell)
+
+
+class TestNGCellCumulativeVectorized:
+    """Cumulative mode must vectorize bit-exactly vs the per-step loop."""
+
+    @pytest.mark.parametrize("k", [1, 2, 3])
+    @pytest.mark.parametrize("s", [1, 2])
+    @pytest.mark.parametrize("p", [1, 2, 3])
+    @pytest.mark.parametrize("const", [True, False])
+    @pytest.mark.parametrize("lin", [True, False])
+    def test_zero_max_diff_vs_per_step_loop(
+        self, k: int, s: int, p: int, const: bool, lin: bool
+    ) -> None:
+        d = 3
+        layer = NGReservoir(
+            input_dim=d,
+            k=k,
+            s=s,
+            p=p,
+            cumulative=True,
+            include_constant=const,
+            include_linear=lin,
+        )
+        torch.manual_seed(k * 100 + s * 10 + p)
+        x = torch.randn(2, 13, d, dtype=torch.float64)
+
+        layer.reset_state()
+        vectorized = layer(x)
+        manual, _ = _manual_cell_scan(layer, x)
+
+        max_diff = (vectorized - manual).abs().max().item()
+        assert max_diff == 0.0, f"max-abs-diff {max_diff} != 0.0 for k={k} s={s} p={p}"
+
+    def test_cumulative_gradients_flow(self) -> None:
+        layer = NGReservoir(input_dim=3, k=2, p=3, cumulative=True)
+        x = torch.randn(2, 5, 3, requires_grad=True)
+        layer(x).sum().backward()
+        assert x.grad is not None
+        assert x.grad.shape == x.shape
+
+    def test_cumulative_large_feature_dim_warning(self) -> None:
+        """Cumulative mode also warns past the 10,000-feature threshold."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            NGCell(input_dim=8, k=4, p=4, cumulative=True)
+        assert len(w) == 1
+        assert "10,000" in str(w[0].message)
 
 
 # ---------------------------------------------------------------------------

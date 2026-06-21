@@ -43,11 +43,19 @@ class NGReservoir(BaseReservoirLayer):
     s : int, default=1
         Spacing between delay taps, in timesteps.
     p : int, default=2
-        Polynomial degree for nonlinear feature construction.  Only monomials
-        of *exactly* degree ``p`` are emitted.  When ``p == 1`` and
-        ``include_linear`` is ``True`` the nonlinear block is omitted, because
-        the degree-1 monomials are identical to the linear features (see
+        Polynomial degree for nonlinear feature construction.  By default
+        (``cumulative=False``) only monomials of *exactly* degree ``p`` are
+        emitted; lower-order cross terms (degrees ``2, ..., p-1``) are excluded.
+        With ``cumulative=True`` every monomial of degree up to ``p`` is emitted
+        (the "degree up to ``p``" / full polynomial basis used by many NVAR
+        implementations).  When ``p == 1`` and ``include_linear`` is ``True``
+        the nonlinear block is omitted, because the degree-1 monomials are
+        identical to the linear features (see
         :class:`~resdag.layers.cells.ngrc_cell.NGCell`).
+    cumulative : bool, default=False
+        Degree convention for the nonlinear block.  ``False`` keeps only
+        exact-degree-``p`` monomials (default, unchanged behaviour); ``True``
+        includes all monomials of every degree up to ``p``.
     include_constant : bool, default=True
         Whether to prepend a constant ``1.0`` to the feature vector.
     include_linear : bool, default=True
@@ -106,6 +114,7 @@ class NGReservoir(BaseReservoirLayer):
         k: int = 2,
         s: int = 1,
         p: int = 2,
+        cumulative: bool = False,
         include_constant: bool = True,
         include_linear: bool = True,
     ) -> None:
@@ -114,6 +123,7 @@ class NGReservoir(BaseReservoirLayer):
             k=k,
             s=s,
             p=p,
+            cumulative=cumulative,
             include_constant=include_constant,
             include_linear=include_linear,
         )

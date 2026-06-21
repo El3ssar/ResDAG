@@ -1,0 +1,133 @@
+# Reusable test + lint workflow (workflow_call).
+#
+# The single source of truth for the test gate. Both ci.yml (pull requests,
+# nightly) and release.yml (push to main) call this, so lint, type-check, and
+# the test matrix are defined in exactly one place instead of being copied.
+#
+# Inputs let the caller choose how much to run:
+#   * force-full — run the WHOLE suite with coverage on every Python in the
+#     matrix (nightly schedule, push to main, manual dispatch, or a PR carrying
+#     the `ci-full` label). On a normal pull request this is false and the test
+#     job runs only the affected tests selected by tools/affected_tests.py — a
+#     partial run can't meet the coverage floor, so coverage is skipped there.
+#   * base-sha — the PR base commit the selector diffs against (selective runs).
+#
+# Coverage: full runs add --cov-report=xml, enforce the `fail_under` floor
+# (pyproject [tool.coverage.report]), and upload coverage.xml to Codecov. The
+# optional CODECOV_TOKEN secret is forwarded from the caller via `secrets:
+# inherit`; uploads never fail the build (fail_ci_if_error: false), so a repo
+# without the token configured still passes.
+
+name: Test
+
+on:
+  workflow_call:
+    inputs:
+      force-full:
+        description: "Run the full suite with coverage instead of the affected-tests selection."
+        type: boolean
+        default: false
+      base-sha:
+        description: "Base commit the affected-tests selector diffs against (selective runs only)."
+        type: string
+        default: ""
+    secrets:
+      CODECOV_TOKEN:
+        description: "Codecov upload token (optional; uploads are best-effort)."
+        required: false
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU torch (slim CI)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install package with dev extras
+        run: pip install -e ".[dev,hpo]"
+
+      - name: Lint
+        run: |
+          ruff check src/ tests/
+          black --check src/ tests/
+
+      - name: Type check (whole package)
+        # Type-checks the entire package. New/changed code is gated immediately;
+        # pre-existing violations are held in a tracked per-module baseline in
+        # pyproject.toml ([[tool.mypy.overrides]]) that is being burned down.
+        run: mypy src/resdag/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # requires-python = ">=3.11,<3.15" (pyproject.toml) — test the full range.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the selector can diff against the PR base commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU torch (slim CI)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install package with dev extras
+        run: pip install -e ".[dev,hpo]"
+
+      - name: Select affected tests
+        id: select
+        if: ${{ ! inputs.force-full }}
+        env:
+          BASE_SHA: ${{ inputs.base-sha }}
+        run: |
+          if SEL=$(python tools/affected_tests.py --base "$BASE_SHA" --no-dirty --format args --explain); then
+            if [ -z "$SEL" ]; then
+              echo "mode=none" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=selected" >> "$GITHUB_OUTPUT"
+              echo "tests=$SEL" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::warning::affected-tests selector failed — falling back to the full suite."
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tests (full suite + coverage)
+        if: ${{ inputs.force-full || steps.select.outputs.mode == 'full' }}
+        run: pytest -q --cov=resdag --cov-report=xml --cov-report=term
+
+      - name: Tests (affected selection)
+        if: ${{ ! inputs.force-full && steps.select.outputs.mode == 'selected' }}
+        run: pytest --no-cov -q ${{ steps.select.outputs.tests }}
+
+      - name: No tests affected
+        if: ${{ ! inputs.force-full && steps.select.outputs.mode == 'none' }}
+        run: |
+          echo "No source or test changes affect the suite — skipping pytest."
+          echo "The full suite still runs on merge to main and nightly."
+
+      - name: Upload coverage to Codecov
+        if: ${{ (inputs.force-full || steps.select.outputs.mode == 'full') && hashFiles('coverage.xml') != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          flags: py${{ matrix.python-version }}
+          name: resdag-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

@@ -1,5 +1,6 @@
-# Pull-request gate: lint + type-check + tests. (Docs build correctness is
-# checked by docs.yml, which also runs on pull requests.)
+# Pull-request gate: lint + type-check + tests, via the reusable _test.yml
+# workflow (shared with release.yml). (Docs build correctness is checked by
+# docs.yml, which also runs on pull requests.)
 #
 # Tests are SELECTIVE on pull requests: `tools/affected_tests.py` diffs the PR
 # against its base and runs only the test files that the change can affect, via
@@ -11,6 +12,10 @@
 #   * Broad-impact changes (pyproject, conftest, package __init__, the selector
 #     itself, ...) force a full run; the selector fails safe to "run everything".
 #   * Add the `ci-full` label to a PR to force a full run on demand.
+#
+# Coverage (full runs only) is computed, gated by a `fail_under` floor, and
+# uploaded to Codecov by _test.yml. A nightly CPU benchmark lane guards the
+# performance regressions the fast paths were built to prevent.
 
 name: CI
 
@@ -29,12 +34,23 @@ concurrency:
 
 jobs:
   test:
+    uses: ./.github/workflows/_test.yml
+    with:
+      # Anything that is not a PR (nightly schedule, manual dispatch), or a PR
+      # carrying the `ci-full` label, runs the whole suite with coverage.
+      force-full: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+      base-sha: ${{ github.event.pull_request.base.sha }}
+    secrets: inherit
+
+  benchmark:
+    # CPU benchmark lane — runs nightly and on manual dispatch (not on PRs).
+    # `-m benchmark` runs the performance assertions deselected by default;
+    # TestFastPathSpeed and the other CPU benchmarks run here, while the @gpu
+    # ones auto-skip without CUDA.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Full history so the selector can diff against the PR base commit.
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -48,48 +64,5 @@ jobs:
       - name: Install package with dev extras
         run: pip install -e ".[dev,hpo]"
 
-      - name: Lint
-        run: |
-          ruff check src/ tests/
-          black --check src/ tests/
-
-      - name: Type check (whole package)
-        # Type-checks the entire package. New/changed code is gated immediately;
-        # pre-existing violations are held in a tracked per-module baseline in
-        # pyproject.toml ([[tool.mypy.overrides]]) that is being burned down.
-        run: mypy src/resdag/
-
-      - name: Select affected tests
-        id: select
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          # Anything that is not a PR (nightly schedule, manual dispatch), or a
-          # PR carrying the `ci-full` label, runs the whole suite.
-          FORCE_FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci-full') }}
-        run: |
-          if [ "$FORCE_FULL" = "true" ]; then
-            echo "Running the FULL suite (${{ github.event_name }}${{ contains(github.event.pull_request.labels.*.name, 'ci-full') && ' / ci-full label' || '' }})."
-            echo "mode=full" >> "$GITHUB_OUTPUT"
-            echo "tests=tests" >> "$GITHUB_OUTPUT"
-          elif SEL=$(python tools/affected_tests.py --base "$BASE_SHA" --no-dirty --format args --explain); then
-            if [ -z "$SEL" ]; then
-              echo "mode=none" >> "$GITHUB_OUTPUT"
-            else
-              echo "mode=selected" >> "$GITHUB_OUTPUT"
-              echo "tests=$SEL" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "::warning::affected-tests selector failed — falling back to the full suite."
-            echo "mode=full" >> "$GITHUB_OUTPUT"
-            echo "tests=tests" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Tests
-        if: steps.select.outputs.mode != 'none'
-        run: pytest --no-cov -q ${{ steps.select.outputs.tests }}
-
-      - name: No tests affected
-        if: steps.select.outputs.mode == 'none'
-        run: |
-          echo "No source or test changes affect the suite — skipping pytest."
-          echo "The full suite still runs on merge to main and nightly."
+      - name: Benchmarks (CPU)
+        run: pytest -m benchmark --no-cov -q tests/test_performance

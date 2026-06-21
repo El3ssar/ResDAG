@@ -191,6 +191,7 @@ nav:
       - Forecast: workflows/forecast.md
       - Tune: workflows/tune.md
       - Scale & deploy: workflows/deploy.md
+      - Compile & accelerate: workflows/compile.md
       - Benchmarks: workflows/benchmarks.md
   - Theory:
       - theory/index.md

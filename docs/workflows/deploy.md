@@ -151,5 +151,6 @@ way, one sub-model per thread.
 
 ## See also
 
+- [Work · Compile & accelerate](compile.md) — `compile_reservoirs()` and the scan path (compile the step, not the forward)
 - [Build · Architectures](../build/architectures/index.md) — premade model factories
 - [Reference · Core](../reference/core.md) — `save`, `load`, `load_from_file` in full

@@ -235,6 +235,74 @@ class ESNModel(ps.SymbolicModel):
             if isinstance(module, BaseReservoirLayer):
                 module.reset_state()
 
+    def compile_reservoirs(self, **compile_kwargs: Any) -> "ESNModel":
+        """
+        Compile every reservoir's per-step kernel with :func:`torch.compile`.
+
+        Replaces ``layer.cell.step`` with its ``torch.compile``-wrapped version
+        for each :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
+        in the model.  This compiles the *single-step* recurrent kernel — the
+        thing the time loop and the autoregressive
+        :meth:`forecast` engine call once per timestep — so the per-step launch
+        overhead amortises across steps **without** unrolling the whole-sequence
+        loop into one graph node per timestep.
+
+        Wrapping the whole reservoir (``torch.compile(reservoir)``) instead makes
+        Dynamo unroll the Python time loop: first-compile cost grows with
+        sequence length (tens of seconds at ``T=500``) and the compiled call is
+        frequently slower than eager.  Compiling ``cell.step`` sidesteps that —
+        the graph is a single timestep, captured once and replayed every step.
+
+        The default ``mode="reduce-overhead"`` uses CUDA graphs to collapse the
+        kernel-launch overhead that dominates the launch-bound per-step update;
+        any ``compile_kwargs`` you pass override the defaults (e.g.
+        ``mode="default"``, ``fullgraph=True``, ``dynamic=False``).
+
+        Parameters
+        ----------
+        **compile_kwargs
+            Keyword arguments forwarded to :func:`torch.compile`.  Defaults to
+            ``mode="reduce-overhead"`` when ``mode`` is not supplied.
+
+        Returns
+        -------
+        ESNModel
+            ``self``, with each reservoir's ``cell.step`` compiled (so calls
+            chain, e.g. ``model.compile_reservoirs().forecast(...)``).
+
+        Notes
+        -----
+        Compilation is lazy: ``torch.compile`` traces on the first call with a
+        given input signature, so the first forward / forecast after this pays
+        the one-time compile cost and subsequent calls are fast.  The biggest
+        wins are on CUDA (the per-step update is launch-bound, not FLOP-bound);
+        on CPU the eager path is already lean, so the benefit is smaller.
+
+        This mutates the reservoir cells in place.  Because it rebinds an
+        instance attribute (``cell.step``) rather than the class method, it is
+        not picklable while compiled — call it after any ``save_full`` /
+        ``deepcopy``, or on the restored model.
+
+        Examples
+        --------
+        >>> model.compile_reservoirs()                       # reduce-overhead
+        >>> preds = model.forecast(warmup, horizon=1000)     # first call compiles
+        >>> model.compile_reservoirs(mode="default", fullgraph=True)
+
+        See Also
+        --------
+        forecast : Autoregressive generation driven by the per-step kernel.
+        resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer :
+            Why to compile ``cell.step`` rather than ``forward``.
+        """
+        compile_kwargs.setdefault("mode", "reduce-overhead")
+        for module in self.modules():
+            if isinstance(module, BaseReservoirLayer):
+                module.cell.step = torch.compile(  # type: ignore[method-assign]
+                    module.cell.step, **compile_kwargs
+                )
+        return self
+
     def set_random_reservoir_states(
         self,
         batch_size: int | None = None,

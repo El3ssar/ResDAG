@@ -65,6 +65,20 @@ class ESNLayer(BaseReservoirLayer):
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
+    compile_mode : {'eager', 'loop', 'scan'}, default='loop'
+        Strategy for the per-step time loop.  ``'eager'`` / ``'loop'`` run the
+        plain Python loop (historical default).  ``'scan'`` lowers the loop to
+        :func:`torch._higher_order_ops.scan` so the whole sequence is a single
+        ``combine_fn`` (one graph region under :func:`torch.compile` instead of
+        one node per timestep), falling back to the Python loop when torch is
+        too old (``< 2.10``) or the scan HOP is unavailable.  ``'scan'`` is an
+        inference/forward throughput option — the scan op is a prototype with no
+        autograd support and a known gradient-clamp miscompile
+        (`pytorch#153437 <https://github.com/pytorch/pytorch/issues/153437>`_),
+        so keep the default loop for training-through-time.  To compile the
+        per-step kernel without unrolling, prefer
+        :meth:`resdag.core.ESNModel.compile_reservoirs` over
+        ``torch.compile(reservoir)``.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
         name, ``(name, params)``, any matrix-building callable
@@ -201,6 +215,7 @@ class ESNLayer(BaseReservoirLayer):
         leak_rate: float = 1.0,
         noise: float = 0.0,
         trainable: bool = False,
+        compile_mode: str = "loop",
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
@@ -222,7 +237,7 @@ class ESNLayer(BaseReservoirLayer):
             topology=topology,
             seed=seed,
         )
-        super().__init__(cell)
+        super().__init__(cell, compile_mode=compile_mode)
         # Preserve legacy attribute used by existing callsites and tests
         self._initialized = True
 

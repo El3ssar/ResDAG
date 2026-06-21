@@ -56,6 +56,38 @@ python -m rc_bench.run --only resdag-cpu resdag-gpu reservoirpy --contexts forec
 python -m rc_bench.report --in results/latest.json --out results/REPORT.md
 ```
 
+## Compile / scan microbenchmark
+
+`compile_scan_reservoir.py` is a standalone, single-library microbenchmark for
+the reservoir *recurrence* itself — it compares four ways to run the per-step
+time loop and is the empirical backing for `compile_reservoirs()` and
+`ESNLayer(compile_mode="scan")` (issue #257):
+
+```bash
+# defaults: N=200, T=500, CPU
+python benchmarks/compile_scan_reservoir.py
+
+# CUDA, persist results
+python benchmarks/compile_scan_reservoir.py --size 200 --steps 500 --device cuda \
+    --json results/compile_scan.json
+```
+
+It reports, for each variant, median wall time, per-step latency, speedup vs the
+eager loop, and a `max_err` correctness check (every path must match the eager
+loop within `1e-4`):
+
+- **eager_loop** — the default Python time loop (reference).
+- **compiled_unroll** — `torch.compile(reservoir)`; also prints its
+  *first-compile* wall time to expose the unroll cost.
+- **compiled_step** — `cell.step` wrapped in `torch.compile` (the
+  `compile_reservoirs()` strategy).
+- **scan** — the `compile_mode="scan"` lowering.
+
+The per-step-latency and first-compile-time *acceptance* numbers in #257 are
+CUDA figures (the per-step update is launch-bound, so the compiled-step / scan
+wins are a GPU phenomenon); on CPU the script still proves correctness and
+relative cost but the absolute latencies are a proxy.
+
 ## Adding a library
 
 Drop a new adapter in `rc_bench/adapters/` implementing

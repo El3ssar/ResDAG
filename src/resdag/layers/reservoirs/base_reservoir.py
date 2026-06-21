@@ -13,11 +13,40 @@ resdag.layers.reservoir : Concrete implementations.
 
 from abc import ABC
 from itertools import chain
+from typing import Callable
 
 import torch
 import torch.nn as nn
 
 from resdag.layers.cells import ReservoirCell
+
+# ``torch._higher_order_ops.scan`` (the lowered-loop ``combine_fn`` scan) is a
+# prototype that only gained the maturity this path relies on in 2.10; below
+# that the ``compile_mode="scan"`` request degrades cleanly to the Python loop.
+_MIN_SCAN_TORCH = "2.10.0"
+
+# Reservoir time-loop execution strategies selectable via
+# ``ESNLayer(compile_mode=...)``.  ``"eager"`` and ``"loop"`` are aliases for the
+# plain Python time loop (the historical default); ``"scan"`` lowers the loop to
+# :func:`torch._higher_order_ops.scan` so a single compiled ``combine_fn`` covers
+# the whole sequence instead of one graph node per timestep.
+COMPILE_MODES = ("eager", "loop", "scan")
+
+
+def _scan_available() -> bool:
+    """Return whether the lowered-loop scan HOP is importable on this torch.
+
+    The scan higher-order op moved around across torch versions and is gated
+    behind a version floor here; a missing import (older/newer torch) makes the
+    ``compile_mode="scan"`` path fall back to the Python loop rather than raise.
+    """
+    if torch.__version__ < _MIN_SCAN_TORCH:
+        return False
+    try:
+        from torch._higher_order_ops.scan import scan  # noqa: F401
+    except Exception:
+        return False
+    return True
 
 
 class BaseReservoirLayer(nn.Module, ABC):
@@ -32,11 +61,22 @@ class BaseReservoirLayer(nn.Module, ABC):
     ----------
     cell : ReservoirCell
         Concrete cell instance that performs the single-step update.
+    compile_mode : {'eager', 'loop', 'scan'}, default='loop'
+        Strategy for the per-step time loop in :meth:`forward_stateless`.
+        ``'eager'`` / ``'loop'`` run the plain Python loop (the historical
+        default).  ``'scan'`` lowers the loop to
+        :func:`torch._higher_order_ops.scan`, expressing the recurrence as a
+        single ``combine_fn`` over the whole sequence so that
+        :func:`torch.compile` captures it as **one** graph region instead of one
+        node per timestep.  ``'scan'`` falls back to the Python loop when the
+        installed torch is too old (``< 2.10``) or the scan HOP is unavailable.
 
     Attributes
     ----------
     cell : ReservoirCell
         The wrapped single-step cell.
+    compile_mode : str
+        The active time-loop strategy (see the ``compile_mode`` parameter).
     state : torch.Tensor or None
         Current reservoir state of shape ``(batch, cell.state_size)``, or
         ``None`` if not yet initialized.
@@ -51,15 +91,42 @@ class BaseReservoirLayer(nn.Module, ABC):
         through state carried across multiple forward calls (and manage the
         retained graphs yourself).
 
+    Notes
+    -----
+    **Compile the step, not the whole-sequence forward.**  Calling
+    ``torch.compile(reservoir)`` (or ``torch.compile(reservoir.forward)``) makes
+    Dynamo *unroll* the Python time loop into one graph node per timestep — the
+    first compile cost grows linearly with sequence length (~90 s at ``T=500``)
+    and the compiled call is often slower than eager.  Wrap the per-step kernel
+    instead: :meth:`resdag.core.ESNModel.compile_reservoirs` sets
+    ``layer.cell.step = torch.compile(layer.cell.step)`` so launch overhead
+    amortises across steps without unrolling.  The ``compile_mode="scan"`` path
+    is the complementary whole-sequence option: it lowers the loop to a single
+    ``combine_fn`` so ``torch.compile`` sees one graph region rather than ``T``.
+
+    .. warning::
+
+        ``torch._higher_order_ops.scan`` is a *prototype* op.  It does not
+        support autograd in current torch and may miscompile under
+        gradient-clamping (`pytorch#153437
+        <https://github.com/pytorch/pytorch/issues/153437>`_).  Use
+        ``compile_mode="scan"`` for inference / forward-only throughput; for
+        training-through-time keep the default Python loop, whose autograd is
+        well-tested.
+
     See Also
     --------
     resdag.layers.esn.ESNLayer : Concrete ESN layer built on this base.
     resdag.layers.base.ReservoirCell : Abstract cell interface.
+    resdag.core.ESNModel.compile_reservoirs : Compile each reservoir's step.
     """
 
-    def __init__(self, cell: ReservoirCell) -> None:
+    def __init__(self, cell: ReservoirCell, compile_mode: str = "loop") -> None:
         super().__init__()
+        if compile_mode not in COMPILE_MODES:
+            raise ValueError(f"compile_mode must be one of {COMPILE_MODES}, got {compile_mode!r}")
         self.cell = cell
+        self.compile_mode = compile_mode
         # Register the reservoir state as a *non-persistent* buffer so that
         # ``nn.Module._apply`` (driven by ``.to()`` / ``.cuda()`` / ``.double()``)
         # moves a warmed-up state along with the module's parameters, instead of
@@ -129,6 +196,20 @@ class BaseReservoirLayer(nn.Module, ABC):
         # the loop, so the loop body itself stays branch-free.
         projected = self.cell.project_inputs(inputs)
 
+        # Whole-sequence scan lowering: express the recurrence as a single
+        # ``combine_fn`` so torch.compile captures one graph region for the
+        # entire sequence instead of one node per timestep.  Only the projected
+        # fast path is scan-able (the loop body must be a pure per-step kernel);
+        # everything else, and any torch without a usable scan HOP, falls back
+        # to the Python loop below.
+        if (
+            self.compile_mode == "scan"
+            and projected is not None
+            and seq_len > 0
+            and _scan_available()
+        ):
+            return self._scan_forward(projected, state)
+
         outputs: list[torch.Tensor] = []
         if projected is not None:
             for t in range(seq_len):
@@ -148,6 +229,64 @@ class BaseReservoirLayer(nn.Module, ABC):
             return empty, state
 
         return torch.stack(outputs, dim=1), state
+
+    def _scan_forward(
+        self,
+        projected: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run the projected time loop via :func:`torch._higher_order_ops.scan`.
+
+        Lowers the recurrence ``state_{t} = cell.step(projected_t, state_{t-1})``
+        to a single ``combine_fn`` scanned over the time axis, so the whole
+        sequence is one graph region for ``torch.compile`` rather than ``T``
+        unrolled nodes.  Numerically identical to the Python loop in
+        :meth:`forward_stateless` (same :meth:`ReservoirCell.step` kernel).
+
+        Parameters
+        ----------
+        projected : torch.Tensor
+            Precomputed input projection, shape ``(batch, timesteps, state_size)``,
+            as returned by :meth:`ReservoirCell.project_inputs`.
+        state : torch.Tensor
+            Initial reservoir state, shape ``(batch, state_size)``.
+
+        Returns
+        -------
+        outputs : torch.Tensor
+            Per-step outputs, shape ``(batch, timesteps, cell.output_size)``.
+        new_state : torch.Tensor
+            Final reservoir state after the last timestep.
+
+        Notes
+        -----
+        ``scan`` rejects carry/output aliasing, so the per-step output handed
+        back as the scan ``y`` slice is cloned (the carry keeps the live state).
+        It also stacks the ``y`` slices along ``dim=0`` regardless of the input
+        scan dim, hence the transpose to ``(batch, time, ...)`` on return.  The
+        ``step`` kernel is a pure function of ``(projected_t, state)`` with no
+        data-dependent Python branch, which is what keeps the lowering valid.
+        """
+        from torch._higher_order_ops.scan import scan
+
+        step: Callable[[torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]] = (
+            self.cell.step
+        )
+
+        def combine_fn(
+            carry: torch.Tensor, projected_t: torch.Tensor
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            output, new_state = step(projected_t, carry)
+            # scan forbids the carry and the emitted y-slice aliasing the same
+            # storage (ESNCell returns the state twice); clone the y so the
+            # carry stays the live state and the output is an independent tensor.
+            return new_state, output.clone()
+
+        # Scan over the time axis.  The HOP emits y-slices stacked on dim 0, so
+        # feed it a (time, batch, features) view and transpose the result back.
+        xs = projected.transpose(0, 1)
+        new_state, outputs = scan(combine_fn, state, xs, dim=0)
+        return outputs.transpose(0, 1), new_state
 
     def step_stateless(
         self,

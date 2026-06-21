@@ -83,10 +83,11 @@ ESNTrainer : Trainer for fitting readout layers.
 import importlib
 from typing import Any
 
-from . import core, ensemble, init, layers, models, training, utils
+from . import core, data, ensemble, init, layers, models, training, utils
 
 # Convenience imports for common use cases
 from .core import ESNModel, ReservoirFeatureExtractor, reservoir_input
+from .data import TimeSeriesWindowDataset, make_dataloader
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
 from .facade import ESN
@@ -134,6 +135,7 @@ __version__ = "0.6.2"
 __all__ = [
     # Modules
     "core",
+    "data",
     "ensemble",
     "hpo",  # resolved lazily via __getattr__ (see below)
     "init",
@@ -179,6 +181,9 @@ __all__ = [
     "CoupledEnsembleESNModel",
     # Training
     "ESNTrainer",
+    # Streaming / SGD data pipeline
+    "TimeSeriesWindowDataset",
+    "make_dataloader",
     # Premade models
     "classic_esn",
     "coupled_ensemble_esn",

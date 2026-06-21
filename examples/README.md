@@ -1,6 +1,6 @@
 # ResDAG Examples
 
-Fourteen self-contained, runnable scripts covering the whole library. Every
+Fifteen self-contained, runnable scripts covering the whole library. Every
 script is deterministic (fixed seeds), prints what it is doing in numbered
 sections, and finishes in well under a minute on CPU — except the GPU
 benchmark, which takes a couple of minutes.
@@ -31,6 +31,7 @@ uv run python examples/01_quickstart.py --plot
 | 11 | `11_gpu_benchmark.py` | CPU vs GPU timing of forward/fit/forecast at three scales; skips cleanly without CUDA | ~30 s – 2 min |
 | 12 | `12_feature_extractor.py` | `ReservoirFeatureExtractor` in `nn.Sequential`: frozen features → Adam regression head, a classification head, and `from_model` reuse | ~5 s |
 | 13 | `13_windowed_forecast.py` | `windowed_forecast`: gap-filling reconstruction of a sparsely-observed Lorenz trajectory (alternate teacher-force re-sync + autonomous free-run); scoring the unseen gaps | ~10 s |
+| 14 | `14_streaming_dataloader.py` | `TimeSeriesWindowDataset` + `make_dataloader`: windowed SGD (frozen head and full BPTT) and an algebraic `IncrementalRidgeReadout.partial_fit`/`finalize` fit, all over a standard PyTorch `DataLoader` | ~10 s |
 
 ## Suggested order
 
@@ -45,8 +46,9 @@ core skills — how models are trained and how forecasting actually works
 gap-filling reconstruction of sparsely-observed signals. After that, the
 rest are independent: **07** (ensembles) and **10** (hyperparameter search)
 when you want better forecasts, **08** and **09** when you need persistence
-and architecture inspection, and **11** when deciding whether your workload
-belongs on a GPU.
+and architecture inspection, **11** when deciding whether your workload
+belongs on a GPU, and **14** when you want the plain-PyTorch `DataLoader` path
+for minibatched SGD or streaming algebraic fits.
 
 ## More
 

@@ -43,6 +43,56 @@ def simple_data_loader(trial):
     }
 
 
+def seeded_model_creator(reservoir_size: int = 30, spectral_radius: float = 0.9, seed=None):
+    """Seed-aware creator: forwards ``seed`` into the reservoir initializers.
+
+    Uses string-form ``topology`` and ``feedback_initializer`` so the recurrent
+    matrix and feedback weights are drawn from their own RNGs — exactly the
+    initializers that ignore NumPy's legacy global state.  Threading ``seed``
+    through is what makes them reproducible per trial.
+    """
+    return ott_esn(
+        reservoir_size=reservoir_size,
+        feedback_size=3,
+        output_size=3,
+        spectral_radius=spectral_radius,
+        topology="erdos_renyi",
+        feedback_initializer="random",
+        seed=seed,
+    )
+
+
+def rng_consuming_data_loader(trial):
+    """Data loader that advances the global RNGs non-deterministically.
+
+    Draws a random number of throwaway samples from torch / NumPy / ``random``
+    *after* the deterministic data build, so the global RNG state at
+    ``model_creator`` time depends on entropy the per-trial seed does not
+    control.  Without the per-trial seed being threaded *directly* into
+    ``model_creator``, the reservoir initializers would therefore vary run to
+    run; this loader makes the reproducibility test meaningful rather than an
+    artifact of a deterministic loader.
+    """
+    import random as _random
+
+    torch.manual_seed(42)
+    data = torch.randn(1, 150, 3)
+    # Perturb every global RNG by a random amount drawn from a fresh,
+    # unseeded generator so it differs across otherwise-identical runs.
+    burn = int(torch.randint(0, 17, (1,), generator=None).item())
+    for _ in range(burn + 1):
+        torch.rand(1)
+        np.random.rand()
+        _random.random()
+    return {
+        "warmup": data[:, :20, :],
+        "train": data[:, 20:70, :],
+        "target": data[:, 21:71, :],
+        "f_warmup": data[:, 70:90, :],
+        "val": data[:, 90:100, :],
+    }
+
+
 class TestRunHPOBasic:
     """Basic tests for run_hpo function."""
 
@@ -279,3 +329,113 @@ class TestRunHPOLossParams:
             verbosity=0,
         )
         assert study.best_value is not None
+
+
+class TestRunHPOReproducibility:
+    """#273: a seeded study reproduces end to end, reservoir RNG included."""
+
+    def _run(self, seed, model_creator=seeded_model_creator, data_loader=simple_data_loader):
+        return run_hpo(
+            model_creator=model_creator,
+            search_space=simple_search_space,
+            data_loader=data_loader,
+            n_trials=4,
+            seed=seed,
+            verbosity=0,
+        )
+
+    def test_same_seed_identical_best_value(self):
+        """AC1: two runs with the same seed give identical best_value."""
+        study_a = self._run(42)
+        study_b = self._run(42)
+        assert study_a.best_value == study_b.best_value
+
+    def test_same_seed_identical_trials(self):
+        """Same seed reproduces every trial's params and value (not just the best)."""
+        study_a = self._run(42)
+        study_b = self._run(42)
+
+        params_a = [t.params for t in study_a.trials]
+        params_b = [t.params for t in study_b.trials]
+        assert params_a == params_b
+
+        values_a = [t.value for t in study_a.trials]
+        values_b = [t.value for t in study_b.trials]
+        assert values_a == values_b
+
+    def test_different_seed_differs(self):
+        """A different seed yields a different best_value."""
+        study_a = self._run(42)
+        study_c = self._run(123)
+        assert study_a.best_value != study_c.best_value
+
+    def test_reproducible_despite_global_rng_consumption(self):
+        """The per-trial seed reaches the reservoir even when the data_loader
+        burns the global RNGs by a run-varying amount.
+
+        This is the crux of #273: the topology / feedback initializers build
+        their own RNGs and ignore NumPy's legacy global state, so reproducibility
+        must come from the per-trial seed threaded *into* model_creator, not from
+        the pre-model global RNG state.
+        """
+        study_a = self._run(7, data_loader=rng_consuming_data_loader)
+        study_b = self._run(7, data_loader=rng_consuming_data_loader)
+        assert study_a.best_value == study_b.best_value
+        assert [t.value for t in study_a.trials] == [t.value for t in study_b.trials]
+
+    def test_seed_unaware_creator_still_runs(self):
+        """A model_creator without a ``seed`` parameter is called unchanged.
+
+        The seed is injected only when ``model_creator`` accepts it, so legacy
+        creators keep working (backward compatibility).
+        """
+        study = self._run(42, model_creator=simple_model_creator)
+        assert len(study.trials) == 4
+        assert study.best_value is not None
+
+    def test_explicit_seed_in_params_wins(self):
+        """A ``seed`` returned by search_space is not overwritten by the trial seed."""
+
+        def search_space_with_seed(trial):
+            return {
+                "reservoir_size": trial.suggest_int("reservoir_size", 20, 40, step=10),
+                "spectral_radius": trial.suggest_float("spectral_radius", 0.5, 1.2),
+                "seed": 999,  # pinned by the user; must survive injection
+            }
+
+        seen_seeds = []
+
+        def recording_creator(reservoir_size, spectral_radius, seed=None):
+            seen_seeds.append(seed)
+            return seeded_model_creator(reservoir_size, spectral_radius, seed=seed)
+
+        run_hpo(
+            model_creator=recording_creator,
+            search_space=search_space_with_seed,
+            data_loader=simple_data_loader,
+            n_trials=2,
+            seed=42,
+            verbosity=0,
+        )
+        assert seen_seeds, "model_creator was never called"
+        assert all(s == 999 for s in seen_seeds)
+
+    def test_no_seed_does_not_inject(self):
+        """When no base seed is set, no ``seed`` kwarg is injected into the creator."""
+        seen_seeds = []
+
+        def recording_creator(reservoir_size, spectral_radius, seed="UNSET"):
+            seen_seeds.append(seed)
+            return seeded_model_creator(reservoir_size, spectral_radius, seed=None)
+
+        run_hpo(
+            model_creator=recording_creator,
+            search_space=simple_search_space,
+            data_loader=simple_data_loader,
+            n_trials=2,
+            seed=None,
+            verbosity=0,
+        )
+        assert seen_seeds, "model_creator was never called"
+        # The default sentinel survives → no injection happened.
+        assert all(s == "UNSET" for s in seen_seeds)

@@ -107,7 +107,10 @@ def build_objective(
         ``None``, uses the default device from model/data.
     seed : int, optional
         Base seed for per-trial reproducibility.  Each trial uses
-        ``seed + trial.number`` to seed PyTorch and NumPy.
+        ``seed + trial.number`` to seed PyTorch, NumPy, and Python's
+        :mod:`random` module, and the same per-trial seed is threaded into
+        ``model_creator`` (when it accepts a ``seed`` keyword) so the reservoir
+        topology and input/feedback initializers also reproduce.
     clip_value : float, optional
         Upper bound for the objective value.  When set and the raw loss exceeds
         this threshold, the value returned to Optuna is clamped to *clip_value*

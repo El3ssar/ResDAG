@@ -17,6 +17,12 @@ RandomInputInitializer
     Uniform random in [-1, 1] (baseline).
 RandomBinaryInitializer
     Binary {-1, +1} values.
+NormalInputInitializer
+    Gaussian ``Normal(loc, scale)`` entries (reservoirpy ``mat_gen.normal``).
+UniformInputInitializer
+    Bounded ``Uniform(low, high)`` entries (reservoirpy ``mat_gen.uniform``).
+BernoulliInputInitializer
+    Bernoulli ``±1`` signs with density (reservoirpy ``mat_gen.bernoulli``).
 PseudoDiagonalInitializer
     Structured block-diagonal pattern.
 ChebyshevInitializer
@@ -75,12 +81,14 @@ resdag.init.topology : Topology initializers for recurrent weights.
 """
 
 from .base import InputFeedbackInitializer
+from .bernoulli import BernoulliInputInitializer
 from .binary_balanced import BinaryBalancedInitializer
 from .chain_of_neurons_input import ChainOfNeuronsInputInitializer
 from .chebyshev import ChebyshevInitializer
 from .chessboard import ChessboardInitializer
 from .dendrocycle_input import DendrocycleInputInitializer
 from .function import FunctionInitializer
+from .normal import NormalInputInitializer
 from .opposite_anchors import OppositeAnchorsInitializer
 from .pseudo_diagonal import PseudoDiagonalInitializer
 from .random import RandomInputInitializer
@@ -91,9 +99,11 @@ from .registry import (
     show_input_initializers,
 )
 from .ring_window import RingWindowInputInitializer
+from .uniform import UniformInputInitializer
 from .zero import ZeroInitializer
 
 __all__ = [
+    "BernoulliInputInitializer",
     "BinaryBalancedInitializer",
     "ChainOfNeuronsInputInitializer",
     "ChebyshevInitializer",
@@ -101,11 +111,13 @@ __all__ = [
     "DendrocycleInputInitializer",
     "FunctionInitializer",
     "InputFeedbackInitializer",
+    "NormalInputInitializer",
     "OppositeAnchorsInitializer",
     "PseudoDiagonalInitializer",
     "RandomBinaryInitializer",
     "RandomInputInitializer",
     "RingWindowInputInitializer",
+    "UniformInputInitializer",
     "ZeroInitializer",
     # Registry functions
     "register_input_feedback",

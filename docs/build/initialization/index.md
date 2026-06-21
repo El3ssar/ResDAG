@@ -120,6 +120,9 @@ The "magnitude statistic" is `max|W|` for the elementwise initializers and the
 | --- | --- | --- |
 | `random` | entries in `[-1, 1]` | entries in `[-0.5, 0.5]`; `max\|W\|` → `0.5` |
 | `random_binary` | entries in `{-1, +1}` | entries in `{-0.5, +0.5}` |
+| `normal` | `Normal(loc, scale)` entries | every entry × `0.5` |
+| `uniform` | `Uniform(low, high)` entries | every entry × `0.5` |
+| `bernoulli` | entries in `{-1, +1}` (`+1` w.p. `p`) | entries in `{-0.5, +0.5}` |
 | `chessboard` | entries in `{-1, +1}` | entries in `{-0.5, +0.5}` |
 | `chebyshev` | Chebyshev map values | every entry × `0.5` |
 | `pseudo_diagonal` | structured `[-1, 1]` | every entry × `0.5` |
@@ -148,9 +151,33 @@ layer = ESNLayer(200, feedback_size=3, feedback_initializer=("opposite_anchors",
 ```
 
 An optional `connectivity` knob (a fraction in `(0, 1]`) lives on the same base
-class: it keeps that fraction of nonzero entries per input channel. Structured
+class: it keeps that fraction of nonzero entries per input channel — exactly
+`round(connectivity * reservoir_size)` per column, at least one. The
+distribution initializers `normal`, `uniform`, and `bernoulli` honor it
+directly (`connectivity=0.1` → a 10%-dense input matrix); structured
 initializers that already define their own connectivity pattern (only the core
 ring receives input, a fixed window per channel) document whether they honor it.
+
+## Coming from reservoirpy
+
+The bread-and-butter input-matrix recipes have one-to-one equivalents, so a
+reservoirpy `mat_gen` call maps directly onto a resdag initializer name. The
+shared `connectivity` and `input_scaling` knobs carry the same meaning:
+
+| reservoirpy `mat_gen` | resdag initializer | Notes |
+| --- | --- | --- |
+| `normal(loc=, scale=, connectivity=)` | `("normal", {"loc": …, "scale": …, "connectivity": …})` | Gaussian entries; same `connectivity` density. |
+| `uniform(low=, high=, connectivity=)` | `("uniform", {"low": …, "high": …, "connectivity": …})` | Bounded uniform; configurable bounds. |
+| `bernoulli(p=, connectivity=)` | `("bernoulli", {"p": …, "connectivity": …})` | `±1` signs, `+1` with probability `p`. |
+| `random_sparse(dist="normal"/"uniform", …)` | `normal` / `uniform` with `connectivity` | The sparse variants are just `connectivity < 1`. |
+
+```python
+# reservoirpy: Win = bernoulli(N, dim_in, connectivity=0.1, input_scaling=0.5)
+layer = ESNLayer(
+    reservoir_size=200, feedback_size=3,
+    feedback_initializer=("bernoulli", {"connectivity": 0.1, "input_scaling": 0.5}),
+)
+```
 
 ---
 

@@ -17,6 +17,7 @@ import pytest
 import torch
 
 from resdag.init.input_feedback import (
+    BernoulliInputInitializer,
     BinaryBalancedInitializer,
     ChainOfNeuronsInputInitializer,
     ChebyshevInitializer,
@@ -24,11 +25,13 @@ from resdag.init.input_feedback import (
     DendrocycleInputInitializer,
     FunctionInitializer,
     InputFeedbackInitializer,
+    NormalInputInitializer,
     OppositeAnchorsInitializer,
     PseudoDiagonalInitializer,
     RandomBinaryInitializer,
     RandomInputInitializer,
     RingWindowInputInitializer,
+    UniformInputInitializer,
     get_input_feedback,
     register_input_feedback,
     show_input_initializers,
@@ -138,6 +141,9 @@ class TestInitializerResolverCallables:
 _SEEDED_INITIALIZERS = [
     pytest.param(RandomInputInitializer, {"input_scaling": 1.0}, id="random"),
     pytest.param(RandomBinaryInitializer, {"input_scaling": 0.5}, id="random_binary"),
+    pytest.param(NormalInputInitializer, {"loc": 0.0, "scale": 1.0}, id="normal"),
+    pytest.param(UniformInputInitializer, {"low": -1.0, "high": 1.0}, id="uniform"),
+    pytest.param(BernoulliInputInitializer, {"p": 0.5}, id="bernoulli"),
     pytest.param(
         PseudoDiagonalInitializer,
         {"input_scaling": 1.0, "binarize": False},
@@ -305,6 +311,169 @@ class TestRandomInitializersDeviceNativeSeed:
         init.initialize(weight)
 
         assert set(torch.unique(weight).tolist()) <= {-0.5, 0.5}
+
+
+class TestStandardDistributionInitializers:
+    """Issue #192: bread-and-butter ``normal`` / ``uniform`` / ``bernoulli``.
+
+    The reservoirpy migration story: standard input-matrix recipes with a
+    ``connectivity`` density knob and the shared ``input_scaling`` magnitude
+    knob. Covers shape, sparsity (verified statistically), scaling, and
+    reproducibility for each.
+    """
+
+    # (registry name, kwargs that distinguish the draw) for the three new ones.
+    _STANDARD = [
+        pytest.param("normal", {"loc": 0.0, "scale": 1.0}, id="normal"),
+        pytest.param("uniform", {"low": -1.0, "high": 1.0}, id="uniform"),
+        pytest.param("bernoulli", {"p": 0.5}, id="bernoulli"),
+    ]
+
+    @pytest.mark.parametrize(("name", "kwargs"), _STANDARD)
+    def test_registry_returns_working_initializer(self, name: str, kwargs: dict) -> None:
+        """``get_input_feedback`` resolves each new name to a working initializer."""
+        init = get_input_feedback(name, **kwargs)
+        weight = torch.empty(100, 10)
+        out = init.initialize(weight)
+
+        assert out is weight  # in-place
+        assert weight.shape == (100, 10)
+        assert torch.isfinite(weight).all()
+
+    @pytest.mark.parametrize(("name", "kwargs"), _STANDARD)
+    def test_connectivity_yields_expected_sparsity(self, name: str, kwargs: dict) -> None:
+        """``connectivity=0.1`` keeps ~10% nonzero entries (verified statistically).
+
+        The base contract keeps exactly ``round(connectivity * rows)`` nonzeros
+        per column, so a tall matrix lands the global density on ~0.1. The
+        ``bernoulli`` draw is never zero before masking, so its density is the
+        mask density exactly; ``normal`` / ``uniform`` could in principle draw a
+        zero, but the probability over the kept entries is negligible.
+        """
+        rows = 1000
+        init = get_input_feedback(name, connectivity=0.1, seed=0, **kwargs)
+        weight = torch.empty(rows, 8)
+        init.initialize(weight)
+
+        per_column_nonzero = (weight != 0).sum(dim=0)
+        # round(0.1 * 1000) == 100 kept per column.
+        assert torch.equal(per_column_nonzero, torch.full((8,), 100))
+
+        density = (weight != 0).float().mean().item()
+        assert density == pytest.approx(0.1, abs=0.005)
+
+    @pytest.mark.parametrize(("name", "kwargs"), _STANDARD)
+    def test_connectivity_none_is_dense(self, name: str, kwargs: dict) -> None:
+        """``connectivity=None`` leaves a fully dense matrix (no zeroed entries)."""
+        init = get_input_feedback(name, connectivity=None, seed=0, **kwargs)
+        weight = torch.empty(200, 5)
+        init.initialize(weight)
+
+        # bernoulli/uniform/normal are a.s. nonzero with these params, so a dense
+        # build keeps every entry.
+        assert (weight != 0).all()
+
+    @pytest.mark.parametrize(("name", "kwargs"), _STANDARD)
+    def test_input_scaling_is_uniform_pointwise_multiply(self, name: str, kwargs: dict) -> None:
+        """``input_scaling=0.5`` is exactly the elementwise half of ``input_scaling=1.0``.
+
+        Same ``seed`` + same ``connectivity`` mask, so the only difference is the
+        documented uniform final multiply.
+        """
+        base = torch.empty(128, 6, dtype=torch.float64)
+        half = torch.empty(128, 6, dtype=torch.float64)
+        get_input_feedback(name, input_scaling=1.0, connectivity=0.5, seed=7, **kwargs).initialize(
+            base
+        )
+        get_input_feedback(name, input_scaling=0.5, connectivity=0.5, seed=7, **kwargs).initialize(
+            half
+        )
+
+        assert torch.allclose(half, 0.5 * base, atol=1e-12)
+        # The connectivity mask must coincide so the comparison is meaningful.
+        assert torch.equal(base != 0, half != 0)
+
+    @pytest.mark.parametrize(("name", "kwargs"), _STANDARD)
+    def test_reproducible_under_fixed_seed(self, name: str, kwargs: dict) -> None:
+        """Two instances with the same seed (value + mask) are byte-identical."""
+        a = torch.empty(100, 10)
+        b = torch.empty(100, 10)
+        get_input_feedback(name, connectivity=0.1, seed=99, **kwargs).initialize(a)
+        get_input_feedback(name, connectivity=0.1, seed=99, **kwargs).initialize(b)
+
+        assert torch.equal(a, b)
+
+    def test_normal_matches_loc_and_scale(self) -> None:
+        """``normal`` draws track the requested mean and standard deviation."""
+        init = NormalInputInitializer(loc=2.0, scale=0.5, seed=0)
+        weight = torch.empty(2000, 4, dtype=torch.float64)
+        init.initialize(weight)
+
+        assert weight.mean().item() == pytest.approx(2.0, abs=0.05)
+        assert weight.std().item() == pytest.approx(0.5, abs=0.05)
+
+    def test_uniform_respects_bounds(self) -> None:
+        """``uniform`` draws stay within ``[low, high)`` and span most of it."""
+        init = UniformInputInitializer(low=0.0, high=0.5, seed=0)
+        weight = torch.empty(2000, 4, dtype=torch.float64)
+        init.initialize(weight)
+
+        assert weight.min().item() >= 0.0
+        assert weight.max().item() < 0.5
+        # A 8000-sample draw covers the bulk of the interval.
+        assert weight.min().item() < 0.02
+        assert weight.max().item() > 0.48
+
+    def test_bernoulli_values_are_signed(self) -> None:
+        """``bernoulli`` produces only ``{-1, +1}`` before any scaling/masking."""
+        init = BernoulliInputInitializer(p=0.5, seed=0)
+        weight = torch.empty(64, 8)
+        init.initialize(weight)
+
+        assert set(torch.unique(weight).tolist()) <= {-1.0, 1.0}
+
+    def test_bernoulli_p_controls_positive_fraction(self) -> None:
+        """``p`` is the probability of drawing ``+1`` (verified statistically)."""
+        init = BernoulliInputInitializer(p=0.8, seed=0)
+        weight = torch.empty(2000, 4)
+        init.initialize(weight)
+
+        positive_fraction = (weight > 0).float().mean().item()
+        assert positive_fraction == pytest.approx(0.8, abs=0.03)
+
+    def test_bernoulli_scaled_values_are_signed_scaled(self) -> None:
+        """``bernoulli`` stays a ``{-s, +s}`` matrix after the scaling contract."""
+        init = BernoulliInputInitializer(p=0.5, input_scaling=0.25, seed=0)
+        weight = torch.empty(64, 8)
+        init.initialize(weight)
+
+        assert set(torch.unique(weight).tolist()) <= {-0.25, 0.25}
+
+    @pytest.mark.parametrize(("name", "kwargs"), _STANDARD)
+    def test_draws_on_target_device(self, name: str, kwargs: dict, device: torch.device) -> None:
+        """The filled weight stays on the device it was passed in on."""
+        init = get_input_feedback(name, connectivity=0.2, seed=0, **kwargs)
+        weight = torch.empty(50, 8, device=device)
+        init.initialize(weight)
+
+        assert weight.device.type == device.type
+
+    def test_normal_rejects_negative_scale(self) -> None:
+        """A negative ``scale`` is rejected at construction."""
+        with pytest.raises(ValueError, match="scale"):
+            NormalInputInitializer(scale=-1.0)
+
+    @pytest.mark.parametrize(("low", "high"), [(1.0, 1.0), (1.0, 0.0)])
+    def test_uniform_rejects_bad_bounds(self, low: float, high: float) -> None:
+        """``low`` must be strictly less than ``high``."""
+        with pytest.raises(ValueError, match="low"):
+            UniformInputInitializer(low=low, high=high)
+
+    @pytest.mark.parametrize("bad_p", [-0.1, 1.1])
+    def test_bernoulli_rejects_p_out_of_range(self, bad_p: float) -> None:
+        """``p`` must lie in ``[0, 1]``."""
+        with pytest.raises(ValueError, match="p"):
+            BernoulliInputInitializer(p=bad_p)
 
 
 class TestOppositeAnchorsCollision:
@@ -500,6 +669,24 @@ _SCALING_CONTRACT = [
         _max_abs,
         (128, 6),
         id="random_binary",
+    ),
+    pytest.param(
+        lambda s: NormalInputInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (128, 6),
+        id="normal",
+    ),
+    pytest.param(
+        lambda s: UniformInputInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (128, 6),
+        id="uniform",
+    ),
+    pytest.param(
+        lambda s: BernoulliInputInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (128, 6),
+        id="bernoulli",
     ),
     pytest.param(
         lambda s: PseudoDiagonalInitializer(input_scaling=s, seed=0),

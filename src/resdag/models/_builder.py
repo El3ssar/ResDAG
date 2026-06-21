@@ -38,6 +38,7 @@ def _esn_builder(
     augment: AugmentFactory | None = None,
     concat_input: bool = True,
     input_size: int | None = None,
+    input_initializer: InitializerSpec | None = None,
     # Reservoir params
     topology: TopologySpec | None = None,
     spectral_radius: float = 0.9,
@@ -83,8 +84,17 @@ def _esn_builder(
         reservoir output before the readout.  Only meaningful when a readout is
         attached.
     input_size : int or None, optional
-        Dimension of an optional driving input passed to the reservoir.
-        ``None`` (default) builds a feedback-only reservoir.
+        Dimension of an optional driving (exogenous) input passed to the
+        reservoir.  When given (a positive integer), a second symbolic input is
+        built via :func:`~resdag.core.reservoir_input`, the reservoir is called
+        as ``ESNLayer(...)(feedback, driver)``, and both inputs are wired into
+        the returned :class:`~resdag.core.ESNModel`.  The driver is deliberately
+        kept out of the input concatenation, so the readout ``in_features`` stays
+        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        feedback-only reservoir, leaving the non-driven path unchanged.
+    input_initializer : InitializerSpec, optional
+        Initializer for the driving-input weights.  Same accepted forms as
+        ``topology``.  Only used when ``input_size`` is given.
     topology : TopologySpec, optional
         Topology for recurrent weights.  Accepts a registry name, a
         ``(name, params)`` tuple, a callable, or a pre-configured
@@ -129,11 +139,17 @@ def _esn_builder(
     resdag.models.classic_esn : Classic ESN built on this helper.
     resdag.models.ott_esn : Ott's state-augmented ESN built on this helper.
     """
-    # Build the symbolic input.  The time dimension is a placeholder — actual
-    # sequence lengths are inferred from the input at call time.
+    # Build the symbolic feedback input.  The time dimension is a placeholder —
+    # actual sequence lengths are inferred from the input at call time.
     inp = reservoir_input(feedback_size)
 
-    output: SymbolicTensor = ESNLayer(
+    # An optional driving (exogenous) input.  When present the reservoir is
+    # called with ``(feedback, driver)`` and both inputs are wired into the
+    # model; the driver is kept out of the input concatenation below so the
+    # readout ``in_features`` stays ``feedback_size + reservoir_size``.
+    driver = reservoir_input(input_size) if input_size else None
+
+    reservoir = ESNLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=input_size,
@@ -141,18 +157,24 @@ def _esn_builder(
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
         feedback_initializer=feedback_initializer,
+        input_initializer=input_initializer,
         activation=activation,
         bias=bias,
         trainable=trainable,
         **reservoir_kwargs,
-    )(inp)
+    )
+
+    output: SymbolicTensor = reservoir(inp) if driver is None else reservoir(inp, driver)
+
+    # Inputs wired into the final model: feedback alone, or [feedback, driver].
+    model_inputs = inp if driver is None else [inp, driver]
 
     if augment is not None:
         output = augment()(output)
 
     # Headless / linear variants stop at the (possibly augmented) reservoir.
     if output_size is None:
-        return ESNModel(inp, output)
+        return ESNModel(model_inputs, output)
 
     if output_size <= 0:
         raise ValueError(f"output_size must be a positive integer, got {output_size!r}")
@@ -171,4 +193,4 @@ def _esn_builder(
         name=readout_name,
     )(output)
 
-    return ESNModel(inp, readout)
+    return ESNModel(model_inputs, readout)

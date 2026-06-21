@@ -23,6 +23,8 @@ def classic_esn(
     reservoir_size: int,
     feedback_size: int,
     output_size: int,
+    input_size: int | None = None,
+    input_initializer: InitializerSpec | None = None,
     # Reservoir params
     topology: TopologySpec | None = None,
     spectral_radius: float = 0.9,
@@ -59,6 +61,16 @@ def classic_esn(
         Number of feedback features (input dimension).
     output_size : int
         Number of output features.
+    input_size : int or None, optional
+        Dimension of an optional driving (exogenous) input.  When given, the
+        model takes two inputs ``(feedback, driver)`` and the driver feeds the
+        reservoir alongside the autoregressive feedback.  The driver is kept out
+        of the input concatenation, so the readout ``in_features`` stays
+        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        feedback-only model, unchanged from previous behavior.
+    input_initializer : InitializerSpec, optional
+        Initializer for the driving-input weights.  Same accepted forms as
+        ``feedback_initializer``.  Only used when ``input_size`` is given.
     topology : TopologySpec, optional
         Topology for recurrent weights. Accepts:
 
@@ -138,6 +150,8 @@ def classic_esn(
         output_size=output_size,
         augment=None,
         concat_input=True,
+        input_size=input_size,
+        input_initializer=input_initializer,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,

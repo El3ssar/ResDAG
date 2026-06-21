@@ -27,6 +27,7 @@ from .losses import LossProtocol, get_loss
 from .objective import build_objective
 from .runners import run_multiprocess, run_single
 from .storage import enable_sqlite_wal, resolve_storage
+from .transfer import apply_warm_start, transfer_trials
 from .utils import make_study_name
 
 __all__ = ["run_hpo"]
@@ -63,6 +64,33 @@ def _configure_logging(verbosity: int) -> None:
     optuna.logging.set_verbosity(optuna_level)
 
 
+def _discover_param_names(
+    search_space: Callable[[optuna.Trial], dict[str, Any]],
+) -> set[str]:
+    """Discover the parameter names a *search_space* callback samples.
+
+    Runs *search_space* once against a throwaway, in-memory trial so the set of
+    ``suggest_*`` parameter names can be recovered without touching the real
+    study or running the objective.  The probe trial is never told a result, so
+    it leaves no trace.  Used to decide which transferred parameters overlap the
+    current search space.
+
+    Parameters
+    ----------
+    search_space : Callable[[Trial], dict[str, Any]]
+        The search-space callback to introspect.
+
+    Returns
+    -------
+    set of str
+        The names of all parameters the callback suggested on the probe trial.
+    """
+    probe_study = optuna.create_study()
+    probe_trial = probe_study.ask()
+    search_space(probe_trial)
+    return set(probe_trial.params.keys())
+
+
 def run_hpo(
     model_creator: Callable[..., ESNModel],
     search_space: Callable[[optuna.Trial], dict[str, Any]],
@@ -76,6 +104,8 @@ def run_hpo(
     monitor_params: dict[str, dict[str, Any]] | None = None,
     study_name: str | None = None,
     storage: str | None = None,
+    warm_start: list[dict[str, Any]] | None = None,
+    transfer_from: "optuna.Study | str | None" = None,
     sampler: optuna.samplers.BaseSampler | None = None,
     seed: int | None = None,
     device: str | torch.device | None = None,
@@ -148,6 +178,20 @@ def run_hpo(
         - ``"study.log"``: Journal file storage (recommended for multi-worker).
         - ``"study.db"`` or ``"sqlite:///study.db"``: SQLite with WAL mode.
 
+    warm_start : list[dict], optional
+        Known-good configurations to evaluate **before** any sampler-proposed
+        trial.  Each dict maps parameter name to a fixed value and is enqueued
+        via :meth:`optuna.study.Study.enqueue_trial`.  Enqueued in the parent
+        process (pre-fork), so the warm-start trials are picked up by every
+        worker when ``n_workers > 1``.
+    transfer_from : optuna.Study or str, optional
+        A prior study (or a storage path/URL holding exactly one study) whose
+        ``COMPLETE`` trials are copied into the new study via
+        :meth:`optuna.study.Study.add_trial`, seeding the sampler without
+        re-running the objective.  Only parameters that overlap with the current
+        search space are kept; mismatched parameters are dropped and logged at
+        ``INFO`` level.  Ingested in the parent process (pre-fork), so it works
+        with ``n_workers > 1``.
     sampler : BaseSampler, optional
         Optuna sampler. Defaults to ``TPESampler`` with ``multivariate=True``.
     seed : int, optional
@@ -327,6 +371,28 @@ def run_hpo(
         logger.info(f"Loaded existing study with {completed_trials} completed trials")
         logger.info(f"Best value so far: {study.best_value:.6f}")
 
+    # ── Warm-start and transfer (pre-fork) ───────────────────────────
+    # Both mutate the shared storage in the parent process, before any worker
+    # is forked, so the enqueued / transferred trials are visible to every
+    # worker when ``n_workers > 1``.
+    #
+    # Transferred trials are *seeds* (already evaluated), not budget: they land
+    # in storage as COMPLETE, so the stop target and progress baseline are
+    # offset by their count to keep ``remaining`` = the number of *new* trials
+    # to run.  Warm-start trials, by contrast, are enqueued for evaluation and
+    # consume budget like any sampler-proposed trial.
+    n_transferred = 0
+    if transfer_from is not None:
+        n_transferred = transfer_trials(
+            study, transfer_from, param_names=_discover_param_names(search_space)
+        )
+    if warm_start:
+        apply_warm_start(study, warm_start)
+
+    # Stop target and progress baseline shifted past the transferred seeds.
+    stop_target = n_trials + n_transferred
+    baseline_completed = completed_trials + n_transferred
+
     # ── Build objective function ─────────────────────────────────────
     objective = build_objective(
         model_creator=model_creator,
@@ -357,9 +423,9 @@ def run_hpo(
                 storage_path=storage_path,
                 study_name=study_name,
                 objective=objective,
-                n_trials=n_trials,
+                n_trials=stop_target,
                 remaining=remaining,
-                completed_trials=completed_trials,
+                completed_trials=baseline_completed,
                 n_workers=n_workers,
                 seed=seed,
                 verbosity=verbosity,

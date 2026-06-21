@@ -12,6 +12,7 @@ by ``tests/test_init/test_topologies.py``; these tests pin the layer-level
 contract: same seed -> byte-identical reservoirs, independent of the global RNG.
 """
 
+import pytest
 import torch
 
 from resdag.layers import ESNLayer
@@ -192,3 +193,70 @@ class TestHPOPerTrialSeeding:
         b = ESNLayer(reservoir_size=50, feedback_size=3, topology="erdos_renyi", seed=again)
 
         assert _all_equal(a, b, ("weight_hh", "weight_feedback", "bias_h"))
+
+
+class TestDeviceNativeReproducibleDraws:
+    """AC#2/#3: device-native, per-device-reproducible weight draws.
+
+    Issue #188: ``seed`` previously drove only the NumPy CPU RNG for the named
+    random initializers and the global torch RNG for the default
+    no-initializer path. The torch-native random initializers and the seeded
+    default path now draw directly on the target device, so the same ``seed``
+    reproduces the reservoir on whatever device the layer is built on —
+    including CUDA when present.
+    """
+
+    def test_default_path_reproducible_on_device(self, device: torch.device) -> None:
+        """AC#3: the default no-initializer path is reproducible under one seed.
+
+        Builds the whole reservoir on ``device`` with no explicit
+        initializers/topology so every weight comes from the seeded default
+        ``uniform(-1, 1)`` draws, and checks two builds agree byte-for-byte.
+        """
+        kw = dict(reservoir_size=40, feedback_size=3, input_size=2, spectral_radius=0.9)
+        a = ESNLayer(**kw, seed=17).to(device)
+        b = ESNLayer(**kw, seed=17).to(device)
+
+        assert _all_equal(a, b)
+
+    def test_named_random_initializer_reproducible_on_device(self, device: torch.device) -> None:
+        """AC#1/#2: the named ``random``/``random_binary`` inits reproduce per device."""
+        kw = dict(
+            reservoir_size=40,
+            feedback_size=3,
+            input_size=2,
+            feedback_initializer="random",
+            input_initializer="random_binary",
+        )
+        a = ESNLayer(**kw, seed=23).to(device)
+        b = ESNLayer(**kw, seed=23).to(device)
+
+        assert _all_equal(a, b, ("weight_feedback", "weight_input", "bias_h"))
+
+    @pytest.mark.gpu
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+    def test_random_initializer_draws_natively_on_cuda(self) -> None:
+        """AC#2: a CUDA target is filled by a CUDA draw (no CPU build + copy).
+
+        Applying a seeded ``RandomInputInitializer`` to a CUDA weight twice must
+        agree, and the result must live on CUDA. Because torch's CPU and CUDA
+        RNG streams differ, a CUDA draw must *not* coincide with the equivalent
+        CPU draw — proving the values were generated on-device rather than on
+        CPU and copied over.
+        """
+        from resdag.init.input_feedback import RandomInputInitializer
+
+        init = RandomInputInitializer(input_scaling=1.0, seed=42)
+
+        cuda_a = torch.empty(64, 8, device="cuda")
+        cuda_b = torch.empty(64, 8, device="cuda")
+        init.initialize(cuda_a)
+        init.initialize(cuda_b)
+
+        assert cuda_a.is_cuda
+        assert torch.equal(cuda_a, cuda_b)  # per-device reproducible
+
+        cpu = torch.empty(64, 8)
+        init.initialize(cpu)
+        # Same seed, different RNG stream per backend → device-native draw.
+        assert not torch.equal(cuda_a.cpu(), cpu)

@@ -2,8 +2,9 @@
 
 from typing import Any
 
-import numpy as np
 import torch
+
+from resdag.utils.general import SeedLike
 
 from .base import InputFeedbackInitializer, _resolve_shape
 from .registry import register_input_feedback
@@ -30,8 +31,13 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         (the default) leaves entries in ``{-1, +1}``; a float ``s`` multiplies
         every entry by ``s`` (entries become ``{-s, +s}``), so ``max|W|`` scales
         linearly with ``s`` (``input_scaling=0.5`` halves it).
-    seed : int, optional
-        Random seed for reproducibility.
+    seed : int, torch.Generator, or None, optional
+        Reproducibility seed for the binary draw. Accepts a plain ``int``, a
+        :class:`torch.Generator` (whose ``initial_seed()`` is used), or ``None``
+        (defer to torch's global RNG). The draw is **device-native**: it happens
+        directly on the target weight's device via a torch generator, so the
+        same ``seed`` is reproducible per device (CPU and CUDA each reproduce,
+        though their RNG streams differ from each other).
 
     Examples
     --------
@@ -52,7 +58,7 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
     def __init__(
         self,
         input_scaling: float | None = None,
-        seed: int | None = None,
+        seed: SeedLike = None,
     ) -> None:
         """Initialize the RandomBinaryInitializer."""
         super().__init__(input_scaling=input_scaling, seed=seed)
@@ -60,10 +66,12 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with binary random values.
 
-        The RNG is constructed from ``self.seed`` on every call, so the produced
-        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
-        same instance with equal shapes therefore yield identical matrices.
-        Pass ``seed=None`` for a fresh draw on each call.
+        The draw uses a :class:`torch.Generator` built from ``self.seed`` on the
+        target weight's **device** (no CPU build + copy), so the produced matrix
+        is a pure function of ``(seed, shape, device)``. Repeated calls on the
+        same instance with equal shapes on the same device therefore yield
+        identical matrices. Pass ``seed=None`` for a draw tied to torch's global
+        RNG (reproducible under ``torch.manual_seed``).
 
         Parameters
         ----------
@@ -79,19 +87,18 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         device = weight.device
         dtype = weight.dtype
 
-        rng = np.random.default_rng(self.seed)
+        generator = self._torch_generator_for(device)
 
-        # Generate binary values {-1, +1}
-        values = rng.choice([-1.0, 1.0], size=(out_features, in_features))
+        # Draw bits {0, 1} on the target device, then map to {-1, +1}.
+        bits = torch.randint(0, 2, (out_features, in_features), generator=generator, device=device)
+        values = (bits.to(dtype) * 2.0) - 1.0
 
-        # Apply the shared uniform scaling contract as the documented final transform.
+        # Apply the shared uniform scaling contract as the documented final
+        # transform (torch-native, staying on-device).
         values = self._apply_scaling(values)
 
-        # Convert to tensor and copy to weight
-        weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)
-
         with torch.no_grad():
-            weight.copy_(weight_data)
+            weight.copy_(values)
 
         return weight
 

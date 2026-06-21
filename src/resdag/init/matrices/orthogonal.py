@@ -6,6 +6,8 @@ of random matrices. A useful structured alternative to sparse random
 topologies, especially for memory-capacity tasks.
 """
 
+from typing import cast
+
 import torch
 
 from resdag.init.topology import register_matrix_topology
@@ -64,4 +66,4 @@ def orthogonal_matrix(n: int, gain: float = 1.0, seed: int | None = None) -> tor
     # Sign correction: make the decomposition unique so Q is Haar-distributed.
     q = q * torch.sign(torch.diagonal(r))
 
-    return (gain * q).to(torch.float32)
+    return cast(torch.Tensor, (gain * q).to(torch.float32))

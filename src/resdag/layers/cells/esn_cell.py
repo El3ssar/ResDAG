@@ -14,6 +14,8 @@ resdag.init.topology : Topology initialization for recurrent weights.
 resdag.init.input_feedback : Input/feedback weight initialization.
 """
 
+from collections.abc import Callable
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -474,9 +476,9 @@ class ESNCell(ReservoirCell):
     # Weight initialization (verbatim from legacy ReservoirLayer)
     # ------------------------------------------------------------------
 
-    def _get_activation(self, activation: str) -> callable:
+    def _get_activation(self, activation: str) -> Callable[[torch.Tensor], torch.Tensor]:
         """Get activation function by name."""
-        activations = {
+        activations: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
             "tanh": torch.tanh,
             "relu": F.relu,
             "identity": _identity,

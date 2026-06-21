@@ -53,12 +53,13 @@ resdag.training.ESNTrainer : Trainer for fitting readouts.
 
 import pytorch_symbolic as ps
 import torch
+from pytorch_symbolic.symbolic_data import SymbolicData
 
 from .feature_extractor import ReservoirFeatureExtractor
 from .model import ESNModel, Input
 
 
-def reservoir_input(feature_size: int, dtype: torch.dtype | None = None):
+def reservoir_input(feature_size: int, dtype: torch.dtype | None = None) -> SymbolicData:
     """
     Build a symbolic input tensor for a reservoir model.
 

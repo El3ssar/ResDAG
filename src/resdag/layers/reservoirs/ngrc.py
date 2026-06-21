@@ -13,7 +13,7 @@ resdag.layers.cells.ngrc_cell : Single-step NG-RC cell (NGCell).
 resdag.layers.reservoirs.base_reservoir : Abstract base (BaseReservoirLayer).
 """
 
-from typing import cast
+from typing import Any, cast
 
 import torch
 
@@ -232,12 +232,12 @@ class NGReservoir(BaseReservoirLayer):
     @property
     def input_dim(self) -> int:
         """Dimensionality of each input vector."""
-        return self.cell.input_dim
+        return cast(NGCell, self.cell).input_dim
 
     @property
     def feature_dim(self) -> int:
         """Total dimension of the output feature vector."""
-        return self.cell.feature_dim
+        return cast(NGCell, self.cell).feature_dim
 
     @property
     def warmup_length(self) -> int:
@@ -254,7 +254,7 @@ class NGReservoir(BaseReservoirLayer):
     # Convenience delegation
     # ------------------------------------------------------------------
 
-    def __getattr__(self, name: str) -> object:
+    def __getattr__(self, name: str) -> Any:
         """Delegate unknown attribute lookups to the wrapped cell."""
         try:
             return super().__getattr__(name)

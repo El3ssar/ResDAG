@@ -478,8 +478,10 @@ def _dispatch_multiprocess(
         verbosity=verbosity,
     )
 
-    # Reopen storage to build the return study object
+    # Reopen storage to build the return study object. ``storage_path`` is
+    # non-None here (guarded above), so the resolved backend is never None.
     new_storage = resolve_storage(storage_path, n_workers=1)
+    assert new_storage is not None
     new_study = optuna.load_study(
         study_name=study_name,
         storage=new_storage,

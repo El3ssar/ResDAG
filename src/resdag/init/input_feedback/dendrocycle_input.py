@@ -120,6 +120,8 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
 
         C = self.C
         if C is None:
+            # __init__ enforces exactly one of c/C is set, so C is None ⇒ c is not None.
+            assert self.c is not None
             if not (0 < self.c <= 1):
                 raise ValueError("c must be in (0, 1].")
             C = max(1, int(round(self.c * N)))

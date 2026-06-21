@@ -4,7 +4,7 @@ Zeros out specific features based on a fixed mask, useful for analyzing
 how shutting off specific neurons affects model predictions.
 """
 
-from typing import Sequence
+from typing import Sequence, cast
 
 import numpy as np
 import torch
@@ -92,17 +92,19 @@ class SelectiveDropout(nn.Module):
                 f"with shape {input.shape}"
             )
 
+        mask = cast(torch.Tensor, self.mask)
         feature_dim = input.shape[-1]
-        if self.mask.shape[0] != feature_dim:
+        if mask.shape[0] != feature_dim:
             raise ValueError(
-                f"Mask size ({self.mask.shape[0]}) does not match feature dimension ({feature_dim})"
+                f"Mask size ({mask.shape[0]}) does not match feature dimension ({feature_dim})"
             )
 
         # Apply mask: where mask is True, output 0; otherwise keep input
-        return torch.where(self.mask, torch.zeros_like(input), input)
+        return torch.where(mask, torch.zeros_like(input), input)
 
     def extra_repr(self) -> str:
         """String representation of layer configuration."""
-        num_dropped = self.mask.sum().item()
-        total_features = self.mask.shape[0]
+        mask = cast(torch.Tensor, self.mask)
+        num_dropped = mask.sum().item()
+        total_features = mask.shape[0]
         return f"features={total_features}, dropped={num_dropped}"

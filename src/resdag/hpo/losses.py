@@ -48,7 +48,8 @@ resdag.hpo.run : High-level HPO orchestrator.
 """
 
 import warnings
-from typing import Literal, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -98,7 +99,7 @@ class LossProtocol(Protocol):
         y_true: NDArray[np.floating],
         y_pred: NDArray[np.floating],
         /,
-        **kwargs,
+        **kwargs: Any,
     ) -> float: ...
 
 
@@ -129,16 +130,16 @@ def _compute_errors(
     diff = y_pred - y_true
 
     if metric == "mse":
-        return np.mean(diff**2, axis=2)
+        return cast(NDArray[np.floating], np.mean(diff**2, axis=2))
     if metric == "rmse":
-        return np.sqrt(np.mean(diff**2, axis=2))
+        return cast(NDArray[np.floating], np.sqrt(np.mean(diff**2, axis=2)))
     if metric == "mae":
-        return np.mean(np.abs(diff), axis=2)
+        return cast(NDArray[np.floating], np.mean(np.abs(diff), axis=2))
     if metric == "nrmse":
         scale = np.std(y_true, axis=(0, 1), keepdims=True)
         scale = np.where(scale == 0, 1.0, scale)
         diff_n = diff / scale
-        return np.sqrt(np.mean(diff_n**2, axis=2))
+        return cast(NDArray[np.floating], np.sqrt(np.mean(diff_n**2, axis=2)))
 
     raise ValueError(f"Unknown metric: '{metric}'. Use 'rmse', 'mse', 'mae', or 'nrmse'.")
 
@@ -196,11 +197,11 @@ def _aggregate_batch(errors: NDArray[np.floating], how: str = "median") -> NDArr
         If *how* is not ``"median"`` or ``"gmean"``.
     """
     if how == "median":
-        return np.median(errors, axis=0)
+        return cast(NDArray[np.floating], np.median(errors, axis=0))
     if how == "gmean":
         # Clip before gmean: a single 0 in a column would otherwise force the
         # whole geometric mean to 0 (verified behaviour of scipy.stats.gmean).
-        return gmean(np.clip(errors, _GMEAN_FLOOR, None), axis=0)
+        return cast(NDArray[np.floating], gmean(np.clip(errors, _GMEAN_FLOOR, None), axis=0))
     raise ValueError(f"Unknown aggregation '{how}'. Use 'median' or 'gmean'.")
 
 
@@ -474,8 +475,11 @@ def soft_valid_horizon(
     return -float(horizon)
 
 
-# Registry mapping loss names to loss functions.
-LOSSES: dict[str, LossProtocol] = {
+# Registry mapping loss names to loss functions.  The concrete losses have
+# named-kwarg signatures that don't structurally match ``LossProtocol.__call__``
+# (which uses ``**kwargs``), so the registry is typed with a permissive callable
+# alias; ``get_loss`` re-narrows lookups back to ``LossProtocol`` for callers.
+LOSSES: dict[str, Callable[..., float]] = {
     "efh": expected_forecast_horizon,
     "forecast_horizon": forecast_horizon,
     "lyapunov": lyapunov_weighted,
@@ -514,7 +518,7 @@ def get_loss(key_or_callable: str | LossProtocol) -> LossProtocol:
         if key_or_callable not in LOSSES:
             available = ", ".join(LOSSES.keys())
             raise KeyError(f"Unknown loss '{key_or_callable}'. Available: {available}")
-        return LOSSES[key_or_callable]
+        return cast(LossProtocol, LOSSES[key_or_callable])
 
     if not callable(key_or_callable):
         raise TypeError("Loss must be a string key or a callable.")

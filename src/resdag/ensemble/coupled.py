@@ -13,7 +13,8 @@ resdag.core.ESNModel : Base ESN model used as sub-models.
 """
 
 import warnings
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -178,6 +179,17 @@ class CoupledEnsembleESNModel(nn.Module):
         """Number of sub-models in the ensemble."""
         return len(self.models)
 
+    def _iter_models(self) -> Iterator[ESNModel]:
+        """Iterate over the sub-models with their concrete :class:`ESNModel` type.
+
+        ``self.models`` is an :class:`torch.nn.ModuleList` (so the sub-models are
+        registered for ``state_dict``/``to``), whose element type is the generic
+        ``Module``.  This helper re-exposes them as ``ESNModel`` for static
+        type-checking; it does not copy or re-register anything.
+        """
+        for model in self.models:
+            yield cast(ESNModel, model)
+
     # ------------------------------------------------------------------
     # Forward / warmup
     # ------------------------------------------------------------------
@@ -206,7 +218,7 @@ class CoupledEnsembleESNModel(nn.Module):
         *inputs : torch.Tensor
             Warmup sequences.  Passed identically to each sub-model.
         """
-        for model in self.models:
+        for model in self._iter_models():
             model.warmup(*inputs)
 
     # ------------------------------------------------------------------
@@ -215,7 +227,7 @@ class CoupledEnsembleESNModel(nn.Module):
 
     def reset_reservoirs(self) -> None:
         """Reset reservoir states in all sub-models to zero / None."""
-        for model in self.models:
+        for model in self._iter_models():
             model.reset_reservoirs()
 
     def get_reservoir_states(self) -> list[dict[str, torch.Tensor]]:
@@ -226,7 +238,7 @@ class CoupledEnsembleESNModel(nn.Module):
         list of dict
             One dict per sub-model, mapping layer name to state tensor.
         """
-        return [model.get_reservoir_states() for model in self.models]
+        return [model.get_reservoir_states() for model in self._iter_models()]
 
     def set_reservoir_states(
         self,
@@ -255,7 +267,7 @@ class CoupledEnsembleESNModel(nn.Module):
                 f"Expected {self.n_models} state dict(s) (one per sub-model), "
                 f"got {len(states)}."
             )
-        for model, state_dict in zip(self.models, states):
+        for model, state_dict in zip(self._iter_models(), states):
             model.set_reservoir_states(state_dict, strict=strict)
 
     # ------------------------------------------------------------------
@@ -306,7 +318,7 @@ class CoupledEnsembleESNModel(nn.Module):
             raise ValueError(f"n_workers must be >= 1, got {n_workers}.")
 
         if n_workers == 1 or self.n_models == 1:
-            for model in self.models:
+            for model in self._iter_models():
                 ESNTrainer(model).fit(warmup_inputs, train_inputs, targets)
             return
 
@@ -437,8 +449,10 @@ class CoupledEnsembleESNModel(nn.Module):
 
         # Phase 1: warmup — all models independently, same teacher-forced data
         warmup_outputs_per_model: list[torch.Tensor] = []
-        for model in self.models:
-            out = model.warmup(*warmup_inputs, return_outputs=True, reset=reset)
+        for model in self._iter_models():
+            # ``return_outputs=True`` yields the warmup outputs; sub-models are
+            # single-output (validated in __init__), so this is a single tensor.
+            out = cast(torch.Tensor, model.warmup(*warmup_inputs, return_outputs=True, reset=reset))
             warmup_outputs_per_model.append(out)  # (batch, W, output_size)
 
         output_size = warmup_outputs_per_model[0].shape[-1]
@@ -464,6 +478,9 @@ class CoupledEnsembleESNModel(nn.Module):
         # genuine coupled step; no teacher-forced warmup echo is emitted.
         for t in range(horizon):
             if has_drivers:
+                # ``has_drivers`` implies ``forecast_inputs`` was validated as a
+                # non-empty tuple above; restate it for the type-checker.
+                assert forecast_inputs is not None
                 # Same pairing as ESNModel.forecast: step ``t`` consumes the
                 # driver at the ``t``-th step after warmup = forecast_inputs[:, t].
                 driver_slice = tuple(d[:, t : t + 1, :] for d in forecast_inputs)
@@ -661,7 +678,9 @@ class CoupledEnsembleESNModel(nn.Module):
     def _aggregate_stacked(self, stacked: torch.Tensor) -> torch.Tensor:
         """Aggregate a pre-stacked (N, batch, T, F) tensor."""
         if self.aggregator_module is not None:
-            return self.aggregator_module(stacked)
+            # nn.Module.__call__ is typed to return Any; the aggregator contract
+            # is to return a single aggregated tensor.
+            return cast(torch.Tensor, self.aggregator_module(stacked))
         if self._aggregator_str == "mean":
             return stacked.mean(dim=0)
         # median

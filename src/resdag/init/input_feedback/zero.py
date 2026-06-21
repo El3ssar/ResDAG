@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 
 from .base import InputFeedbackInitializer
@@ -12,7 +14,7 @@ class ZeroInitializer(InputFeedbackInitializer):
         """Initialize the ZeroInitializer."""
         super().__init__()
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with zero values."""
         with torch.no_grad():
             weight.zero_()

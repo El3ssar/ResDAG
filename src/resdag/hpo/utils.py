@@ -149,9 +149,13 @@ def get_study_summary(study: optuna.Study, top_n: int = 5) -> str:
                 lines.append(f"  {k}: {v}")
         lines.append("")
 
-        # Top N trials
+        # Top N trials. ``completed_trials`` are all COMPLETE, so ``t.value`` is
+        # always a float at runtime; the ``inf`` fallback only satisfies the
+        # ``float | None`` stub and never affects ordering (it would sort last).
         completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        sorted_trials = sorted(completed_trials, key=lambda t: t.value)
+        sorted_trials = sorted(
+            completed_trials, key=lambda t: t.value if t.value is not None else float("inf")
+        )
 
         lines.append("-" * 60)
         lines.append(f"Top {min(top_n, len(sorted_trials))} Trials")

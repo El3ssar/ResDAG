@@ -1,6 +1,6 @@
 """Chain-of-neurons specific input initializer."""
 
-from typing import Sequence
+from typing import Any, Sequence, cast
 
 import numpy as np
 import torch
@@ -49,7 +49,7 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
         self.features = features
         self.weights = weights
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor for chain-of-neurons topology.
 
         Parameters
@@ -93,7 +93,9 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
                 )
             in_weights = [float(w) for w in self.weights]
         else:
-            w = float(self.weights)
+            # Reached only when ``self.weights`` is not a list/tuple/ndarray, i.e.
+            # the scalar branch of the ``float | Sequence[float]`` union; cast for mypy.
+            w = float(cast(float, self.weights))
             in_weights = [w] * input_dim
 
         block_len = units // self.features

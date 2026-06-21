@@ -1,5 +1,7 @@
 """Chessboard pattern initializer for input/feedback weights."""
 
+from typing import Any
+
 import numpy as np
 import torch
 
@@ -45,7 +47,7 @@ class ChessboardInitializer(InputFeedbackInitializer):
         """Initialize the ChessboardInitializer."""
         super().__init__(input_scaling=input_scaling)
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with chessboard pattern.
 
         Parameters

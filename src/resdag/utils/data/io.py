@@ -23,7 +23,9 @@ The ``(timesteps, features)`` convention is preserved across every loader:
 """
 
 import warnings
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -43,7 +45,7 @@ def _torch_to_numpy_dtype(dtype: torch.dtype) -> np.dtype:
     """Convert a torch dtype to the corresponding numpy dtype."""
     if dtype not in _TORCH_TO_NUMPY:
         raise ValueError(f"Unsupported dtype {dtype}. Supported: {list(_TORCH_TO_NUMPY.keys())}")
-    return _TORCH_TO_NUMPY[dtype]
+    return np.dtype(_TORCH_TO_NUMPY[dtype])
 
 
 def _ensure_3d(data: np.ndarray, source: str) -> np.ndarray:
@@ -274,7 +276,7 @@ def load_nc(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
     return torch.from_numpy(data)
 
 
-def load_file(path: PathLike, dtype: torch.dtype | None = None, **kwargs) -> torch.Tensor:
+def load_file(path: PathLike, dtype: torch.dtype | None = None, **kwargs: Any) -> torch.Tensor:
     """Load time series data from a file, detecting format from extension.
 
     Parameters
@@ -299,7 +301,7 @@ def load_file(path: PathLike, dtype: torch.dtype | None = None, **kwargs) -> tor
     path = Path(path)
     suffix = path.suffix.lower()
 
-    loaders = {
+    loaders: dict[str, Callable[..., torch.Tensor]] = {
         ".csv": load_csv,
         ".npy": load_npy,
         ".npz": load_npz,
@@ -368,7 +370,13 @@ def save_npz(data: torch.Tensor, path: PathLike, key: str = "data") -> None:
     key : str, default="data"
         Key to use when storing the data.
     """
-    np.savez(path, **{key: data.detach().cpu().numpy()})
+    # ``key`` is dynamic, so the array is passed via ``**``. numpy 2.4's typed
+    # stub for ``savez`` added an ``allow_pickle`` keyword that a str-keyed ``**``
+    # mapping cannot satisfy; bind through a generically-typed reference so the
+    # call type-checks identically on every supported numpy (>=2.0) without
+    # changing the runtime call.
+    savez: Callable[..., None] = np.savez
+    savez(path, **{key: data.detach().cpu().numpy()})
 
 
 def save_nc(data: torch.Tensor, path: PathLike) -> None:

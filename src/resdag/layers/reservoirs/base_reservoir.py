@@ -456,8 +456,14 @@ class BaseReservoirLayer(nn.Module, ABC):
                     "Pass batch_size= to initialise it before randomising."
                 )
             self.reset_state(batch_size=batch_size)
+            # ``reset_state(batch_size=...)`` always assigns a real tensor here
+            # (batch_size is non-None past the guard above); narrows for mypy.
+            assert self.state is not None
             # ``reset_state`` honours device/dtype of existing state or cell;
             # apply overrides if explicitly requested.
             if device is not None or dtype is not None:
                 self.state = self.state.to(device=device, dtype=dtype)
+        # State is non-None on both branches: either just initialised above or
+        # already non-None at method entry.
+        assert self.state is not None
         self.state = torch.randn_like(self.state)

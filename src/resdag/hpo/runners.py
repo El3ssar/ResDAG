@@ -110,8 +110,11 @@ def _worker_process(
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    # Reconstruct the storage object in the worker process
+    # Reconstruct the storage object in the worker process. ``storage`` is a
+    # non-None path string here, so ``resolve_storage`` always returns a
+    # concrete backend (it only returns None for in-memory single-worker runs).
     worker_storage = resolve_storage(storage, n_workers=1)
+    assert worker_storage is not None
 
     sampler = TPESampler(
         multivariate=True,
@@ -241,7 +244,9 @@ def run_multiprocess(
     processes: list[mp.process.BaseProcess] = []
     for i in range(n_workers):
         worker_seed = (seed + i * 7919) if seed is not None else None
-        p = ctx.Process(
+        # Annotate as BaseProcess so the later monitor loops (which type ``p`` as
+        # BaseProcess) agree with this fork-context Process instance.
+        p: mp.process.BaseProcess = ctx.Process(
             target=_worker_process,
             args=(study_name, storage, objective, n_trials, worker_seed),
             daemon=True,
@@ -250,8 +255,10 @@ def run_multiprocess(
         processes.append(p)
 
     # Reopen storage in the main process for progress monitoring.
-    # This is safe because forked children have their own copies.
+    # This is safe because forked children have their own copies. ``storage`` is
+    # a non-None path string, so the resolved backend is never None here.
     monitor_storage = resolve_storage(storage, n_workers=1)
+    assert monitor_storage is not None
     monitor_study = optuna.load_study(
         study_name=study_name,
         storage=monitor_storage,

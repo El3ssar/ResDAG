@@ -12,6 +12,7 @@ Sequence-level behaviour (state management, fast path) is covered in
 import pytest
 import torch
 
+from resdag.layers import ESNLayer
 from resdag.layers.cells import ESNCell
 
 
@@ -315,3 +316,70 @@ class TestESNCellNoise:
         eps_step = noisy_step.step(proj_noisy, state)[0] - clean_step.step(proj_clean, state)[0]
 
         assert torch.allclose(eps_fwd, eps_step, atol=1e-6)
+
+
+class TestESNCellLeakRate:
+    """Leak-rate validation and forward()/step() leak-semantics parity."""
+
+    def test_default_leak_rate_is_one(self) -> None:
+        """leak_rate defaults to 1.0 (no leaking)."""
+        cell = ESNCell(reservoir_size=8, feedback_size=2)
+
+        assert cell.leak_rate == 1.0
+
+    @pytest.mark.parametrize("leak_rate", [0.01, 0.3, 0.5, 1.0])
+    def test_in_range_leak_rate_accepted(self, leak_rate: float) -> None:
+        """Values in (0, 1] are accepted at construction."""
+        cell = ESNCell(reservoir_size=8, feedback_size=2, leak_rate=leak_rate)
+
+        assert cell.leak_rate == leak_rate
+
+    @pytest.mark.parametrize("leak_rate", [0.0, -0.5, 1.5, 2.0])
+    def test_out_of_range_leak_rate_raises(self, leak_rate: float) -> None:
+        """Values outside (0, 1] raise ValueError at construction."""
+        with pytest.raises(ValueError, match=r"leak_rate must be in \(0, 1\]"):
+            ESNCell(reservoir_size=8, feedback_size=2, leak_rate=leak_rate)
+
+    @pytest.mark.parametrize("leak_rate", [0.0, -0.5, 1.5, 2.0])
+    def test_layer_surfaces_leak_rate_validation(self, leak_rate: float) -> None:
+        """ESNLayer raises the same ValueError as the underlying cell."""
+        with pytest.raises(ValueError, match=r"leak_rate must be in \(0, 1\]"):
+            ESNLayer(reservoir_size=8, feedback_size=2, leak_rate=leak_rate)
+
+    @pytest.mark.parametrize("leak_rate", [0.1, 0.5, 0.9, 1.0])
+    def test_forward_and_step_leak_parity(self, leak_rate: float) -> None:
+        """forward() and the step() fast path apply identical leak semantics.
+
+        The two paths differ only by the fused-vs-unfused recurrent matmul
+        (~1e-6); with noise disabled, an identical leak treatment keeps them
+        within that band for every in-range leak_rate (including 1.0).
+        """
+        cell = ESNCell(reservoir_size=20, feedback_size=3, leak_rate=leak_rate, seed=5)
+        cell.eval()
+        fb = torch.randn(4, 3)
+        state = torch.randn(4, 20)
+
+        out_fwd, _ = cell([fb], state)
+
+        projected = cell.project_inputs([fb])
+        out_step, _ = cell.step(projected, state)
+
+        assert torch.allclose(out_fwd, out_step, atol=1e-6)
+
+    def test_forward_step_parity_matches_leaky_equation(self) -> None:
+        """Both paths realize h_t = lerp(h_{t-1}, tanh(pre), leak_rate)."""
+        torch.manual_seed(8)
+        leak_rate = 0.4
+        cell = ESNCell(reservoir_size=12, feedback_size=4, leak_rate=leak_rate, seed=8)
+        cell.eval()
+        fb = torch.randn(5, 4)
+        state = torch.randn(5, 12)
+
+        pre = fb @ cell.weight_feedback.T + state @ cell.weight_hh.T + cell.bias_h
+        expected = torch.lerp(state, torch.tanh(pre), leak_rate)
+
+        out_fwd, _ = cell([fb], state)
+        out_step, _ = cell.step(cell.project_inputs([fb]), state)
+
+        assert torch.allclose(out_fwd, expected, atol=1e-6)
+        assert torch.allclose(out_step, expected, atol=1e-6)

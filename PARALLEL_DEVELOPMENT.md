@@ -58,11 +58,14 @@ You are the conductor for the resdag roadmap. Read ROADMAP.md (strategy) and thi
 1. Sync: git fetch --prune origin; clean merged worktrees (§3);
    run `python .agent-planning/roadmap_build/maintenance.py --execute` to flip newly-unblocked issues.
 2. Pick the next 5 highest-priority UNASSIGNED status:ready issues whose `## Files` DO NOT OVERLAP.
+   EXCLUDE issues labelled `needs:dedicated-session` (those are off-limits to batch dispatch):
+     gh issue list -R El3ssar/resdag --search \
+       'is:open is:issue label:status:ready -label:needs:dedicated-session no:assignee'
    Read `## Files` from each ISSUE BODY (`gh issue view <n>`) — NOT from deploy_plan.json (it doesn't
    know the newest tickets). Never batch two issues touching the same file; the frequent collisions are
    src/resdag/__init__.py, layers/cells/esn_cell.py, layers/reservoirs/base_reservoir.py,
    core/model.py, hpo/run.py — at most ONE issue per shared file per batch.
-   SKIP anything in the "single-session list" (§1c) and report it for a dedicated session instead.
+   If you find fewer than 5 truly non-overlapping issues, dispatch fewer — never batch a collision.
 3. Pre-create each worktree sequentially (avoids git-lock races), claim each issue, then launch one
    Opus BACKGROUND worker per issue with prompt (a), each in its own .claude/worktrees/<type>-<slug>.
 4. Report each PR link + per-check result. DO NOT merge — leave them for the human.
@@ -84,7 +87,8 @@ session because it is <design-heavy / hardware-dependent / touches CI / defines 
 - PR into main with `Closes #<n>`; DO NOT merge — walk me through it first.
 ```
 
-**Single-session list — do NOT background-batch these:**
+**Single-session list — do NOT background-batch these.** Every such issue carries the
+**`needs:dedicated-session`** label, so the conductor query in §1b/§4 auto-excludes them. Categories:
 
 | Category | Why | Examples |
 |---|---|---|
@@ -154,11 +158,12 @@ The `commit-commands:clean_gone` skill does the `[gone]` cleanup as a one-shot.
 ## 4. Picking the next issue
 
 ```bash
-gh issue list -R El3ssar/resdag --state open --label "status:ready" --limit 400 \
-  --json number,title,assignees,labels \
-  --jq 'map(select(.assignees|length==0))
-        | sort_by( (.labels|map(.name)|map(select(startswith("priority:")))[0] // "priority:P9") )
+# Batchable ready issues (excludes those needing a dedicated session), highest priority first:
+gh issue list -R El3ssar/resdag --limit 400 --json number,title,assignees,labels \
+  --search 'is:open is:issue label:status:ready -label:needs:dedicated-session no:assignee' \
+  --jq 'sort_by( (.labels|map(.name)|map(select(startswith("priority:")))[0] // "priority:P9") )
         | .[] | "\(.number)\t\(.title)"'
+# (Drop the `-label:needs:dedicated-session` filter to also see dedicated-session issues.)
 ```
 
 Take the top one (or, for a conductor, the top non-overlapping batch). **Always re-read the body and

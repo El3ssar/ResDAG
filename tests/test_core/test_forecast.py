@@ -745,3 +745,227 @@ class TestCompiledForecast:
         with pytest.warns(RuntimeWarning, match="needs torch>="):
             result = model.forecast(warmup, horizon=20, compile=True)
         assert (eager - result).abs().max().item() < 1e-10
+
+
+def _build_trainable_model(
+    feedback_size: int = 2,
+    reservoir_size: int = 32,
+    seed: int = 0,
+) -> tuple[ESNModel, ESNLayer]:
+    """A fully trainable, BPTT-ready model.
+
+    The reservoir is ``trainable=True`` with ``detach_state_between_calls=False``
+    so gradients flow across the warmup→forecast seam, and the readout is
+    ``trainable=True`` so it carries gradients too (rather than being frozen as a
+    ridge-fit layer normally is).
+    """
+    torch.manual_seed(seed)
+    inp = Input(shape=(20, feedback_size))
+    reservoir = ESNLayer(
+        reservoir_size=reservoir_size,
+        feedback_size=feedback_size,
+        spectral_radius=0.9,
+        trainable=True,
+    )
+    reservoir.detach_state_between_calls = False
+    states = reservoir(inp)
+    out = CGReadoutLayer(reservoir_size, feedback_size, name="output", trainable=True)(states)
+    model = ESNModel(inp, out)
+    return model, reservoir
+
+
+class TestDifferentiableForecast:
+    """``no_grad`` flag on warmup / forecast / windowed_forecast (#264)."""
+
+    # ── Default path is unchanged (no_grad) ───────────────────────────────
+
+    def test_forecast_default_is_no_grad(self, make_tiny_model) -> None:
+        """Default ``forecast(...)`` builds no autograd graph."""
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        model.reset_reservoirs()
+        preds = model.forecast(warmup, horizon=10)
+        assert isinstance(preds, torch.Tensor)
+        assert not preds.requires_grad
+        assert preds.grad_fn is None
+
+    def test_explicit_no_grad_true_matches_default_bitwise(self, make_tiny_model) -> None:
+        """``no_grad=True`` is bit-for-bit identical to the default."""
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        model.reset_reservoirs()
+        default = model.forecast(warmup, horizon=15)
+        model.reset_reservoirs()
+        explicit = model.forecast(warmup, horizon=15, no_grad=True)
+        assert torch.equal(default, explicit)
+
+    def test_warmup_default_is_no_grad(self, make_tiny_model) -> None:
+        """Default ``warmup(...)`` output carries no grad graph."""
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        model.reset_reservoirs()
+        out = model.warmup(warmup, return_outputs=True)
+        assert isinstance(out, torch.Tensor)
+        assert not out.requires_grad
+
+    def test_windowed_forecast_default_is_no_grad(self, make_tiny_model) -> None:
+        """Default ``windowed_forecast(...)`` is graph-free."""
+        model = make_tiny_model(feedback_size=3)
+        series = torch.randn(1, 80, 3)
+        model.reset_reservoirs()
+        recon = model.windowed_forecast(series, predict_len=10, teacher_len=8)
+        assert isinstance(recon, torch.Tensor)
+        assert not recon.requires_grad
+
+    def test_no_grad_false_values_match_no_grad_true(self, make_tiny_model) -> None:
+        """Keeping the graph must not change the produced numbers."""
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        model.reset_reservoirs()
+        frozen = model.forecast(warmup, horizon=12, no_grad=True)
+        model.reset_reservoirs()
+        live = model.forecast(warmup, horizon=12, no_grad=False)
+        assert torch.allclose(frozen, live.detach(), atol=1e-6)
+
+    # ── Differentiable path produces finite grads ─────────────────────────
+
+    def test_forecast_no_grad_false_builds_graph(self) -> None:
+        """``forecast(no_grad=False)`` returns a grad-tracked tensor."""
+        model, _ = _build_trainable_model()
+        warmup = torch.randn(1, 20, 2)
+        model.reset_reservoirs()
+        preds = model.forecast(warmup, horizon=5, no_grad=False)
+        assert isinstance(preds, torch.Tensor)
+        assert preds.requires_grad
+        assert preds.grad_fn is not None
+
+    def test_backward_reaches_reservoir_and_readout(self) -> None:
+        """``.backward()`` produces finite grads on reservoir + readout params."""
+        model, reservoir = _build_trainable_model()
+        warmup = torch.randn(1, 20, 2)
+        model.reset_reservoirs()
+        preds = model.forecast(warmup, horizon=4, no_grad=False)
+        loss = (preds**2).mean()
+        loss.backward()
+
+        readouts = [m for m in model.modules() if isinstance(m, CGReadoutLayer)]
+        assert readouts, "expected a readout layer"
+        readout = readouts[0]
+        assert readout.weight.grad is not None
+        assert torch.isfinite(readout.weight.grad).all()
+
+        res_grads = [
+            p.grad for p in reservoir.parameters() if p.requires_grad and p.grad is not None
+        ]
+        assert res_grads, "no reservoir parameter received a gradient"
+        assert all(torch.isfinite(g).all() for g in res_grads)
+
+    def test_backward_reaches_grad_tracked_input(self, make_tiny_model) -> None:
+        """Gradients flow back to a ``requires_grad`` warmup input."""
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3, requires_grad=True)
+        model.reset_reservoirs()
+        preds = model.forecast(warmup, horizon=3, no_grad=False)
+        preds.sum().backward()
+        assert warmup.grad is not None
+        assert torch.isfinite(warmup.grad).all()
+
+    def test_training_loop_decreases_loss(self) -> None:
+        """A trainable reservoir + readout trained on a 2-step forecast loss improves."""
+        model, _ = _build_trainable_model(seed=1)
+        torch.manual_seed(123)
+        warmup = torch.randn(1, 20, 2)
+        target = torch.randn(1, 2, 2)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+
+        def step_loss() -> torch.Tensor:
+            model.reset_reservoirs()
+            preds = model.forecast(warmup, horizon=2, no_grad=False)
+            return ((preds - target) ** 2).mean()
+
+        initial = step_loss().item()
+        for _ in range(40):
+            optimizer.zero_grad()
+            loss = step_loss()
+            loss.backward()
+            optimizer.step()
+        final = step_loss().item()
+        assert final < initial, f"loss did not decrease: {initial:.5f} -> {final:.5f}"
+
+    def test_warmup_no_grad_false_builds_graph(self) -> None:
+        """``warmup(no_grad=False)`` keeps the teacher-forced graph."""
+        model, _ = _build_trainable_model()
+        warmup = torch.randn(1, 20, 2)
+        model.reset_reservoirs()
+        out = model.warmup(warmup, return_outputs=True, no_grad=False)
+        assert isinstance(out, torch.Tensor)
+        assert out.requires_grad
+        out.sum().backward()
+        readouts = [m for m in model.modules() if isinstance(m, CGReadoutLayer)]
+        assert readouts[0].weight.grad is not None
+
+    def test_windowed_forecast_no_grad_false_is_differentiable(self) -> None:
+        """Gap-fill reconstruction backpropagates into the model on the gaps."""
+        model, reservoir = _build_trainable_model()
+        series = torch.randn(1, 60, 2)
+        model.reset_reservoirs()
+        recon, mask = model.windowed_forecast(
+            series, predict_len=5, teacher_len=8, return_mask=True, no_grad=False
+        )
+        assert recon.requires_grad
+        # Score only the forecast gaps (the values the model had to infer).
+        gap_loss = ((recon[:, ~mask] - series[:, ~mask]) ** 2).mean()
+        gap_loss.backward()
+        res_grads = [
+            p.grad for p in reservoir.parameters() if p.requires_grad and p.grad is not None
+        ]
+        assert res_grads, "no reservoir parameter received a gradient"
+        assert all(torch.isfinite(g).all() for g in res_grads)
+
+    def test_multi_output_no_grad_false_grad_flows(self) -> None:
+        """Multi-output models keep grad on every output under ``no_grad=False``."""
+        torch.manual_seed(0)
+        feedback = Input(shape=(20, 2))
+        reservoir = ESNLayer(
+            reservoir_size=32, feedback_size=2, spectral_radius=0.9, trainable=True
+        )
+        reservoir.detach_state_between_calls = False
+        states = reservoir(feedback)
+        main = CGReadoutLayer(32, 2, name="main", trainable=True)(states)
+        aux = CGReadoutLayer(32, 3, name="aux", trainable=True)(states)
+        model = ESNModel(feedback, [main, aux])
+
+        warmup = torch.randn(1, 20, 2)
+        model.reset_reservoirs()
+        preds = model.forecast(warmup, horizon=4, no_grad=False)
+        assert isinstance(preds, tuple)
+        assert preds[0].shape == (1, 4, 2)
+        assert preds[1].shape == (1, 4, 3)
+        assert all(p.requires_grad for p in preds)
+        (preds[0].sum() + preds[1].sum()).backward()
+        res_grads = [
+            p.grad for p in reservoir.parameters() if p.requires_grad and p.grad is not None
+        ]
+        assert res_grads and all(torch.isfinite(g).all() for g in res_grads)
+
+    # ── Guards & interactions ─────────────────────────────────────────────
+
+    def test_compile_with_no_grad_false_raises(self, make_tiny_model) -> None:
+        """``compile=True`` and ``no_grad=False`` are mutually exclusive."""
+        model = make_tiny_model(feedback_size=3)
+        warmup = torch.randn(1, 20, 3)
+        model.reset_reservoirs()
+        with pytest.raises(ValueError, match="incompatible with no_grad=False"):
+            model.forecast(warmup, horizon=5, compile=True, no_grad=False)
+
+    def test_return_warmup_no_grad_false_grad_flows(self) -> None:
+        """``return_warmup=True`` with ``no_grad=False`` keeps the seam graph."""
+        model, _ = _build_trainable_model()
+        warmup = torch.randn(1, 20, 2)
+        model.reset_reservoirs()
+        full = model.forecast(warmup, horizon=3, return_warmup=True, no_grad=False)
+        assert isinstance(full, torch.Tensor)
+        assert full.shape == (1, 23, 2)
+        assert full.requires_grad
+        full.sum().backward()  # must not raise

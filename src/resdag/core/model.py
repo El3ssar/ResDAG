@@ -41,7 +41,9 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 from __future__ import annotations
 
 import colorsys
+import contextlib
 import copy
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +61,27 @@ from resdag.layers.reservoirs import BaseReservoirLayer
 
 # Re-export for convenience
 Input = ps.Input
+
+
+def _grad_context(no_grad: bool) -> AbstractContextManager[Any]:
+    """
+    Select the autograd context for a rollout helper.
+
+    Parameters
+    ----------
+    no_grad : bool
+        If ``True``, return :func:`torch.no_grad` so the rollout builds no
+        autograd graph (the default — preserves behaviour and memory cost of
+        the historical ``@torch.no_grad()`` decorators).  If ``False``, return
+        :class:`contextlib.nullcontext` so the per-step calls build a
+        backpropagatable graph (BPTT through the rollout).
+
+    Returns
+    -------
+    contextlib.AbstractContextManager
+        ``torch.no_grad()`` when ``no_grad=True``, else ``contextlib.nullcontext()``.
+    """
+    return torch.no_grad() if no_grad else contextlib.nullcontext()
 
 
 class ESNModel(ps.SymbolicModel):
@@ -863,12 +886,12 @@ class ESNModel(ps.SymbolicModel):
                 "graphviz not installed: pip install graphviz && apt install graphviz"
             )
 
-    @torch.no_grad()
     def warmup(
         self,
         *inputs: torch.Tensor,
         return_outputs: bool = False,
         reset: bool = True,
+        no_grad: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, ...] | None:
         """
         Teacher-forced warmup to synchronize reservoir states.
@@ -888,6 +911,20 @@ class ESNModel(ps.SymbolicModel):
             If True, reservoir states are reset to ``None`` before the
             warmup pass.  Set to ``False`` only if you want to continue
             from a previously saved state — typical workflows always reset.
+        no_grad : bool, default=True
+            If True (default), the warmup pass runs under :func:`torch.no_grad`
+            — no autograd graph is built and behaviour/performance are identical
+            to the historical ``@torch.no_grad()`` decorator.  Set ``False`` to
+            keep the graph so the teacher-forced pass is part of a wider
+            backpropagation (e.g. BPTT over the warmup→forecast seam).
+
+            For gradients to flow *across* the warmup→forecast boundary the
+            reservoir must also keep its carried state attached: set
+            ``reservoir.detach_state_between_calls = False`` (it defaults to
+            ``True``, which detaches the stored state at every forward call —
+            see :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`).
+            Note that ``no_grad=False`` retains the full warmup graph in memory,
+            so cost grows with the warmup length.
 
         Returns
         -------
@@ -932,7 +969,8 @@ class ESNModel(ps.SymbolicModel):
         if reset:
             self.reset_reservoirs()
 
-        output = self(*inputs)
+        with _grad_context(no_grad):
+            output = self(*inputs)
 
         return output if return_outputs else None
 
@@ -956,7 +994,6 @@ class ESNModel(ps.SymbolicModel):
         self._flat_step_cache: tuple[tuple[SymbolicData, ...], FlatStep] = (self.outputs, flat)
         return flat
 
-    @torch.no_grad()
     def forecast(
         self,
         warmup_inputs: tuple[torch.Tensor, ...] | torch.Tensor,
@@ -967,6 +1004,7 @@ class ESNModel(ps.SymbolicModel):
         return_warmup: bool = False,
         reset: bool = True,
         compile: bool = False,
+        no_grad: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
         """
         Two-phase forecast: teacher-forced warmup + autoregressive generation.
@@ -1014,6 +1052,21 @@ class ESNModel(ps.SymbolicModel):
             back to the eager flat step (emitting a :class:`RuntimeWarning`).
             The default eager path is already a flat, graph-free step engine,
             so ``compile=False`` is fast; ``compile=True`` is an opt-in extra.
+        no_grad : bool, default=True
+            If True (default), the whole two-phase forecast runs under
+            :func:`torch.no_grad` — no autograd graph is built and the result is
+            bit-for-bit and performance-wise identical to the historical
+            ``@torch.no_grad()`` decorator.  Set ``False`` to make the rollout
+            **differentiable**: the warmup and every autoregressive step then
+            build a backpropagation-through-time (BPTT) graph, so calling
+            ``.backward()`` on a loss over the returned tensor reaches the
+            trainable reservoir and readout parameters (and any input that
+            ``requires_grad``).  See Notes for the memory cost and the
+            ``detach_state_between_calls`` interaction.
+
+            ``no_grad=False`` is incompatible with ``compile=True`` (the
+            ``reduce-overhead``/cudagraph step path does not support autograd);
+            requesting both raises ``ValueError``.
 
         Returns
         -------
@@ -1024,11 +1077,16 @@ class ESNModel(ps.SymbolicModel):
 
             For multi-output models: tuple of tensors with the same structure.
 
+            With ``no_grad=False`` the returned tensor(s) carry ``grad_fn`` /
+            ``requires_grad=True`` whenever any participating parameter or input
+            requires grad.
+
         Raises
         ------
         ValueError
             If no warmup inputs are provided, if ``forecast_inputs`` is required
-            but missing, or if dimensions don't match.
+            but missing, if dimensions don't match, or if both ``compile=True``
+            and ``no_grad=False`` are requested.
 
         Notes
         -----
@@ -1062,6 +1120,26 @@ class ESNModel(ps.SymbolicModel):
         autoregressive steps** (the teacher-forced warmup still uses the full
         graph path).  The teacher-forced warmup runs the standard graph forward.
 
+        **Differentiable rollout (``no_grad=False``).** By default the rollout
+        is wrapped in :func:`torch.no_grad` for speed and memory.  Pass
+        ``no_grad=False`` to keep the autograd graph so gradients flow through
+        the full BPTT unroll — the canonical building block for multi-step
+        training losses (scheduled sampling, tuning a trainable reservoir on
+        forecast error).  Two things to keep in mind:
+
+        - *Memory.* The graph retains every intermediate from the warmup and all
+          ``horizon`` steps, so peak memory grows linearly with
+          ``warmup_steps + horizon``.  Keep the horizon modest, or truncate it,
+          when backpropagating.
+        - *Cross-seam gradients.* For the gradient to flow from a forecast step
+          back through the warmup, the reservoir must not detach its carried
+          state between the warmup forward and the autoregressive loop.  Set
+          ``reservoir.detach_state_between_calls = False`` (it defaults to
+          ``True``; the detach happens in
+          :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.forward`).
+          The autoregressive loop itself threads the state explicitly and never
+          detaches, so gradients always flow *within* the forecast window.
+
         Examples
         --------
         Simple feedback-only model:
@@ -1089,6 +1167,19 @@ class ESNModel(ps.SymbolicModel):
         >>> print(full_output.shape)  # warmup_steps + horizon
         torch.Size([1, 150, 3])
 
+        Differentiable multi-step rollout — train a trainable reservoir on a
+        forecast-error loss with BPTT:
+
+        >>> reservoir.trainable = True             # an ESNLayer(trainable=True)
+        >>> reservoir.detach_state_between_calls = False  # keep the seam graph
+        >>> opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+        >>> for _ in range(steps):
+        ...     opt.zero_grad()
+        ...     preds = model.forecast(warmup_data, horizon=2, no_grad=False)
+        ...     loss = ((preds - target) ** 2).mean()
+        ...     loss.backward()           # reaches reservoir + readout params
+        ...     opt.step()
+
         See Also
         --------
         warmup : Teacher-forced warmup only.
@@ -1106,6 +1197,16 @@ class ESNModel(ps.SymbolicModel):
         # a downstream IndexError / negative-dimension RuntimeError.
         if horizon < 1:
             raise ValueError(f"horizon must be a positive integer, got {horizon}")
+
+        # A differentiable rollout and the cudagraph/reduce-overhead compile
+        # path are mutually exclusive: the compiled step reuses static output
+        # buffers and is built for inference, so it cannot back-propagate.
+        if compile and not no_grad:
+            raise ValueError(
+                "forecast(compile=True) is incompatible with no_grad=False: the "
+                "reduce-overhead/cudagraph step path does not support autograd. "
+                "Use no_grad=False with compile=False for a differentiable rollout."
+            )
 
         # Determine if model has driving inputs
         num_drivers = len(warmup_inputs) - 1
@@ -1149,8 +1250,11 @@ class ESNModel(ps.SymbolicModel):
 
         # Phase 1: Warmup (handles reset internally). With ``return_outputs=True``
         # the result is never None — a single tensor for single-output models, a
-        # tuple of tensors for multi-output models.
-        warmup_outputs = self.warmup(*warmup_inputs, return_outputs=True, reset=reset)
+        # tuple of tensors for multi-output models. ``no_grad`` is threaded
+        # through so the warmup graph is kept (or not) consistently with Phase 2.
+        warmup_outputs = self.warmup(
+            *warmup_inputs, return_outputs=True, reset=reset, no_grad=no_grad
+        )
 
         # Determine output structure
         output_shape = self.output_shape
@@ -1189,104 +1293,141 @@ class ESNModel(ps.SymbolicModel):
         # ``initial_feedback`` (if given) or the last warmup output — no
         # teacher-forced frame is emitted, so slot 0 is a genuine forecast step
         # and the warmup/forecast seam is not duplicated.
-        flat = self._get_flat_step()
+        #
+        # The whole phase runs under ``_grad_context(no_grad)``: ``torch.no_grad``
+        # by default (graph-free, the historical behaviour), or ``nullcontext``
+        # when ``no_grad=False`` so the per-step calls build a BPTT graph.
+        with _grad_context(no_grad):
+            flat = self._get_flat_step()
 
-        # Resolve reservoir states (warmup leaves them set; init any that are
-        # somehow missing). They are threaded through ``step`` explicitly rather
-        # than mutated in place each iteration.
-        states: list[torch.Tensor] = []
-        for reservoir in flat.reservoir_layers:
-            if reservoir.state is None:
-                reservoir._maybe_init_state(batch_size, device, dtype)
-            assert reservoir.state is not None  # narrows for mypy
-            states.append(reservoir.state)
+            # Resolve reservoir states (warmup leaves them set; init any that are
+            # somehow missing). They are threaded through ``step`` explicitly rather
+            # than mutated in place each iteration.
+            states: list[torch.Tensor] = []
+            for reservoir in flat.reservoir_layers:
+                if reservoir.state is None:
+                    reservoir._maybe_init_state(batch_size, device, dtype)
+                assert reservoir.state is not None  # narrows for mypy
+                states.append(reservoir.state)
 
-        # Per-output feature dimensions and the (batch, 1, feedback_dim) seed.
-        # The engine threads 3-D single-step slices so every non-reservoir layer
-        # sees exactly what the graph path would; only the reservoir update is
-        # squeezed to 2-D internally.
-        if multi_output:
-            assert isinstance(warmup_outputs, tuple)  # guaranteed by multi_output
-            out_dims = [out.shape[-1] for out in warmup_outputs]
-            seed = (
-                initial_feedback if initial_feedback is not None else warmup_outputs[0][:, -1:, :]
-            )
-        else:
-            assert isinstance(warmup_outputs, torch.Tensor)  # guaranteed by single output
-            out_dims = [warmup_outputs.shape[-1]]
-            seed = initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
-        current_feedback = seed  # (batch, 1, feedback_dim)
-
-        n_out = len(out_dims)
-        forecast_buffers = [
-            torch.empty(batch_size, horizon, dim, dtype=dtype, device=device) for dim in out_dims
-        ]
-
-        # Optionally compile a chunked step. ``done`` tracks how many steps the
-        # compiled path has produced; the eager single-step loop below fills the
-        # rest (the whole horizon when not compiling, or the < chunk remainder).
-        done = 0
-        if compile:
-            chunk = min(DEFAULT_COMPILE_CHUNK, horizon)
-            compiled_chunk = resolve_chunk_step(
-                flat,
-                chunk=chunk,
-                n_outputs=n_out,
-                mode="reduce-overhead",
-                trial_feedback=current_feedback,
-                trial_drivers=tuple(d[:, 0:chunk, :] for d in drivers),
-                trial_states=states,
-            )
-            if compiled_chunk is not None:
-                for _ in range(horizon // chunk):
-                    driver_chunk = tuple(d[:, done : done + chunk, :] for d in drivers)
-                    # cudagraph trees reuse static output buffers; mark a new
-                    # step so this replay's outputs may feed the next, and clone
-                    # the tensors carried across the chunk boundary.
-                    torch.compiler.cudagraph_mark_step_begin()
-                    blocks, states, current_feedback = compiled_chunk(
-                        current_feedback, driver_chunk, states
-                    )
-                    for i in range(n_out):
-                        forecast_buffers[i][:, done : done + chunk, :] = blocks[i]
-                    current_feedback = current_feedback.clone()
-                    states = [state.clone() for state in states]
-                    done += chunk
-
-        # Eager single-step loop: the whole horizon when not compiling, or the
-        # trailing remainder the chunked path could not cover.
-        for t in range(done, horizon):
-            if has_drivers:
-                step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
-            else:
-                step_inputs = (current_feedback,)
-            step_outputs, states = flat.step(step_inputs, states)
-            for i in range(n_out):
-                forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
-            current_feedback = step_outputs[0]
-
-        # Persist the final reservoir states so a follow-up ``forecast(reset=False)``
-        # or ``get_reservoir_states()`` sees them, mirroring the in-place mutation
-        # of the legacy per-step loop. Clone so a compiled step's static output
-        # buffers cannot be overwritten under the stored state.
-        for reservoir, state in zip(flat.reservoir_layers, states):
-            reservoir.state = state.clone()
-
-        if multi_output:
-            if return_warmup:
-                assert isinstance(warmup_outputs, tuple)
-                return tuple(
-                    torch.cat([warmup_outputs[i], forecast_buffers[i]], dim=1)
-                    for i in range(len(forecast_buffers))
+            # Per-output feature dimensions and the (batch, 1, feedback_dim) seed.
+            # The engine threads 3-D single-step slices so every non-reservoir layer
+            # sees exactly what the graph path would; only the reservoir update is
+            # squeezed to 2-D internally.
+            if multi_output:
+                assert isinstance(warmup_outputs, tuple)  # guaranteed by multi_output
+                out_dims = [out.shape[-1] for out in warmup_outputs]
+                seed = (
+                    initial_feedback
+                    if initial_feedback is not None
+                    else warmup_outputs[0][:, -1:, :]
                 )
-            return tuple(forecast_buffers)
+            else:
+                assert isinstance(warmup_outputs, torch.Tensor)  # guaranteed by single output
+                out_dims = [warmup_outputs.shape[-1]]
+                seed = (
+                    initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
+                )
+            current_feedback = seed  # (batch, 1, feedback_dim)
 
-        if return_warmup:
-            assert isinstance(warmup_outputs, torch.Tensor)
-            return torch.cat([warmup_outputs, forecast_buffers[0]], dim=1)
-        return forecast_buffers[0]
+            n_out = len(out_dims)
 
-    @torch.no_grad()
+            # Two assembly strategies share the same per-step engine:
+            #
+            # * default (``no_grad=True``): write each step into a preallocated
+            #   buffer — minimal allocation, no graph anyway;
+            # * differentiable (``no_grad=False``): collect per-step slices and
+            #   ``torch.cat`` them at the end.  In-place index writes into a
+            #   ``torch.empty`` buffer would graft autograd-tracked values onto an
+            #   uninitialised tensor (a ``CopySlices`` per step); accumulating in a
+            #   list and concatenating keeps the BPTT graph clean and standard.
+            forecast_buffers: list[torch.Tensor] = []
+            step_accumulators: list[list[torch.Tensor]] = []
+            if no_grad:
+                forecast_buffers = [
+                    torch.empty(batch_size, horizon, dim, dtype=dtype, device=device)
+                    for dim in out_dims
+                ]
+            else:
+                step_accumulators = [[] for _ in range(n_out)]
+
+            # Optionally compile a chunked step. ``done`` tracks how many steps the
+            # compiled path has produced; the eager single-step loop below fills the
+            # rest (the whole horizon when not compiling, or the < chunk remainder).
+            # The compile path is gated to ``no_grad=True`` upfront, so it only ever
+            # writes into ``forecast_buffers``.
+            done = 0
+            if compile:
+                chunk = min(DEFAULT_COMPILE_CHUNK, horizon)
+                compiled_chunk = resolve_chunk_step(
+                    flat,
+                    chunk=chunk,
+                    n_outputs=n_out,
+                    mode="reduce-overhead",
+                    trial_feedback=current_feedback,
+                    trial_drivers=tuple(d[:, 0:chunk, :] for d in drivers),
+                    trial_states=states,
+                )
+                if compiled_chunk is not None:
+                    for _ in range(horizon // chunk):
+                        driver_chunk = tuple(d[:, done : done + chunk, :] for d in drivers)
+                        # cudagraph trees reuse static output buffers; mark a new
+                        # step so this replay's outputs may feed the next, and clone
+                        # the tensors carried across the chunk boundary.
+                        torch.compiler.cudagraph_mark_step_begin()
+                        blocks, states, current_feedback = compiled_chunk(
+                            current_feedback, driver_chunk, states
+                        )
+                        for i in range(n_out):
+                            forecast_buffers[i][:, done : done + chunk, :] = blocks[i]
+                        current_feedback = current_feedback.clone()
+                        states = [state.clone() for state in states]
+                        done += chunk
+
+            # Eager single-step loop: the whole horizon when not compiling, or the
+            # trailing remainder the chunked path could not cover.
+            for t in range(done, horizon):
+                if has_drivers:
+                    step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
+                else:
+                    step_inputs = (current_feedback,)
+                step_outputs, states = flat.step(step_inputs, states)
+                if no_grad:
+                    for i in range(n_out):
+                        forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
+                else:
+                    for i in range(n_out):
+                        step_accumulators[i].append(step_outputs[i])
+                current_feedback = step_outputs[0]
+
+            if not no_grad:
+                # Concatenate the per-step (batch, 1, dim) slices into the full
+                # (batch, horizon, dim) forecast for each output.
+                forecast_buffers = [torch.cat(acc, dim=1) for acc in step_accumulators]
+
+            # Persist the final reservoir states so a follow-up
+            # ``forecast(reset=False)`` or ``get_reservoir_states()`` sees them,
+            # mirroring the in-place mutation of the legacy per-step loop. Clone
+            # so a compiled step's static output buffers cannot be overwritten
+            # under the stored state. With ``no_grad=False`` the clone keeps its
+            # grad_fn, so a continuation forecast shares the rollout graph.
+            for reservoir, state in zip(flat.reservoir_layers, states):
+                reservoir.state = state.clone()
+
+            if multi_output:
+                if return_warmup:
+                    assert isinstance(warmup_outputs, tuple)
+                    return tuple(
+                        torch.cat([warmup_outputs[i], forecast_buffers[i]], dim=1)
+                        for i in range(len(forecast_buffers))
+                    )
+                return tuple(forecast_buffers)
+
+            if return_warmup:
+                assert isinstance(warmup_outputs, torch.Tensor)
+                return torch.cat([warmup_outputs, forecast_buffers[0]], dim=1)
+            return forecast_buffers[0]
+
     def windowed_forecast(
         self,
         series: torch.Tensor,
@@ -1296,6 +1437,7 @@ class ESNModel(ps.SymbolicModel):
         warmup_len: int | None = None,
         reset: bool = True,
         return_mask: bool = False,
+        no_grad: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Gap-filling reconstruction by alternating re-sync and free-running.
@@ -1356,6 +1498,19 @@ class ESNModel(ps.SymbolicModel):
             If True, also return a 1-D boolean mask of length ``T`` that is
             True where the reconstruction is a real value and False where it is
             a model forecast (see Returns).
+        no_grad : bool, default=True
+            If True (default), every cycle runs under :func:`torch.no_grad` —
+            graph-free and identical to the historical ``@torch.no_grad()``
+            decorator.  Set ``False`` to make the gap-fill reconstruction
+            **differentiable**: the value threaded into the reconstruction on
+            every forecast segment carries an autograd graph, so a loss over the
+            gaps (``reconstruction[:, ~mask]``) can be back-propagated through the
+            BPTT unroll of each window into the trainable reservoir and readout
+            parameters.  The flag is threaded into the per-cycle :meth:`forecast`
+            calls; the same memory cost and
+            ``reservoir.detach_state_between_calls`` caveats documented on
+            :meth:`forecast` apply, multiplied across cycles (state is carried
+            across windows, so detaching it severs gradients window-to-window).
 
         Returns
         -------
@@ -1444,47 +1599,53 @@ class ESNModel(ps.SymbolicModel):
                     f"{total_steps}; drivers must cover the full timeline."
                 )
 
+        # ``no_grad`` is also threaded into each per-cycle ``forecast`` below; the
+        # context here additionally covers the in-place reconstruction writes so
+        # that, when differentiable, the forecast segments graft their autograd
+        # graph onto the (cloned) reconstruction via ``CopySlices``.
         reconstruction = series.clone()
         mask = torch.ones(total_steps, dtype=torch.bool, device=series.device)
 
         pos = 0
         window_len = warmup_len
         ran_a_cycle = False
-        while True:
-            teacher_end = pos + window_len
-            # Stop once a full re-sync window leaves no room to forecast. The
-            # guard guarantees ``teacher_end < total_steps`` below, so the gap
-            # (clamped to whatever remains) is always at least one step.
-            if teacher_end >= total_steps:
-                break
-            gap = min(predict_len, total_steps - teacher_end)
+        with _grad_context(no_grad):
+            while True:
+                teacher_end = pos + window_len
+                # Stop once a full re-sync window leaves no room to forecast. The
+                # guard guarantees ``teacher_end < total_steps`` below, so the gap
+                # (clamped to whatever remains) is always at least one step.
+                if teacher_end >= total_steps:
+                    break
+                gap = min(predict_len, total_steps - teacher_end)
 
-            teacher_window = series[:, pos:teacher_end, :]
-            if num_drivers:
-                warmup_inputs: tuple[torch.Tensor, ...] = (
-                    teacher_window,
-                    *(d[:, pos:teacher_end, :] for d in driver_series),
+                teacher_window = series[:, pos:teacher_end, :]
+                if num_drivers:
+                    warmup_inputs: tuple[torch.Tensor, ...] = (
+                        teacher_window,
+                        *(d[:, pos:teacher_end, :] for d in driver_series),
+                    )
+                    forecast_inputs: tuple[torch.Tensor, ...] | None = tuple(
+                        d[:, teacher_end : teacher_end + gap, :] for d in driver_series
+                    )
+                else:
+                    warmup_inputs = (teacher_window,)
+                    forecast_inputs = None
+
+                preds = self.forecast(
+                    warmup_inputs,
+                    forecast_inputs=forecast_inputs,
+                    horizon=gap,
+                    reset=reset and not ran_a_cycle,
+                    no_grad=no_grad,
                 )
-                forecast_inputs: tuple[torch.Tensor, ...] | None = tuple(
-                    d[:, teacher_end : teacher_end + gap, :] for d in driver_series
-                )
-            else:
-                warmup_inputs = (teacher_window,)
-                forecast_inputs = None
+                feedback_preds = preds[0] if isinstance(preds, tuple) else preds
+                reconstruction[:, teacher_end : teacher_end + gap, :] = feedback_preds
+                mask[teacher_end : teacher_end + gap] = False
 
-            preds = self.forecast(
-                warmup_inputs,
-                forecast_inputs=forecast_inputs,
-                horizon=gap,
-                reset=reset and not ran_a_cycle,
-            )
-            feedback_preds = preds[0] if isinstance(preds, tuple) else preds
-            reconstruction[:, teacher_end : teacher_end + gap, :] = feedback_preds
-            mask[teacher_end : teacher_end + gap] = False
-
-            ran_a_cycle = True
-            pos = teacher_end + gap
-            window_len = teacher_len
+                ran_a_cycle = True
+                pos = teacher_end + gap
+                window_len = teacher_len
 
         if not ran_a_cycle:
             raise ValueError(

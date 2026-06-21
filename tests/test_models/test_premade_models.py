@@ -10,7 +10,9 @@ import pytest
 import torch
 
 from resdag.layers.cells import ESNCell
-from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn
+from resdag.layers.readouts import CGReadoutLayer
+from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn, power_augmented
+from resdag.training import ESNTrainer
 
 
 class TestClassicESN:
@@ -292,6 +294,97 @@ class TestModelComparison:
 
         # Outputs should differ due to different activations
         assert not torch.allclose(out_headless, out_linear, atol=1e-5)
+
+
+DRIVEN_FACTORIES = [
+    ("classic_esn", classic_esn),
+    ("ott_esn", ott_esn),
+    ("power_augmented", power_augmented),
+]
+
+
+class TestDrivenFactories:
+    """Driving/exogenous-input support across the readout factories.
+
+    Each of ``classic_esn``, ``ott_esn`` and ``power_augmented`` accepts an
+    ``input_size`` that wires a second (driving) input into the reservoir while
+    keeping the readout ``in_features`` at ``feedback_size + reservoir_size``.
+    """
+
+    @pytest.mark.parametrize("name, factory", DRIVEN_FACTORIES, ids=lambda v: v)
+    def test_builds_two_input_model(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """With ``input_size`` set the model takes (feedback, driver)."""
+        model = factory(reservoir_size=50, feedback_size=2, output_size=3, input_size=4)
+
+        feedback = torch.randn(4, 20, 2)
+        driver = torch.randn(4, 20, 4)
+        output = model(feedback, driver)
+
+        assert output.shape == (4, 20, 3)
+
+    @pytest.mark.parametrize("name, factory", DRIVEN_FACTORIES, ids=lambda v: v)
+    def test_readout_in_features_excludes_driver(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """Driver stays out of the concat: in_features == feedback + reservoir."""
+        model = factory(reservoir_size=50, feedback_size=2, output_size=3, input_size=4)
+
+        readouts = [m for m in model.modules() if isinstance(m, CGReadoutLayer)]
+        assert readouts, f"{name} should contain a CGReadoutLayer"
+        # feedback_size (2) + reservoir_size (50); the driver (4) is excluded.
+        assert all(r.in_features == 52 for r in readouts)
+
+    @pytest.mark.parametrize("name, factory", DRIVEN_FACTORIES, ids=lambda v: v)
+    def test_input_size_forwarded_to_reservoir(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """The reservoir cell is built with the requested driving-input size."""
+        model = factory(reservoir_size=50, feedback_size=2, output_size=3, input_size=4)
+
+        cells = [m for m in model.modules() if isinstance(m, ESNCell)]
+        assert cells, f"{name} should contain an ESNCell"
+        assert all(c.input_size == 4 for c in cells)
+
+    @pytest.mark.parametrize("name, factory", DRIVEN_FACTORIES, ids=lambda v: v)
+    def test_fit_and_forecast_with_drivers(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """A driven model fits with driver tuples and forecasts with drivers."""
+        torch.manual_seed(0)
+        model = factory(reservoir_size=60, feedback_size=2, output_size=2, input_size=1)
+
+        warmup_fb = torch.randn(1, 30, 2)
+        warmup_dr = torch.randn(1, 30, 1)
+        train_fb = torch.randn(1, 80, 2)
+        train_dr = torch.randn(1, 80, 1)
+        target = torch.randn(1, 80, 2)
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(warmup_fb, warmup_dr),
+            train_inputs=(train_fb, train_dr),
+            targets={"output": target},
+        )
+
+        future_dr = torch.randn(1, 40, 1)
+        preds = model.forecast(
+            (warmup_fb, warmup_dr),
+            forecast_inputs=(future_dr,),
+            horizon=40,
+        )
+
+        assert preds.shape == (1, 40, 2)
+        assert torch.isfinite(preds).all()
+
+    @pytest.mark.parametrize("name, factory", DRIVEN_FACTORIES, ids=lambda v: v)
+    def test_non_driven_path_unchanged(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """Default ``input_size=None`` keeps the single-input behavior."""
+        model = factory(reservoir_size=50, feedback_size=2, output_size=3)
+
+        x = torch.randn(4, 20, 2)
+        output = model(x)
+        assert output.shape == (4, 20, 3)
+
+        cells = [m for m in model.modules() if isinstance(m, ESNCell)]
+        assert cells
+        # No driving input means a zero-size driving-weight placeholder.
+        assert all((c.input_size or 0) == 0 for c in cells)
+
+        readouts = [m for m in model.modules() if isinstance(m, CGReadoutLayer)]
+        assert all(r.in_features == 52 for r in readouts)
 
 
 @pytest.mark.gpu

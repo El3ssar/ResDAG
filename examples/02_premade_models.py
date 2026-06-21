@@ -5,7 +5,9 @@ What it shows
 1. The six factories: classic_esn, ott_esn, power_augmented, linear_esn,
    headless_esn, coupled_ensemble_esn
 2. What each architecture computes (readout models vs state extractors)
-3. A single comparison table: parameters + short-horizon forecast MSE
+3. Driving/exogenous-input support: build a two-input model with
+   ``input_size``, fit with driver tuples, forecast with ``forecast_inputs``
+4. A single comparison table: parameters + short-horizon forecast MSE
    on the same Lorenz-63 task
 
 Expected runtime: ~5 s on CPU.
@@ -17,7 +19,6 @@ import torch
 
 import resdag as rd
 from resdag.training import ESNTrainer
-
 
 SIZE = 400  # reservoir size shared by all models in the comparison
 
@@ -73,10 +74,56 @@ power_augmented generalization of ott_esn: states**exponent branch
         print(f"{name:<16} trained, forecast shape {tuple(preds.shape)}")
 
     # ------------------------------------------------------------------
-    # 2. Coupled ensemble (N sub-models, shared aggregated feedback)
+    # 2. Driving / exogenous input (input_size)
     # ------------------------------------------------------------------
     print("\n" + "=" * 70)
-    print("2. coupled_ensemble_esn")
+    print("2. Driving inputs: classic_esn, ott_esn, power_augmented")
+    print("=" * 70)
+    print(
+        """
+classic_esn(..., input_size=K) builds a TWO-input model:
+
+    (feedback, driver) -> Reservoir -> Concat(feedback, States) -> CGReadout
+
+The driver feeds the reservoir alongside the autoregressive feedback but is
+kept OUT of the concatenation, so the readout in_features stays
+feedback_size + reservoir_size. Fit with driver tuples, forecast with
+forecast_drivers via the forecast_inputs argument.
+"""
+    )
+
+    # We forecast the first Lorenz variable (feedback) while treating the other
+    # two variables as a known exogenous driver supplied at every step.
+    fb_slice, dr_slice = slice(0, 1), slice(1, 3)  # feedback dim 1, driver dim 2
+
+    driven = rd.classic_esn(SIZE, feedback_size=1, output_size=1, input_size=2, spectral_radius=0.8)
+
+    # readout in_features == feedback_size + reservoir_size (driver excluded)
+    readout = next(m for m in driven.modules() if isinstance(m, rd.CGReadoutLayer))
+    print(f"readout.in_features = {readout.in_features}  (= feedback_size 1 + reservoir {SIZE})")
+
+    ESNTrainer(driven).fit(
+        warmup_inputs=(warmup[:, :, fb_slice], warmup[:, :, dr_slice]),
+        train_inputs=(train[:, :, fb_slice], train[:, :, dr_slice]),
+        targets={"output": target[:, :, fb_slice]},
+    )
+
+    # Forecast: feedback comes from the model's own output; the driver series for
+    # the forecast window is supplied through forecast_inputs.
+    driven_preds = driven.forecast(
+        (f_warmup[:, :, fb_slice], f_warmup[:, :, dr_slice]),
+        forecast_inputs=(val[:, :, dr_slice],),
+        horizon=val.shape[1],
+    )
+    driven_mse = torch.mean((driven_preds - val[:, :, fb_slice]) ** 2).item()
+    print(f"driven classic_esn: forecast shape {tuple(driven_preds.shape)}, MSE {driven_mse:.6f}")
+    print("ott_esn and power_augmented take the same input_size argument.")
+
+    # ------------------------------------------------------------------
+    # 3. Coupled ensemble (N sub-models, shared aggregated feedback)
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("3. coupled_ensemble_esn")
     print("=" * 70)
     print("N independently initialized sub-models forecast together; at every")
     print("autoregressive step all of them get the aggregated (mean) output as")
@@ -101,10 +148,10 @@ power_augmented generalization of ott_esn: states**exponent branch
     print(f"\nEnsemble of {ensemble.n_models} sub-models, forecast shape {tuple(preds.shape)}")
 
     # ------------------------------------------------------------------
-    # 3. State extractors (no readout — they output reservoir states)
+    # 4. State extractors (no readout — they output reservoir states)
     # ------------------------------------------------------------------
     print("\n" + "=" * 70)
-    print("3. State extractors: headless_esn and linear_esn")
+    print("4. State extractors: headless_esn and linear_esn")
     print("=" * 70)
 
     x = torch.randn(4, 100, 3)  # (batch, time, features)
@@ -119,10 +166,10 @@ power_augmented generalization of ott_esn: states**exponent branch
     print("Use cases: reservoir dynamics analysis, custom heads (see 05), ESP checks.")
 
     # ------------------------------------------------------------------
-    # 4. Comparison table
+    # 5. Comparison table
     # ------------------------------------------------------------------
     print("\n" + "=" * 70)
-    print("4. Comparison (same data, same reservoir size, same readout alpha)")
+    print("5. Comparison (same data, same reservoir size, same readout alpha)")
     print("=" * 70)
     header = f"{'model':<22} {'params':>10} {'fit [s]':>8} {'MSE@50 steps':>14}"
     print(header)

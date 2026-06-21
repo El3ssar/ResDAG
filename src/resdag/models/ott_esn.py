@@ -32,6 +32,8 @@ def ott_esn(
     reservoir_size: int,
     feedback_size: int,
     output_size: int,
+    input_size: int | None = None,
+    input_initializer: InitializerSpec | None = None,
     # Reservoir params
     topology: TopologySpec | None = None,
     spectral_radius: float = 0.9,
@@ -66,6 +68,16 @@ def ott_esn(
         Dimension of feedback signal (input features).
     output_size : int
         Dimension of output signal.
+    input_size : int or None, optional
+        Dimension of an optional driving (exogenous) input.  When given, the
+        model takes two inputs ``(feedback, driver)`` and the driver feeds the
+        reservoir alongside the autoregressive feedback.  The driver is kept out
+        of the input concatenation, so the readout ``in_features`` stays
+        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        feedback-only model, unchanged from previous behavior.
+    input_initializer : str, tuple, or InputFeedbackInitializer, optional
+        Initializer for the driving-input weights.  Same format as
+        ``feedback_initializer``.  Only used when ``input_size`` is given.
     topology : str, tuple, or TopologyInitializer, optional
         Topology for recurrent weights. Accepts:
 
@@ -146,6 +158,8 @@ def ott_esn(
         output_size=output_size,
         augment=lambda: SelectiveExponentiation(index=0, exponent=2.0),
         concat_input=True,
+        input_size=input_size,
+        input_initializer=input_initializer,
         topology=topology,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,

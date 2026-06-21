@@ -69,7 +69,9 @@ def power_augmented(
     output_size : int
         Dimension of output signal.
     exponent : float, default=2.0
-        Exponent to apply to reservoir states.
+        Exponent to apply to reservoir states. Tanh reservoir states live in
+        ``[-1, 1]`` and routinely include negative and zero values, so the
+        exponent must be chosen with that signed range in mind (see Notes).
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
         model takes two inputs ``(feedback, driver)`` and the driver feeds the
@@ -112,6 +114,27 @@ def power_augmented(
     -------
     ESNModel
         Configured Power Augmented ESN model ready for training and inference.
+
+    Notes
+    -----
+    The augmentation applies :class:`~resdag.layers.Power` to the raw reservoir
+    states, which for a ``tanh`` activation lie in ``[-1, 1]`` — negatives and
+    zeros included. Choose ``exponent`` accordingly:
+
+    - **Even integers** (``2.0``, ``4.0``, …) are always safe: every state maps
+      to a non-negative value with no ``nan``/``inf``.
+    - **Odd integers** (``3.0``, ``5.0``, …) are safe and *sign-preserving*:
+      negative states stay negative.
+    - **Non-integer exponents** (e.g. ``0.5``, ``1.5``) applied to a *negative*
+      state produce ``nan`` under the default :func:`torch.pow`, silently
+      corrupting the readout inputs. **Negative exponents** (e.g. ``-1.0``)
+      produce ``inf`` on the zeros that ``tanh`` states pass through.
+
+    If you need a non-integer exponent on signed states, wire the model by hand
+    with ``Power(exponent, sign_preserving=True)``, which applies
+    ``sign(x) * abs(x) ** exponent`` and stays finite for negative bases. This
+    factory always uses the default (non-sign-preserving) ``Power`` to keep the
+    well-established integer-exponent behaviour unchanged.
 
     Examples
     --------

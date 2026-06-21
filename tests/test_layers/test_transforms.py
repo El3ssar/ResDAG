@@ -1133,6 +1133,112 @@ class TestPower:
 
         assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
 
+    def test_negative_base_integer_exponent_forward(self) -> None:
+        """Negative base with an integer exponent is finite and sign-correct.
+
+        Issue #208 acceptance criterion: a ``Power`` forward + gradient test
+        including a negative base with an integer exponent. An even exponent
+        maps negatives to positives; an odd exponent preserves the sign.
+        """
+        x = torch.tensor([[-2.0, 3.0, -4.0]])
+
+        even = Power(exponent=2.0)(x)
+        odd = Power(exponent=3.0)(x)
+
+        assert torch.allclose(even, torch.tensor([[4.0, 9.0, 16.0]]))
+        assert torch.allclose(odd, torch.tensor([[-8.0, 27.0, -64.0]]))
+        assert torch.isfinite(even).all()
+        assert torch.isfinite(odd).all()
+
+    def test_negative_base_integer_exponent_gradient(self) -> None:
+        """Gradient on a negative base with an integer exponent stays finite."""
+        layer = Power(exponent=3.0)
+        x = torch.tensor([[-2.0, 3.0, -4.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # d/dx x^3 = 3 x^2, valid for any real base.
+        assert torch.allclose(x.grad, 3.0 * x.detach() ** 2)
+
+    def test_negative_base_fractional_exponent_default_is_nan(self) -> None:
+        """Default mode documents torch.pow: negative base ^ fraction = nan.
+
+        Issue #208 verified ``Power(0.5)`` on ``[[-4.0, 4.0]]`` yields
+        ``[[nan, 2.0]]``. This pins that caveat so the documented behaviour is
+        regression-tested.
+        """
+        out = Power(exponent=0.5)(torch.tensor([[-4.0, 4.0]]))
+
+        assert torch.isnan(out[0, 0])
+        assert out[0, 1] == 2.0
+
+    def test_zero_base_negative_exponent_default_is_inf(self) -> None:
+        """Default mode documents torch.pow: zero base ^ negative = inf.
+
+        Issue #208 verified ``Power(-1.0)`` on ``[[0.0, 2.0]]`` yields
+        ``[[inf, 0.5]]``.
+        """
+        out = Power(exponent=-1.0)(torch.tensor([[0.0, 2.0]]))
+
+        assert torch.isinf(out[0, 0])
+        assert out[0, 1] == 0.5
+
+    def test_sign_preserving_negative_base_finite_forward(self) -> None:
+        """Sign-preserving mode keeps negative bases finite under a fraction.
+
+        Issue #208 acceptance criterion: ``Power`` offers a sign-preserving
+        mode. ``sign(x) * abs(x) ** exponent`` returns real, signed roots where
+        the default :func:`torch.pow` returns ``nan``.
+        """
+        layer = Power(exponent=0.5, sign_preserving=True)
+        x = torch.tensor([[-4.0, 4.0, -9.0, 9.0]])
+
+        out = layer(x)
+
+        assert torch.allclose(out, torch.tensor([[-2.0, 2.0, -3.0, 3.0]]))
+        assert torch.isfinite(out).all()
+
+    def test_sign_preserving_negative_base_finite_gradients(self) -> None:
+        """Sign-preserving mode yields finite gradients on negative bases."""
+        layer = Power(exponent=0.5, sign_preserving=True)
+        x = torch.tensor([[-4.0, 4.0, -9.0, 9.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+
+    def test_sign_preserving_matches_default_on_positive_base(self) -> None:
+        """For non-negative bases, both modes agree exactly."""
+        x = torch.tensor([[0.5, 1.0, 2.0, 4.0]])
+
+        plain = Power(exponent=1.5)(x)
+        signed = Power(exponent=1.5, sign_preserving=True)(x)
+
+        assert torch.allclose(plain, signed)
+
+    def test_sign_preserving_odd_integer_matches_default(self) -> None:
+        """Odd integer exponents are already sign-preserving; modes agree."""
+        x = torch.tensor([[-2.0, 3.0, -4.0]])
+
+        plain = Power(exponent=3.0)(x)
+        signed = Power(exponent=3.0, sign_preserving=True)(x)
+
+        assert torch.allclose(plain, signed)
+
+    def test_gradcheck_sign_preserving(self) -> None:
+        """Gradcheck the sign-preserving path away from the x=0 kink."""
+        layer = Power(exponent=1.5, sign_preserving=True)
+        # Push bases away from 0 (the |x| kink) for a well-defined gradient.
+        x = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+        x = (x + torch.sign(x) * 1.0).detach().requires_grad_(True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
     def test_extra_repr(self) -> None:
-        """String representation reports the exponent."""
-        assert "exponent=2.0" in Power(exponent=2.0).extra_repr()
+        """String representation reports the exponent and mode."""
+        repr_str = Power(exponent=2.0).extra_repr()
+        assert "exponent=2.0" in repr_str
+        assert "sign_preserving=False" in repr_str

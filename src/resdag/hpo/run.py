@@ -195,8 +195,16 @@ def run_hpo(
     sampler : BaseSampler, optional
         Optuna sampler. Defaults to ``TPESampler`` with ``multivariate=True``.
     seed : int, optional
-        Random seed for reproducibility. Seeds both the Optuna sampler and
-        per-trial PyTorch / numpy random state (``seed + trial.number``).
+        Random seed for reproducibility. Seeds the Optuna sampler and, per
+        trial, PyTorch / NumPy / Python ``random`` (``seed + trial.number``).
+        The per-trial seed is also threaded into ``model_creator`` when it
+        accepts a ``seed`` keyword argument, so the reservoir topology and
+        input/feedback initializers — which build their own RNGs and do **not**
+        read the legacy global NumPy state — reproduce as well. With a
+        ``seed``-aware ``model_creator``, two ``run_hpo`` calls sharing the same
+        ``seed`` therefore yield identical trials, parameters, and
+        ``best_value``. See *Reproducible studies* in the HPO reference for how
+        to make a creator seed-aware.
     device : str or torch.device, optional
         Device to place models and data on (e.g., ``"cuda"`` or
         ``torch.device("cpu")``). If ``None``, uses default device.

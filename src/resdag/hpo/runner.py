@@ -22,7 +22,9 @@ resdag.hpo.losses : Loss functions evaluated by the runner.
 """
 
 import gc
+import inspect
 import logging
+import random
 from typing import Any, Callable
 
 import numpy as np
@@ -37,6 +39,34 @@ from .losses import LossProtocol
 __all__ = ["TrialRunner", "TrialCallback"]
 
 logger = logging.getLogger(__name__)
+
+
+def _accepts_seed(func: Callable[..., Any]) -> bool:
+    """Return ``True`` if ``func`` accepts a ``seed`` keyword argument.
+
+    A ``model_creator`` accepts ``seed`` if its signature names a ``seed``
+    parameter or declares ``**kwargs`` (variadic keyword).  When introspection
+    fails (e.g. a C builtin without a signature) we conservatively assume it
+    does not, so the seed is never injected blindly.
+
+    Parameters
+    ----------
+    func : Callable
+        The callable to introspect.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``func`` can receive a ``seed=`` keyword argument.
+    """
+    try:
+        params = inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return False
+    if "seed" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
 
 # A per-trial callback receives the trial and a context dict.  It may call
 # ``trial.report``/``trial.should_prune`` (acting as a pruning signal) but its
@@ -153,7 +183,11 @@ class TrialRunner:
         defaults.
     seed : int, optional
         Base seed for per-trial reproducibility.  Trial ``n`` uses
-        ``seed + n`` to seed PyTorch and NumPy.
+        ``seed + n`` to seed PyTorch, NumPy, and Python's :mod:`random`
+        module, and the same per-trial seed is threaded into ``model_creator``
+        (when it accepts a ``seed`` keyword) so the reservoir topology and
+        input/feedback initializers — which build their own RNGs and ignore the
+        legacy global NumPy state — also reproduce.
     clip_value : float, optional
         Upper bound for the objective value.  When set and the raw loss exceeds
         it, the returned value is clamped (or the trial pruned, see
@@ -265,7 +299,7 @@ class TrialRunner:
     # ── Per-trial lifecycle ──────────────────────────────────────────────
     def _run(self, trial: optuna.Trial) -> float:
         """Run the full per-trial pipeline (seed → train → forecast → score)."""
-        self._seed_trial(trial)
+        trial_seed = self._seed_trial(trial)
 
         params = self.search_space(trial)
 
@@ -273,7 +307,7 @@ class TrialRunner:
         _validate_data_keys(data, drivers_keys=self.drivers_keys)
         data = self._to_device(data)
 
-        model = self.model_creator(**params)
+        model = self._create_model(params, trial_seed)
         if self.device is not None:
             model = model.to(self.device)
 
@@ -300,12 +334,70 @@ class TrialRunner:
 
         return loss
 
-    def _seed_trial(self, trial: optuna.Trial) -> None:
-        """Seed PyTorch and NumPy for per-trial reproducibility."""
-        if self.seed is not None:
-            trial_seed = self.seed + trial.number
-            torch.manual_seed(trial_seed)
-            np.random.seed(trial_seed % (2**32))
+    def _seed_trial(self, trial: optuna.Trial) -> int | None:
+        """Seed the global RNGs for a trial and return the per-trial seed.
+
+        Derives a per-trial seed as ``self.seed + trial.number`` and applies it
+        to PyTorch, NumPy (legacy global state), and Python's :mod:`random`
+        module so every global RNG a user callback might draw from is pinned.
+        The returned seed is *also* threaded explicitly into ``model_creator``
+        (see :meth:`_create_model`) so the reservoir's topology and
+        input/feedback initializers — which build their own
+        ``np.random.default_rng`` / :class:`torch.Generator` and **do not** read
+        the legacy global NumPy state — become a pure function of the per-trial
+        seed.  Seeding ``torch.manual_seed`` here is what makes a string- or
+        callable-form topology reproducible *even when* ``model_creator`` does
+        not accept a ``seed`` (those generators derive their seed from torch's
+        global RNG when none is passed).
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+            The trial being evaluated; its ``number`` offsets the base seed.
+
+        Returns
+        -------
+        int or None
+            The per-trial seed (``self.seed + trial.number``), or ``None`` when
+            no base ``seed`` was configured.
+        """
+        if self.seed is None:
+            return None
+        trial_seed = self.seed + trial.number
+        torch.manual_seed(trial_seed)
+        np.random.seed(trial_seed % (2**32))
+        random.seed(trial_seed)
+        return trial_seed
+
+    def _create_model(self, params: dict[str, Any], trial_seed: int | None) -> ESNModel:
+        """Build the trial's model, threading the per-trial seed when accepted.
+
+        The reservoir's topology and input/feedback initializers construct their
+        own RNGs and do **not** consume the legacy global NumPy state, so seeding
+        ``np.random`` alone does not make them reproducible.  When a base
+        ``seed`` is configured and ``model_creator`` accepts a ``seed`` keyword
+        (a named parameter or ``**kwargs``), the per-trial seed is injected so
+        those initializers become a pure function of ``(seed, trial.number)`` —
+        independent of how much global RNG ``search_space`` / ``data_loader``
+        consumed first.  An explicit ``seed`` already present in ``params`` (e.g.
+        one sampled by ``search_space``) always wins and is left untouched.
+
+        Parameters
+        ----------
+        params : dict
+            Hyperparameters returned by ``search_space`` for this trial.
+        trial_seed : int or None
+            The per-trial seed from :meth:`_seed_trial`, or ``None`` when no
+            base ``seed`` was configured.
+
+        Returns
+        -------
+        ESNModel
+            The freshly created model for this trial.
+        """
+        if trial_seed is not None and "seed" not in params and _accepts_seed(self.model_creator):
+            params = {**params, "seed": trial_seed}
+        return self.model_creator(**params)
 
     def _to_device(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Move tensor entries of ``data`` to ``self.device`` (if set)."""

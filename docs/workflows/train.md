@@ -99,20 +99,30 @@ training but degrades forecasts.
 ## Path 2 — frozen reservoir, gradient head
 
 When the head must be nonlinear or the loss is not least-squares, use the
-reservoir as a fixed feature extractor and train any PyTorch head on top:
+reservoir as a fixed feature extractor and train any PyTorch head on top.
+`ReservoirFeatureExtractor` packages a reservoir as a plain
+`nn.Module` that drops straight into `nn.Sequential` ahead of the head —
+single positional input, frozen by default, one optimizer over
+`model.parameters()`:
+
+<div class="nb-specimen" data-label="train_frozen_head.py" markdown>
 
 ```python
+import torch
 import torch.nn as nn
+from resdag import ReservoirFeatureExtractor
 
-inp = reservoir_input(3)
-states = ESNLayer(500, feedback_size=3, spectral_radius=0.9)(inp)
-extractor = ESNModel(inp, states)            # headless: (batch, time, 500)
-
-head = nn.Sequential(nn.Linear(500, 64), nn.Tanh(), nn.Linear(64, 3))
-opt = torch.optim.Adam(head.parameters(), lr=1e-3)
+model = nn.Sequential(
+    ReservoirFeatureExtractor(500, feedback_size=3, spectral_radius=0.9),
+    nn.Linear(500, 64),
+    nn.Tanh(),
+    nn.Linear(64, 3),
+)
+extractor, head = model[0], model[1:]
+opt = torch.optim.Adam(head.parameters(), lr=1e-3)  # head only — reservoir is frozen
 
 with torch.no_grad():                        # frozen features: compute once
-    extractor.reset_reservoirs()
+    extractor.on_epoch_start()               # epoch-reset hook (alias of reset_state)
     feats = extractor(torch.cat([warmup, train], dim=1))[:, warmup.shape[1]:]
 
 for step in range(300):
@@ -122,13 +132,67 @@ for step in range(300):
     opt.step()
 ```
 
-Precomputing `feats` once avoids re-running the reservoir on every
-optimization step; this is the main efficiency advantage of a frozen
-base. Streaming also works: push fresh batches through the reservoir
-inside the loop and consecutive `backward()` calls succeed without
-resets, because the stored state is detached at every forward-call
-boundary (`detach_state_between_calls=True`) and no autograd graph
-survives to trigger "backward through the graph a second time".
+</div>
+
+The reservoir is **frozen by default** (`extractor.is_frozen` is `True`), so
+the optimizer only ever sees the head's parameters. Precomputing `feats`
+once avoids re-running the reservoir on every optimization step; this is the
+main efficiency advantage of a frozen base. Streaming also works: push fresh
+batches through the reservoir inside the loop and consecutive `backward()`
+calls succeed without resets, because the stored state is detached at every
+forward-call boundary (`detach_state_between_calls=True`) and no autograd
+graph survives to trigger "backward through the graph a second time".
+
+**The epoch hook.** The reservoir is stateful, so re-zero it between epochs
+with `extractor.on_epoch_start()` (a readable alias of `reset_state()`) at
+the top of each epoch — otherwise a trajectory from the previous epoch
+bleeds into the next one:
+
+```python
+for epoch in range(num_epochs):
+    extractor.on_epoch_start()               # re-zero the reservoir state
+    for batch_feedback, batch_target in loader:
+        loss = nn.functional.mse_loss(head(extractor(batch_feedback)), batch_target)
+        opt.zero_grad(); loss.backward(); opt.step()
+```
+
+**A non-regression head.** Because the extractor is just an `nn.Module`, any
+torch head works. Feeding the last-timestep feature vector into a linear
+classifier and a cross-entropy loss turns the same frozen reservoir into a
+sequence classifier:
+
+```python
+extractor = ReservoirFeatureExtractor(500, feedback_size=3, spectral_radius=0.9)
+classifier = nn.Linear(500, num_classes)
+
+with torch.no_grad():
+    extractor.reset_state()
+    summary = extractor(sequences)[:, -1, :]   # (batch, 500) — last-step features
+
+opt = torch.optim.Adam(classifier.parameters(), lr=1e-2)
+for step in range(150):
+    loss = nn.functional.cross_entropy(classifier(summary), labels)
+    opt.zero_grad(); loss.backward(); opt.step()
+```
+
+**Reusing an existing model.** `ReservoirFeatureExtractor.from_model(esn)`
+wraps the reservoir layers of an already-built `ESNModel` *by reference* —
+the parameters are shared, not copied — so an algebraically-fitted model can
+double as a feature source without rebuilding the reservoir:
+
+```python
+from resdag import ESNModel, ESNLayer, reservoir_input
+
+inp = reservoir_input(3)
+states = ESNLayer(500, feedback_size=3, spectral_radius=0.9)(inp)
+esn = ESNModel(inp, states)
+extractor = ReservoirFeatureExtractor.from_model(esn)  # shares esn's reservoir
+```
+
+To backpropagate through the recurrence as well (full BPTT, Path 3), pass
+`trainable=True` or call `extractor.unfreeze()`. The runnable end-to-end
+recipe — regression head, classification head, and `from_model` reuse — is
+[`examples/12_feature_extractor.py`](https://github.com/El3ssar/ResDAG/blob/main/examples/12_feature_extractor.py).
 
 ## Path 3 — full BPTT
 

@@ -1,5 +1,5 @@
 ---
-description: API reference for resdag.core — ESNModel, the Input alias, and the reservoir_input helper.
+description: API reference for resdag.core — ESNModel, ReservoirFeatureExtractor, the Input alias, and the reservoir_input helper.
 ---
 
 <span class="nb-kicker">Reference</span>
@@ -14,5 +14,6 @@ declare its entry points.
     options:
       members:
         - ESNModel
+        - ReservoirFeatureExtractor
         - Input
         - reservoir_input

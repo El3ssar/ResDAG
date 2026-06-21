@@ -21,6 +21,7 @@ trainer = rd.ESNTrainer(model)
 | Symbol | Canonical home |
 | ------ | -------------- |
 | [`ESNModel`][resdag.core.ESNModel] | `resdag.core` |
+| [`ReservoirFeatureExtractor`][resdag.core.ReservoirFeatureExtractor] | `resdag.core` |
 | [`reservoir_input`][resdag.core.reservoir_input] | `resdag.core` |
 
 ## Reservoirs and cells

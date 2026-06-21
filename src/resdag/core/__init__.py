@@ -10,6 +10,9 @@ Classes
 ESNModel
     Extended SymbolicModel with ESN-specific methods for forecasting
     and reservoir state management.
+ReservoirFeatureExtractor
+    ``nn.Sequential``-friendly adapter that packages reservoir layers as a
+    drop-in feature extractor for ordinary ``torch.nn`` pipelines.
 Input
     Alias for ``pytorch_symbolic.Input`` for defining model inputs.
 
@@ -51,6 +54,7 @@ resdag.training.ESNTrainer : Trainer for fitting readouts.
 import pytorch_symbolic as ps
 import torch
 
+from .feature_extractor import ReservoirFeatureExtractor
 from .model import ESNModel, Input
 
 
@@ -88,7 +92,7 @@ def reservoir_input(feature_size: int, dtype: torch.dtype | None = None):
 # ``ps`` (the re-exported ``pytorch_symbolic`` module) and ``torch`` remain
 # importable for backward compatibility but are intentionally left out of the
 # public surface — see ``__dir__`` below.
-__all__ = ["ESNModel", "Input", "reservoir_input"]
+__all__ = ["ESNModel", "Input", "ReservoirFeatureExtractor", "reservoir_input"]
 
 
 def __dir__() -> list[str]:

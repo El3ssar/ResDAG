@@ -15,7 +15,8 @@ that composes directly inside :class:`torch.nn.Sequential`.
 
 See Also
 --------
-resdag.layers.reservoirs.ESNLayer : Underlying stateful reservoir layer.
+resdag.layers.reservoirs.BaseReservoirLayer : Any reservoir layer the extractor can wrap.
+resdag.layers.reservoirs.ESNLayer : The concrete layer built by the size-based path.
 resdag.core.ESNModel : Symbolic-graph model the extractor can be built from.
 """
 
@@ -75,13 +76,15 @@ class ReservoirFeatureExtractor(nn.Module):
         If ``True``, the reservoir parameters require gradients (full BPTT
         through the recurrence).  The default ``False`` freezes them, the
         standard reservoir-computing configuration.
-    layers : ESNLayer or sequence of BaseReservoirLayer, optional
+    layers : BaseReservoirLayer or sequence of BaseReservoirLayer, optional
         Pre-built reservoir layer(s) to wrap directly instead of constructing
-        new ones.  When given, ``reservoir_size`` / ``feedback_size`` /
-        ``input_size`` must be omitted (the layers already define them), but
-        ``trainable`` still applies as a freeze/unfreeze toggle over the
-        provided layers.  The layers are wrapped **by reference** — their
-        parameters are shared, not copied.
+        new ones.  Any :class:`~resdag.layers.reservoirs.BaseReservoirLayer`
+        subclass is accepted (``ESNLayer``, ``NGReservoir``, future reservoir
+        types), not just :class:`ESNLayer`.  When given, ``reservoir_size`` /
+        ``feedback_size`` / ``input_size`` must be omitted (the layers already
+        define them), but ``trainable`` still applies as a freeze/unfreeze
+        toggle over the provided layers.  The layers are wrapped **by
+        reference** — their parameters are shared, not copied.
     **layer_kwargs
         Extra keyword arguments forwarded to every :class:`ESNLayer` that this
         constructor builds (for example ``spectral_radius``, ``leak_rate``,
@@ -152,7 +155,7 @@ class ReservoirFeatureExtractor(nn.Module):
         feedback_size: int | None = None,
         input_size: int | None = None,
         trainable: bool = False,
-        layers: ESNLayer | Iterable[BaseReservoirLayer] | None = None,
+        layers: BaseReservoirLayer | Iterable[BaseReservoirLayer] | None = None,
         **layer_kwargs: object,
     ) -> None:
         super().__init__()
@@ -192,7 +195,7 @@ class ReservoirFeatureExtractor(nn.Module):
 
     @staticmethod
     def _wrap_layers(
-        layers: ESNLayer | Iterable[BaseReservoirLayer],
+        layers: BaseReservoirLayer | Iterable[BaseReservoirLayer],
     ) -> list[BaseReservoirLayer]:
         """Validate and normalise pre-built layers into a non-empty list."""
         if isinstance(layers, BaseReservoirLayer):

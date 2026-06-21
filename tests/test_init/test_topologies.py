@@ -23,6 +23,8 @@ import torch
 import resdag.init.graphs as graphs_pkg
 from resdag.init.graphs import (
     barabasi_albert_graph,
+    connected_erdos_renyi_graph,
+    connected_watts_strogatz_graph,
     dendrocycle_graph,
     dendrocycle_with_chords_graph,
     erdos_renyi_graph,
@@ -37,6 +39,7 @@ from resdag.init.topology import (
     show_topologies,
 )
 from resdag.init.utils import resolve_initializer, resolve_topology
+from resdag.init.utils.graph_tools import connected_graph
 from resdag.layers import ESNLayer
 
 
@@ -1177,3 +1180,89 @@ class TestRingChordBranches:
     def test_validation_errors(self, kwargs: dict, match: str) -> None:
         with pytest.raises(ValueError, match=match):
             ring_chord_graph(**kwargs)
+
+
+class TestConnectedGraphRetry:
+    """The ``@connected_graph`` retry contract (issue #139).
+
+    Pins down that retries actually vary the graph under a fixed integer seed
+    (the shared-generator fix), that exhaustion *raises* a ``ValueError``
+    rather than warning and returning a disconnected graph, that ``tries=0``
+    is a clean ``ValueError`` and not an ``UnboundLocalError``, and that the
+    public ``connected_*`` topologies only ever return connected graphs.
+    """
+
+    def test_retries_vary_under_fixed_seed(self) -> None:
+        """Successive attempts produce *different* graphs for a fixed int seed.
+
+        A fresh ``Generator`` rebuilt from the same int each call would make all
+        attempts byte-identical; the shared generator makes them differ.
+        """
+        seen: list[tuple] = []
+
+        def spy(n: int, p: float, seed: object = None) -> nx.DiGraph:
+            g = erdos_renyi_graph(n, p, seed=seed)
+            seen.append(tuple(sorted(g.edges())))
+            return g
+
+        wrapped = connected_graph(spy, max_tries=5)
+        with pytest.raises(ValueError):
+            wrapped(500, p=0.0005, seed=7)  # sub-threshold p: never connects
+
+        assert len(seen) == 5  # all attempts were made
+        assert len(set(seen)) == 5  # and every attempt differed
+
+    def test_exhaustion_raises_value_error(self) -> None:
+        """Exhausting the retries raises ``ValueError`` (not warn + return)."""
+        wrapped = connected_graph(erdos_renyi_graph, max_tries=3)
+        with pytest.raises(ValueError, match="Failed to generate a connected graph"):
+            wrapped(500, p=0.0005, seed=7)
+
+    def test_exhaustion_does_not_warn_and_return(self) -> None:
+        """No disconnected graph is ever returned on exhaustion."""
+        wrapped = connected_graph(erdos_renyi_graph, max_tries=3)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning would fail the test
+            with pytest.raises(ValueError):
+                wrapped(500, p=0.0005, seed=7)
+
+    def test_tries_zero_raises_value_error(self) -> None:
+        """``tries=0`` raises a clear ``ValueError``, not ``UnboundLocalError``."""
+        with pytest.raises(ValueError, match="tries must be a positive integer"):
+            connected_erdos_renyi_graph(500, p=0.5, seed=1, tries=0)
+
+    def test_seed_passed_positionally_is_respected(self) -> None:
+        """A positionally-passed ``seed`` is rerouted through the shared RNG.
+
+        ``connected_*`` builders take ``seed`` as a positional parameter; the
+        wrapper must not pass it twice (which would raise ``TypeError``).
+        """
+        g = connected_erdos_renyi_graph(80, 0.2, True, True, 3)  # seed positional
+        assert nx.is_weakly_connected(g)
+
+    @pytest.mark.parametrize("seed", [0, 1, 7, 42])
+    def test_connected_erdos_renyi_is_connected(self, seed: int) -> None:
+        """A normal return from ``connected_erdos_renyi_graph`` is connected."""
+        g = connected_erdos_renyi_graph(100, p=0.2, seed=seed)
+        assert nx.is_weakly_connected(g)
+
+    @pytest.mark.parametrize("seed", [0, 1, 7, 42])
+    def test_connected_watts_strogatz_is_connected(self, seed: int) -> None:
+        """A normal return from ``connected_watts_strogatz_graph`` is connected."""
+        g = connected_watts_strogatz_graph(100, k=6, p=0.3, seed=seed)
+        assert nx.is_weakly_connected(g)
+
+    def test_fixed_seed_subthreshold_p_raises(self) -> None:
+        """Fixed seed + sub-threshold ``p`` raises ``ValueError`` (AC #5).
+
+        ``connected_erdos_renyi_graph`` guards ``p < ln(n)/n`` up front, so a
+        sub-threshold ``p`` raises immediately; the bare decorator over the
+        unguarded ``erdos_renyi_graph`` exercises the retry-exhaustion path
+        with the same outcome.
+        """
+        with pytest.raises(ValueError):
+            connected_erdos_renyi_graph(500, p=0.0001, seed=7)
+
+        wrapped = connected_graph(erdos_renyi_graph, max_tries=10)
+        with pytest.raises(ValueError):
+            wrapped(500, p=0.0005, seed=7)

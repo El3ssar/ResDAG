@@ -81,7 +81,7 @@ any `save_full` / `deepcopy`, or on the restored model.
 The complementary option lowers the loop itself.
 `ESNLayer(compile_mode="scan")` expresses the recurrence as a single
 `combine_fn` and runs it through
-[`torch._higher_order_ops.scan`][torch._higher_order_ops.scan], so the entire
+`torch._higher_order_ops.scan`, so the entire
 sequence is **one** graph region instead of `T` unrolled nodes:
 
 ```python

@@ -13,6 +13,28 @@ Available Losses
 - ``"standard"`` : Standard Loss (mean geometric mean error)
 - ``"soft_horizon"`` : Soft valid horizon (cumulative survival probability)
 
+Scale conventions
+-----------------
+The threshold-based horizon losses (:func:`expected_forecast_horizon`,
+:func:`forecast_horizon`, :func:`soft_valid_horizon`) compare a per-timestep
+error against a fixed ``threshold``.  For that comparison to be meaningful the
+error metric must be *scale-free*, otherwise the same threshold collapses the
+horizon to ``0`` or ``T`` depending on the absolute scale of the data.  All of
+these losses therefore default to ``metric="nrmse"`` (RMSE normalised by the
+per-dimension standard deviation of ``y_true``).  Selecting a raw-scale metric
+(``"rmse"``, ``"mse"``, ``"mae"``) for a threshold-based loss emits a
+:class:`UserWarning`, because the threshold is then only valid on
+unit-scale data.
+
+Batch aggregation
+-----------------
+Per-timestep errors of shape ``(B, T)`` are collapsed across the batch axis
+with the **median** in *every* loss (see :func:`_aggregate_batch`).  The median
+is robust to outlier trajectories and — unlike the geometric mean — does not
+collapse to ``0`` when a single batch element happens to be perfect at a step.
+When a geometric mean is requested explicitly it is computed on
+*clipped* errors so it is zero-safe.
+
 Example
 -------
 >>> from resdag.hpo import LOSSES, get_loss
@@ -25,6 +47,7 @@ resdag.hpo.objective : Objective builder that wraps these losses for Optuna.
 resdag.hpo.run : High-level HPO orchestrator.
 """
 
+import warnings
 from typing import Literal, Protocol, runtime_checkable
 
 import numpy as np
@@ -44,6 +67,14 @@ __all__ = [
 ]
 
 MetricType = Literal["rmse", "mse", "mae", "nrmse"]
+
+# Metrics that are invariant to the absolute scale of the data.  Threshold-based
+# horizon losses are only meaningful with a scale-free metric.
+SCALE_FREE_METRICS: frozenset[str] = frozenset({"nrmse"})
+
+# Lower bound applied before any geometric-mean reduction so that a single
+# zero-error batch element cannot collapse the whole step to ``0``.
+_GMEAN_FLOOR: float = 1e-12
 
 
 @runtime_checkable
@@ -112,6 +143,67 @@ def _compute_errors(
     raise ValueError(f"Unknown metric: '{metric}'. Use 'rmse', 'mse', 'mae', or 'nrmse'.")
 
 
+def _warn_if_scale_unsafe(metric: MetricType, loss_name: str, threshold: float) -> None:
+    """Warn when a threshold-based loss is used with a raw-scale metric.
+
+    Threshold-based horizon losses compare per-timestep errors against a fixed
+    ``threshold``.  A raw-scale metric (anything not in
+    :data:`SCALE_FREE_METRICS`) makes that comparison depend on the absolute
+    magnitude of the data, which silently collapses the horizon to ``0`` or
+    ``T`` on non-unit-scale inputs.
+
+    Parameters
+    ----------
+    metric : {"rmse", "mse", "mae", "nrmse"}
+        Error metric selected by the caller.
+    loss_name : str
+        Human-readable loss name, used only in the warning message.
+    threshold : float
+        Threshold value the metric is compared against, used in the message.
+    """
+    if metric not in SCALE_FREE_METRICS:
+        warnings.warn(
+            f"{loss_name} compares a fixed threshold ({threshold}) against the "
+            f"raw-scale metric '{metric}'. This is only valid when the data is "
+            "unit-scale; on other scales the forecast horizon collapses to 0 or "
+            "T. Use metric='nrmse' (the default) or pre-normalise the data.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def _aggregate_batch(errors: NDArray[np.floating], how: str = "median") -> NDArray[np.floating]:
+    """Collapse per-timestep errors ``(B, T)`` across the batch axis.
+
+    Parameters
+    ----------
+    errors : ndarray
+        Per-timestep errors of shape ``(B, T)``.
+    how : {"median", "gmean"}, default="median"
+        Aggregation strategy.  ``"median"`` is robust to outlier trajectories
+        and is the default for every loss.  ``"gmean"`` computes a geometric
+        mean on errors clipped to a small positive floor so that a single
+        zero-error batch element cannot collapse the result to ``0``.
+
+    Returns
+    -------
+    ndarray
+        Aggregated errors of shape ``(T,)``.
+
+    Raises
+    ------
+    ValueError
+        If *how* is not ``"median"`` or ``"gmean"``.
+    """
+    if how == "median":
+        return np.median(errors, axis=0)
+    if how == "gmean":
+        # Clip before gmean: a single 0 in a column would otherwise force the
+        # whole geometric mean to 0 (verified behaviour of scipy.stats.gmean).
+        return gmean(np.clip(errors, _GMEAN_FLOOR, None), axis=0)
+    raise ValueError(f"Unknown aggregation '{how}'. Use 'median' or 'gmean'.")
+
+
 def expected_forecast_horizon(
     y_true: NDArray[np.floating],
     y_pred: NDArray[np.floating],
@@ -145,9 +237,16 @@ def expected_forecast_horizon(
     -------
     float
         Negative expected forecast horizon. Lower (more negative) is better.
+
+    Warns
+    -----
+    UserWarning
+        If *metric* is not scale-free (i.e. not ``"nrmse"``), since the fixed
+        *threshold* is then only meaningful on unit-scale data.
     """
+    _warn_if_scale_unsafe(metric, "expected_forecast_horizon", threshold)
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
-    e_t = np.median(errors, axis=0)  # Robust across batch
+    e_t = _aggregate_batch(errors, how="median")  # Robust across batch
 
     # Soft indicator of "good prediction" at each step
     good_t = expit((threshold - e_t) / softness)  # ∈ (0, 1)
@@ -166,7 +265,7 @@ def forecast_horizon(
     y_true: NDArray[np.floating],
     y_pred: NDArray[np.floating],
     /,
-    metric: MetricType = "rmse",
+    metric: MetricType = "nrmse",
     threshold: float = 0.2,
 ) -> float:
     """Contiguous valid forecast horizon length.
@@ -180,8 +279,9 @@ def forecast_horizon(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="rmse"
-        Error metric to compute.
+    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
+        Error metric to compute.  Defaults to the scale-free ``"nrmse"`` so the
+        fixed *threshold* is comparable across datasets of any magnitude.
     threshold : float, default=0.2
         Error threshold below which predictions are considered valid.
 
@@ -189,9 +289,16 @@ def forecast_horizon(
     -------
     float
         Negative of the valid horizon length. Lower is better.
+
+    Warns
+    -----
+    UserWarning
+        If *metric* is not scale-free (i.e. not ``"nrmse"``), since the fixed
+        *threshold* is then only meaningful on unit-scale data.
     """
+    _warn_if_scale_unsafe(metric, "forecast_horizon", threshold)
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
-    e_t = np.median(errors, axis=0)  # Robust across batch
+    e_t = _aggregate_batch(errors, how="median")  # Robust across batch
 
     below = e_t < threshold
     if not below[0]:
@@ -225,9 +332,15 @@ def standard_loss(
     -------
     float
         Mean of geometric mean errors. Lower is better.
+
+    Notes
+    -----
+    The geometric mean across the batch is zero-safe: errors are clipped to a
+    small positive floor before reduction (see :func:`_aggregate_batch`) so a
+    single perfect batch element cannot collapse a step to ``0``.
     """
     errors = _compute_errors(y_true, y_pred, metric)
-    geom_mean = gmean(errors, axis=0)
+    geom_mean = _aggregate_batch(errors, how="gmean")
     return float(np.mean(geom_mean))
 
 
@@ -235,7 +348,7 @@ def lyapunov_weighted(
     y_true: NDArray[np.floating],
     y_pred: NDArray[np.floating],
     /,
-    metric: MetricType = "rmse",
+    metric: MetricType = "nrmse",
     lyapunov_t: int = 64,
 ) -> float:
     """Lyapunov-compensated time-weighted error.
@@ -253,8 +366,9 @@ def lyapunov_weighted(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="rmse"
-        Error metric to compute per time step.
+    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
+        Error metric to compute per time step.  Defaults to the scale-free
+        ``"nrmse"`` so the magnitude is comparable across datasets.
     lyapunov_t : int, default=64
         Characteristic Lyapunov time (in time steps) controlling the
         exponential decay rate of the weights.
@@ -263,9 +377,14 @@ def lyapunov_weighted(
     -------
     float
         Exponentially time-weighted average error. Lower is better.
+
+    Notes
+    -----
+    Errors are reduced across the batch with a zero-safe geometric mean
+    (clipped to a small positive floor; see :func:`_aggregate_batch`).
     """
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
-    e_t = gmean(errors, axis=0)  # (T,)
+    e_t = _aggregate_batch(errors, how="gmean")  # (T,)
 
     t = np.arange(e_t.shape[0])
     weights = np.exp(-t / lyapunov_t)
@@ -277,7 +396,7 @@ def soft_valid_horizon(
     y_true: NDArray[np.floating],
     y_pred: NDArray[np.floating],
     /,
-    metric: MetricType = "rmse",
+    metric: MetricType = "nrmse",
     threshold: float = 0.3,
     n: int = 6,
 ) -> float:
@@ -308,8 +427,9 @@ def soft_valid_horizon(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="rmse"
-        Error metric to compute per timestep.
+    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
+        Error metric to compute per timestep.  Defaults to the scale-free
+        ``"nrmse"`` so the fixed *threshold* is comparable across datasets.
     threshold : float, default=0.3
         Error threshold below which predictions are considered "good".
     n : int, default=6
@@ -322,6 +442,12 @@ def soft_valid_horizon(
     float
         Negative expected horizon.  Lower (more negative) is better.
 
+    Warns
+    -----
+    UserWarning
+        If *metric* is not scale-free (i.e. not ``"nrmse"``), since the fixed
+        *threshold* is then only meaningful on unit-scale data.
+
     Notes
     -----
     Compared to :func:`expected_forecast_horizon` (which uses a sigmoid gate
@@ -333,8 +459,9 @@ def soft_valid_horizon(
     --------
     expected_forecast_horizon : Sigmoid-gated variant with ``cumprod`` survival.
     """
+    _warn_if_scale_unsafe(metric, "soft_valid_horizon", threshold)
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
-    e_t = np.median(errors, axis=0)  # (T,) — robust across batch
+    e_t = _aggregate_batch(errors, how="median")  # (T,) — robust across batch
 
     # Numerically safe Hill gate: clip the ratio to avoid overflow in x**n
     ratio = np.clip(e_t / threshold, 0.0, 1e4)

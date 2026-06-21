@@ -2,7 +2,7 @@
 
 import warnings
 from functools import wraps
-from typing import Callable
+from typing import Any, Callable
 
 import networkx as nx
 
@@ -42,7 +42,7 @@ def connected_graph(
     """
 
     @wraps(graph_func)
-    def wrapper(*args, tries: int = max_tries, **kwargs) -> nx.Graph | nx.DiGraph:
+    def wrapper(*args: Any, tries: int = max_tries, **kwargs: Any) -> nx.Graph | nx.DiGraph:
         """Wrapper function that retries until connected."""
         for attempt in range(tries):
             G = graph_func(*args, **kwargs)

@@ -14,6 +14,8 @@ resdag.init.topology : Topology initialization for recurrent weights.
 resdag.init.input_feedback : Input/feedback weight initialization.
 """
 
+from typing import Any
+
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers.cells import ESNCell
 from resdag.utils.general import SeedLike
@@ -224,7 +226,7 @@ class ESNLayer(BaseReservoirLayer):
         # Preserve legacy attribute used by existing callsites and tests
         self._initialized = True
 
-    def __getattr__(self, name: str) -> object:
+    def __getattr__(self, name: str) -> Any:
         """Delegate unknown attribute lookups to the wrapped cell."""
         try:
             return super().__getattr__(name)

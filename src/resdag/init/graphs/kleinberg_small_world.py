@@ -70,7 +70,7 @@ def kleinberg_small_world_graph(
     rng = create_rng(seed)
     G = DiGraph() if directed else Graph()
 
-    def toroidal_manhattan(i1, j1, i2, j2):
+    def toroidal_manhattan(i1: int, j1: int, i2: int, j2: int) -> int:
         # Wrap distances on a torus
         di = min(abs(i1 - i2), n - abs(i1 - i2))
         dj = min(abs(j1 - j2), n - abs(j1 - j2))

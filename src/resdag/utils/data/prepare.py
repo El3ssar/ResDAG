@@ -7,7 +7,7 @@ Provides functions for splitting time series data into:
 - Validation data
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 
@@ -368,7 +368,7 @@ def load_and_prepare(
     norm_method: NormMethod = "minmax",
     return_stats: bool = False,
     dtype: torch.dtype | None = None,
-    **load_kwargs,
+    **load_kwargs: Any,
 ) -> ESNDataSplits | ESNDataSplitsWithStats:
     """Load data from file(s) and prepare for ESN training.
 

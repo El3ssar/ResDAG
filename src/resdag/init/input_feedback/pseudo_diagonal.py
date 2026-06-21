@@ -1,5 +1,7 @@
 """Pseudo-diagonal initializer for structured input connections."""
 
+from typing import Any
+
 import numpy as np
 import torch
 
@@ -58,7 +60,7 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
         super().__init__(input_scaling=input_scaling, seed=seed)
         self.binarize = binarize
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with pseudo-diagonal structure.
 
         The RNG is constructed from ``self.seed`` on every call, so the produced

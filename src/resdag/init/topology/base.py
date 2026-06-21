@@ -26,7 +26,7 @@ resdag.layers.ESNLayer : Uses topologies for weight initialization.
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import networkx as nx
 import numpy as np
@@ -491,7 +491,7 @@ class GraphTopology(TopologyInitializer):
                 f"Graph produced adjacency matrix of shape {adj_matrix.shape}, expected ({n}, {n})"
             )
 
-        return adj_matrix
+        return cast(np.ndarray, adj_matrix)
 
     def _scale_spectral_radius(
         self,

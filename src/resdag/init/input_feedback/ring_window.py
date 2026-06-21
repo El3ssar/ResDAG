@@ -83,6 +83,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             raise ValueError("c must be in (0,1].")
         self.c = float(c)
 
+        self.window: int | float
         if isinstance(window, int):
             if window < 1:
                 raise ValueError("window int must be >= 1.")
@@ -189,6 +190,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             cols_core = window_indices(center)
             row_vals = base.copy()
 
+            signs: float | np.ndarray
             if self.signed == "allpos":
                 signs = 1.0
             elif self.signed == "alt_ring":

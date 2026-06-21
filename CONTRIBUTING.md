@@ -34,6 +34,22 @@ uv run mypy src/resdag/
 uv run pytest --no-cov -q          # full suite
 ```
 
+### Type checking
+
+CI type-checks the **whole package** — `mypy src/resdag/`, not a single file —
+and the tree is kept at **zero errors**. There is deliberately **no per-module
+baseline and no `disable_error_code` escape hatch** in `pyproject.toml`: new and
+changed code is gated immediately, so a typing error is a failing build, not a
+warning. The only standing allowance is `ignore_missing_imports` (for untyped
+third-party libraries such as `pytorch_symbolic`).
+
+If your change surfaces a type error — even one that looks pre-existing — fix it
+in your PR with a real annotation/narrowing rather than suppressing it. Reach
+for `cast`/`assert` only when a runtime invariant genuinely guarantees the
+narrowing (and say so in a short comment); never use them, or a blanket
+`# type: ignore`, to paper over a possible-`None`/wrong-type bug. If you must
+ignore, use a specific `# type: ignore[code]` with a one-line justification.
+
 ### Fast local iteration — run only the affected tests
 
 The full suite takes a few minutes. While iterating, run only the tests that

@@ -1,5 +1,7 @@
 """Chebyshev mapping initializer for input/feedback weights."""
 
+from typing import Any
+
 import numpy as np
 import torch
 
@@ -77,7 +79,7 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         self.q = q
         self.k = k
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor using Chebyshev mapping.
 
         Parameters

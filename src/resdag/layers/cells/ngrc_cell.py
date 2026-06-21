@@ -269,7 +269,8 @@ class NGCell(ReservoirCell):
             # Extract (k-1) delay taps from the buffer *before* update.
             # delay_indices selects rows so that taps[:,0,:] = X_{i-s},
             # taps[:,1,:] = X_{i-2s}, ..., taps[:,k-2,:] = X_{i-(k-1)s}.
-            taps = state[:, self.delay_indices, :]  # (batch, k-1, input_dim)
+            delay_indices = cast(torch.Tensor, self.delay_indices)
+            taps = state[:, delay_indices, :]  # (batch, k-1, input_dim)
             # O_lin = [X_i || X_{i-s} || ... || X_{i-(k-1)s}]
             o_lin = torch.cat([x.unsqueeze(1), taps], dim=1).reshape(batch, self.k * self.input_dim)
         else:
@@ -305,7 +306,8 @@ class NGCell(ReservoirCell):
         if self.include_linear:
             parts.append(o_lin)
         if self._emit_nonlinear:
-            o_nonlin = o_lin[:, self.monomial_indices].prod(dim=-1)  # (batch, n_monomials)
+            monomial_indices = cast(torch.Tensor, self.monomial_indices)
+            o_nonlin = o_lin[:, monomial_indices].prod(dim=-1)  # (batch, n_monomials)
             parts.append(o_nonlin)
 
         o_total = torch.cat(parts, dim=-1)  # (batch, feature_dim)

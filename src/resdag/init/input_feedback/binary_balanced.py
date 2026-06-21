@@ -1,6 +1,7 @@
 """Binary balanced initializer using Hadamard structure."""
 
 from math import gcd
+from typing import Any
 
 import numpy as np
 import torch
@@ -146,7 +147,7 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
                     col_sums[j] = 1
                     cnt += 1
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with binary balanced structure.
 
         Parameters

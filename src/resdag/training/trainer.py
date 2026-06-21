@@ -16,6 +16,8 @@ resdag.ESNModel : ESN model class.
 resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
 """
 
+from collections.abc import Callable
+
 import torch
 
 from resdag.core import ESNModel
@@ -191,8 +193,10 @@ class ESNTrainer:
         for name, readout in readouts:
             target = targets[name]
 
-            def make_fit_hook(layer: ReadoutLayer, tgt: torch.Tensor):
-                def hook(module, args):
+            def make_fit_hook(
+                layer: ReadoutLayer, tgt: torch.Tensor
+            ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], None]:
+                def hook(module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
                     layer.fit(args[0], tgt)
 
                 return hook

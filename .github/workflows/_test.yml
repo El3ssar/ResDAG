@@ -60,9 +60,9 @@ jobs:
           black --check src/ tests/
 
       - name: Type check (whole package)
-        # Type-checks the entire package. New/changed code is gated immediately;
-        # pre-existing violations are held in a tracked per-module baseline in
-        # pyproject.toml ([[tool.mypy.overrides]]) that is being burned down.
+        # Type-checks the entire package and must stay at zero errors. There is
+        # intentionally no per-module baseline / disable_error_code escape hatch
+        # in pyproject.toml — every error is gated. See CONTRIBUTING.md.
         run: mypy src/resdag/
 
   test:

@@ -1,5 +1,7 @@
 """Binary random initializer for input/feedback weights."""
 
+from typing import Any
+
 import numpy as np
 import torch
 
@@ -55,7 +57,7 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         """Initialize the RandomBinaryInitializer."""
         super().__init__(input_scaling=input_scaling, seed=seed)
 
-    def initialize(self, weight: torch.Tensor, **kwargs) -> torch.Tensor:
+    def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with binary random values.
 
         The RNG is constructed from ``self.seed`` on every call, so the produced

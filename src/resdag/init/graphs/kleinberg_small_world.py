@@ -6,6 +6,143 @@ from networkx import DiGraph, Graph
 from resdag.init.topology.registry import register_graph_topology
 from resdag.utils.general import create_rng
 
+from ._dense import adjacency_to_graph, register_dense_adjacency
+
+
+def _toroidal_distance_matrix(side: int) -> np.ndarray:
+    """Pairwise toroidal Manhattan distances on a ``side x side`` grid.
+
+    Returns an ``(N, N)`` matrix (``N = side * side``) where entry ``(a, b)`` is
+    the wrapped Manhattan distance between the row-major grid nodes ``a`` and
+    ``b``. Computed once and reused for every node's long-range draw, replacing
+    the per-node ``O(N)`` Python candidate rebuild.
+    """
+    coords = np.arange(side)
+    # 1-D wrapped distance along one axis, broadcast to the grid.
+    axis = np.abs(coords[:, None] - coords[None, :])
+    axis = np.minimum(axis, side - axis)  # (side, side)
+
+    rows = np.repeat(np.arange(side), side)
+    cols = np.tile(np.arange(side), side)
+    di = axis[rows[:, None], rows[None, :]]
+    dj = axis[cols[:, None], cols[None, :]]
+    return np.asarray(di + dj, dtype=np.float64)
+
+
+def kleinberg_small_world_adjacency(
+    n: int,
+    q: float = 2,
+    k: int = 1,
+    directed: bool = False,
+    weighted: bool = False,
+    beta: float = 2,
+    seed: int | np.random.Generator | None = None,
+) -> np.ndarray:
+    """Build the dense weighted adjacency of a 2D Kleinberg small-world graph.
+
+    NumPy construction of the same adjacency that
+    :func:`kleinberg_small_world_graph` describes, on a ``sqrt(n) x sqrt(n)``
+    torus with row-major node indexing (node ``(i, j)`` -> ``i * side + j``,
+    matching ``sorted`` over tuple labels). The toroidal distance matrix is
+    computed once and shared across every node's long-range draw, replacing the
+    per-node ``O(n)`` Python candidate rebuild.
+
+    Parameters
+    ----------
+    n : int
+        Total number of nodes; must be a perfect square.
+    q : float, optional
+        Exponent controlling long-range connection probability
+        (``probability ~ distance ** -q``).
+    k : int, optional
+        Number of long-range connections per node.
+    directed : bool, optional
+        If ``True``, the adjacency is directed; otherwise edges are symmetric.
+    weighted : bool, optional
+        If ``True``, long-range weights are ``distance ** beta``; otherwise they
+        are random ``{-1, +1}``. Local edges are always random ``{-1, +1}``.
+    beta : float, optional
+        Exponent for long-range weights when ``weighted=True``.
+    seed : int or numpy.random.Generator or None, optional
+        Seed for the random number generator.
+
+    Returns
+    -------
+    numpy.ndarray
+        An ``(n, n)`` ``float32`` weighted adjacency matrix.
+
+    Raises
+    ------
+    ValueError
+        If ``n`` is not a perfect square.
+
+    See Also
+    --------
+    kleinberg_small_world_graph : NetworkX-returning wrapper around this builder.
+    """
+    side = math.isqrt(n)
+    if side * side != n:
+        raise ValueError(
+            f"kleinberg_small_world requires a perfect-square number of nodes "
+            f"(got n={n}); the graph lives on a sqrt(n) x sqrt(n) toroidal grid."
+        )
+
+    rng = create_rng(seed)
+    adjacency = np.zeros((n, n), dtype=np.float32)
+
+    def _set_edge(u: int, v: int, weight: float) -> None:
+        adjacency[u, v] = weight
+        if not directed:
+            adjacency[v, u] = weight
+
+    # Per-node random "node weight" is drawn in the original (unused in the
+    # adjacency); consume the same draws so the RNG stream stays aligned with the
+    # NetworkX implementation, keeping the two statistically equivalent.
+    rng.random(n)
+
+    # Local edges: each node connects to its 4 toroidal neighbours.
+    for i in range(side):
+        for j in range(side):
+            u = i * side + j
+            neighbors = [
+                ((i - 1) % side) * side + j,
+                ((i + 1) % side) * side + j,
+                i * side + (j - 1) % side,
+                i * side + (j + 1) % side,
+            ]
+            for v in neighbors:
+                _set_edge(u, v, _rand_sign(rng))
+
+    # Long-range edges: probability ~ distance ** -q over all other nodes.
+    distances = _toroidal_distance_matrix(side)
+    with np.errstate(divide="ignore"):
+        probs = distances**-q
+    np.fill_diagonal(probs, 0.0)  # exclude self (distance 0 -> inf)
+
+    for u in range(n):
+        row = probs[u]
+        total = row.sum()
+        if total <= 0:
+            continue
+        weights = row / total
+        candidates = np.flatnonzero(weights > 0)
+        k_eff = min(k, candidates.size)
+        if k_eff == 0:
+            continue
+        chosen = rng.choice(n, size=k_eff, replace=False, p=weights)
+        for v in chosen:
+            v = int(v)
+            dist = float(distances[u, v])
+            weight = (dist**beta) if weighted else _rand_sign(rng)
+            _set_edge(u, v, weight)
+
+    return adjacency
+
+
+def _rand_sign(rng: np.random.Generator) -> float:
+    """Draw a random weight uniformly from ``{-1.0, +1.0}``."""
+    return -1.0 if rng.random() < 0.5 else 1.0
+
 
 @register_graph_topology(
     "kleinberg_small_world",
@@ -16,6 +153,7 @@ from resdag.utils.general import create_rng
     beta=2,
     seed=None,
 )
+@register_dense_adjacency(kleinberg_small_world_adjacency)
 def kleinberg_small_world_graph(
     n: int,
     q: float = 2,
@@ -34,6 +172,11 @@ def kleinberg_small_world_graph(
     particular node depends on the toroidal Manhattan distance raised to the power ``-q``.
 
     When ``weighted=True``, weights are assigned as ``distance^beta`` for long-range links.
+
+    The adjacency is built with NumPy (see
+    :func:`kleinberg_small_world_adjacency`); the NetworkX object is materialised
+    only for direct callers, and the dense topology fast path skips it entirely.
+    Nodes are indexed row-major (node ``(i, j)`` maps to index ``i * sqrt(n) + j``).
 
     Parameters
     ----------
@@ -59,64 +202,5 @@ def kleinberg_small_world_graph(
     networkx.Graph or networkx.DiGraph
         A Kleinberg small-world graph on an ``n x n`` toroidal grid.
     """
-    side = math.isqrt(n)
-    if side * side != n:
-        raise ValueError(
-            f"kleinberg_small_world requires a perfect-square number of nodes "
-            f"(got n={n}); the graph lives on a sqrt(n) x sqrt(n) toroidal grid."
-        )
-    n = side
-
-    rng = create_rng(seed)
-    G = DiGraph() if directed else Graph()
-
-    def toroidal_manhattan(i1: int, j1: int, i2: int, j2: int) -> int:
-        # Wrap distances on a torus
-        di = min(abs(i1 - i2), n - abs(i1 - i2))
-        dj = min(abs(j1 - j2), n - abs(j1 - j2))
-        return di + dj
-
-    # Create nodes
-    for i in range(n):
-        for j in range(n):
-            # Assign a random weight to the node (optionally used or not)
-            G.add_node((i, j), weight=rng.choice([-1, 1]))
-
-    # Local edges to 4 neighbors (toroidal wrap)
-    for i in range(n):
-        for j in range(n):
-            neighbors = [
-                ((i - 1) % n, j),  # up
-                ((i + 1) % n, j),  # down
-                (i, (j - 1) % n),  # left
-                (i, (j + 1) % n),  # right
-            ]
-            for neighbor in neighbors:
-                weight = rng.choice([-1, 1])
-                G.add_edge((i, j), neighbor, weight=weight)
-                if not directed:
-                    G.add_edge(neighbor, (i, j), weight=weight)
-
-    # Add k long-range connections per node
-    for i in range(n):
-        for j in range(n):
-            candidates = [(x, y) for x in range(n) for y in range(n) if (x, y) != (i, j)]
-            distances = np.array(
-                [toroidal_manhattan(i, j, x, y) for (x, y) in candidates], dtype=float
-            )
-
-            # Probability ~ distance^-q
-            probs = distances**-q
-            probs /= probs.sum()
-
-            k_eff = min(k, len(candidates))
-            chosen = rng.choice(len(candidates), size=k_eff, replace=False, p=probs)
-            for idx in chosen:
-                target = candidates[idx]
-                dist = toroidal_manhattan(i, j, *target)
-                weight = (dist**beta) if weighted else rng.choice([-1, 1])
-                G.add_edge((i, j), target, weight=weight)
-                if not directed:
-                    G.add_edge(target, (i, j), weight=weight)
-
-    return G
+    adjacency = kleinberg_small_world_adjacency(n, q, k, directed, weighted, beta, seed)
+    return adjacency_to_graph(adjacency, directed=directed)

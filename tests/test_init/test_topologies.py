@@ -13,6 +13,7 @@ Pins down:
 """
 
 import importlib
+import time
 import warnings
 
 import networkx as nx
@@ -30,6 +31,19 @@ from resdag.init.graphs import (
     erdos_renyi_graph,
     regular_graph,
     ring_chord_graph,
+)
+from resdag.init.graphs._dense import adjacency_to_graph, dense_adjacency_builder
+from resdag.init.graphs.complete import complete_adjacency, complete_graph
+from resdag.init.graphs.erdos_renyi import erdos_renyi_adjacency
+from resdag.init.graphs.kleinberg_small_world import (
+    kleinberg_small_world_adjacency,
+    kleinberg_small_world_graph,
+)
+from resdag.init.graphs.random import random_adjacency, random_graph
+from resdag.init.graphs.regular import regular_adjacency
+from resdag.init.graphs.watts_strogatz import (
+    watts_strogatz_adjacency,
+    watts_strogatz_graph,
 )
 from resdag.init.topology import (
     GraphTopology,
@@ -1266,3 +1280,224 @@ class TestConnectedGraphRetry:
         wrapped = connected_graph(erdos_renyi_graph, max_tries=10)
         with pytest.raises(ValueError):
             wrapped(500, p=0.0005, seed=7)
+
+
+# ---------------------------------------------------------------------------
+# Vectorized dense generators: NumPy fast path (issue #186)
+# ---------------------------------------------------------------------------
+#
+# The dense generators (``erdos_renyi``, ``complete``, ``regular``,
+# ``watts_strogatz``, ``kleinberg_small_world``, ``random``) build their
+# adjacency directly in NumPy and advertise it via ``register_dense_adjacency``.
+# ``GraphTopology`` then skips NetworkX entirely on the hot path. These tests pin
+# down the equivalence contract: the vectorized adjacency matches the NetworkX
+# graph the wrapper returns, the fast path is taken, dtype/device/spectral
+# scaling are unchanged, and everything stays reproducible under a seed.
+
+# (graph_func, adjacency_builder, kwargs, directed) for each vectorized generator.
+_DENSE_CASES = [
+    (erdos_renyi_graph, erdos_renyi_adjacency, {"p": 0.2, "seed": 11}, True),
+    (complete_graph, complete_adjacency, {"seed": 11}, False),
+    (regular_graph, regular_adjacency, {"k": 4, "seed": 11}, False),
+    (watts_strogatz_graph, watts_strogatz_adjacency, {"k": 6, "p": 0.3, "seed": 11}, False),
+    (
+        kleinberg_small_world_graph,
+        kleinberg_small_world_adjacency,
+        {"seed": 11},
+        False,
+    ),
+    (random_graph, random_adjacency, {"density": 0.3, "seed": 11}, True),
+]
+
+_DENSE_NAMES = [
+    "erdos_renyi",
+    "complete",
+    "regular",
+    "watts_strogatz",
+    "kleinberg_small_world",
+    "random",
+]
+
+
+def _adjacency_of(graph: nx.Graph | nx.DiGraph) -> np.ndarray:
+    """Dense adjacency of a NetworkX graph in canonical (sorted) node order."""
+    return nx.to_numpy_array(
+        graph, nodelist=sorted(graph.nodes()), weight="weight", dtype=np.float32
+    )
+
+
+class TestVectorizedDenseAdjacency:
+    """The vectorized NumPy builders are equivalent to the NetworkX graphs."""
+
+    @pytest.mark.parametrize("graph_func, builder, kwargs, directed", _DENSE_CASES)
+    def test_builder_matches_graph_adjacency(
+        self, graph_func, builder, kwargs: dict, directed: bool
+    ) -> None:
+        """The dense adjacency equals the wrapper graph's adjacency exactly.
+
+        ``adjacency_to_graph`` builds the NetworkX object *from* the vectorized
+        adjacency, so the two are equal by construction — this guards that the
+        round-trip preserves every weighted edge.
+        """
+        n = 36  # perfect square so kleinberg is valid for the shared case
+        adjacency = builder(n, **kwargs)
+        graph = graph_func(n, **kwargs)
+
+        assert adjacency.shape == (n, n)
+        assert adjacency.dtype == np.float32
+        assert np.allclose(_adjacency_of(graph), adjacency)
+
+    @pytest.mark.parametrize("graph_func, builder, kwargs, directed", _DENSE_CASES)
+    def test_builder_is_seed_deterministic(
+        self, graph_func, builder, kwargs: dict, directed: bool
+    ) -> None:
+        """The same integer seed yields a bit-identical adjacency; a different one differs."""
+        n = 36
+        a = builder(n, **kwargs)
+        b = builder(n, **kwargs)
+        assert np.array_equal(a, b)
+
+        other = {**kwargs, "seed": kwargs["seed"] + 1}
+        assert not np.array_equal(a, builder(n, **other))
+
+    @pytest.mark.parametrize("graph_func, builder, kwargs, directed", _DENSE_CASES)
+    def test_weights_are_signed_unit_or_zero(
+        self, graph_func, builder, kwargs: dict, directed: bool
+    ) -> None:
+        """Nonzero weights respect each generator's weight distribution."""
+        adjacency = builder(36, **kwargs)
+        nonzero = adjacency[adjacency != 0]
+
+        if graph_func is random_graph:
+            # Uniform(-1, 1) draws.
+            assert nonzero.min() >= -1.0 and nonzero.max() <= 1.0
+        else:
+            # Sign weights drawn from {-1, +1}.
+            assert set(np.unique(nonzero).tolist()) <= {-1.0, 1.0}
+
+    def test_undirected_builders_are_symmetric(self) -> None:
+        """Undirected generators produce a symmetric adjacency."""
+        for graph_func, builder, kwargs, directed in _DENSE_CASES:
+            if directed:
+                continue
+            adjacency = builder(36, **kwargs)
+            assert np.allclose(adjacency, adjacency.T), f"{graph_func.__name__} not symmetric"
+
+
+class TestDenseFastPath:
+    """``GraphTopology`` takes the NumPy fast path and skips NetworkX."""
+
+    @pytest.mark.parametrize("name", _DENSE_NAMES)
+    def test_topology_advertises_dense_builder(self, name: str) -> None:
+        """Each dense topology's graph function carries an adjacency builder."""
+        topology = get_topology(name)
+        assert dense_adjacency_builder(topology.graph_func) is not None
+
+    @pytest.mark.parametrize("name", _DENSE_NAMES)
+    def test_initialize_skips_networkx(self, name: str) -> None:
+        """The fast path never calls the (NetworkX-returning) graph function."""
+        topology = get_topology(name, seed=3)
+        original = topology.graph_func
+        sentinel = {"called": False}
+
+        def _tripwire(*args: object, **kwargs: object) -> object:
+            sentinel["called"] = True
+            return original(*args, **kwargs)
+
+        # Carry the dense-builder attribute over so the fast path is still chosen;
+        # the tripwire only fires if ``GraphTopology`` falls back to NetworkX.
+        _tripwire.adjacency_builder = original.adjacency_builder  # type: ignore[attr-defined]
+        topology.graph_func = _tripwire
+
+        weight = torch.empty(36, 36)
+        topology.initialize(weight, spectral_radius=0.9)
+
+        assert sentinel["called"] is False, f"{name} fell back to the NetworkX builder"
+        assert not torch.all(weight == 0)
+
+    @pytest.mark.parametrize("name", _DENSE_NAMES)
+    def test_spectral_radius_scaling_applies(self, name: str) -> None:
+        """Spectral-radius scaling is unchanged on the fast path."""
+        topology = get_topology(name, seed=3)
+        weight = torch.empty(36, 36)
+        topology.initialize(weight, spectral_radius=0.8)
+
+        radius = float(np.max(np.abs(np.linalg.eigvals(weight.numpy()))))
+        assert radius == pytest.approx(0.8, abs=1e-2)
+
+    @pytest.mark.parametrize("name", _DENSE_NAMES)
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_dtype_preserved(self, name: str, dtype: torch.dtype) -> None:
+        """The target tensor's dtype is preserved through the fast path."""
+        topology = get_topology(name, seed=3)
+        weight = torch.empty(36, 36, dtype=dtype)
+        result = topology.initialize(weight)
+        assert result.dtype == dtype
+
+    @pytest.mark.parametrize("name", _DENSE_NAMES)
+    def test_initialize_on_device(self, name: str, device: torch.device) -> None:
+        """Initialization works on any device through the fast path."""
+        topology = get_topology(name, seed=3)
+        weight = torch.empty(36, 36, device=device)
+        result = topology.initialize(weight, spectral_radius=0.9)
+        assert result.device.type == device.type
+        assert result.shape == (36, 36)
+
+
+class TestAdjacencyToGraph:
+    """``adjacency_to_graph`` reconstructs the right NetworkX object."""
+
+    def test_directed_keeps_every_nonzero_entry(self) -> None:
+        """A directed graph has one edge per nonzero entry, weights intact."""
+        a = np.array([[0.0, 1.0], [-1.0, 0.0]], dtype=np.float32)
+        g = adjacency_to_graph(a, directed=True)
+        assert isinstance(g, nx.DiGraph)
+        assert g.number_of_nodes() == 2
+        assert np.allclose(_adjacency_of(g), a)
+
+    def test_undirected_reads_upper_triangle(self) -> None:
+        """An undirected graph is symmetric and isolated nodes survive."""
+        a = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float32)
+        g = adjacency_to_graph(a, directed=False)
+        assert isinstance(g, nx.Graph)
+        assert g.number_of_nodes() == 3  # node 2 is isolated but present
+        assert np.allclose(_adjacency_of(g), a)
+
+
+@pytest.mark.benchmark
+class TestDenseGeneratorInitSpeed:
+    """The vectorized fast path is several-fold faster than NetworkX (issue #186).
+
+    At ``n=2000`` the pre-#186 ``erdos_renyi`` build spent ~6.5s materialising the
+    NetworkX graph — larger than the dense ``eigvals``. The fast path must build
+    the same dense adjacency far faster; we compare it against the (still
+    NetworkX-based) direct graph build to document the improvement.
+    """
+
+    def test_erdos_renyi_fast_path_beats_networkx_build(self) -> None:
+        n = 2000
+        builder = dense_adjacency_builder(erdos_renyi_graph)
+        assert builder is not None
+
+        def fast() -> None:
+            builder(n, p=0.1, directed=True, self_loops=True, seed=0)
+
+        def networkx_build() -> None:
+            erdos_renyi_graph(n, p=0.1, directed=True, self_loops=True, seed=0)
+
+        # Warm up, then time a single representative call each.
+        fast()
+        networkx_build()
+        t0 = time.perf_counter()
+        fast()
+        t_fast = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        networkx_build()
+        t_nx = time.perf_counter() - t0
+
+        speedup = t_nx / max(t_fast, 1e-9)
+        assert speedup >= 3.0, (
+            f"dense fast path only {speedup:.1f}x the NetworkX build "
+            f"(fast={t_fast:.3f}s, nx={t_nx:.3f}s); expected >= 3x at n={n}"
+        )

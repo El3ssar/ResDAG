@@ -213,6 +213,29 @@ attractor's geometry.</figcaption>
 If forecasts diverge well before this point, tune the hyperparameters
 before increasing reservoir size.
 
+## Locking the forecast — golden regression fixtures
+
+The forecast path is the library's most-revised code, so its behaviour is
+pinned by committed *golden trajectories*. For every forecast-capable premade
+model (`classic_esn`, `ott_esn`, `power_augmented`) plus an NG-RC forecaster, a
+fully-seeded warmup → forecast on a canonical Lorenz-63 series is checked in
+under `tests/fixtures/golden_forecast/` and asserted by
+`tests/test_models/test_golden_forecast.py`:
+
+- the first forecast steps must match the golden within a tight tolerance — the
+  structural guard that catches any silent shift in the autoregressive loop
+  (slot-0, the warmup/forecast seam, the flat single-step engine);
+- the Valid Prediction Time against the true continuation must clear a committed
+  floor — a coarser "forecast quality didn't collapse" guard.
+
+If you intentionally change the forecast path (or the canonical data
+generators), regenerate the goldens and review the diff:
+
+```bash
+python tools/regen_golden_forecasts.py --check   # verify only — write nothing (CI-style drift check)
+python tools/regen_golden_forecasts.py --all     # rewrite every fixture
+```
+
 ## Next
 
 - [**Tune**](tune.md) — hyperparameter optimization for forecast quality

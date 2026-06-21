@@ -80,6 +80,25 @@ The test suite mirrors `src/resdag/`. Markers:
 - `benchmark` — performance assertions, deselected by default
   (`pytest -m benchmark` to run; they assert the GPU beats the CPU at scale)
 
+### Golden-forecast regression fixtures
+
+`tests/test_models/test_golden_forecast.py` pins the behaviour of
+`ESNModel.forecast` for each premade model against committed *golden*
+trajectories under `tests/fixtures/golden_forecast/` — a fully-seeded
+warmup → forecast on Lorenz-63, in CPU float64. It fails on any drift in the
+forecast path. If you change that path — or the canonical `lorenz` /
+`prepare_esn_data` generators it builds on — regenerate the fixtures and review
+the diff before committing:
+
+```bash
+uv run python tools/regen_golden_forecasts.py --check   # verify only (drift check, non-zero exit on drift)
+uv run python tools/regen_golden_forecasts.py --all      # regenerate every fixture
+```
+
+The model specs, data splits, metric, and tolerances live in
+`tests/test_models/golden_forecast.py`, shared by the test and the tool so they
+can never disagree.
+
 ## Commit messages and releases
 
 > **⚠️ Releases are frozen until 1.0.** We are deliberately accumulating

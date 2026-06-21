@@ -1034,3 +1034,28 @@ class TestNGRCWithReadout:
         features = layer(x)
         pred = readout(features)
         assert pred.shape == (2, 20, out_dim)
+
+    def test_composes_into_esnmodel(self) -> None:
+        """NGReservoir slots into the pytorch_symbolic DAG inside an ESNModel.
+
+        A smoke check that the layer composes at the *model* level (not just as
+        a directly-called layer): ``Input -> NGReservoir -> CGReadoutLayer``
+        builds an :class:`~resdag.core.ESNModel` whose forward yields the
+        expected shape.  Full train/forecast/state-management coverage lives in
+        ``tests/test_core/test_ngrc_integration.py``.
+        """
+        from resdag.core import ESNModel, Input
+        from resdag.layers import CGReadoutLayer
+
+        d = 3
+        torch.manual_seed(0)
+        inp = Input(shape=(20, d))
+        reservoir = NGReservoir(input_dim=d, k=2, p=2)
+        feats = reservoir(inp)
+        readout = CGReadoutLayer(reservoir.feature_dim, d, name="output")(feats)
+        model = ESNModel(inp, readout)
+
+        x = torch.randn(2, 20, d)
+        out = model(x)
+        assert out.shape == (2, 20, d)
+        assert torch.isfinite(out).all()

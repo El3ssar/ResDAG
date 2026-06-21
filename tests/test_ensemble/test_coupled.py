@@ -678,6 +678,47 @@ class TestAggregators:
         out = ens.forecast(f_warm, horizon=10)
         assert out.shape == (1, 10, 2)
 
+    def test_median_even_n_is_interpolated(self):
+        """An even-sized ensemble's ``"median"`` aggregation averages the two
+        central members (interpolated median), not the lower one.
+
+        Regression for the bias where ``Tensor.median`` returned the lower of
+        the two middle values for even N, distorting the coupled feedback at
+        every autoregressive step.
+        """
+        ens = rd.coupled_ensemble_esn(
+            n_models=4,
+            reservoir_size=10,
+            feedback_size=2,
+            output_size=2,
+            aggregate="median",
+            seed=0,
+        )
+        # Synthetic stacked tensor (N=4, batch=1, T=1, F=1): members 1, 2, 3, 4.
+        # Lower median would give 2.0; the interpolated median is 2.5.
+        stacked = torch.tensor([1.0, 2.0, 3.0, 4.0]).view(4, 1, 1, 1)
+        result = ens._aggregate_stacked(stacked)
+        assert torch.allclose(
+            result, torch.tensor(2.5)
+        ), f"even-N median returned {result.item()}, expected interpolated 2.5"
+
+    def test_median_odd_n_unchanged(self):
+        """Odd-sized ensembles keep the exact central member as the median."""
+        ens = rd.coupled_ensemble_esn(
+            n_models=3,
+            reservoir_size=10,
+            feedback_size=2,
+            output_size=2,
+            aggregate="median",
+            seed=0,
+        )
+        # Members 1, 5, 9 (N=3, batch=1, T=1, F=1): the median is the middle 5.
+        stacked = torch.tensor([1.0, 5.0, 9.0]).view(3, 1, 1, 1)
+        result = ens._aggregate_stacked(stacked)
+        assert torch.allclose(
+            result, torch.tensor(5.0)
+        ), f"odd-N median returned {result.item()}, expected 5.0"
+
     def test_outliers_filtered_mean_all_outliers_fallback(self):
         """Regression for the bug fixed in commit f0bd4a7: at a position
         where *every* sample is classed as an outlier, the layer must

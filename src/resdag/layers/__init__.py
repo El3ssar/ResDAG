@@ -26,10 +26,15 @@ CGReadoutLayer
     ReadoutLayer with Conjugate Gradient ridge regression solver.
 RidgeReadoutLayer
     Direct ridge readout (Cholesky / LU solve of the normal equations).
+CholeskyReadoutLayer
+    Single-shot Cholesky ridge readout; the streaming-path direct solver.
 SVDReadoutLayer
     SVD filter-factor readout; robust to rank-deficient Gram matrices.
 PinvReadoutLayer
     Least-squares readout via ``lstsq`` / pseudo-inverse with ``rcond``.
+IncrementalRidgeReadout
+    Streaming ridge readout (``partial_fit`` / ``finalize``) for the
+    DataLoader / long-sequence path.
 Concatenate
     Layer for concatenating multiple inputs along feature dimension.
 FeaturePartitioner
@@ -61,6 +66,8 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 from .cells import ESNCell, NGCell, ReservoirCell
 from .readouts import (
     CGReadoutLayer,
+    CholeskyReadoutLayer,
+    IncrementalRidgeReadout,
     PinvReadoutLayer,
     ReadoutLayer,
     RidgeReadoutLayer,
@@ -90,8 +97,10 @@ __all__ = [
     "ReadoutLayer",
     "CGReadoutLayer",
     "RidgeReadoutLayer",
+    "CholeskyReadoutLayer",
     "SVDReadoutLayer",
     "PinvReadoutLayer",
+    "IncrementalRidgeReadout",
     # Custom layers
     "Concatenate",
     "FeaturePartitioner",

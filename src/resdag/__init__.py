@@ -96,10 +96,12 @@ from .init import graphs, input_feedback, topology
 from .layers import (
     BaseReservoirLayer,
     CGReadoutLayer,
+    CholeskyReadoutLayer,
     Concatenate,
     ESNCell,
     ESNLayer,
     FeaturePartitioner,
+    IncrementalRidgeReadout,
     NGCell,
     NGReservoir,
     PinvReadoutLayer,
@@ -161,8 +163,10 @@ __all__ = [
     "CGReadoutLayer",
     "ReadoutLayer",
     "RidgeReadoutLayer",
+    "CholeskyReadoutLayer",
     "SVDReadoutLayer",
     "PinvReadoutLayer",
+    "IncrementalRidgeReadout",
     # Custom / utility layers
     "Concatenate",
     "FeaturePartitioner",

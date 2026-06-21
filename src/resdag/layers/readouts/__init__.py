@@ -13,12 +13,18 @@ CGReadoutLayer
 RidgeReadoutLayer
     Direct ridge readout via Cholesky (``solver='cholesky'``) or LU
     (``solver='solve'``) factorisation of the normal equations.
+CholeskyReadoutLayer
+    Single-shot Cholesky ridge readout; the streaming-path direct solver.
 SVDReadoutLayer
     Readout solved via SVD with Tikhonov filter factors; robust to
     rank-deficient Gram matrices and ``alpha=0``.
 PinvReadoutLayer
     Least-squares readout via ``torch.linalg.lstsq`` / ``pinv`` with an
     ``rcond`` cutoff.
+IncrementalRidgeReadout
+    Streaming ridge readout: ``partial_fit`` accumulates sufficient
+    statistics chunk-by-chunk, ``finalize`` solves once. For the
+    DataLoader / long-sequence path.
 
 Examples
 --------
@@ -41,6 +47,8 @@ resdag.layers.ESNLayer : ESN layer for generating states.
 
 from .base import ReadoutLayer
 from .cg_readout import CGReadoutLayer
+from .cholesky_readout import CholeskyReadoutLayer
+from .incremental_ridge import IncrementalRidgeReadout
 from .pinv_readout import PinvReadoutLayer
 from .ridge_readout import RidgeReadoutLayer
 from .svd_readout import SVDReadoutLayer
@@ -49,8 +57,10 @@ __all__ = [
     "ReadoutLayer",
     "CGReadoutLayer",
     "RidgeReadoutLayer",
+    "CholeskyReadoutLayer",
     "SVDReadoutLayer",
     "PinvReadoutLayer",
+    "IncrementalRidgeReadout",
 ]
 
 

@@ -245,6 +245,81 @@ class TestESNLayerStatefulBehavior:
         assert state is None
 
 
+class TestESNLayerSetStateBatchContract:
+    """set_state pins the next-forward batch size (#145).
+
+    A state restored via :meth:`set_state` must not be silently discarded by a
+    later forward at a mismatched batch size — the discard used to zero-reinit
+    the reservoir and produce plausible-looking but wrong forecasts for the
+    common train-with-``batch>1`` / forecast-with-``batch=1`` pattern.
+    """
+
+    def test_set_state_then_forward_mismatched_batch_raises(self) -> None:
+        """set_state(batch=7) then forward(batch=4) raises, not silent zero-init."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
+        reservoir.reset_state(batch_size=7)
+        saved_7 = reservoir.get_state()
+
+        reservoir.set_state(saved_7)
+        with pytest.raises(RuntimeError, match="set_state"):
+            reservoir(torch.randn(4, 5, 10))
+
+    def test_set_state_then_forward_matching_batch_preserved(self) -> None:
+        """A restored state is honoured (not zeroed) when batch sizes match."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
+        reservoir(torch.randn(3, 8, 10))  # warm up so the state is non-trivial
+        saved_3 = reservoir.get_state()
+        same_input = torch.randn(3, 1, 10)
+
+        # A one-step forward from the restored state must continue from it, not
+        # from re-zeroed state: its output differs from the zero-started run.
+        reservoir.set_state(saved_3)
+        out_from_saved = reservoir(same_input)
+        assert reservoir.state.shape[0] == 3
+
+        reservoir.reset_state(batch_size=3)
+        out_from_zero = reservoir(same_input)
+        assert not torch.allclose(out_from_saved, out_from_zero)
+
+    def test_lazy_zero_init_still_auto_resizes_without_error(self) -> None:
+        """Lazy/None state path keeps auto-resizing on batch change, no error."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
+        assert reservoir.state is None  # lazy: nothing user-set
+
+        reservoir(torch.randn(4, 6, 10))
+        # An evolved (not user-set) state must still auto-resize silently.
+        reservoir(torch.randn(2, 6, 10))
+        assert reservoir.state.shape[0] == 2
+
+    def test_evolved_state_after_set_state_auto_resizes(self) -> None:
+        """Once a restored state evolves via forward, the pin is released."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
+        reservoir.reset_state(batch_size=5)
+        reservoir.set_state(reservoir.get_state())
+
+        reservoir(torch.randn(5, 4, 10))  # matching batch: state evolves, pin drops
+        # Now a batch change must auto-resize (no longer the as-restored tensor).
+        reservoir(torch.randn(2, 4, 10))
+        assert reservoir.state.shape[0] == 2
+
+    def test_reset_state_clears_user_set_pin(self) -> None:
+        """reset_state() opts back into auto-resize after a set_state."""
+        reservoir = ESNLayer(reservoir_size=50, feedback_size=10)
+        reservoir.reset_state(batch_size=7)
+        reservoir.set_state(reservoir.get_state())
+
+        reservoir.reset_state()  # explicit opt back into auto-resize
+        reservoir(torch.randn(4, 5, 10))  # must not raise
+        assert reservoir.state.shape[0] == 4
+
+    def test_set_state_docstring_states_batch_contract(self) -> None:
+        """set_state docstring documents the batch-size contract explicitly."""
+        doc = ESNLayer.set_state.__doc__
+        assert doc is not None
+        assert "batch" in doc.lower()
+        assert "next forward" in doc.lower()
+
+
 class TestESNLayerActivations:
     """Activation functions and their codomain."""
 

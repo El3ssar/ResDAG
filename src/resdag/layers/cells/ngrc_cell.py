@@ -49,9 +49,24 @@ class NGCell(ReservoirCell):
     s : int, default=1
         Spacing between delay taps, in timesteps.
     p : int, default=2
-        Polynomial degree for nonlinear feature construction.  All unique
-        monomials of *exactly* degree ``p`` from the ``D = input_dim * k``
-        linear features are included.
+        Polynomial degree for nonlinear feature construction.  See ``cumulative``
+        for the two supported degree conventions.
+
+        **Exact-degree convention** (``cumulative=False``, the default): the
+        nonlinear block contains all unique monomials of *exactly* degree ``p``
+        from the ``D = input_dim * k`` linear features — there are
+        ``C(D + p - 1, p)`` of them.  Lower-order cross terms (degrees
+        ``2, ..., p-1``) are **not** included.  For example,
+        ``NGCell(p=3, include_linear=True)`` emits ``constant + linear + cubic``
+        with *no* quadratic terms.  This is the historical resdag behaviour and
+        matches Gauthier et al. (arXiv:2106.07688v2), whose Lorenz63 (Eq. 9) and
+        double-scroll (Eq. 10) bases each use a single polynomial degree.
+
+        **Cumulative-degree convention** (``cumulative=True``): the nonlinear
+        block contains every monomial of degree ``2, ..., p`` (or ``1, ..., p``
+        when ``include_linear=False``), i.e. the full polynomial basis up to
+        degree ``p``.  Many NVAR / NG-RC implementations (and configs ported
+        from them) expect this "degree up to ``p``" basis.
 
         .. note::
             When ``p == 1`` the degree-1 monomials *are* the linear features
@@ -59,7 +74,16 @@ class NGCell(ReservoirCell):
             readout design matrix rank-deficient), the nonlinear block is
             **omitted** whenever ``p == 1`` and ``include_linear`` is ``True``.
             With ``p == 1`` and ``include_linear=False`` the degree-1 monomials
-            are kept, since they are then the only delay-embedded features.
+            are kept, since they are then the only delay-embedded features.  More
+            generally, whenever ``include_linear`` is ``True`` the degree-1
+            monomials are dropped from the nonlinear block (in both conventions),
+            since they would duplicate ``O_lin``; the cumulative basis therefore
+            spans degrees ``2, ..., p`` in that case.
+    cumulative : bool, default=False
+        Degree convention for the nonlinear block (see ``p``).  ``False`` keeps
+        only exact-degree-``p`` monomials (default, unchanged behaviour);
+        ``True`` includes all monomials of every degree up to ``p`` (the
+        cumulative / "degree up to ``p``" basis).
     include_constant : bool, default=True
         Whether to prepend a constant ``1.0`` feature to the output vector.
         Set ``True`` for Lorenz63 forecasting (Eq. 9).
@@ -74,14 +98,22 @@ class NGCell(ReservoirCell):
         Total dimension of the output feature vector ``O_total``::
 
             D = input_dim * k
-            n_nonlin = C(D + p - 1, p)
-            # The nonlinear block is dropped when it would duplicate O_lin:
-            emit_nonlin = not (p == 1 and include_linear)
+            # Degrees emitted in the nonlinear block.  Degree 1 is excluded
+            # whenever include_linear is True (those monomials == O_lin):
+            d_lo = 2 if include_linear else 1
+            degrees = range(d_lo, p + 1) if cumulative else [p]
+            degrees = [g for g in degrees if not (g == 1 and include_linear)]
+            n_nonlin = sum(C(D + g - 1, g) for g in degrees)
             feature_dim = (
                 int(include_constant)
                 + int(include_linear) * D
-                + int(emit_nonlin) * n_nonlin
+                + n_nonlin
             )
+
+        In the default exact-degree mode (``cumulative=False``) this reduces to
+        ``int(include_constant) + int(include_linear) * D + C(D + p - 1, p)``,
+        with the ``C(...)`` term dropped only in the ``p == 1`` /
+        ``include_linear=True`` duplicate-column case.
 
     state_size : int
         Number of rows in the delay buffer: ``(k - 1) * s``.  When ``k=1``
@@ -89,6 +121,11 @@ class NGCell(ReservoirCell):
     monomial_indices : torch.Tensor
         Long tensor of shape ``(n_monomials, p)`` containing the column
         indices into ``O_lin`` for each monomial.  Registered as a buffer.
+        Each row lists the ``O_lin`` columns multiplied together to form one
+        monomial.  In exact-degree mode every row has ``p`` distinct index
+        slots; in cumulative mode lower-degree monomials are **right-padded**
+        with ``-1`` sentinels (gathered from a prepended ``1.0`` column at
+        runtime) so all rows share the same width ``p``.
     delay_indices : torch.Tensor
         Long tensor of shape ``(k-1,)`` containing the row indices into the
         delay buffer for extracting the delay taps.  Registered as a buffer.
@@ -125,6 +162,7 @@ class NGCell(ReservoirCell):
         k: int = 2,
         s: int = 1,
         p: int = 2,
+        cumulative: bool = False,
         include_constant: bool = True,
         include_linear: bool = True,
     ) -> None:
@@ -141,6 +179,7 @@ class NGCell(ReservoirCell):
         self.k = k
         self.s = s
         self.p = p
+        self.cumulative = cumulative
         self.include_constant = include_constant
         self.include_linear = include_linear
 
@@ -156,19 +195,56 @@ class NGCell(ReservoirCell):
             delay_idx = torch.zeros(0, dtype=torch.long)
         self.register_buffer("delay_indices", delay_idx)
 
-        # Precompute monomial index tuples (shape: (n_monomials, p)).
-        raw_indices = list(itertools.combinations_with_replacement(range(linear_feature_dim), p))
-        monomial_idx = torch.tensor(raw_indices, dtype=torch.long)  # (n_monomials, p)
+        # ------------------------------------------------------------------
+        # Decide which monomial degrees the nonlinear block emits.
+        #
+        # Exact-degree mode (cumulative=False): only degree p.
+        # Cumulative mode (cumulative=True):    every degree 1..p.
+        #
+        # When include_linear is True the degree-1 monomials are exactly the
+        # columns of O_lin, so emitting them again would duplicate every linear
+        # column and make the readout design matrix rank-deficient.  Drop
+        # degree 1 from the nonlinear block in that case (this generalises the
+        # historical p==1 special case to both conventions).
+        # ------------------------------------------------------------------
+        degrees = range(1, p + 1) if cumulative else range(p, p + 1)
+        emit_degrees = [g for g in degrees if not (g == 1 and include_linear)]
+
+        # Build the monomial index rows.  Exact-degree mode keeps the historical
+        # tight (n_monomials, p) layout with no padding.  Cumulative mode mixes
+        # degrees, so every row is right-padded to width p with the -1 sentinel,
+        # which is gathered from a prepended 1.0 column (the multiplicative
+        # identity) at runtime — keeping a single vectorised gather/prod.
+        raw_indices: list[tuple[int, ...]] = []
+        for g in emit_degrees:
+            raw_indices.extend(
+                itertools.combinations_with_replacement(range(linear_feature_dim), g)
+            )
+
+        self._pad_with_ones: bool = cumulative and len(emit_degrees) > 1
+        if self._pad_with_ones:
+            # Right-pad short monomials with the -1 ones-sentinel to width p.
+            padded = [list(idx) + [-1] * (p - len(idx)) for idx in raw_indices]
+            monomial_idx = (
+                torch.tensor(padded, dtype=torch.long)
+                if padded
+                else torch.zeros(0, p, dtype=torch.long)
+            )
+        else:
+            # Tight layout: every monomial already has exactly ``width`` factors.
+            width = emit_degrees[0] if emit_degrees else p
+            monomial_idx = (
+                torch.tensor([list(idx) for idx in raw_indices], dtype=torch.long)
+                if raw_indices
+                else torch.zeros(0, width, dtype=torch.long)
+            )
         self.register_buffer("monomial_indices", monomial_idx)
 
         n_monomials = len(raw_indices)
 
-        # When p == 1 the degree-1 monomials are exactly the columns of O_lin,
-        # so emitting both O_lin and O_nonlin would duplicate every linear
-        # column and make the readout design matrix rank-deficient.  Drop the
-        # nonlinear block in that case; keep it when include_linear is False
-        # (the degree-1 monomials are then the only delay-embedded features).
-        self._emit_nonlinear: bool = not (p == 1 and include_linear)
+        # The nonlinear block is omitted entirely only when no degrees survive
+        # the degree-1 filter (i.e. p == 1 and include_linear is True).
+        self._emit_nonlinear: bool = len(emit_degrees) > 0
 
         # Total output dimension
         self._feature_dim: int = (
@@ -287,15 +363,13 @@ class NGCell(ReservoirCell):
             new_state = state  # empty tensor, no change
 
         # ------------------------------------------------------------------
-        # 3. Nonlinear features (Eq. 6): all degree-p monomials from O_lin
+        # 3. Nonlinear features (Eq. 6): polynomial monomials from O_lin.
         #
-        # monomial_indices: (n_monomials, p)  — precomputed in __init__
-        # o_lin[:, monomial_indices]: (batch, n_monomials, p) via advanced
-        # indexing (broadcast over batch, gather over feature dim).
-        # .prod(dim=-1): (batch, n_monomials)
-        #
-        # Skipped when p == 1 and include_linear is True, because the degree-1
-        # monomials are exactly the columns of O_lin (see __init__).
+        # Exact-degree mode emits only degree-p monomials; cumulative mode emits
+        # every degree up to p.  The gather/product is delegated to
+        # :meth:`_build_nonlinear`, which handles the padded cumulative layout.
+        # The block is omitted only when p == 1 and include_linear is True
+        # (the degree-1 monomials are then exactly the columns of O_lin).
         # ------------------------------------------------------------------
         # ------------------------------------------------------------------
         # 4. Assemble O_total = [c] ⊕ O_lin ⊕ O_nonlin (Eq. 9 / Eq. 10)
@@ -306,13 +380,46 @@ class NGCell(ReservoirCell):
         if self.include_linear:
             parts.append(o_lin)
         if self._emit_nonlinear:
-            monomial_indices = cast(torch.Tensor, self.monomial_indices)
-            o_nonlin = o_lin[:, monomial_indices].prod(dim=-1)  # (batch, n_monomials)
-            parts.append(o_nonlin)
+            parts.append(self._build_nonlinear(o_lin))  # (batch, n_monomials)
 
         o_total = torch.cat(parts, dim=-1)  # (batch, feature_dim)
 
         return o_total, new_state
+
+    def _build_nonlinear(self, o_lin: torch.Tensor) -> torch.Tensor:
+        """
+        Gather the polynomial monomials from the linear features ``O_lin``.
+
+        Each row of :attr:`monomial_indices` lists the ``O_lin`` columns to
+        multiply together for one monomial.  In exact-degree mode every row has
+        ``p`` valid column indices, so the monomial block is a single advanced
+        index plus a product over the last axis.  In cumulative mode the rows
+        mix degrees and are right-padded with the ``-1`` sentinel; a ``1.0``
+        column is prepended to ``O_lin`` (index ``0``, the multiplicative
+        identity) and the indices shifted by ``+1`` so that ``-1`` selects the
+        ones column and contributes nothing to the product.
+
+        Parameters
+        ----------
+        o_lin : torch.Tensor
+            Linear delay-embedded features of shape ``(..., D)`` (the leading
+            dimensions are ``(batch,)`` for :meth:`forward` and
+            ``(batch, timesteps)`` for :meth:`forward_sequence`).
+
+        Returns
+        -------
+        torch.Tensor
+            Monomial block of shape ``(..., n_monomials)``.
+        """
+        monomial_indices = cast(torch.Tensor, self.monomial_indices)
+        if self._pad_with_ones:
+            # Prepend a 1.0 identity column; shift -1 sentinels to that column.
+            ones = torch.ones(*o_lin.shape[:-1], 1, device=o_lin.device, dtype=o_lin.dtype)
+            o_aug = torch.cat([ones, o_lin], dim=-1)  # (..., 1 + D)
+            gathered = o_aug[..., monomial_indices + 1]  # (..., n_monomials, p)
+        else:
+            gathered = o_lin[..., monomial_indices]  # (..., n_monomials, width)
+        return gathered.prod(dim=-1)  # (..., n_monomials)
 
     def forward_sequence(
         self,
@@ -399,11 +506,7 @@ class NGCell(ReservoirCell):
         if self.include_linear:
             parts.append(o_lin)
         if self._emit_nonlinear:
-            # o_lin[..., monomial_indices]: (batch, T, n_monomials, p)
-            # .prod(dim=-1):                (batch, T, n_monomials)
-            monomial_indices = cast(torch.Tensor, self.monomial_indices)
-            o_nonlin = o_lin[..., monomial_indices].prod(dim=-1)
-            parts.append(o_nonlin)
+            parts.append(self._build_nonlinear(o_lin))  # (batch, T, n_monomials)
 
         o_total = torch.cat(parts, dim=-1)  # (batch, T, feature_dim)
 
@@ -439,6 +542,7 @@ class NGCell(ReservoirCell):
             f"k={self.k}, "
             f"s={self.s}, "
             f"p={self.p}, "
+            f"cumulative={self.cumulative}, "
             f"feature_dim={self.feature_dim}"
             f")"
         )

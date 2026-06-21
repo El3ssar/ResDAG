@@ -54,6 +54,37 @@ The three terms are the constant 1, the delay-embedded inputs, and every
 monomial of *exactly* degree `p`; `include_constant` and `include_linear`
 toggle the first two.
 
+!!! warning "Exact degree, not degree-up-to-`p` (default)"
+    By default the nonlinear block holds monomials of **exactly** degree `p` —
+    lower-order cross terms (degrees `2, …, p-1`) are *excluded*. So
+    `NGReservoir(p=3, include_linear=True)` emits `constant + linear + cubic`
+    with **no quadratic terms**. This matches Gauthier et al. (2021), whose
+    Lorenz63 and double-scroll bases each use a single polynomial degree. Many
+    NVAR / NG-RC implementations instead use the *cumulative* "degree up to `p`"
+    basis — see below.
+
+## Cumulative degree (`cumulative=True`)
+
+Pass `cumulative=True` to emit **every** monomial of degree up to `p` (the full
+polynomial basis), rather than only the top degree:
+
+```python
+layer = NGReservoir(input_dim=3, k=2, p=3, cumulative=True)
+```
+
+With `D = input_dim · k` linear features, the nonlinear block then spans degrees
+`2 … p` when `include_linear=True` (degree-1 monomials are dropped — they would
+duplicate the linear block), or `1 … p` when `include_linear=False`:
+
+$$
+\text{feature\_dim} = \mathbb{1}[\text{constant}] + \mathbb{1}[\text{linear}]\,D + \sum_{g=d_{\text{lo}}}^{p} \binom{D+g-1}{g},
+\quad d_{\text{lo}} = \begin{cases} 2 & \text{include\_linear} \\ 1 & \text{otherwise} \end{cases}
+$$
+
+The default (`cumulative=False`) is unchanged and stays bit-for-bit identical to
+previous releases; reach for the cumulative basis when porting configs that
+expect "degree up to `p`".
+
 !!! note "Degree 1 (`p=1`)"
     With `p=1` the degree-1 monomials are the linear features themselves.
     To avoid two identical blocks (which would make the readout design

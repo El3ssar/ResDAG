@@ -98,6 +98,40 @@ class TestFeaturePartitioner:
         with pytest.raises(ValueError, match="must be smaller"):
             layer(x)
 
+    def test_zero_partitions_raises_at_construction(self) -> None:
+        """``partitions=0`` is rejected at construction, not as a forward ZeroDivisionError."""
+        with pytest.raises(ValueError, match="partitions must be a positive integer"):
+            FeaturePartitioner(partitions=0, overlap=0)
+
+    def test_negative_partitions_raises_at_construction(self) -> None:
+        """Negative partitions are rejected at construction with a clear message."""
+        with pytest.raises(ValueError, match="partitions must be a positive integer"):
+            FeaturePartitioner(partitions=-1, overlap=0)
+
+    def test_negative_overlap_raises_at_construction(self) -> None:
+        """Negative overlap is rejected at construction rather than accepted silently."""
+        with pytest.raises(ValueError, match="overlap must be a non-negative integer"):
+            FeaturePartitioner(partitions=2, overlap=-1)
+
+    def test_single_partition_with_overlap_warns(self) -> None:
+        """``partitions == 1`` with ``overlap > 0`` warns that the overlap is ignored."""
+        with pytest.warns(UserWarning, match="ignored when partitions == 1"):
+            layer = FeaturePartitioner(partitions=1, overlap=5)
+
+        # The overlap is genuinely ignored: the single-partition path is a no-op.
+        x = torch.randn(2, 10, 12)
+        output = layer(x)
+        assert len(output) == 1
+        assert torch.allclose(output[0], x)
+
+    def test_single_partition_without_overlap_does_not_warn(self) -> None:
+        """``partitions == 1`` with ``overlap == 0`` is a valid config and warns nothing."""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            FeaturePartitioner(partitions=1, overlap=0)
+
     def test_multiple_partitions(self) -> None:
         """Test partitioning into multiple groups."""
         layer = FeaturePartitioner(partitions=4, overlap=1)

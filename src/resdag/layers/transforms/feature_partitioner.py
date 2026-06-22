@@ -4,6 +4,8 @@ Splits the feature dimension into multiple overlapping slices with optional
 circular wrapping at the boundaries.
 """
 
+import warnings
+
 import torch
 import torch.nn as nn
 
@@ -38,8 +40,14 @@ class FeaturePartitioner(nn.Module):
         partition_width = features // partitions + 2 * overlap
 
     Raises:
-        ValueError: If features % partitions != 0 (unless partitions == 1)
-        ValueError: If overlap >= features // partitions (invalid overlap size)
+        ValueError: At construction, if ``partitions < 1`` or ``overlap < 0``.
+        ValueError: At forward, if features % partitions != 0 (unless partitions == 1).
+        ValueError: At forward, if overlap >= features // partitions (invalid overlap size).
+
+    Warns:
+        UserWarning: At construction, if ``partitions == 1`` and ``overlap > 0``,
+            since the single-partition fast path returns the input unchanged and
+            the overlap is silently ignored.
 
     Example:
         >>> partitioner = FeaturePartitioner(partitions=2, overlap=1)
@@ -54,11 +62,36 @@ class FeaturePartitioner(nn.Module):
     def __init__(self, partitions: int, overlap: int) -> None:
         """Initialize the FeaturePartitioner.
 
+        Configuration is validated eagerly so misconfiguration surfaces at
+        construction rather than deep inside a forward pass (the layer lives in
+        an eagerly-resolved symbolic graph). The divisibility and
+        overlap-vs-width checks stay in :meth:`forward`, where the runtime
+        feature count is known.
+
         Args:
-            partitions: Number of partitions
-            overlap: Overlap size between adjacent partitions
+            partitions: Number of partitions (must be a positive integer)
+            overlap: Overlap size between adjacent partitions (must be non-negative)
+
+        Raises:
+            ValueError: If ``partitions < 1`` or ``overlap < 0``.
+
+        Warns:
+            UserWarning: If ``partitions == 1`` and ``overlap > 0`` — the
+                single-partition fast path returns the input unchanged, so the
+                overlap has no effect.
         """
         super().__init__()
+        if partitions < 1:
+            raise ValueError(f"partitions must be a positive integer, got {partitions}")
+        if overlap < 0:
+            raise ValueError(f"overlap must be a non-negative integer, got {overlap}")
+        if partitions == 1 and overlap > 0:
+            warnings.warn(
+                f"FeaturePartitioner: overlap={overlap} is ignored when partitions == 1; "
+                f"the single-partition fast path returns the input unchanged.",
+                stacklevel=2,
+            )
+
         self.partitions = partitions
         self.overlap = overlap
 

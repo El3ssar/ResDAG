@@ -22,6 +22,7 @@ resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
 resdag.layers.readouts.IncrementalRidgeReadout : Streaming partial_fit readout.
 """
 
+import warnings
 from collections.abc import Callable, Iterable
 
 import torch
@@ -185,7 +186,8 @@ class ESNTrainer:
         train_steps = train_inputs[0].shape[1]
 
         # Validate target shapes
-        for name, _ in readouts:
+        readout_names = [name for name, _ in readouts]
+        for name in readout_names:
             target = targets[name]
             if target.shape[1] != train_steps:
                 raise ValueError(
@@ -433,8 +435,6 @@ class ESNTrainer:
 
         extra = [name for name in targets if name not in readout_names]
         if extra:
-            import warnings
-
             warnings.warn(
                 f"Targets provided for non-existent readouts: {extra}. These will be ignored.",
                 UserWarning,

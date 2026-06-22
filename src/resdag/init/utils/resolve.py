@@ -65,7 +65,7 @@ def resolve_topology(
 ) -> TopologyInitializer | None:
     """Resolve a topology specification to a TopologyInitializer object.
 
-    Accepts five formats:
+    Accepts six formats:
 
     - ``None`` — returns None (use default random initialization)
     - ``str`` — registry name, uses registered default parameters
@@ -165,7 +165,7 @@ def resolve_initializer(
 ) -> InputFeedbackInitializer | None:
     """Resolve an initializer specification to an InputFeedbackInitializer object.
 
-    Accepts five formats:
+    Accepts six formats:
 
     - ``None`` — returns None (use default random initialization)
     - ``str`` — registry name, uses registered default parameters

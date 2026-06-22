@@ -1,7 +1,23 @@
 """Tests for the HPO objective built by :func:`build_objective`.
 
-Two behaviours are pinned here:
+The following behaviours of the :class:`resdag.hpo.runner.TrialRunner` returned
+by :func:`build_objective` are pinned here:
 
+* **Clip / prune + ``raw_loss``.**  ``clip_value`` clamps the returned objective
+  to the bound while the unclipped value is preserved as the ``raw_loss`` user
+  attribute; ``prune_on_clip`` instead raises :class:`optuna.TrialPruned` so a
+  clip-exceeding trial is ``PRUNED`` (and excluded from the study's best value)
+  rather than completing at the clamp.
+* **Monitor losses.**  ``monitor_losses`` are computed and logged as
+  ``monitor_<__name__>`` user attributes without affecting the optimized value,
+  and ``monitor_params`` are remapped onto each monitor by the loss function's
+  ``__name__`` (not the registry alias) and forwarded as kwargs.
+* **Driver round-trip.**  ``drivers_keys`` thread the ``warmup_<key>`` /
+  ``train_<key>`` / ``f_warmup_<key>`` / ``forecast_<key>`` data entries through
+  training and forecasting, so an input-driven model produces a finite,
+  non-penalty loss.
+* **Per-trial seeding.**  Two studies built with the same base ``seed`` reproduce
+  every trial value bit-for-bit; a different base seed diverges.
 * **Non-finite loss handling.**  A non-finite (NaN/inf) loss is a *value*, not an
   exception, so it slips past the ``catch_exceptions`` / ``penalty_value``
   machinery in :class:`resdag.hpo.runner.TrialRunner` (built by
@@ -237,3 +253,330 @@ class TestMultiOutputForecast:
         study.optimize(runner, n_trials=1, catch=())  # must not raise
 
         assert study.trials[0].state == optuna.trial.TrialState.COMPLETE
+
+
+# ── Constant-loss callbacks for clip / prune assertions ───────────────────────
+def constant_loss_5(y_true, y_pred, /, **kwargs):
+    """Deterministic loss that always returns ``5.0`` regardless of inputs.
+
+    A fixed value makes the clip / prune thresholds exact: with ``clip_value``
+    below ``5.0`` the trial clamps (or prunes) deterministically; above it the
+    value passes through untouched.
+    """
+    return 5.0
+
+
+class TestClipAndPrune:
+    """``clip_value`` clamps the value and records ``raw_loss``; ``prune_on_clip`` prunes."""
+
+    def _runner(self, *, clip_value=None, prune_on_clip=False):
+        """Build a one-trial runner with a constant loss of ``5.0``."""
+        return build_objective(
+            model_creator=model_creator,
+            search_space=search_space,
+            data_loader=data_loader,
+            loss_fn=constant_loss_5,
+            seed=1,
+            clip_value=clip_value,
+            prune_on_clip=prune_on_clip,
+        )
+
+    def test_clip_clamps_value_and_records_raw_loss(self):
+        """A raw loss above ``clip_value`` is clamped; ``raw_loss`` keeps the original."""
+        runner = self._runner(clip_value=1.0)
+        study = optuna.create_study(direction="minimize")
+        study.optimize(runner, n_trials=1, catch=())
+        trial = study.trials[0]
+
+        assert trial.state == optuna.trial.TrialState.COMPLETE
+        assert trial.value == 1.0  # clamped to clip_value
+        assert trial.user_attrs["raw_loss"] == 5.0  # unclipped value preserved
+        assert trial.user_attrs["loss"] == 1.0  # logged loss is the clamped value
+
+    def test_below_clip_passes_through_unchanged(self):
+        """A raw loss at or below ``clip_value`` is returned verbatim."""
+        runner = self._runner(clip_value=10.0)
+        study = optuna.create_study(direction="minimize")
+        study.optimize(runner, n_trials=1, catch=())
+        trial = study.trials[0]
+
+        assert trial.state == optuna.trial.TrialState.COMPLETE
+        assert trial.value == 5.0
+        assert trial.user_attrs["raw_loss"] == 5.0
+
+    def test_no_clip_value_leaves_raw_loss_equal_to_loss(self):
+        """Without ``clip_value`` the returned loss equals the recorded ``raw_loss``."""
+        runner = self._runner(clip_value=None)
+        study = optuna.create_study(direction="minimize")
+        study.optimize(runner, n_trials=1, catch=())
+        trial = study.trials[0]
+
+        assert trial.value == 5.0
+        assert trial.user_attrs["raw_loss"] == trial.user_attrs["loss"] == 5.0
+
+    def test_prune_on_clip_prunes_exceeding_trial(self):
+        """With ``prune_on_clip`` a clip-exceeding trial is PRUNED, not clamped."""
+        runner = self._runner(clip_value=1.0, prune_on_clip=True)
+        study = optuna.create_study(direction="minimize")
+        # ``catch=()`` so a missed TrialPruned would surface as an error.
+        study.optimize(runner, n_trials=1, catch=())
+        trial = study.trials[0]
+
+        assert trial.state == optuna.trial.TrialState.PRUNED
+        # A pruned trial is excluded from the study's best value.
+        with pytest.raises(ValueError):
+            _ = study.best_value
+
+    def test_prune_on_clip_keeps_below_threshold_trial(self):
+        """``prune_on_clip`` does not prune a trial whose raw loss is within bound."""
+        runner = self._runner(clip_value=10.0, prune_on_clip=True)
+        study = optuna.create_study(direction="minimize")
+        study.optimize(runner, n_trials=1, catch=())
+        trial = study.trials[0]
+
+        assert trial.state == optuna.trial.TrialState.COMPLETE
+        assert trial.value == 5.0
+
+
+# ── Monitor-loss callbacks (top-level so the runner stays picklable) ──────────
+def primary_loss(y_true, y_pred, /, **kwargs):
+    """Finite MAE used as the optimized objective in monitor tests."""
+    if isinstance(y_true, torch.Tensor):
+        return float(torch.mean(torch.abs(y_true - y_pred)))
+    return float(np.mean(np.abs(y_true - y_pred)))
+
+
+def monitor_mse(y_true, y_pred, /, **kwargs):
+    """Monitor loss with a stable ``__name__`` used to key ``monitor_params``.
+
+    Returns mean-squared error; the optional ``offset`` kwarg (supplied via
+    ``monitor_params`` keyed on this function's ``__name__``) is added to the
+    result so the test can prove the kwargs were remapped and forwarded.
+    """
+    offset = kwargs.get("offset", 0.0)
+    if isinstance(y_true, torch.Tensor):
+        return float(torch.mean((y_true - y_pred) ** 2)) + offset
+    return float(np.mean((y_true - y_pred) ** 2)) + offset
+
+
+class TestMonitorLosses:
+    """Monitor losses populate ``monitor_*`` attrs; ``monitor_params`` remap by name."""
+
+    def _run(self, *, monitor_losses=None, monitor_params=None):
+        """Run a one-trial study with the given monitor configuration."""
+        runner = build_objective(
+            model_creator=model_creator,
+            search_space=search_space,
+            data_loader=data_loader,
+            loss_fn=primary_loss,
+            seed=1,
+            monitor_losses=monitor_losses,
+            monitor_params=monitor_params,
+        )
+        study = optuna.create_study(direction="minimize")
+        study.optimize(runner, n_trials=1, catch=())
+        return study.trials[0]
+
+    def test_monitor_loss_populates_user_attr(self):
+        """A monitor loss is logged as ``monitor_<__name__>`` and is finite."""
+        trial = self._run(monitor_losses=[monitor_mse])
+
+        key = f"monitor_{monitor_mse.__name__}"
+        assert key in trial.user_attrs
+        assert np.isfinite(trial.user_attrs[key])
+
+    def test_monitor_loss_does_not_change_objective(self):
+        """The optimized value is the primary loss, unaffected by the monitor."""
+        with_monitor = self._run(monitor_losses=[monitor_mse])
+        without_monitor = self._run(monitor_losses=None)
+
+        # Same seed + same primary loss → identical objective value.
+        assert with_monitor.value == without_monitor.value
+
+    def test_monitor_params_remapped_by_function_name(self):
+        """``monitor_params`` keyed by the loss ``__name__`` are forwarded as kwargs.
+
+        ``monitor_mse`` adds its ``offset`` kwarg to the result, so a large offset
+        keyed on the function name proves the remap and forwarding happened.
+        """
+        offset = 1000.0
+        with_params = self._run(
+            monitor_losses=[monitor_mse],
+            monitor_params={monitor_mse.__name__: {"offset": offset}},
+        )
+        without_params = self._run(monitor_losses=[monitor_mse])
+
+        key = f"monitor_{monitor_mse.__name__}"
+        base = without_params.user_attrs[key]
+        assert with_params.user_attrs[key] == pytest.approx(base + offset)
+
+    def test_monitor_params_under_wrong_key_are_ignored(self):
+        """Params keyed by anything other than the loss ``__name__`` are not applied.
+
+        This pins the remap-by-``__name__`` contract: keying on a registry alias
+        (e.g. ``"mse"``) rather than the function's real ``__name__`` is a no-op.
+        """
+        mislabelled = self._run(
+            monitor_losses=[monitor_mse],
+            monitor_params={"mse": {"offset": 1000.0}},  # wrong key
+        )
+        unparametrised = self._run(monitor_losses=[monitor_mse])
+
+        key = f"monitor_{monitor_mse.__name__}"
+        assert mislabelled.user_attrs[key] == pytest.approx(unparametrised.user_attrs[key])
+
+    def test_real_registry_monitor_uses_canonical_name(self):
+        """A registry loss is keyed by its real ``__name__``, not its alias.
+
+        ``get_loss("efh")`` has ``__name__ == "expected_forecast_horizon"``; the
+        logged attribute must use that canonical name, confirming the runner reads
+        ``__name__`` rather than the ``"efh"`` alias the user passes to the loss
+        registry.
+        """
+        from resdag.hpo import get_loss
+
+        efh = get_loss("efh")
+        trial = self._run(monitor_losses=[efh])
+
+        assert f"monitor_{efh.__name__}" in trial.user_attrs
+        assert "monitor_efh" not in trial.user_attrs
+
+
+# ── Driven-model callbacks (top-level so the runner stays picklable) ──────────
+def driven_model_creator(reservoir_size: int = 30, spectral_radius: float = 0.9):
+    """Create an input-driven ESN: feedback (dim 3) + a 2-dim driver input.
+
+    Mirrors the ``classic_esn`` topology but with a ``driver`` :class:`Input`
+    wired into the reservoir's ``input_size``, so the model's ``forecast``
+    requires a ``forecast_inputs`` driver series — exercising the ``drivers_keys``
+    round-trip through training and forecasting.
+    """
+    feedback = reservoir_input(3)
+    driver = reservoir_input(2)
+    res = ESNLayer(
+        reservoir_size,
+        feedback_size=3,
+        input_size=2,
+        spectral_radius=spectral_radius,
+    )(feedback, driver)
+    cat = Concatenate()(feedback, res)
+    readout = CGReadoutLayer(3 + reservoir_size, 3, name="output")(cat)
+    return ESNModel([feedback, driver], readout)
+
+
+def driven_data_loader(trial):
+    """Synthetic data with the driver companions the ``drivers_keys`` flow needs.
+
+    Alongside the five required feedback keys, supplies ``warmup_driver`` /
+    ``train_driver`` / ``f_warmup_driver`` / ``forecast_driver`` (the
+    ``<prefix>_<key>`` entries the runner threads through when
+    ``drivers_keys=["driver"]``).
+    """
+    torch.manual_seed(0)
+    fb = torch.randn(1, 200, 3)
+    dr = torch.randn(1, 200, 2)
+    return {
+        "warmup": fb[:, :20, :],
+        "train": fb[:, 20:120, :],
+        "target": fb[:, 21:121, :],
+        "f_warmup": fb[:, 120:140, :],
+        "val": fb[:, 140:180, :],  # 40-step horizon
+        "warmup_driver": dr[:, :20, :],
+        "train_driver": dr[:, 20:120, :],
+        "f_warmup_driver": dr[:, 120:140, :],
+        "forecast_driver": dr[:, 140:180, :],  # spans the forecast horizon
+    }
+
+
+class TestDriversKeysRoundTrip:
+    """``drivers_keys`` thread driver inputs through training and forecasting."""
+
+    def test_driven_trial_completes_with_finite_loss(self):
+        """An input-driven model yields a COMPLETE trial with a finite, non-penalty loss."""
+        penalty = 1e10
+        runner = build_objective(
+            model_creator=driven_model_creator,
+            search_space=search_space,
+            data_loader=driven_data_loader,
+            loss_fn=mae_loss,
+            drivers_keys=["driver"],
+            seed=1,
+            penalty_value=penalty,
+            catch_exceptions=False,  # a driver wiring bug must surface, not penalize
+        )
+        study = optuna.create_study(direction="minimize")
+        study.optimize(runner, n_trials=1, catch=())
+        trial = study.trials[0]
+
+        assert trial.state == optuna.trial.TrialState.COMPLETE
+        assert trial.value is not None
+        assert np.isfinite(trial.value)
+        assert trial.value != penalty
+        assert "error" not in trial.user_attrs
+
+
+def seeded_model_creator(reservoir_size: int = 30, spectral_radius: float = 0.9, seed=None):
+    """Seed-aware creator: threads ``seed`` into the reservoir initializers.
+
+    Uses string-form ``topology`` and ``feedback_initializer`` so the recurrent
+    matrix and feedback weights are drawn from their *own* RNGs — the exact
+    initializers that ignore NumPy's legacy global state and torch's global RNG.
+    Threading the per-trial ``seed`` through is therefore what makes a trial's
+    objective a pure function of ``(base_seed, trial.number)``, so two studies
+    with the same base seed reproduce and a different base seed diverges.
+    """
+    return ott_esn(
+        reservoir_size=reservoir_size,
+        feedback_size=3,
+        output_size=3,
+        spectral_radius=spectral_radius,
+        topology="erdos_renyi",
+        feedback_initializer="random",
+        seed=seed,
+    )
+
+
+def stochastic_search_space(trial):
+    """Search space with a genuine ``suggest_*`` so trials are non-degenerate.
+
+    Sampling the spectral radius (rather than pinning it) gives each trial a
+    distinct hyperparameter, so the per-trial seed has observable, trial-varying
+    effects rather than collapsing every trial onto the same value.
+    """
+    return {
+        "reservoir_size": 30,
+        "spectral_radius": trial.suggest_float("spectral_radius", 0.7, 1.0),
+    }
+
+
+class TestPerTrialSeedDeterminism:
+    """Two studies with the same base ``seed`` reproduce every trial value."""
+
+    def _values(self, seed):
+        """Run a 3-trial study with a seed-aware creator; return per-trial values."""
+        runner = build_objective(
+            model_creator=seeded_model_creator,
+            search_space=stochastic_search_space,
+            data_loader=data_loader,
+            loss_fn=mae_loss,
+            seed=seed,
+        )
+        # A fixed-seed sampler isolates the *runner's* per-trial seeding from the
+        # sampler's own RNG, so any divergence is the runner's, not the sampler's.
+        study = optuna.create_study(
+            direction="minimize",
+            sampler=optuna.samplers.RandomSampler(seed=0),
+        )
+        study.optimize(runner, n_trials=3, catch=())
+        return [t.value for t in study.trials]
+
+    def test_same_seed_reproduces_values(self):
+        """Identical base seeds give identical per-trial values (and best_value)."""
+        values_a = self._values(123)
+        values_b = self._values(123)
+        assert values_a == values_b
+        assert min(values_a) == min(values_b)  # best_value reproduces
+
+    def test_different_seed_diverges(self):
+        """A different base seed changes at least one trial value."""
+        assert self._values(123) != self._values(456)

@@ -41,7 +41,8 @@ class CoupledEnsembleESNModel(nn.Module):
         How to combine the N per-model outputs into a single feedback tensor.
 
         - ``"mean"`` — arithmetic mean across models.
-        - ``"median"`` — median across models.
+        - ``"median"`` — interpolated (statistical) median across models;
+          for an even number of models the two central values are averaged.
         - Any ``nn.Module`` that accepts a stacked tensor of shape
           ``(N, batch, timesteps, features)`` and returns
           ``(batch, timesteps, features)``.  E.g.
@@ -685,8 +686,11 @@ class CoupledEnsembleESNModel(nn.Module):
             return cast(torch.Tensor, self.aggregator_module(stacked))
         if self._aggregator_str == "mean":
             return stacked.mean(dim=0)
-        # median
-        return stacked.median(dim=0).values
+        # Interpolated (statistical) median: ``torch.quantile(.., 0.5)`` averages
+        # the two central members for even N, unlike ``Tensor.median`` which
+        # returns the lower of the two and biases an even-sized ensemble's
+        # feedback downward at every autoregressive step.
+        return torch.quantile(stacked, 0.5, dim=0)
 
     def extra_repr(self) -> str:
         agg = (

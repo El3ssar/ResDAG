@@ -241,27 +241,18 @@ class TestLinearESN:
         activated = reservoir.activation_fn(test_input)
         assert torch.allclose(activated, test_input), "Linear ESN should use identity activation"
 
-    def test_activation_forced_even_with_kwargs(self) -> None:
-        """Test that activation is forced even with extra kwargs."""
-        # Even if user tries to pass activation in kwargs, linear_esn forces identity
-        model = linear_esn(
-            reservoir_size=50,
-            feedback_size=2,
-            spectral_radius=0.8,
-        )
-
-        # Verify activation is still identity
-        from resdag.layers import ESNLayer
-
-        reservoir = None
-        for module in model.modules():
-            if isinstance(module, ESNLayer):
-                reservoir = module
-                break
-
-        test_input = torch.randn(1, 10)
-        activated = reservoir.activation_fn(test_input)
-        assert torch.allclose(activated, test_input)
+    def test_activation_kwarg_forbidden(self) -> None:
+        """Passing activation= raises a clear ValueError, not a cryptic TypeError."""
+        # linear_esn forces identity activation by design; an explicit override
+        # must fail loudly rather than collide with the hardcoded value and raise
+        # "got multiple values for keyword argument 'activation'".
+        with pytest.raises(ValueError, match="forces activation='identity'"):
+            linear_esn(
+                reservoir_size=50,
+                feedback_size=2,
+                spectral_radius=0.8,
+                activation="relu",
+            )
 
 
 class TestModelComparison:

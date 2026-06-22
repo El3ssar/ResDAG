@@ -6,7 +6,7 @@ description: Train an Echo State Network on the Lorenz attractor and forecast it
 
 # First forecast
 
-The script below trains a 500-neuron reservoir on five thousand samples of
+The script below trains a 900-neuron reservoir on five thousand samples of
 the Lorenz attractor, then forecasts two thousand steps autoregressively,
 feeding each prediction back as the next input. Training is a single
 algebraic solve; there is no gradient-descent loop.
@@ -36,7 +36,7 @@ warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
 )
 
 # --- Build, train, forecast ---
-model = rd.models.ott_esn(reservoir_size=500, feedback_size=3, output_size=3)
+model = rd.models.ott_esn(reservoir_size=900, feedback_size=3, output_size=3)
 
 rd.ESNTrainer(model).fit(
     warmup_inputs=(warmup,),
@@ -53,9 +53,9 @@ prediction = model.forecast(f_warmup, horizon=2000)    # (1, 2000, 3)
 ![All three Lorenz components, true system versus ESN forecast, with the valid-horizon marker](../assets/figures/first_forecast.png)
 <figcaption>All three Lorenz components, true system against autonomous ESN
 forecast. The dashed line marks the valid horizon — about 8–9 Lyapunov
-times here, from a 900-unit model after a small grid search over spectral
-radius and ridge alpha. Divergence past that point reflects the chaotic
-sensitivity of the system, not a defect in the model.</figcaption>
+times here, from the same 900-unit model after a small grid search over
+spectral radius and ridge alpha. Divergence past that point reflects the
+chaotic sensitivity of the system, not a defect in the model.</figcaption>
 </figure>
 
 ---

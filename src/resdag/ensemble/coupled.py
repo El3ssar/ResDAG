@@ -14,6 +14,7 @@ resdag.core.ESNModel : Base ESN model used as sub-models.
 
 import warnings
 from collections.abc import Iterator
+from itertools import chain
 from typing import Any, cast
 
 import torch
@@ -282,12 +283,23 @@ class CoupledEnsembleESNModel(nn.Module):
         train_inputs: tuple[torch.Tensor, ...],
         targets: dict[str, torch.Tensor],
         n_workers: int = 1,
+        coerce: bool = False,
     ) -> None:
         """Train all sub-models independently using :class:`~resdag.training.ESNTrainer`.
 
         Each sub-model is trained separately on the same warmup/train data.
         Ensemble diversity comes from the different random reservoir
         initialisations of each sub-model.
+
+        Before dispatching to :class:`~resdag.training.ESNTrainer`, every
+        ``warmup_inputs`` / ``train_inputs`` tensor and every ``targets`` value
+        is checked against the ensemble's reference device/dtype (the first
+        sub-model's first floating-point parameter; see
+        :meth:`_reference_device_dtype`).  A mismatch raises a clear, named
+        :class:`ValueError` — e.g. CPU targets fed to a GPU ensemble — instead
+        of a raw cross-device ``RuntimeError`` deep inside the readout solve.
+        Pass ``coerce=True`` to ``.to()``-coerce the data to the reference
+        instead of raising.
 
         Parameters
         ----------
@@ -310,14 +322,40 @@ class CoupledEnsembleESNModel(nn.Module):
             multiprocessing.  On GPU, all workers share one device and may
             interfere via the same CUDA stream; benchmark before raising
             ``n_workers`` above 1 in that case.
+        coerce : bool, default ``False``
+            If ``False`` (default), a device/dtype mismatch between any input or
+            target and the ensemble's sub-models raises a clear, named
+            :class:`ValueError`.  If ``True``, such tensors are coerced with
+            ``.to(device=..., dtype=...)`` to the reference instead.
 
         Raises
         ------
         ValueError
-            If ``n_workers < 1``.
+            If ``n_workers < 1``, or if ``coerce=False`` and any input/target
+            tensor's device or dtype does not match the ensemble's sub-models.
         """
         if n_workers < 1:
             raise ValueError(f"n_workers must be >= 1, got {n_workers}.")
+
+        ref_device, ref_dtype = self._reference_device_dtype()
+        warmup_inputs = tuple(
+            self._coerce_tensor_to_reference(
+                t, ref_device, ref_dtype, coerce=coerce, label=f"warmup_inputs[{i}]"
+            )
+            for i, t in enumerate(warmup_inputs)
+        )
+        train_inputs = tuple(
+            self._coerce_tensor_to_reference(
+                t, ref_device, ref_dtype, coerce=coerce, label=f"train_inputs[{i}]"
+            )
+            for i, t in enumerate(train_inputs)
+        )
+        targets = {
+            name: self._coerce_tensor_to_reference(
+                t, ref_device, ref_dtype, coerce=coerce, label=f"targets[{name!r}]"
+            )
+            for name, t in targets.items()
+        }
 
         if n_workers == 1 or self.n_models == 1:
             for model in self._iter_models():
@@ -447,8 +485,13 @@ class CoupledEnsembleESNModel(nn.Module):
                     )
 
         batch_size = warmup_inputs[0].shape[0]
-        device = warmup_inputs[0].device
-        dtype = warmup_inputs[0].dtype
+        # Build the output buffers from the sub-models' own device/dtype, not
+        # from ``warmup_inputs`` — the sub-models compute on their parameter
+        # device regardless of where the warmup data lives, so this is the
+        # device/dtype every aggregated step actually has.  Deriving the buffer
+        # from the inputs (the old behaviour) risked a cross-device in-place
+        # write or a silent dtype cast when a custom aggregator changed dtype.
+        device, dtype = self._reference_device_dtype()
 
         # Phase 1: warmup — all models independently, same teacher-forced data
         warmup_outputs_per_model: list[torch.Tensor] = []
@@ -463,8 +506,13 @@ class CoupledEnsembleESNModel(nn.Module):
         # Aggregate the last warmup step as the initial autoregressive feedback.
         # This seeds ``current_feedback`` but is *not* written into any output
         # buffer — slot 0 is a genuine forecast step, matching ESNModel.forecast.
+        # Conform it to the reference device/dtype so a dtype-changing custom
+        # aggregator does not feed a float-mismatched tensor into the sub-models
+        # on the very first autoregressive step.
         last_steps = [out[:, -1:, :] for out in warmup_outputs_per_model]
-        current_feedback = self._aggregate(last_steps)  # (batch, 1, output_size)
+        current_feedback = self._coerce_step_for_buffer(
+            self._aggregate(last_steps), device, dtype
+        )  # (batch, 1, output_size)
 
         # Pre-allocate aggregated forecast buffer
         forecast_outputs = torch.empty(batch_size, horizon, output_size, device=device, dtype=dtype)
@@ -495,14 +543,36 @@ class CoupledEnsembleESNModel(nn.Module):
 
             if individual_outputs is not None:
                 for buf, out in zip(individual_outputs, step_outputs):
-                    buf[:, t, :] = out.squeeze(1)
+                    buf[:, t, :] = self._coerce_step_for_buffer(out.squeeze(1), device, dtype)
 
-            current_feedback = self._aggregate(step_outputs)  # (batch, 1, output_size)
+            # Conform the aggregated feedback to the reference device/dtype once,
+            # deliberately. A custom aggregator that changes dtype would
+            # otherwise (a) be silently down/upcast by the in-place buffer write
+            # and (b) re-enter the float-mismatched sub-models on the *next*
+            # step, raising an opaque ``F.linear`` dtype error. Coercing here
+            # fixes both and keeps the autoregressive loop type-stable.
+            current_feedback = self._coerce_step_for_buffer(
+                self._aggregate(step_outputs), device, dtype
+            )  # (batch, 1, output_size)
             forecast_outputs[:, t, :] = current_feedback.squeeze(1)
 
         if return_warmup:
             warmup_stacked = torch.stack(warmup_outputs_per_model, dim=0)
             warmup_avg = self._aggregate_stacked(warmup_stacked)
+            # Conform the aggregated warmup to the forecast buffer before the
+            # concat so a custom aggregator that changes dtype/device produces a
+            # clear error or deliberate cast rather than a raw ``torch.cat``
+            # mismatch.  ``warmup_avg`` is (batch, W, F); reuse the per-step
+            # coercion over the flattened time axis by checking the tensor as a
+            # whole (device + dtype only, shape is preserved).
+            if warmup_avg.device != device:
+                raise ValueError(
+                    f"Aggregated warmup output is on device={warmup_avg.device}, but "
+                    f"the forecast output buffer is on device={device}. A custom "
+                    f"aggregator must keep its output on the sub-models' device."
+                )
+            if warmup_avg.dtype != dtype:
+                warmup_avg = warmup_avg.to(dtype=dtype)
             aggregated = torch.cat([warmup_avg, forecast_outputs], dim=1)
         else:
             aggregated = forecast_outputs
@@ -672,6 +742,132 @@ class CoupledEnsembleESNModel(nn.Module):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _reference_device_dtype(self) -> tuple[torch.device, torch.dtype]:
+        """Resolve the canonical device and dtype of the ensemble's weights.
+
+        The reference is the first floating-point parameter or buffer of the
+        first sub-model — the same scan reservoir layers use to derive their
+        own reference (see
+        :meth:`resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer._reference_device_dtype`)
+        — falling back to ``cpu`` / ``float32`` for a (hypothetical) weightless
+        sub-model.  This is the device/dtype that ``fit`` inputs/targets and the
+        ``forecast`` output buffer must agree with, so a CPU-target-on-GPU-model
+        mistake surfaces as a clear, named error rather than a raw cross-device
+        ``RuntimeError`` deep inside the readout solve.
+
+        Returns
+        -------
+        device : torch.device
+            Device of the first sub-model's first floating-point tensor, or
+            ``cpu``.
+        dtype : torch.dtype
+            Dtype of the first sub-model's first floating-point tensor, or
+            ``float32``.
+        """
+        first = next(self._iter_models())
+        ref = next(
+            (t for t in chain(first.parameters(), first.buffers()) if t.is_floating_point()),
+            None,
+        )
+        device = ref.device if ref is not None else torch.device("cpu")
+        dtype = ref.dtype if ref is not None else torch.float32
+        return device, dtype
+
+    def _coerce_tensor_to_reference(
+        self,
+        tensor: torch.Tensor,
+        ref_device: torch.device,
+        ref_dtype: torch.dtype,
+        *,
+        coerce: bool,
+        label: str,
+    ) -> torch.Tensor:
+        """Validate or coerce one tensor against the ensemble's reference.
+
+        Parameters
+        ----------
+        tensor : torch.Tensor
+            The tensor to check.
+        ref_device, ref_dtype : torch.device, torch.dtype
+            The ensemble's reference device/dtype from
+            :meth:`_reference_device_dtype`.
+        coerce : bool
+            If ``True``, return ``tensor.to(device=ref_device, dtype=ref_dtype)``
+            (a no-op when already matching).  If ``False``, raise a clear,
+            named :class:`ValueError` on any device or dtype mismatch.
+        label : str
+            Human-readable name of the tensor (e.g. ``"warmup_inputs[0]"`` or
+            ``"targets['output']"``) used in the error message.
+
+        Returns
+        -------
+        torch.Tensor
+            ``tensor`` unchanged when it already matches the reference, the
+            coerced tensor when ``coerce=True``, otherwise raises.
+
+        Raises
+        ------
+        ValueError
+            When ``coerce=False`` and ``tensor``'s device or dtype differs from
+            the reference.
+        """
+        if tensor.device == ref_device and tensor.dtype == ref_dtype:
+            return tensor
+        if coerce:
+            return tensor.to(device=ref_device, dtype=ref_dtype)
+        raise ValueError(
+            f"{label} is on device={tensor.device}, dtype={tensor.dtype}, but the "
+            f"ensemble's sub-models are on device={ref_device}, dtype={ref_dtype}. "
+            f"Move the data to match (e.g. tensor.to(device='{ref_device}', "
+            f"dtype={ref_dtype})) or pass coerce=True to fit() to coerce it "
+            f"automatically."
+        )
+
+    @staticmethod
+    def _coerce_step_for_buffer(
+        step: torch.Tensor,
+        buf_device: torch.device,
+        buf_dtype: torch.dtype,
+    ) -> torch.Tensor:
+        """Deliberately conform one autoregressive step to the output buffer.
+
+        The per-step in-place buffer writes in :meth:`forecast` would otherwise
+        *silently* down/upcast a custom aggregator whose output dtype differs
+        from the buffer's (and raise an opaque cross-device ``RuntimeError`` on
+        a device mismatch).  This makes both explicit: a device mismatch raises
+        a clear, named :class:`ValueError`; a dtype mismatch is cast on purpose
+        (a no-op in the common matching case).
+
+        Parameters
+        ----------
+        step : torch.Tensor
+            One aggregated (or per-model) step — shape-agnostic; only its
+            device and dtype are inspected, the shape is preserved.
+        buf_device, buf_dtype : torch.device, torch.dtype
+            The pre-allocated output buffer's device/dtype.
+
+        Returns
+        -------
+        torch.Tensor
+            ``step`` unchanged when it already matches, else cast to
+            ``buf_dtype`` on ``buf_device``.
+
+        Raises
+        ------
+        ValueError
+            If ``step`` lives on a different device than the buffer (e.g. a
+            custom aggregator that moved the output off-device).
+        """
+        if step.device != buf_device:
+            raise ValueError(
+                f"Aggregated forecast step is on device={step.device}, but the "
+                f"forecast output buffer is on device={buf_device}. A custom "
+                f"aggregator must keep its output on the sub-models' device."
+            )
+        if step.dtype != buf_dtype:
+            return step.to(dtype=buf_dtype)
+        return step
 
     def _aggregate(self, outputs: list[torch.Tensor]) -> torch.Tensor:
         """Stack a list of per-model tensors and aggregate them."""

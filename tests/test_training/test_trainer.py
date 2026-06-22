@@ -675,6 +675,117 @@ class TestESNTrainerValidation:
             )
 
 
+def _assert_all_params_finite(model: ESNModel) -> None:
+    """Assert every parameter of ``model`` is finite (no ``NaN``/``Inf``).
+
+    A successful ``fit`` must never leave the model carrying non-finite
+    parameters: a ``NaN`` readout weight silently produces all-``NaN``
+    forecasts downstream, so the post-fit finiteness check is the cheapest
+    guard against a degenerate solve slipping through ``is_fitted == True``.
+
+    Parameters
+    ----------
+    model : ESNModel
+        The model whose parameters are checked after fitting.
+    """
+    for name, param in model.named_parameters():
+        assert torch.isfinite(param).all(), f"non-finite parameter after fit: {name}"
+
+
+class TestESNTrainerFiniteParameters:
+    """``fit()`` must never leave ``NaN``/``Inf`` parameters behind.
+
+    The CG ridge solver has per-column ``NaN`` guards (see
+    ``TestCGReadoutDegenerateColumns`` in ``test_readouts.py``); these tests are
+    the trainer-level analogue, asserting that a full ``ESNTrainer.fit`` over the
+    single-readout, stacked-readout, and driven-model paths produces fitted
+    *and* finite parameters.
+    """
+
+    def test_single_readout_fit_leaves_finite_params(self) -> None:
+        """A single-readout fit produces finite weights and bias."""
+        torch.manual_seed(0)
+        feedback = Input(shape=(10, 1))
+        reservoir = rd.ESNLayer(50, 1)(feedback)
+        readout = CGReadoutLayer(50, 1, name="output")(reservoir)
+        model = ESNModel(feedback, readout)
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(torch.randn(4, 50, 1),),
+            train_inputs=(torch.randn(4, 150, 1),),
+            targets={"output": torch.randn(4, 150, 1)},
+        )
+
+        assert model.CGReadoutLayer_1.is_fitted
+        assert torch.isfinite(model.CGReadoutLayer_1.weight).all()
+        assert torch.isfinite(model.CGReadoutLayer_1.bias).all()
+        _assert_all_params_finite(model)
+
+    def test_stacked_readouts_fit_leaves_finite_params(self) -> None:
+        """Both readouts of a stacked DAG are finite after fitting."""
+        torch.manual_seed(0)
+        feedback = Input(shape=(10, 1))
+        reservoir1 = rd.ESNLayer(50, 1)(feedback)
+        readout1 = CGReadoutLayer(50, 2, name="intermediate")(reservoir1)
+        reservoir2 = rd.ESNLayer(30, 2)(readout1)
+        readout2 = CGReadoutLayer(30, 1, name="output")(reservoir2)
+        model = ESNModel(feedback, readout2)
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(torch.randn(4, 50, 1),),
+            train_inputs=(torch.randn(4, 150, 1),),
+            targets={
+                "intermediate": torch.randn(4, 150, 2),
+                "output": torch.randn(4, 150, 1),
+            },
+        )
+
+        assert model.CGReadoutLayer_1.is_fitted
+        assert model.CGReadoutLayer_2.is_fitted
+        _assert_all_params_finite(model)
+
+    def test_driven_model_fit_leaves_finite_params(self) -> None:
+        """An input-driven fit (feedback + driver) leaves finite parameters."""
+        torch.manual_seed(0)
+        feedback = Input(shape=(10, 1))
+        driver = Input(shape=(10, 3))
+        reservoir = rd.ESNLayer(50, 1, input_size=3)(feedback, driver)
+        readout = CGReadoutLayer(50, 1, name="output")(reservoir)
+        model = ESNModel(inputs=[feedback, driver], outputs=readout)
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(torch.randn(4, 50, 1), torch.randn(4, 50, 3)),
+            train_inputs=(torch.randn(4, 150, 1), torch.randn(4, 150, 3)),
+            targets={"output": torch.randn(4, 150, 1)},
+        )
+
+        assert model.CGReadoutLayer_1.is_fitted
+        _assert_all_params_finite(model)
+
+    def test_all_zero_targets_fit_leaves_finite_params(self) -> None:
+        """All-zero targets fit to a finite (zero-weight) readout, not ``NaN``.
+
+        This is the degenerate case the CG per-column guard handles, exercised
+        end-to-end through the trainer: an all-zero target column used to drive
+        ``0 / 0 = NaN`` in the solver; the post-fit finiteness check confirms it
+        no longer does.
+        """
+        torch.manual_seed(0)
+        feedback = Input(shape=(10, 1))
+        reservoir = rd.ESNLayer(50, 1)(feedback)
+        readout = CGReadoutLayer(50, 3, name="output")(reservoir)
+        model = ESNModel(feedback, readout)
+
+        ESNTrainer(model).fit(
+            warmup_inputs=(torch.randn(4, 50, 1),),
+            train_inputs=(torch.randn(4, 150, 1),),
+            targets={"output": torch.zeros(4, 150, 3)},
+        )
+
+        assert model.CGReadoutLayer_1.is_fitted
+        _assert_all_params_finite(model)
+
+
 class TestESNTrainerGPU:
     """GPU tests (if available)."""
 

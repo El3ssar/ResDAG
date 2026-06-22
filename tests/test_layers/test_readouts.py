@@ -915,6 +915,224 @@ class TestCGReadoutDegenerateColumns:
         assert torch.allclose(coefs[:, 0], torch.zeros(10, dtype=torch.float64))
 
 
+class TestCGReadoutDegenerateGram:
+    """Ill-conditioned / rank-deficient state matrices stay finite and bounded.
+
+    Reservoir computing routinely produces ill-conditioned Gram matrices
+    (highly correlated neurons, more features than samples, dead/constant
+    units).  ``alpha`` is the guard: the regularized normal equations
+    ``(XᵀX + αI)`` are positive-definite even when ``XᵀX`` is singular, so the
+    ridge solve must always return finite, bounded weights — never ``NaN`` and
+    never a blow-up from inverting a near-singular Gram.
+    """
+
+    def test_rank_deficient_gram_duplicate_columns_stays_bounded(self) -> None:
+        """Duplicated state columns make ``XᵀX`` singular; ridge stays finite.
+
+        Two identical feature columns give the Gram matrix a zero eigenvalue,
+        so the *unregularized* normal equations are singular.  The ``alpha``
+        ridge term lifts that eigenvalue to ``alpha > 0``, and the CG solve must
+        return finite, bounded weights rather than ``NaN`` or an explosion.
+        """
+        torch.manual_seed(10)
+
+        n_samples, n_features = 200, 12
+        X = torch.randn(n_samples, n_features, dtype=torch.float64)
+        # Force exact rank deficiency: column 5 duplicates column 2, and
+        # column 9 duplicates column 3.  Both pairs collapse the Gram's rank.
+        X[:, 5] = X[:, 2]
+        X[:, 9] = X[:, 3]
+        y = torch.randn(n_samples, 4, dtype=torch.float64)
+
+        readout = CGReadoutLayer(
+            in_features=n_features, out_features=4, alpha=1e-6, max_iter=1000, tol=1e-10
+        )
+        coefs, intercept = readout._solve_ridge_cg(X, y, 1e-6)
+
+        assert torch.isfinite(coefs).all()
+        assert intercept is not None and torch.isfinite(intercept).all()
+        # "Bounded" is the operative word: ridge with a tiny alpha on a singular
+        # Gram could in principle produce huge weights; verify it does not.
+        assert coefs.abs().max() < 1e3
+
+    def test_rank_deficient_gram_matches_closed_form_ridge(self) -> None:
+        """On a rank-deficient Gram, CG still matches the closed-form ridge.
+
+        The minimum-norm-among-regularized solution is uniquely defined by the
+        ``(XᵀX + αI)`` system even when ``XᵀX`` is singular, so the CG solve
+        must agree with a direct ``torch.linalg.solve`` of that same system.
+        """
+        torch.manual_seed(11)
+
+        n_samples, n_features = 150, 10
+        X = torch.randn(n_samples, n_features, dtype=torch.float64)
+        X[:, 7] = X[:, 1]  # duplicate -> rank-deficient Gram
+        y = torch.randn(n_samples, 3, dtype=torch.float64)
+        alpha = 1e-3
+
+        readout = CGReadoutLayer(
+            in_features=n_features, out_features=3, alpha=alpha, max_iter=2000, tol=1e-12
+        )
+        coefs_cg, intercept_cg = readout._solve_ridge_cg(X, y, alpha)
+        coefs_cf, intercept_cf = solve_ridge_closed_form(X, y, alpha)
+
+        assert torch.allclose(coefs_cg, coefs_cf, atol=1e-6, rtol=1e-5)
+        assert intercept_cg is not None
+        assert torch.allclose(intercept_cg, intercept_cf, atol=1e-6, rtol=1e-5)
+
+    def test_more_features_than_samples_stays_finite(self) -> None:
+        """A wide system (F > N) is rank-deficient by construction; ridge copes.
+
+        With more features than samples the Gram ``XᵀX`` has rank at most ``N``
+        and is therefore singular, but the ``alpha`` ridge term keeps the
+        solve well-posed.  Weights must be finite and bounded.
+        """
+        torch.manual_seed(12)
+
+        n_samples, n_features = 8, 40  # deliberately F > N
+        X = torch.randn(n_samples, n_features, dtype=torch.float64)
+        y = torch.randn(n_samples, 5, dtype=torch.float64)
+
+        readout = CGReadoutLayer(
+            in_features=n_features, out_features=5, alpha=1e-6, max_iter=1000, tol=1e-10
+        )
+        coefs, intercept = readout._solve_ridge_cg(X, y, 1e-6)
+
+        assert coefs.shape == (n_features, 5)
+        assert torch.isfinite(coefs).all()
+        assert intercept is not None and torch.isfinite(intercept).all()
+        assert coefs.abs().max() < 1e3
+
+    def test_more_features_than_samples_via_fit_is_finite(self) -> None:
+        """The public ``fit`` path also produces finite weights when F > N."""
+        torch.manual_seed(13)
+
+        X = torch.randn(6, 30)  # 6 samples, 30 features
+        y = torch.randn(6, 4)
+
+        readout = CGReadoutLayer(in_features=30, out_features=4, alpha=1e-6)
+        readout.fit(X, y)
+
+        assert readout.is_fitted
+        assert torch.isfinite(readout.weight).all()
+        assert torch.isfinite(readout.bias).all()
+
+    def test_all_zero_states_give_zero_weight_and_bias_only_prediction(self) -> None:
+        """All-zero *states* (not targets) fit to ``W = 0`` and predict the bias.
+
+        Unlike the all-zero-*targets* case (covered above), here the inputs are
+        zero: every centered feature is zero, so there is no signal for the
+        weights to latch onto and the fit collapses to ``W = 0`` with the bias
+        absorbing the target mean.  Predictions then reduce to a constant
+        bias-only output, finite for any input.
+        """
+        torch.manual_seed(14)
+
+        X = torch.zeros(120, 12)
+        y = torch.randn(120, 3)
+
+        readout = CGReadoutLayer(in_features=12, out_features=3, alpha=1e-6)
+        readout.fit(X, y)
+
+        assert torch.isfinite(readout.weight).all()
+        assert torch.isfinite(readout.bias).all()
+        # No signal in the inputs -> weights collapse to exactly zero.
+        assert torch.allclose(readout.weight, torch.zeros_like(readout.weight))
+        # Prediction is bias-only: every row equals the fitted bias.
+        pred = readout(torch.randn(5, 12))
+        assert torch.isfinite(pred).all()
+        assert torch.allclose(pred, readout.bias.expand(5, 3))
+
+
+class TestCGReadoutNonFiniteInputs:
+    """NaN/Inf inputs must not be *silently* fitted into garbage weights.
+
+    A reservoir that diverged (or a corrupt target) feeds ``NaN``/``Inf`` into
+    the readout fit.  The desired contract is that such input is either rejected
+    with a clear error or otherwise not turned into a silently-``is_fitted``
+    model carrying ``NaN`` weights.
+
+    The CG solver currently has **no** ``isfinite`` input guard: a ``NaN``/``Inf``
+    in ``states`` or ``targets`` propagates straight through the Gram-matrix
+    matmuls into the fitted weights, leaving ``is_fitted == True`` with
+    non-finite parameters.  The tests below pin that *current* behaviour as a
+    regression (so a future guard is a deliberate, visible change), and an
+    ``xfail`` records the contract the issue asks for — a clear rejection — which
+    requires a source-side guard outside this test-only change.
+    """
+
+    def test_nan_state_is_currently_fitted_silently(self) -> None:
+        """Documents the current behaviour: a ``NaN`` state poisons the weights.
+
+        No error is raised and ``is_fitted`` flips to ``True`` even though the
+        fitted weights are non-finite.  This is the gap the issue flags; the
+        ``xfail`` test below records the intended contract.
+        """
+        torch.manual_seed(20)
+
+        X = torch.randn(100, 10, dtype=torch.float64)
+        X[0, 0] = float("nan")
+        y = torch.randn(100, 3, dtype=torch.float64)
+
+        readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-6)
+        readout.fit(X, y)
+
+        # Current (undesirable) behaviour: silently fitted, weights non-finite.
+        assert readout.is_fitted
+        assert not torch.isfinite(readout.weight).all()
+
+    def test_inf_target_is_currently_fitted_silently(self) -> None:
+        """Documents the current behaviour for an ``Inf`` in the targets."""
+        torch.manual_seed(21)
+
+        X = torch.randn(100, 10, dtype=torch.float64)
+        y = torch.randn(100, 3, dtype=torch.float64)
+        y[5, 1] = float("inf")
+
+        readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-6)
+        readout.fit(X, y)
+
+        assert readout.is_fitted
+        assert not torch.isfinite(readout.weight).all()
+
+    @pytest.mark.xfail(
+        reason=(
+            "Issue #184 acceptance: NaN/Inf fit inputs should raise a clear error "
+            "(or be rejected) rather than be silently fitted into NaN weights. The "
+            "CG readout has no isfinite input guard yet; adding one is a source "
+            "change outside this test-only issue."
+        ),
+        strict=True,
+        raises=AssertionError,
+    )
+    def test_nan_state_should_raise_a_clear_error(self) -> None:
+        """Contract test for the intended behaviour: ``NaN`` states are rejected.
+
+        Marked ``xfail(strict=True)``: the assertion fails today (no guard
+        exists, so ``fit`` does not raise and ``is_fitted`` flips to ``True``)
+        and will turn into a reported failure — flagging the contract as met —
+        the moment a source-side ``isfinite`` rejection lands.
+        """
+        torch.manual_seed(22)
+
+        X = torch.randn(100, 10)
+        X[0, 0] = float("nan")
+        y = torch.randn(100, 3)
+
+        readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-6)
+        # Desired contract: a NaN state is rejected with a clear error, leaving
+        # the readout unfitted rather than carrying NaN weights.  Today ``fit``
+        # silently succeeds, so this assertion fails (and the strict xfail
+        # records the open gap).
+        try:
+            readout.fit(X, y)
+        except ValueError as exc:
+            assert any(tok in str(exc).lower() for tok in ("finite", "nan", "inf"))
+        else:
+            raise AssertionError("fit() silently accepted a NaN state without raising")
+        assert not readout.is_fitted
+
+
 class TestCGReadoutConstructionValidation:
     """Constructor-time validation of alpha, tol, and max_iter."""
 

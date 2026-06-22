@@ -1,7 +1,6 @@
 """First-forecast figure: three Lorenz components, system vs forecast."""
 
 import numpy as np
-
 from _style import ACCENT, MUTED, TRUE, plt, save, train_best_lorenz
 
 
@@ -19,8 +18,14 @@ def main() -> None:
         ax.set_ylabel(comp, rotation=0, va="center", style="italic")
         ax.margins(x=0)
     axes[0].legend(ncols=2, loc="upper right", fontsize=8)
-    axes[0].text(0.012, 0.06, f"valid horizon ≈ {vh * 0.01 * lyap:.1f} Lyapunov times",
-                 transform=axes[0].transAxes, fontsize=8, color=MUTED)
+    axes[0].text(
+        0.012,
+        0.06,
+        f"valid horizon ≈ {vh * 0.01 * lyap:.1f} Lyapunov times",
+        transform=axes[0].transAxes,
+        fontsize=8,
+        color=MUTED,
+    )
     axes[-1].set_xlabel("Lyapunov times  (λ₁ t)")
     fig.align_ylabels(axes)
     fig.subplots_adjust(hspace=0.18)

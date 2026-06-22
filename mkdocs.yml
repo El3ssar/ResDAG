@@ -189,9 +189,12 @@ nav:
       - workflows/index.md
       - Train: workflows/train.md
       - Forecast: workflows/forecast.md
+      - NG-RC: workflows/ngrc.md
       - Tune: workflows/tune.md
+      - Streaming & DataLoaders: workflows/streaming.md
       - Scale & deploy: workflows/deploy.md
       - Benchmarks: workflows/benchmarks.md
+  - Migrating: migrating.md
   - Theory:
       - theory/index.md
       - Reservoir dynamics: theory/dynamics.md

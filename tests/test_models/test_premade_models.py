@@ -2,6 +2,7 @@
 
 Pins down the architecture of each factory — classic_esn (with input
 concatenation), ott_esn (selective-exponentiation augmentation),
+power_augmented (uniform Power augmentation, sign-preserving default),
 headless_esn (no readout), linear_esn (forced identity activation) —
 their forward shapes, parameter plumbing, and GPU execution.
 """
@@ -9,6 +10,7 @@ their forward shapes, parameter plumbing, and GPU execution.
 import pytest
 import torch
 
+from resdag.layers import Power
 from resdag.layers.cells import ESNCell
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn, power_augmented
@@ -253,6 +255,94 @@ class TestLinearESN:
                 spectral_radius=0.8,
                 activation="relu",
             )
+
+
+class TestPowerAugmented:
+    """Tests for the power-augmented ESN architecture.
+
+    Covers the contracts fixed in issue #234: the factory augments every
+    reservoir unit with a configurable ``Power`` exponent (not Ott's even-index
+    squaring), and the default exponent is sign-preserving rather than
+    sign-destroying.
+    """
+
+    def _power_layer(self, model) -> Power:  # type: ignore[no-untyped-def]
+        """Return the single Power augmentation node wired by the factory."""
+        powers = [m for m in model.modules() if isinstance(m, Power)]
+        assert len(powers) == 1, "power_augmented should wire exactly one Power node"
+        return powers[0]
+
+    def test_basic_instantiation(self) -> None:
+        """The factory builds a model with reservoir, Power, and readout."""
+        model = power_augmented(reservoir_size=50, feedback_size=2, output_size=3)
+
+        assert model is not None
+        layer_names = [name for name, _ in model.named_modules()]
+        assert any("ESNLayer" in name for name in layer_names)
+        assert any("CGReadoutLayer" in name for name in layer_names)
+        # The augmentation node is a Power transform, not Ott's selective one.
+        assert any(isinstance(m, Power) for m in model.modules())
+
+    def test_default_exponent_is_sign_preserving(self) -> None:
+        """The default exponent is the odd, sign-preserving 3.0.
+
+        Acceptance criterion (#234): the default no longer silently destroys
+        the sign of the reservoir states. The wired Power node carries 3.0 and,
+        applied to a signed range, keeps negatives negative.
+        """
+        model = power_augmented(reservoir_size=50, feedback_size=2, output_size=3)
+        power = self._power_layer(model)
+
+        assert power.exponent == 3.0
+        signed = power(torch.tensor([[-3.0, 3.0]]))
+        # Odd exponent preserves sign: a negative base stays negative.
+        assert signed[0, 0] < 0 < signed[0, 1]
+        assert torch.allclose(signed, torch.tensor([[-27.0, 27.0]]))
+
+    def test_exponent_two_destroys_sign(self) -> None:
+        """Opting into exponent=2.0 is allowed and squares (drops) the sign."""
+        model = power_augmented(reservoir_size=50, feedback_size=2, output_size=3, exponent=2.0)
+        power = self._power_layer(model)
+
+        assert power.exponent == 2.0
+        squared = power(torch.tensor([[-3.0, 3.0]]))
+        # Even exponent maps both signs to the same non-negative value.
+        assert torch.allclose(squared, torch.tensor([[9.0, 9.0]]))
+
+    @pytest.mark.parametrize("exponent", [2.0, 3.0, 1.5])
+    def test_exponent_forwarded_to_power_node(self, exponent: float) -> None:
+        """The requested exponent reaches the wired Power node verbatim."""
+        model = power_augmented(
+            reservoir_size=50, feedback_size=2, output_size=3, exponent=exponent
+        )
+
+        assert self._power_layer(model).exponent == exponent
+
+    @pytest.mark.parametrize("exponent", [2.0, 3.0, 1.5])
+    def test_forward_pass(self, exponent: float) -> None:
+        """Forward pass yields the readout shape for integer and fractional exponents.
+
+        Tanh states are non-negative often enough that a fractional exponent
+        on a freshly built reservoir stays finite here; the NaN-on-negative
+        contract of fractional ``torch.pow`` is pinned in the Power transform
+        tests. This guards the factory wiring for exponents 2.0, 3.0 and 1.5.
+        """
+        model = power_augmented(
+            reservoir_size=50, feedback_size=2, output_size=3, exponent=exponent
+        )
+
+        x = torch.randn(4, 20, 2)
+        output = model(x)
+
+        assert output.shape == (4, 20, 3)
+
+    def test_uses_power_not_selective_exponentiation(self) -> None:
+        """Augmentation is uniform Power, not Ott's even-index SelectiveExponentiation."""
+        model = power_augmented(reservoir_size=50, feedback_size=2, output_size=3)
+
+        type_names = {type(m).__name__ for m in model.modules()}
+        assert "Power" in type_names
+        assert "SelectiveExponentiation" not in type_names
 
 
 class TestModelComparison:

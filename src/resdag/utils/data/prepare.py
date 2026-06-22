@@ -7,6 +7,7 @@ Provides functions for splitting time series data into:
 - Validation data
 """
 
+import warnings
 from typing import Any, Literal
 
 import torch
@@ -272,7 +273,16 @@ def prepare_esn_data(
     Raises
     ------
     ValueError
-        If data is too short for the requested splits.
+        If ``warmup_steps`` or ``train_steps`` is not strictly positive, if
+        ``discard_steps`` is negative, if ``val_steps`` is negative, or if the
+        data is too short for the requested splits.
+
+    Warns
+    -----
+    UserWarning
+        If the resulting validation window is empty (``val_steps=0`` or the data
+        is exhausted by warmup/train/seam), meaning no held-out validation data
+        remains.
 
     See Also
     --------
@@ -300,6 +310,17 @@ def prepare_esn_data(
     """
     _, timesteps, _ = data.shape
 
+    # Validate step counts before any negative slicing can silently produce
+    # plausible-but-wrong / empty splits.
+    if warmup_steps <= 0:
+        raise ValueError(f"warmup_steps must be a positive integer, got {warmup_steps}")
+    if train_steps <= 0:
+        raise ValueError(f"train_steps must be a positive integer, got {train_steps}")
+    if discard_steps < 0:
+        raise ValueError(f"discard_steps must be non-negative, got {discard_steps}")
+    if val_steps is not None and val_steps < 0:
+        raise ValueError(f"val_steps must be non-negative or None, got {val_steps}")
+
     # Validate discard_steps
     if discard_steps >= timesteps:
         raise ValueError(
@@ -326,6 +347,15 @@ def prepare_esn_data(
     val_start = train_end + 1
     if val_steps is None:
         val_steps = timesteps - val_start
+        if val_steps == 0:
+            warnings.warn(
+                "Validation window is empty: warmup + train + the autoregressive "
+                f"seam consume all {timesteps} available steps (after discarding "
+                f"{discard_steps}), leaving no held-out data for val. Reduce "
+                "warmup_steps/train_steps or supply more data if you need a val split.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
         required = val_start + val_steps
         if required > timesteps:
@@ -334,6 +364,14 @@ def prepare_esn_data(
                 f"exceeds available length ({timesteps}). The +1 is the "
                 f"autoregressive seam step (data[train_end]) the forecast "
                 f"consumes as its seed before producing val_steps predictions."
+            )
+        if val_steps == 0:
+            warnings.warn(
+                "val_steps=0 produces an empty validation split. Pass a positive "
+                "val_steps (or None to use all remaining data) if you need a val "
+                "window.",
+                UserWarning,
+                stacklevel=2,
             )
 
     # Split data

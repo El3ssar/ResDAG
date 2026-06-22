@@ -1,5 +1,8 @@
 """Tests for prepare_esn_data splits and forecast alignment."""
 
+import warnings
+
+import pytest
 import torch
 
 from resdag import classic_esn
@@ -78,3 +81,62 @@ def test_forecast_predictions_align_with_validation() -> None:
 
     assert pred.shape[1] == val.shape[1]
     assert torch.allclose(pred, val, atol=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Input validation: negative / zero / empty-split-producing step counts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("warmup_steps", [-5, -1, 0])
+def test_nonpositive_warmup_steps_raises(warmup_steps: int) -> None:
+    data = torch.arange(100, dtype=torch.float32).view(1, -1, 1)
+    with pytest.raises(ValueError, match=rf"warmup_steps.*positive.*{warmup_steps}"):
+        prepare_esn_data(data, warmup_steps, train_steps=20)
+
+
+@pytest.mark.parametrize("train_steps", [-5, -1, 0])
+def test_nonpositive_train_steps_raises(train_steps: int) -> None:
+    data = torch.arange(100, dtype=torch.float32).view(1, -1, 1)
+    with pytest.raises(ValueError, match=rf"train_steps.*positive.*{train_steps}"):
+        prepare_esn_data(data, warmup_steps=10, train_steps=train_steps)
+
+
+@pytest.mark.parametrize("val_steps", [-5, -1])
+def test_negative_val_steps_raises(val_steps: int) -> None:
+    data = torch.arange(100, dtype=torch.float32).view(1, -1, 1)
+    with pytest.raises(ValueError, match=rf"val_steps.*non-negative.*{val_steps}"):
+        prepare_esn_data(data, warmup_steps=10, train_steps=20, val_steps=val_steps)
+
+
+def test_negative_discard_steps_raises() -> None:
+    data = torch.arange(100, dtype=torch.float32).view(1, -1, 1)
+    with pytest.raises(ValueError, match=r"discard_steps.*non-negative.*-3"):
+        prepare_esn_data(data, warmup_steps=10, train_steps=20, discard_steps=-3)
+
+
+def test_zero_val_steps_warns_and_returns_empty_val() -> None:
+    data = torch.arange(100, dtype=torch.float32).view(1, -1, 1)
+    with pytest.warns(UserWarning, match="empty validation split"):
+        _, _, _, _, val = prepare_esn_data(data, warmup_steps=10, train_steps=20, val_steps=0)
+    assert val.shape[1] == 0
+
+
+def test_exhausted_data_val_none_warns_empty_val() -> None:
+    # warmup + train + seam == timesteps exactly -> no remaining val data.
+    data = torch.arange(31, dtype=torch.float32).view(1, -1, 1)
+    with pytest.warns(UserWarning, match="Validation window is empty"):
+        _, _, _, _, val = prepare_esn_data(data, warmup_steps=10, train_steps=20, val_steps=None)
+    assert val.shape[1] == 0
+
+
+def test_valid_call_does_not_warn() -> None:
+    data = torch.arange(200, dtype=torch.float32).view(1, -1, 1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        warmup, train, _, _, val = prepare_esn_data(
+            data, warmup_steps=20, train_steps=80, val_steps=30
+        )
+    assert warmup.shape[1] == 20
+    assert train.shape[1] == 80
+    assert val.shape[1] == 30

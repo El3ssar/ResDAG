@@ -250,8 +250,9 @@ class IncrementalRidgeReadout(ReadoutLayer):
         ValueError
             If ``states`` and ``targets`` disagree on the sample dimension after
             flattening, if the state feature dimension does not match
-            ``in_features``, or if the target feature dimension does not match
-            ``out_features``.
+            ``in_features``, if the target feature dimension does not match
+            ``out_features``, or if ``states`` or ``targets`` contain non-finite
+            (NaN or Inf) values.
         """
         if states.dim() == 3:
             b, t, f = states.shape
@@ -278,6 +279,23 @@ class IncrementalRidgeReadout(ReadoutLayer):
                 f"{type(self).__name__}.partial_fit({readout_id}): target feature dimension "
                 f"({targets.shape[1]}) does not match readout out_features "
                 f"({self.out_features})."
+            )
+
+        # Reject non-finite chunks before accumulating: a NaN/Inf here would
+        # poison the running XtX / Xty statistics for the whole fit, not just
+        # this chunk. Mirrors the guard in ReadoutLayer.fit.
+        if not torch.isfinite(states).all():
+            raise ValueError(
+                f"{type(self).__name__}.partial_fit({readout_id}): states contain "
+                f"non-finite values (NaN or Inf). Incremental fitting requires "
+                f"finite inputs — clean or impute the reservoir states (a diverged "
+                f"reservoir is the usual cause) before fitting."
+            )
+        if not torch.isfinite(targets).all():
+            raise ValueError(
+                f"{type(self).__name__}.partial_fit({readout_id}): targets contain "
+                f"non-finite values (NaN or Inf). Incremental fitting requires "
+                f"finite inputs — clean or impute the targets before fitting."
             )
 
         # Per-chunk Gram matmuls run in the device-aware gram dtype (float64 on

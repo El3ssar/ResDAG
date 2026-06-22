@@ -86,9 +86,30 @@ class InputFeedbackInitializer(ABC):
     nonzero entries kept per column. ``None`` leaves the produced sparsity
     untouched.
 
+    Per-call overrides
+    ------------------
+    The contract parameters are bound at construction, but :meth:`initialize`
+    (and the :meth:`__call__` alias) accept **per-call keyword overrides** for
+    the recognized contract parameters — ``input_scaling`` and ``connectivity``.
+    A recognized keyword passed to ``initialize`` takes precedence over the
+    bound attribute *for that call only*, and is validated identically::
+
+        init = RandomInputInitializer(input_scaling=2.0)
+        init.initialize(weight)                         # uses input_scaling=2.0
+        init.initialize(weight, input_scaling=0.001)    # honored: uses 0.001
+        init.input_scaling                              # still 2.0 (unchanged)
+
+    This is the **same contract** :class:`FunctionInitializer` honors (per-call
+    kwargs merged over the bound ones), so a given call shape behaves
+    identically for class-based and function-wrapped initializers. Subclasses
+    cooperate simply by threading their ``**kwargs`` into the contract helpers,
+    which read the override from ``**kwargs`` and fall back to the bound
+    attribute; unrecognized keys are ignored.
+
     Subclasses must implement :meth:`initialize`, which builds the weight
     tensor and returns it (modified in-place). They opt into the contract via
-    :meth:`_apply_scaling` (and optionally :meth:`_apply_connectivity`).
+    :meth:`_apply_scaling` (and optionally :meth:`_apply_connectivity`),
+    forwarding the per-call ``**kwargs`` so recognized overrides are honored.
 
     Parameters
     ----------
@@ -115,7 +136,8 @@ class InputFeedbackInitializer(ABC):
     >>> class MyInitializer(InputFeedbackInitializer):
     ...     def initialize(self, weight, **kwargs):
     ...         values = torch.empty_like(weight).uniform_(-1, 1)
-    ...         values = self._apply_scaling(values)
+    ...         # Forward **kwargs so a per-call ``input_scaling`` override wins.
+    ...         values = self._apply_scaling(values, **kwargs)
     ...         with torch.no_grad():
     ...             weight.copy_(values)
     ...         return weight
@@ -161,7 +183,14 @@ class InputFeedbackInitializer(ABC):
             2D tensor of shape ``(reservoir_size, input_size)`` to initialize.
             Modified in-place.
         **kwargs
-            Additional keyword arguments for specific initializers.
+            Per-call keyword overrides. The recognized contract parameters —
+            ``input_scaling`` and ``connectivity`` — override the bound
+            attributes *for this call only* (see the **Per-call overrides**
+            section of :class:`InputFeedbackInitializer`); specific
+            initializers may recognize additional keys. Unrecognized keys are
+            ignored. Implementations honor the overrides by forwarding
+            ``**kwargs`` into :meth:`_apply_scaling` /
+            :meth:`_apply_connectivity`.
 
         Returns
         -------
@@ -170,7 +199,7 @@ class InputFeedbackInitializer(ABC):
         """
         pass
 
-    def _apply_scaling(self, values: ArrayT) -> ArrayT:
+    def _apply_scaling(self, values: ArrayT, **kwargs: Any) -> ArrayT:
         """Apply the uniform ``input_scaling`` transform to ``values``.
 
         This is the documented final transform of the scaling contract:
@@ -178,36 +207,98 @@ class InputFeedbackInitializer(ABC):
         float ``s`` returns ``s * values``. The array dtype is preserved, so
         callers may apply this to a float64 intermediate before narrowing.
 
+        The effective scale is resolved from the per-call ``**kwargs`` (a
+        recognized ``input_scaling`` key wins) with the bound
+        ``self.input_scaling`` as the fallback, so forwarding an
+        :meth:`initialize` call's ``**kwargs`` here honors a per-call override.
+        The override is validated exactly like the constructor value and never
+        mutates ``self.input_scaling``.
+
         Parameters
         ----------
         values : numpy.ndarray or torch.Tensor
             The natural-range weight matrix to scale.
+        **kwargs
+            Per-call keyword overrides. A recognized ``input_scaling`` key
+            overrides the bound value for this call; other keys are ignored.
 
         Returns
         -------
         numpy.ndarray or torch.Tensor
-            ``values`` unchanged when ``input_scaling is None``; otherwise
-            ``input_scaling * values`` (a new array; ``values`` is not mutated).
+            ``values`` unchanged when the effective ``input_scaling is None``;
+            otherwise ``input_scaling * values`` (a new array; ``values`` is not
+            mutated).
         """
-        if self.input_scaling is None:
+        input_scaling = self._resolve_input_scaling(kwargs)
+        if input_scaling is None:
             return values
         if isinstance(values, np.ndarray):
             # Cast the scalar to the array dtype so a float32 intermediate stays
             # float32 (a bare Python float would upcast the product to float64).
-            scaled = values * np.asarray(self.input_scaling, dtype=values.dtype)
+            scaled = values * np.asarray(input_scaling, dtype=values.dtype)
             return cast(ArrayT, scaled)
-        return values * self.input_scaling
+        return values * input_scaling
+
+    def _resolve_input_scaling(self, kwargs: dict[str, Any]) -> float | None:
+        """Resolve the effective ``input_scaling`` for one call.
+
+        A recognized ``input_scaling`` entry in the per-call ``kwargs`` wins and
+        is validated exactly like the constructor argument; otherwise the bound
+        ``self.input_scaling`` is used. ``self.input_scaling`` is never mutated.
+
+        Parameters
+        ----------
+        kwargs : dict
+            The per-call keyword arguments forwarded from :meth:`initialize`.
+
+        Returns
+        -------
+        float or None
+            The validated effective scale for this call.
+        """
+        if "input_scaling" in kwargs:
+            return _validate_input_scaling(kwargs["input_scaling"])
+        return self.input_scaling
+
+    def _resolve_connectivity(self, kwargs: dict[str, Any]) -> float | None:
+        """Resolve the effective ``connectivity`` for one call.
+
+        A recognized ``connectivity`` entry in the per-call ``kwargs`` wins and
+        is validated exactly like the constructor argument; otherwise the bound
+        ``self.connectivity`` is used. ``self.connectivity`` is never mutated.
+
+        Parameters
+        ----------
+        kwargs : dict
+            The per-call keyword arguments forwarded from :meth:`initialize`.
+
+        Returns
+        -------
+        float or None
+            The validated effective density for this call.
+        """
+        if "connectivity" in kwargs:
+            return _validate_connectivity(kwargs["connectivity"])
+        return self.connectivity
 
     def _apply_connectivity(
         self,
         values: ArrayT,
         rng: np.random.Generator | None = None,
+        **kwargs: Any,
     ) -> ArrayT:
         """Sparsify ``values`` to the configured per-column ``connectivity``.
 
         For each column (input channel) a random fraction ``1 - connectivity``
         of the entries is zeroed, keeping at least one nonzero per column. When
-        ``connectivity is None`` the array is returned untouched.
+        the effective ``connectivity is None`` the array is returned untouched.
+
+        The effective density is resolved from the per-call ``**kwargs`` (a
+        recognized ``connectivity`` key wins) with the bound
+        ``self.connectivity`` as the fallback, so forwarding an
+        :meth:`initialize` call's ``**kwargs`` here honors a per-call override.
+        The override is validated exactly like the constructor value and never
+        mutates ``self.connectivity``.
 
         Parameters
         ----------
@@ -216,14 +307,18 @@ class InputFeedbackInitializer(ABC):
         rng : numpy.random.Generator, optional
             Generator for the mask. Defaults to ``numpy.random.default_rng``
             seeded with ``self.seed`` so masking is reproducible.
+        **kwargs
+            Per-call keyword overrides. A recognized ``connectivity`` key
+            overrides the bound value for this call; other keys are ignored.
 
         Returns
         -------
         numpy.ndarray or torch.Tensor
-            ``values`` unchanged when ``connectivity is None``; otherwise a
-            masked copy with the requested per-column density.
+            ``values`` unchanged when the effective ``connectivity is None``;
+            otherwise a masked copy with the requested per-column density.
         """
-        if self.connectivity is None:
+        connectivity = self._resolve_connectivity(kwargs)
+        if connectivity is None:
             return values
         if rng is None:
             # Reduce a torch.Generator/int/None seed to the int/None NumPy
@@ -232,7 +327,7 @@ class InputFeedbackInitializer(ABC):
 
         n_rows = int(values.shape[0])
         n_cols = int(values.shape[1])
-        keep = max(1, int(round(self.connectivity * n_rows)))
+        keep = max(1, int(round(connectivity * n_rows)))
 
         mask = np.zeros((n_rows, n_cols), dtype=bool)
         for col in range(n_cols):

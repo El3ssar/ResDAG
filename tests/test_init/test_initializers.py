@@ -177,6 +177,113 @@ class TestFunctionInitializer:
         assert torch.all(weight == -1.0)
 
 
+class TestPerCallKwargsContract:
+    """Per-call ``initialize(**kwargs)`` overrides (issue #195).
+
+    The recognized contract parameters (``input_scaling``, ``connectivity``)
+    passed to ``initialize`` override the bound values *for that call only*, and
+    the behaviour is identical for class-based initializers and
+    ``FunctionInitializer`` — the same call shape can no longer behave
+    differently across the two.
+    """
+
+    def test_class_initializer_honors_per_call_input_scaling(self) -> None:
+        """A per-call ``input_scaling`` overrides the bound value (the bug repro).
+
+        ``RandomInputInitializer(input_scaling=2.0).initialize(w,
+        input_scaling=0.001)`` used to ignore the override and still yield
+        ``max|W| ~ 2.0``; it must now honor ``0.001``.
+        """
+        init = RandomInputInitializer(input_scaling=2.0, seed=0)
+
+        bound = torch.empty(256, 8)
+        overridden = torch.empty(256, 8)
+        init.initialize(bound)
+        init.initialize(overridden, input_scaling=0.001)
+
+        assert _max_abs(bound) == pytest.approx(2.0, rel=0.05)
+        assert _max_abs(overridden) <= 0.001 + 1e-9
+        # The override is per-call only: the bound attribute is untouched.
+        assert init.input_scaling == 2.0
+
+    def test_class_per_call_matches_construction_time_value(self) -> None:
+        """A per-call override yields exactly the construction-time-equivalent draw.
+
+        Same ``(seed, shape)`` plus the documented uniform final multiply, so the
+        per-call path and the bound path must agree bit-for-bit.
+        """
+        per_call = torch.empty(128, 6, dtype=torch.float64)
+        constructed = torch.empty(128, 6, dtype=torch.float64)
+        RandomInputInitializer(input_scaling=2.0, seed=7).initialize(per_call, input_scaling=0.5)
+        RandomInputInitializer(input_scaling=0.5, seed=7).initialize(constructed)
+
+        assert torch.equal(per_call, constructed)
+
+    def test_class_per_call_none_disables_scaling(self) -> None:
+        """A per-call ``input_scaling=None`` is a valid override meaning 'no scaling'."""
+        init = RandomInputInitializer(input_scaling=10.0, seed=0)
+        weight = torch.empty(256, 8)
+        init.initialize(weight, input_scaling=None)
+
+        # Natural range is [-1, 1]; with no scaling max|W| stays at ~1.
+        assert _max_abs(weight) == pytest.approx(1.0, rel=0.05)
+
+    def test_class_call_alias_honors_per_call_input_scaling(self) -> None:
+        """The ``__call__`` alias threads per-call kwargs identically to ``initialize``."""
+        init = RandomInputInitializer(input_scaling=2.0, seed=0)
+        weight = torch.empty(256, 8)
+        init(weight, input_scaling=0.001)
+
+        assert _max_abs(weight) <= 0.001 + 1e-9
+
+    def test_class_invalid_per_call_input_scaling_raises(self) -> None:
+        """A per-call override is validated exactly like the constructor value."""
+        init = RandomInputInitializer(input_scaling=1.0, seed=0)
+        with pytest.raises(ValueError, match="input_scaling"):
+            init.initialize(torch.empty(10, 4), input_scaling=float("inf"))
+
+    def test_function_initializer_honors_per_call_kwargs(self) -> None:
+        """``FunctionInitializer`` merges per-call kwargs over the bound ones."""
+
+        def constant(rows: int, cols: int, value: float = 1.0) -> torch.Tensor:
+            return torch.full((rows, cols), value)
+
+        init = FunctionInitializer(constant, value=2.0)
+
+        bound = torch.empty(4, 2)
+        overridden = torch.empty(4, 2)
+        init.initialize(bound)
+        init.initialize(overridden, value=0.001)
+
+        assert torch.all(bound == 2.0)
+        assert torch.all(overridden == 0.001)
+        # Per-call only: the bound kwargs are unchanged.
+        assert init.kwargs == {"value": 2.0}
+
+    def test_class_and_function_per_call_contract_agree(self) -> None:
+        """The same per-call shape behaves identically for class and function styles.
+
+        Both honor a recognized per-call override; neither silently ignores it.
+        This is the consistency guarantee the bug was about.
+        """
+        # Class initializer: per-call input_scaling overrides bound input_scaling.
+        klass = RandomInputInitializer(input_scaling=2.0, seed=0)
+        w_class = torch.empty(256, 8)
+        klass.initialize(w_class, input_scaling=0.001)
+        class_honored = _max_abs(w_class) <= 0.001 + 1e-9
+
+        # Function initializer: per-call kwarg overrides bound kwarg.
+        def scaled(rows: int, cols: int, scale: float = 1.0) -> torch.Tensor:
+            return torch.full((rows, cols), scale)
+
+        fn = FunctionInitializer(scaled, scale=2.0)
+        w_fn = torch.empty(256, 8)
+        fn.initialize(w_fn, scale=0.001)
+        function_honored = bool(torch.all(w_fn == 0.001))
+
+        assert class_honored and function_honored
+
+
 class TestInitializerResolverCallables:
     """resolve_initializer accepts bare callables and (callable, params) tuples."""
 

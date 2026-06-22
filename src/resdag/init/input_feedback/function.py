@@ -89,7 +89,11 @@ class FunctionInitializer(InputFeedbackInitializer):
             2D tensor of shape ``(rows, cols)`` to initialize. Modified
             in-place.
         **kwargs
-            Per-call overrides merged over the bound keyword arguments.
+            Per-call overrides merged over the bound keyword arguments (a
+            recognized key wins for this call only). This is the same per-call
+            contract the class-based initializers honor — see the **Per-call
+            overrides** section of
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`.
 
         Returns
         -------

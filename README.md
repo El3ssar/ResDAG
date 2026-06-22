@@ -80,6 +80,49 @@ Branches, feature augmentations, and multiple readout heads compose the same way
 
 All heads fit in a single pass, in dependency order. The [composition handbook](https://el3ssar.github.io/ResDAG/build/) covers the patterns.
 
+## Coming from scikit-learn?
+
+The whole `fit` → `predict` loop fits in one object. `ESN.fit(series)` slices the warmup window, builds the one-step-ahead target, and runs the algebraic solve; `forecast(horizon=...)` re-synchronizes and rolls out — numpy in, numpy out:
+
+```python
+import numpy as np
+from resdag import ESN
+
+series = np.cumsum(np.random.randn(2000, 3), axis=0)   # (time, features)
+
+esn = ESN(reservoir_size=300, spectral_radius=0.9).fit(series)
+prediction = esn.forecast(horizon=200)                 # (200, 3)
+```
+
+`esn.model` drops you back into the full composable graph whenever you outgrow the facade. The [mental model](https://el3ssar.github.io/ResDAG/start/concepts/) maps `fit`/`predict` onto ResDAG's `warmup` + `ESNTrainer.fit` / `forecast` flow.
+
+## Train through it with SGD
+
+A reservoir is an ordinary PyTorch layer, so it drops into a pipeline as a frozen feature extractor and you train any head with a normal optimizer loop. The reservoir has zero trainable parameters, so the optimizer only ever touches the head:
+
+```python
+import torch
+import torch.nn as nn
+from resdag import ReservoirFeatureExtractor
+
+net = nn.Sequential(
+    ReservoirFeatureExtractor(500, feedback_size=3, spectral_radius=0.9),
+    nn.Linear(500, 64), nn.Tanh(), nn.Linear(64, n_classes),
+)
+extractor, head = net[0], net[1:]
+opt = torch.optim.Adam(head.parameters(), lr=1e-3)     # head only — reservoir is frozen
+
+with torch.no_grad():                                  # frozen features: compute once
+    extractor.on_epoch_start()
+    feats = extractor(sequences)[:, -1]                # (batch, 500) last-step summary
+
+for _ in range(300):
+    loss = nn.functional.cross_entropy(head(feats), labels)
+    opt.zero_grad(); loss.backward(); opt.step()
+```
+
+This is the pure-PyTorch path: gradient heads, full BPTT through the recurrence (`trainable=True`), and embedding frozen reservoirs in larger networks. [Work · Train](https://el3ssar.github.io/ResDAG/workflows/train/) covers all three training paths; [Work · Scale & deploy](https://el3ssar.github.io/ResDAG/workflows/deploy/) shows the frozen-backbone classifier inside a `nn.Module` pipeline.
+
 ## Documentation
 
 | | |

@@ -62,6 +62,16 @@ a deep head with Adam, or set `trainable=True` and backpropagate through
 everything. The [Train](../workflows/train.md) page covers all three
 approaches.
 
+!!! note "The pure-PyTorch quickstart"
+    Prefer a normal optimizer loop? `ReservoirFeatureExtractor` wraps a
+    reservoir as a plain `nn.Module` that drops into `nn.Sequential` ahead
+    of any head, frozen by default — so you compute its features once under
+    `torch.no_grad()` and train the head with `Adam` like any other model.
+    The runnable snippet is
+    [Train · Path 2 — frozen reservoir, gradient head](../workflows/train.md#path-2-frozen-reservoir-gradient-head),
+    and [Scale & deploy](../workflows/deploy.md#inside-a-larger-pipeline)
+    embeds the same frozen backbone inside a classifier `nn.Module`.
+
 ## 4 — Forecasting is autoregressive feedback
 
 A trained model maps *signal now* → *signal one step ahead*. Forecasting
@@ -69,6 +79,31 @@ closes the loop: after a teacher-forced warmup, each prediction is fed back
 as the next input, `horizon` times. Exogenous drivers slot in alongside the
 feedback with a fixed [timing convention](../theory/timing.md): drivers
 for the forecast window start exactly where the warmup drivers ended.
+
+!!! note "For scikit-learn users"
+    A reservoir forecaster has no single `fit`/`predict` because training
+    and rollout are two phases — but they map cleanly onto the estimator
+    workflow you already know:
+
+    | scikit-learn | ResDAG |
+    | --- | --- |
+    | `est.fit(X, y)` | synchronize the state on a warmup window, then `ESNTrainer.fit(...)` solves the readout in one algebraic pass |
+    | `est.predict(X)` | `model.forecast(warmup, horizon=...)` re-synchronizes, then rolls the prediction back in as the next input |
+
+    The `ESN` facade collapses both phases into one object —
+    `ESN(...).fit(series).forecast(horizon=...)`, numpy in and numpy out —
+    for when you want the estimator shape without wiring the graph yourself:
+
+    ```python
+    import numpy as np
+    from resdag import ESN
+
+    series = np.cumsum(np.random.randn(2000, 3), axis=0)   # (time, features)
+    prediction = ESN(reservoir_size=300).fit(series).forecast(horizon=200)
+    ```
+
+    `esn.model` exposes the full composable graph the moment you outgrow
+    the facade.
 
 ---
 

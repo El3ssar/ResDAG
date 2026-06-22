@@ -38,8 +38,13 @@ class BaseReservoirLayer(nn.Module, ABC):
     cell : ReservoirCell
         The wrapped single-step cell.
     state : torch.Tensor or None
-        Current reservoir state of shape ``(batch, cell.state_size)``, or
-        ``None`` if not yet initialized.
+        Current reservoir state, or ``None`` if not yet initialized.  The
+        layout is cell-defined: 2-D ``(batch, cell.state_size)`` for
+        :class:`~resdag.layers.cells.esn_cell.ESNCell`, 3-D
+        ``(batch, cell.state_size, input_dim)`` delay buffer for
+        :class:`~resdag.layers.cells.ngrc_cell.NGCell`.  See
+        :attr:`ReservoirCell.state_size <resdag.layers.cells.base_cell.ReservoirCell.state_size>`
+        for the leading state dimension.
     detach_state_between_calls : bool
         If ``True`` (default), the stored state is detached from the autograd
         graph at the end of each forward call (truncated BPTT at call
@@ -406,8 +411,12 @@ class BaseReservoirLayer(nn.Module, ABC):
         Returns
         -------
         torch.Tensor or None
-            Clone of the current state tensor of shape
-            ``(batch, cell.state_size)``, or ``None`` if not yet initialized.
+            Clone of the current state tensor, or ``None`` if not yet
+            initialized.  The layout is cell-defined: 2-D
+            ``(batch, cell.state_size)`` for
+            :class:`~resdag.layers.cells.esn_cell.ESNCell`, 3-D
+            ``(batch, cell.state_size, input_dim)`` delay buffer for
+            :class:`~resdag.layers.cells.ngrc_cell.NGCell`.
 
         Examples
         --------

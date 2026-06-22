@@ -17,11 +17,13 @@ mechanics; the design rationale lives in the
 
 ```bash
 git clone https://github.com/El3ssar/ResDAG && cd ResDAG
-uv sync --extra hpo          # dev tools come from the default dependency group
+uv sync --extra dev          # lint/format/test toolchain (single source of truth)
 uv run pytest --no-cov -q    # full suite — ~1,400 tests, a few minutes on CPU
 ```
 
-`pip install -e ".[dev,hpo]"` works too if you don't use uv.
+`pip install -e ".[dev]"` works too if you don't use uv. Add `hpo` (Optuna) or
+`docs` (MkDocs + the figure pipeline) as needed — e.g. `uv sync --extra dev
+--extra docs` or `pip install -e ".[dev,docs]"`.
 
 ## Quality gate
 

@@ -354,6 +354,55 @@ class TestOutliersFilteredMean:
 
         assert output.shape == (2, 5, 4)
 
+    def test_explicit_4d_tensor_input(self) -> None:
+        """An explicit 4D ``(samples, batch, timesteps, features)`` tensor aggregates over samples."""
+        layer = OutliersFilteredMean(method="z_score", threshold=10.0)  # keep all
+        x = torch.stack(
+            [
+                torch.ones(2, 5, 4) * 1.0,
+                torch.ones(2, 5, 4) * 2.0,
+                torch.ones(2, 5, 4) * 3.0,
+            ],
+            dim=0,
+        )
+
+        output = layer(x)
+
+        # No outliers (high threshold) -> plain mean over the samples axis.
+        assert output.shape == (2, 5, 4)
+        assert torch.allclose(output, torch.ones(2, 5, 4) * 2.0)
+
+    def test_2d_input_raises_value_error(self) -> None:
+        """A 2D tensor is rejected instead of silently collapsing to a wrong shape.
+
+        Without the guard a ``(samples, features)`` tensor falls through the
+        list / 3D / 4D branches and the ``dim=-1`` norm collapses the only
+        non-sample axis, returning a ``(features,)`` tensor. The guard must
+        raise a clear ``ValueError`` instead.
+        """
+        layer = OutliersFilteredMean(method="z_score", threshold=2.0)
+        x = torch.randn(5, 4)
+
+        with pytest.raises(ValueError, match="OutliersFilteredMean expects"):
+            layer(x)
+
+    @pytest.mark.parametrize("ndim", [1, 2, 5])
+    def test_invalid_tensor_ndim_raises_value_error(self, ndim: int) -> None:
+        """Any tensor rank other than 3D or 4D raises a clear ``ValueError``."""
+        layer = OutliersFilteredMean(method="z_score", threshold=2.0)
+        x = torch.randn(*([2] * ndim))
+
+        with pytest.raises(ValueError, match=rf"got a {ndim}D tensor"):
+            layer(x)
+
+    def test_list_of_2d_tensors_raises_value_error(self) -> None:
+        """A list of 2D tensors stacks to a 3D tensor and is rejected."""
+        layer = OutliersFilteredMean(method="z_score", threshold=2.0)
+        members = [torch.randn(5, 4), torch.randn(5, 4)]
+
+        with pytest.raises(ValueError, match="list of 3D"):
+            layer(members)
+
     def test_no_outliers_returns_mean(self) -> None:
         """Test that with no outliers, returns regular mean."""
         layer = OutliersFilteredMean(method="z_score", threshold=10.0)  # High threshold

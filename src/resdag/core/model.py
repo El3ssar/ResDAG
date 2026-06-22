@@ -412,7 +412,13 @@ class ESNModel(ps.SymbolicModel):
             File path to save the model. Parent directories are created
             if they don't exist.
         include_states : bool, default=False
-            If True, also save current reservoir states.
+            If True, also save current reservoir states. Only reservoirs whose
+            state is non-``None`` are persisted (see
+            :meth:`get_reservoir_states`); reservoirs that are still
+            lazily-uninitialised at save time — e.g. a model saved before any
+            warmup — are omitted from the checkpoint. :meth:`load` restores the
+            saved states tolerantly, so this partial-key checkpoint round-trips
+            without error.
         **metadata
             Additional metadata to store with the model (e.g., training info).
 
@@ -466,7 +472,12 @@ class ESNModel(ps.SymbolicModel):
         strict : bool, default=True
             If True, strictly enforce that state_dict keys match.
         load_states : bool, default=False
-            If True, also load reservoir states if available.
+            If True, also load reservoir states if available. States are
+            restored tolerantly (``strict=False``): because
+            :meth:`save` only persists reservoirs whose state is non-``None``,
+            a checkpoint may legitimately omit some reservoir keys (e.g. one
+            saved before warmup). Reservoirs absent from the checkpoint keep
+            their current state and no ``KeyError`` is raised.
 
         Warns
         -----
@@ -498,7 +509,13 @@ class ESNModel(ps.SymbolicModel):
 
         if load_states:
             if "reservoir_states" in checkpoint:
-                self.set_reservoir_states(checkpoint["reservoir_states"])
+                # save(include_states=True) only persists reservoirs whose state
+                # is non-None (see save / get_reservoir_states), so a checkpoint
+                # written before warmup legitimately omits some reservoir keys.
+                # Restore tolerantly (strict=False) to mirror that asymmetry —
+                # reservoirs missing from the checkpoint keep their current
+                # (typically None / lazily-initialised) state.
+                self.set_reservoir_states(checkpoint["reservoir_states"], strict=False)
             else:
                 warnings.warn(
                     "load_states=True but no reservoir states found in checkpoint", UserWarning

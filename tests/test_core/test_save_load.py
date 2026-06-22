@@ -16,6 +16,8 @@ import torch
 from resdag.core import ESNModel
 from resdag.layers import ESNLayer
 from resdag.layers.readouts import CGReadoutLayer
+from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
+from resdag.layers.transforms import Concatenate
 from resdag.models import classic_esn, headless_esn, linear_esn
 from resdag.training import ESNTrainer
 
@@ -214,6 +216,77 @@ class TestReservoirStates:
             for key in states_before:
                 assert states_after[key].dtype == torch.float32
                 assert torch.allclose(states_before[key], states_after[key], rtol=1e-5, atol=1e-6)
+
+    def test_load_states_before_warmup_does_not_raise(self) -> None:
+        """save(include_states=True) before warmup round-trips without KeyError.
+
+        Regression for #169: ``get_reservoir_states`` only persists reservoirs
+        whose state is non-``None``, so a checkpoint saved before any warmup
+        contains an empty ``reservoir_states`` dict. ``load(load_states=True)``
+        must tolerate the missing keys rather than tripping the strict
+        missing-keys check in ``set_reservoir_states``.
+        """
+        model = headless_esn(50, 1)
+        model.reset_reservoirs()  # un-initialised state (None), as before warmup
+
+        # No reservoir has a state, so nothing is persisted.
+        assert model.get_reservoir_states() == {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "model.pt"
+            model.save(path, include_states=True)
+
+            checkpoint = torch.load(path, weights_only=False)
+            assert checkpoint["reservoir_states"] == {}
+
+            # Must not raise KeyError despite the empty/partial states dict.
+            model.load(path, load_states=True)
+
+    def test_load_states_partial_reservoirs_round_trips(self) -> None:
+        """A model with one warmed + one un-warmed reservoir round-trips states.
+
+        Regression for #169: ``save`` omits the un-warmed reservoir, so the
+        checkpoint's key set is a strict subset of the model's reservoirs.
+        ``load(load_states=True)`` must restore the warmed reservoir and leave
+        the un-warmed one untouched instead of raising ``KeyError``.
+        """
+        inp = ps.Input((20, 1))
+        res_a = ESNLayer(reservoir_size=30, feedback_size=1, input_size=0)(inp)
+        res_b = ESNLayer(reservoir_size=40, feedback_size=1, input_size=0)(inp)
+        merged = Concatenate()(res_a, res_b)
+        out = CGReadoutLayer(in_features=70, out_features=1, name="output")(merged)
+        model = ESNModel(inp, out)
+
+        reservoirs = {
+            name: module
+            for name, module in model.named_modules()
+            if isinstance(module, BaseReservoirLayer)
+        }
+        names = sorted(reservoirs)
+        assert len(names) == 2
+        warmed_name, unwarmed_name = names
+
+        # Leave one reservoir un-warmed (state=None); warm the other.
+        reservoirs[unwarmed_name].reset_state()
+        reservoirs[warmed_name].set_random_state(batch_size=2)
+
+        states_before = model.get_reservoir_states()
+        assert set(states_before) == {warmed_name}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "model.pt"
+            model.save(path, include_states=True)
+
+            # Only the warmed reservoir is persisted.
+            checkpoint = torch.load(path, weights_only=False)
+            assert set(checkpoint["reservoir_states"]) == {warmed_name}
+
+            model.reset_reservoirs()
+            model.load(path, load_states=True)  # must not raise
+
+            states_after = model.get_reservoir_states()
+            assert set(states_after) == {warmed_name}
+            assert torch.allclose(states_before[warmed_name], states_after[warmed_name])
 
 
 class TestModelArchitecture:

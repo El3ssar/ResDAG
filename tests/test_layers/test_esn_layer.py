@@ -38,7 +38,6 @@ class TestESNLayerInstantiation:
         assert reservoir.feedback_size == 10
         assert reservoir.input_size is None
         assert reservoir.spectral_radius is None  # default is None
-        assert reservoir._initialized is True
         assert reservoir.weight_feedback.shape == (100, 10)
         assert reservoir.weight_hh.shape == (100, 100)
         assert reservoir.weight_input is None

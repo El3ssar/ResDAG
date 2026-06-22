@@ -1721,6 +1721,7 @@ dev = [
 ]
 docs = [
     { name = "griffe" },
+    { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocs-glightbox" },
     { name = "mkdocs-material" },
@@ -1733,14 +1734,7 @@ hpo = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "basedpyright" },
-    { name = "black" },
-    { name = "matplotlib" },
-    { name = "mypy" },
-    { name = "optuna" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
+    { name = "resdag", extra = ["dev"] },
 ]
 
 [package.metadata]
@@ -1749,6 +1743,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=25.12.0" },
     { name = "graphviz", specifier = ">=0.21" },
     { name = "griffe", marker = "extra == 'docs'", specifier = ">=1.0" },
+    { name = "matplotlib", marker = "extra == 'docs'", specifier = ">=3.9" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-glightbox", marker = "extra == 'docs'", specifier = ">=0.4" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
@@ -1769,16 +1764,7 @@ requires-dist = [
 provides-extras = ["dev", "docs", "hpo"]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "basedpyright", specifier = ">=1.13.0" },
-    { name = "black", specifier = ">=24.0.0" },
-    { name = "matplotlib", specifier = ">=3.9" },
-    { name = "mypy", specifier = ">=1.8.0" },
-    { name = "optuna", specifier = ">=4.0.0" },
-    { name = "pytest", specifier = ">=8.0.0" },
-    { name = "pytest-cov", specifier = ">=4.1.0" },
-    { name = "ruff", specifier = ">=0.6.0" },
-]
+dev = [{ name = "resdag", extras = ["dev"] }]
 
 [[package]]
 name = "ruff"

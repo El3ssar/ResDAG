@@ -43,6 +43,11 @@ Documentation = "https://el3ssar.github.io/ResDAG/"
 Repository = "https://github.com/El3ssar/ResDAG"
 Issues = "https://github.com/El3ssar/ResDAG/issues"
 
+# Single source of truth for dev tooling: the `dev` extra below. Both
+# `pip install -e ".[dev]"` and `uv sync --extra dev` resolve from it, and the
+# `dev` dependency-group (used by a bare `uv sync`) just re-exports it via a
+# self-reference (see `[dependency-groups]`), so pip and uv install identical
+# lint/format/test tool versions.
 [project.optional-dependencies]
 hpo = ["optuna>=3.0.0"]
 dev = [
@@ -61,20 +66,15 @@ docs = [
     "mkdocs-glightbox>=0.4",
     "pymdown-extensions>=10.7",
     "griffe>=1.0",
+    "matplotlib>=3.9",  # docs figure pipeline (docs/_tooling/figures)
 ]
 
 
 [dependency-groups]
-dev = [
-    "basedpyright>=1.13.0",
-    "pytest>=8.0.0",
-    "pytest-cov>=4.1.0",
-    "black>=24.0.0",
-    "ruff>=0.6.0",
-    "mypy>=1.8.0",
-    "optuna>=4.0.0",
-    "matplotlib>=3.9",  # docs figure pipeline (docs/_tooling/figures)
-]
+# Re-export the `dev` extra so a bare `uv sync` (which includes the default
+# `dev` group) installs exactly the tool versions pinned in
+# `[project.optional-dependencies] dev` — no divergence between pip and uv.
+dev = ["resdag[dev]"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resdag"]

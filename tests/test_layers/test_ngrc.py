@@ -793,6 +793,91 @@ class TestNGReservoirForwardShape:
 
 
 # ---------------------------------------------------------------------------
+# NGReservoir / NGCell — input validation (issue #149)
+# ---------------------------------------------------------------------------
+
+
+class TestNGRCInputValidation:
+    """Wrong input width and stray driving inputs must fail loudly (issue #149).
+
+    NG-RC is a weightless feedforward feature map built against a fixed
+    ``input_dim`` with no input weight matrix.  A wrong feature width used to
+    surface as a cryptic ``torch.cat`` size-mismatch, and a stray driving input
+    used to be silently discarded (producing a misconfigured-but-running model).
+    Both now raise a clear ``ValueError``.
+    """
+
+    def test_reservoir_wrong_width_raises_naming_input_dim(self) -> None:
+        """Wrong-width feedback raises ValueError naming the expected input_dim."""
+        layer = NGReservoir(input_dim=3, k=2, p=2)
+        bad = torch.randn(2, 10, 4)  # feature width 4 != input_dim 3
+        with pytest.raises(ValueError, match=r"input_dim=3"):
+            layer(bad)
+
+    def test_reservoir_wrong_width_message_reports_actual_shape(self) -> None:
+        """The error reports the offending tensor's actual feature width."""
+        layer = NGReservoir(input_dim=3)
+        with pytest.raises(ValueError, match=r"feature dimension 5"):
+            layer(torch.randn(2, 8, 5))
+
+    def test_reservoir_correct_width_does_not_raise(self) -> None:
+        """A correctly-sized feedback sequence still works."""
+        layer = NGReservoir(input_dim=3, k=2, p=2)
+        out = layer(torch.randn(2, 10, 3))
+        assert out.shape == (2, 10, layer.feature_dim)
+
+    def test_reservoir_wrong_width_k1_raises(self) -> None:
+        """The k=1 (no-delay) path also validates the feature width."""
+        layer = NGReservoir(input_dim=5, k=1, p=2)
+        with pytest.raises(ValueError, match=r"input_dim=5"):
+            layer(torch.randn(2, 10, 4))
+
+    def test_reservoir_single_driver_raises(self) -> None:
+        """A single driving input is rejected, not silently ignored."""
+        layer = NGReservoir(input_dim=3, k=2, p=2)
+        feedback = torch.randn(2, 10, 3)
+        driver = torch.randn(2, 10, 5)
+        with pytest.raises(ValueError, match=r"does not\s+accept driving inputs"):
+            layer(feedback, driver)
+
+    def test_reservoir_multiple_drivers_raise_with_count(self) -> None:
+        """The driver-rejection message reports how many were passed."""
+        layer = NGReservoir(input_dim=3)
+        feedback = torch.randn(2, 10, 3)
+        d1 = torch.randn(2, 10, 3)
+        d2 = torch.randn(2, 10, 3)
+        with pytest.raises(ValueError, match=r"2 were passed"):
+            layer(feedback, d1, d2)
+
+    def test_reservoir_no_driver_still_works(self) -> None:
+        """The feedback-only call path is unaffected by the driver guard."""
+        layer = NGReservoir(input_dim=3, k=2, p=2)
+        out = layer(torch.randn(2, 10, 3))
+        assert out.shape == (2, 10, layer.feature_dim)
+
+    def test_cell_forward_wrong_width_raises(self) -> None:
+        """NGCell.forward validates the per-step input feature width."""
+        cell = NGCell(input_dim=3, k=2, p=2)
+        state = cell.init_state(4, "cpu", torch.float32)
+        with pytest.raises(ValueError, match=r"input_dim=3"):
+            cell([torch.randn(4, 4)], state)
+
+    def test_cell_forward_sequence_wrong_width_raises(self) -> None:
+        """NGCell.forward_sequence validates the sequence feature width."""
+        cell = NGCell(input_dim=3, k=2, p=2)
+        state = cell.init_state(2, "cpu", torch.float32)
+        with pytest.raises(ValueError, match=r"input_dim=3"):
+            cell.forward_sequence(torch.randn(2, 10, 4), state)
+
+    def test_cell_forward_correct_width_ok(self) -> None:
+        """A correctly-sized per-step input still produces features."""
+        cell = NGCell(input_dim=3, k=2, p=2)
+        state = cell.init_state(4, "cpu", torch.float32)
+        feats, _ = cell([torch.randn(4, 3)], state)
+        assert feats.shape == (4, cell.feature_dim)
+
+
+# ---------------------------------------------------------------------------
 # NGReservoir — state management
 # ---------------------------------------------------------------------------
 

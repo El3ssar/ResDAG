@@ -310,6 +310,35 @@ class NGCell(ReservoirCell):
         """
         return torch.zeros(batch_size, self.state_size, self.input_dim, device=device, dtype=dtype)
 
+    def _check_input_dim(self, x: torch.Tensor) -> None:
+        """
+        Validate that an input's feature dimension matches :attr:`input_dim`.
+
+        The cell builds its delay-embedded and monomial features against a
+        fixed ``input_dim``; a wrong feature width would otherwise surface as a
+        cryptic ``torch.cat`` size-mismatch deep inside feature construction.
+        This raises a clear :class:`ValueError` naming the expected width
+        instead.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input slice whose trailing dimension is the feature width:
+            ``(batch, input_dim)`` for the single-step path or
+            ``(batch, timesteps, input_dim)`` for the sequence path.
+
+        Raises
+        ------
+        ValueError
+            If ``x.shape[-1]`` does not equal :attr:`input_dim`.
+        """
+        if x.shape[-1] != self.input_dim:
+            raise ValueError(
+                f"NGCell expected input with feature dimension input_dim="
+                f"{self.input_dim}, but got input of shape {tuple(x.shape)} "
+                f"(feature dimension {x.shape[-1]})."
+            )
+
     def forward(
         self,
         inputs: list[torch.Tensor],
@@ -322,8 +351,10 @@ class NGCell(ReservoirCell):
         ----------
         inputs : list[torch.Tensor]
             Per-timestep input slices.  ``inputs[0]`` is the current input
-            of shape ``(batch, input_dim)``.  Additional elements are ignored
-            (NG-RC has no driving inputs).
+            of shape ``(batch, input_dim)``.  NG-RC has no driving inputs, so
+            only ``inputs[0]`` is consumed (the wrapping
+            :class:`~resdag.layers.reservoirs.ngrc.NGReservoir` rejects driving
+            inputs before they reach the cell).
         state : torch.Tensor
             Delay buffer of shape ``(batch, state_size, input_dim)``.
 
@@ -334,8 +365,15 @@ class NGCell(ReservoirCell):
             ``(batch, feature_dim)``.
         new_state : torch.Tensor
             Updated delay buffer of shape ``(batch, state_size, input_dim)``.
+
+        Raises
+        ------
+        ValueError
+            If ``inputs[0]``'s trailing (feature) dimension does not equal
+            :attr:`input_dim`.
         """
         x = inputs[0]
+        self._check_input_dim(x)
         batch = x.shape[0]
 
         # ------------------------------------------------------------------
@@ -459,10 +497,17 @@ class NGCell(ReservoirCell):
             sequence is shorter than the buffer, carried-over history), so a
             subsequent streaming :meth:`forward` continues seamlessly.
 
+        Raises
+        ------
+        ValueError
+            If ``x``'s trailing (feature) dimension does not equal
+            :attr:`input_dim`.
+
         See Also
         --------
         NGCell.forward : Single-step counterpart driving the streaming path.
         """
+        self._check_input_dim(x)
         batch, seq_len, _ = x.shape
         pad = self.state_size  # == (k - 1) * s
 

@@ -18,8 +18,12 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
 
     Parameters
     ----------
-    features : int
-        Number of chains (must equal number of inputs).
+    features : int, optional
+        Number of chains. Must equal the number of inputs (the weight's
+        ``in_features``). ``None`` (the default) infers it from the weight's
+        column count at :meth:`initialize` time, so the bare-name registry
+        path ``get_input_feedback("chain_of_neurons_input")`` works. When an
+        explicit value is given it is validated against the weight shape.
     weights : float or Sequence[float], default=1.0
         Either a single float (same weight for all input→chain pairs) or
         a sequence of floats (one weight per input/chain).
@@ -28,23 +32,30 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
     --------
     >>> from resdag.init.input_feedback import ChainOfNeuronsInputInitializer
     >>>
-    >>> # 3 chains, uniform weight
-    >>> init = ChainOfNeuronsInputInitializer(features=3, weights=1.0)
+    >>> # Infer the number of chains from the weight (3 columns -> 3 chains)
+    >>> init = ChainOfNeuronsInputInitializer(weights=1.0)
     >>> weight = torch.empty(150, 3)  # (reservoir_size, num_inputs)
     >>> init.initialize(weight)
+    >>>
+    >>> # Or pin it explicitly (validated against the weight shape)
+    >>> init = ChainOfNeuronsInputInitializer(features=3, weights=1.0)
     >>>
     >>> # Each input connects only to the first neuron of its chain
     """
 
     def __init__(
         self,
-        features: int,
+        features: int | None = None,
         weights: float | Sequence[float] = 1.0,
     ):
-        """Initialize the ChainOfNeuronsInputInitializer."""
-        if features is None:
-            raise ValueError("'features' must be provided.")
-        if features < 1:
+        """Initialize the ChainOfNeuronsInputInitializer.
+
+        Raises
+        ------
+        ValueError
+            If ``features`` is given but ``< 1``.
+        """
+        if features is not None and features < 1:
             raise ValueError(f"'features' must be >= 1, got {features}.")
         self.features = features
         self.weights = weights
@@ -57,27 +68,42 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
             out_features = reservoir_size (units)
-            in_features = num_inputs (must equal features)
+            in_features = num_inputs (must equal features; when ``features`` is
+            ``None`` it is inferred from this column count)
 
         Returns
         -------
         torch.Tensor
             Initialized weight tensor
+
+        Raises
+        ------
+        ValueError
+            If an explicit ``features`` does not equal ``in_features``, or
+            ``units`` is not a multiple of the number of chains.
         """
         units, input_dim = _resolve_shape(weight)
         device = weight.device
         dtype = weight.dtype
         compute_dtype = _numpy_compute_dtype(dtype)
 
-        if input_dim != self.features:
-            raise ValueError(
-                f"input_dim ({input_dim}) must equal 'features' ({self.features}) "
-                "to have one input per chain."
-            )
-        if units % self.features != 0:
+        # ``features`` equals the number of chains, which equals the weight's
+        # column count (one input per chain). Infer it from the weight when the
+        # caller left it unset; otherwise validate the explicit value matches.
+        if self.features is None:
+            features = input_dim
+        else:
+            features = self.features
+            if input_dim != features:
+                raise ValueError(
+                    f"input_dim ({input_dim}) must equal 'features' ({features}) "
+                    "to have one input per chain."
+                )
+
+        if units % features != 0:
             raise ValueError(
                 f"Number of units ({units}) must be a multiple of 'features' "
-                f"({self.features}) to align chains with inputs."
+                f"({features}) to align chains with inputs."
             )
 
         # Build at the target precision so non-float32-representable per-input
@@ -98,7 +124,7 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
             w = float(cast(float, self.weights))
             in_weights = [w] * input_dim
 
-        block_len = units // self.features
+        block_len = units // features
 
         # Deterministic: input i → first unit of chain i
         for i in range(input_dim):

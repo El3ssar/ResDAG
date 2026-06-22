@@ -15,7 +15,7 @@ produced the tensor.
 | Layer | Signature | What it does |
 | --- | --- | --- |
 | `Concatenate` | `Concatenate()` | Joins inputs along the feature dimension |
-| `Power` | `(exponent)` | Raises every feature to `exponent`; the `power_augmented` augmentation |
+| `Power` | `(exponent, sign_preserving=False)` | Raises every feature to `exponent`; the `power_augmented` augmentation |
 | `SelectiveExponentiation` | `(index, exponent)` | Raises even- or odd-indexed features (parity of `index`) to `exponent`; the Ott augmentation |
 | `SelectiveDropout` | `(mask)` | Zeros a fixed boolean mask of features — deterministic, for ablations |
 | `FeaturePartitioner` | `(partitions, overlap)` | Splits features into overlapping circular slices, returns a list — feeds parallel reservoirs |
@@ -58,6 +58,19 @@ Swap `SelectiveExponentiation` for `Power(2.0)` and the result is
 augmented states. One thing to track is the readout's `in_features`:
 concatenation adds feature dimensions, and the readout must be
 constructed with the sum.
+
+Both `Power` and `SelectiveExponentiation` exponentiate signed reservoir
+states. `tanh` states live in `[-1, 1]`, so a *non-integer* exponent on a
+*negative* base returns `nan` under the default `torch.pow`, and a
+*negative* exponent on a zero base returns `inf` — silently, with no
+diagnostic. Even integers (`2.0`, the default) and odd integers (`3.0`)
+are always safe. For a non-integer exponent on signed states, pass
+`sign_preserving=True`, which applies `sign(x) * abs(x) ** exponent` and
+stays finite for negative bases:
+
+```python
+Power(0.5, sign_preserving=True)        # sqrt(|x|), signed; finite on [-1, 1]
+```
 
 These five layers are not a closed set. Any `nn.Module` that maps
 `(batch, time, features)` to the same layout composes the same way;

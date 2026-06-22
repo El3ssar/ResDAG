@@ -51,12 +51,23 @@ Because `exponent` is continuous, the factory works directly as a
 `model_creator` for [hyperparameter tuning](../../workflows/tune.md);
 sweep `exponent` alongside `spectral_radius`.
 
+!!! warning "Choose the exponent for signed states"
+    `tanh` reservoir states span `[-1, 1]`, negatives and zeros included.
+    Even integers (`2.0`, the default) and odd integers (`3.0`) are always
+    safe. A *non-integer* exponent (`0.5`, `1.5`) on a negative state
+    returns `nan`, and a *negative* exponent (`-1.0`) on a zero state
+    returns `inf` — silently, since this factory uses the default
+    `torch.pow`. If you need a non-integer exponent on signed states, wire
+    the model by hand with
+    [`Power(exponent, sign_preserving=True)`](../layers/transforms.md),
+    which applies `sign(x) * abs(x) ** exponent` and stays finite.
+
 ## Parameters
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
 | `reservoir_size`, `feedback_size`, `output_size` | required | units, input dim, output dim |
-| `exponent` | `2.0` | power applied to every reservoir state |
+| `exponent` | `2.0` | power applied to every reservoir state; prefer integers on signed `tanh` states (see warning above) |
 | `topology`, `feedback_initializer` | `None` | any [initialization spec](../initialization/index.md) |
 | `spectral_radius`, `leak_rate` | `0.9`, `1.0` | factory scales the spectrum; `1.0` = no leak |
 | `activation`, `bias`, `trainable` | `"tanh"`, `True`, `False` | reservoir options, as in the other factories |

@@ -20,10 +20,13 @@ preds = model.forecast(f_warmup, horizon=2000)     # (batch, 2000, features)
 
 Phase 1 resets the reservoirs (pass `reset=False` to continue from a
 saved state instead), runs a teacher-forced pass over `f_warmup`, and
-keeps the outputs. Prediction 0 *is* the last warmup output — the model's
-one-step prediction from the final real sample — so phase 2 makes
-`horizon − 1` model calls, each feeding the previous output back in. The
-returned tensor aligns one-to-one with the `val` split from
+keeps the outputs. Phase 2 then makes `horizon` genuinely
+autoregressive model calls, each feeding the previous output back in.
+Prediction 0 is a real forecast step — the model's own output seeded by
+the last warmup output (or `initial_feedback`), not an echo of it — so
+`horizon=1` returns one genuine forecast and `return_warmup=True` adds
+no duplicated frame at the warmup/forecast seam. The returned tensor
+aligns one-to-one with the `val` split from
 `prepare_esn_data`, so error metrics can be computed element-wise with
 no further index arithmetic.
 

@@ -390,6 +390,137 @@ class TestFitForecast:
 
 
 # ---------------------------------------------------------------------------
+# Device / dtype coercion (fit + forecast)
+# ---------------------------------------------------------------------------
+
+
+class _DtypeChangingAggregator(torch.nn.Module):
+    """Mean aggregator that returns a different dtype than its input.
+
+    Used to exercise the deliberate-cast path in ``forecast``: a custom
+    aggregator whose output dtype differs from the pre-allocated buffer must be
+    cast on purpose, not silently truncated by the in-place write.
+    """
+
+    def __init__(self, out_dtype: torch.dtype) -> None:
+        super().__init__()
+        self.out_dtype = out_dtype
+
+    def forward(self, stacked: torch.Tensor) -> torch.Tensor:
+        return stacked.mean(dim=0).to(dtype=self.out_dtype)
+
+
+class TestDeviceDtypeCoercion:
+    """``fit``/``forecast`` validate or coerce device/dtype against sub-models."""
+
+    def test_fit_mismatched_dtype_target_raises_clear_error(self):
+        """A target on a different dtype raises a clear, named error.
+
+        Sub-models are float32 (the resdag default); feeding a float64 target
+        must surface a clear ValueError naming the offending tensor and both
+        dtypes, not a raw low-level error from the readout solve.
+        """
+        x = _toy_data()
+        warmup, train = x[:, :10], x[:, 10:40]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=2, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        bad_target = train.clone().to(dtype=torch.float64)
+        with pytest.raises(ValueError, match=r"targets\['output'\].*float64.*float32"):
+            ens.fit((warmup,), (train,), {"output": bad_target})
+
+    def test_fit_mismatched_dtype_input_raises_clear_error(self):
+        """A warmup/train input on a different dtype is named in the error."""
+        x = _toy_data()
+        warmup, train = x[:, :10], x[:, 10:40]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=2, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        with pytest.raises(ValueError, match=r"train_inputs\[0\].*float64.*float32"):
+            ens.fit(
+                (warmup,),
+                (train.to(dtype=torch.float64),),
+                {"output": train.clone()},
+            )
+
+    def test_fit_coerce_true_accepts_mismatched_dtype(self):
+        """``coerce=True`` casts mismatched inputs/targets instead of raising."""
+        x = _toy_data()
+        warmup, train = x[:, :10], x[:, 10:40]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=2, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        # All three float64 — coerce them all back to the float32 sub-models.
+        ens.fit(
+            (warmup.to(dtype=torch.float64),),
+            (train.to(dtype=torch.float64),),
+            {"output": train.clone().to(dtype=torch.float64)},
+            coerce=True,
+        )
+        # The readout was fitted (no error) and produces a float32 forecast.
+        out = ens.forecast(x[:, 40:60], horizon=8)
+        assert out.dtype == torch.float32
+        assert out.shape == (1, 8, 2)
+
+    def test_fit_matching_dtype_is_unchanged(self):
+        """The common matching-dtype path is a no-op and trains normally."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=2, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+        out = ens.forecast(f_warm, horizon=10)
+        assert out.shape == (1, 10, 2)
+
+    def test_forecast_dtype_changing_aggregator_is_cast_not_truncated(self):
+        """A custom aggregator returning float64 is cast to the float32 buffer.
+
+        The aggregated step (float64) must be deliberately cast to the buffer
+        dtype (float32) on the in-place write — the result is float32 and finite,
+        proving the value was cast rather than silently reinterpreted/truncated.
+        """
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=3,
+            reservoir_size=20,
+            feedback_size=2,
+            output_size=2,
+            aggregate=_DtypeChangingAggregator(torch.float64),
+            seed=0,
+        )
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+        out = ens.forecast(f_warm, horizon=10)
+        assert out.dtype == torch.float32  # cast to the buffer dtype
+        assert out.shape == (1, 10, 2)
+        assert torch.isfinite(out).all()
+
+    def test_forecast_dtype_changing_aggregator_return_warmup(self):
+        """The ``return_warmup`` concat also conforms a dtype-changing aggregator."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=3,
+            reservoir_size=20,
+            feedback_size=2,
+            output_size=2,
+            aggregate=_DtypeChangingAggregator(torch.float64),
+            seed=0,
+        )
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+        out = ens.forecast(f_warm, horizon=8, return_warmup=True)
+        assert out.dtype == torch.float32
+        assert out.shape[1] == f_warm.shape[1] + 8
+
+
+# ---------------------------------------------------------------------------
 # Autograd isolation (no_grad on forecast / warmup)
 # ---------------------------------------------------------------------------
 

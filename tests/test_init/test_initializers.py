@@ -71,6 +71,68 @@ class TestInputFeedbackRegistry:
         assert hasattr(init, "initialize")
 
 
+class TestChainOfNeuronsInputInference:
+    """``chain_of_neurons_input`` infers ``features`` from the weight (issue #194).
+
+    The registry historically defaulted ``features`` to ``None`` while the
+    constructor rejected ``None``, so the bare-name path crashed and the show
+    helper advertised a default for an effectively required parameter. The fix
+    makes ``features`` optional: ``None`` infers the chain count from the
+    weight's ``in_features`` at :meth:`initialize` time.
+    """
+
+    def test_get_input_feedback_bare_name_does_not_crash(self) -> None:
+        """``get_input_feedback("chain_of_neurons_input")`` builds without error."""
+        init = get_input_feedback("chain_of_neurons_input")
+
+        assert isinstance(init, ChainOfNeuronsInputInitializer)
+        assert init.features is None  # inferred lazily at initialize() time
+
+    def test_bare_name_inits_weight_from_inferred_features(self) -> None:
+        """The bare-name initializer fills a weight, inferring chains from columns."""
+        init = get_input_feedback("chain_of_neurons_input")
+        weight = torch.empty(12, 3)  # 3 columns -> 3 inferred chains
+        init.initialize(weight)
+
+        # Input i connects to the first neuron of chain i; everything else zero.
+        block_len = 12 // 3
+        for i in range(3):
+            assert weight[i * block_len, i] == 1.0
+        assert int((weight != 0).sum()) == 3
+
+    def test_inferred_matches_explicit_features(self) -> None:
+        """Inferring ``features`` yields the same weight as pinning it explicitly."""
+        inferred = torch.empty(12, 3)
+        explicit = torch.empty(12, 3)
+        ChainOfNeuronsInputInitializer().initialize(inferred)
+        ChainOfNeuronsInputInitializer(features=3).initialize(explicit)
+
+        assert torch.equal(inferred, explicit)
+
+    def test_explicit_features_mismatch_still_raises(self) -> None:
+        """An explicit ``features`` that disagrees with the weight still errors."""
+        init = ChainOfNeuronsInputInitializer(features=4)
+        with pytest.raises(ValueError, match="must equal 'features'"):
+            init.initialize(torch.empty(12, 3))
+
+    def test_features_below_one_rejected(self) -> None:
+        """A non-positive explicit ``features`` is rejected at construction."""
+        with pytest.raises(ValueError, match="must be >= 1"):
+            ChainOfNeuronsInputInitializer(features=0)
+
+    def test_show_helper_does_not_render_required_features(self, capsys) -> None:
+        """``show_input_initializers`` no longer presents ``features`` as required.
+
+        With inference, ``None`` is a genuine optional default rather than a
+        hidden-required trap, and the table must not render ``<required>``.
+        """
+        show_input_initializers("chain_of_neurons_input")
+        out = capsys.readouterr().out
+
+        assert "features" in out
+        assert "<required>" not in out
+
+
 class TestFunctionInitializer:
     """FunctionInitializer wraps plain callables as initializers."""
 

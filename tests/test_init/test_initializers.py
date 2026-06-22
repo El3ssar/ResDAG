@@ -777,6 +777,49 @@ class TestScalingContract:
         assert torch.allclose(half, 0.5 * base, atol=1e-12)
 
 
+class TestChebyshevColumnBalance:
+    """The Chebyshev map must not de-weight the first feedback dimension (issue #190).
+
+    The seed column lives on ``[-p, p]`` while the chaotic columns span ``[-1, 1]``,
+    so the raw map left column 0 ~``1/p`` weaker than the rest. Each column is now
+    normalized to unit peak amplitude before ``input_scaling`` applies, so every
+    feedback dimension peaks at the same magnitude.
+    """
+
+    def test_per_column_max_abs_is_near_uniform(self) -> None:
+        """Per-column ``max|W|`` of a (100, 5) Chebyshev matrix are all near-equal."""
+        weight = torch.empty(100, 5, dtype=torch.float64)
+        ChebyshevInitializer().initialize(weight)
+
+        col_max = weight.abs().max(dim=0).values
+        # Without the fix col 0 was ~0.151 against ~1.0 elsewhere (a ~6.6x gap);
+        # every column now peaks at 1.0 (no input_scaling).
+        assert torch.allclose(col_max, torch.ones_like(col_max), atol=1e-9)
+        # The first column is no longer the weak one.
+        assert float(col_max[0]) == pytest.approx(float(col_max.max()), rel=1e-9)
+
+    def test_per_column_max_abs_tracks_input_scaling(self) -> None:
+        """Every column peaks at ``input_scaling`` once the scaling contract applies."""
+        scale = 0.5
+        weight = torch.empty(100, 5, dtype=torch.float64)
+        ChebyshevInitializer(input_scaling=scale).initialize(weight)
+
+        col_max = weight.abs().max(dim=0).values
+        assert torch.allclose(col_max, torch.full_like(col_max, scale), atol=1e-9)
+
+    def test_single_column_feedback_matches_input_scaling(self) -> None:
+        """A 1D-feedback matrix peaks at ``input_scaling``, not the seed amplitude ``p``."""
+        # Without scaling the lone seed column now peaks at 1.0 instead of ~p.
+        unscaled = torch.empty(64, 1, dtype=torch.float64)
+        ChebyshevInitializer(p=0.3).initialize(unscaled)
+        assert float(unscaled.abs().max()) == pytest.approx(1.0, rel=1e-9)
+
+        # And with input_scaling it peaks at exactly that scale.
+        scaled = torch.empty(64, 1, dtype=torch.float64)
+        ChebyshevInitializer(p=0.3, input_scaling=0.8).initialize(scaled)
+        assert float(scaled.abs().max()) == pytest.approx(0.8, rel=1e-9)
+
+
 class TestScalingContractBase:
     """Unit coverage for the contract helpers owned by ``InputFeedbackInitializer``."""
 

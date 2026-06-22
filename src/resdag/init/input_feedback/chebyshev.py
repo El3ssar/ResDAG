@@ -27,6 +27,16 @@ class ChebyshevInitializer(InputFeedbackInitializer):
 
     where k controls chaotic behavior (optimal range: 2 < k < 4).
 
+    The seed column (column 0) lives on the small amplitude ``[-p, p]`` while the
+    chaotic columns span ``[-1, 1]``, so the raw map systematically de-weights the
+    first feedback dimension (its ``max|W|`` is ~``p`` against ~``1`` elsewhere).
+    To honor the shared scaling contract — whose magnitude statistic is ``max|W|``
+    per column for this elementwise initializer — each column is normalized to unit
+    peak amplitude (divided by its own ``max|W|``) before ``input_scaling`` applies.
+    Every column then peaks at the same ``input_scaling`` (or ``1`` when
+    ``input_scaling is None``), and the 1D-feedback matrix peaks at ``input_scaling``
+    rather than the unscaled seed amplitude ``p``.
+
     Parameters
     ----------
     p : float, default=0.3
@@ -108,6 +118,14 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         # Apply Chebyshev recurrence column-wise
         for j in range(1, in_features):
             values[:, j] = np.cos(self.k * np.arccos(np.clip(values[:, j - 1], -1.0, 1.0)))
+
+        # Normalize each column to unit peak amplitude so the small-amplitude seed
+        # column (~|p|) is no longer ~1/p weaker than the chaotic columns (~1). This
+        # makes the magnitude statistic ``max|W|`` uniform across feedback dimensions
+        # before the scaling contract applies. Columns that are entirely zero (e.g. a
+        # degenerate p=0 seed) are left untouched to avoid dividing by zero.
+        col_peak = np.max(np.abs(values), axis=0, keepdims=True)
+        np.divide(values, col_peak, out=values, where=col_peak > 0.0)
 
         # Apply the shared uniform scaling contract as the documented final transform.
         values = self._apply_scaling(values)

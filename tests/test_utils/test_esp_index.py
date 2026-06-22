@@ -118,6 +118,146 @@ def test_transient_too_large_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tail / window statistic (issue #179, point 2)
+# ---------------------------------------------------------------------------
+
+
+def test_window_focuses_on_asymptotic_regime(device: torch.device) -> None:
+    """``window`` averages only the tail, so it lies far below the full-window mean.
+
+    For a healthy-ESP reservoir the trajectories start far apart and converge
+    to ~0, so the full-window mean is dominated by the early transient while a
+    short trailing window reflects the (near-zero) asymptotic distance.
+    """
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=120, size=60, spectral_radius=0.5, device=device)
+    fb = (torch.randn(2, 120, 3, device=device) * 0.5).to(device)
+
+    (full,) = esp_index(model, fb, iterations=4, verbose=False).values()
+    (tail,) = esp_index(model, fb, iterations=4, window=20, verbose=False).values()
+
+    assert torch.isfinite(full[0]) and torch.isfinite(tail[0])
+    # The asymptotic-window index is much smaller than the transient-dominated
+    # full-window index.
+    assert tail[0] < full[0]
+    assert tail[0] < full[0] * 1e-2
+
+
+def test_window_does_not_change_history_length(device: torch.device) -> None:
+    """``window`` only trims the index average; the history spans the full sequence."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=40, device=device)
+    fb = torch.randn(2, 40, 3, device=device)
+
+    _, history = esp_index(model, fb, iterations=2, window=10, history=True, verbose=False)
+    for hist in history.values():
+        assert hist[0].shape == (2, 40, 2)  # (iterations, full timesteps, batch)
+
+
+def test_window_combines_with_transient(device: torch.device) -> None:
+    """``window`` is measured against post-transient timesteps."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=40, device=device)
+    fb = torch.randn(2, 40, 3, device=device)
+
+    # 40 - transient(10) = 30 post-transient steps; window=30 is the maximum.
+    (value,) = esp_index(model, fb, iterations=2, transient=10, window=30, verbose=False).values()
+    assert torch.isfinite(value[0])
+
+
+@pytest.mark.parametrize("bad_window", [0, -1, 25])
+def test_window_out_of_range_raises(bad_window: int) -> None:
+    """A non-positive or too-large window is rejected (21 post-transient steps)."""
+    model = _esn_model(seq_len=30)
+    fb = torch.randn(2, 30, 3)
+    with pytest.raises(ValueError, match="window"):
+        esp_index(model, fb, transient=9, window=bad_window, verbose=False)
+
+
+# ---------------------------------------------------------------------------
+# Relative-distance normalization (issue #179, point 3)
+# ---------------------------------------------------------------------------
+
+
+def test_relative_normalization_returns_finite_index(device: torch.device) -> None:
+    """``relative=True`` yields a finite, non-negative scale-free index."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=40, size=60, spectral_radius=0.9, device=device)
+    fb = (torch.randn(2, 40, 3, device=device) * 0.5).to(device)
+
+    (value,) = esp_index(model, fb, iterations=4, relative=True, verbose=False).values()
+    assert torch.isfinite(value[0])
+    assert value[0] >= 0
+
+
+def test_relative_normalization_changes_the_index(device: torch.device) -> None:
+    """Relative normalization produces a different number than the absolute index."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=40, size=60, spectral_radius=10.0, device=device)
+    fb = (torch.randn(2, 40, 3, device=device) * 0.5).to(device)
+
+    (absolute,) = esp_index(model, fb, iterations=4, relative=False, verbose=False).values()
+    (relative,) = esp_index(model, fb, iterations=4, relative=True, verbose=False).values()
+    assert not torch.allclose(absolute[0], relative[0])
+
+
+def test_relative_normalization_applies_to_history(device: torch.device) -> None:
+    """The relative flag is reflected in the returned history tensors."""
+    torch.manual_seed(0)
+    model = _esn_model(seq_len=30, size=60, spectral_radius=10.0, device=device)
+    fb = (torch.randn(2, 30, 3, device=device) * 0.5).to(device)
+
+    _, abs_hist = esp_index(model, fb, iterations=2, history=True, verbose=False)
+    torch.manual_seed(0)
+    _, rel_hist = esp_index(model, fb, iterations=2, relative=True, history=True, verbose=False)
+
+    (abs_h,) = abs_hist.values()
+    (rel_h,) = rel_hist.values()
+    assert not torch.allclose(abs_h[0], rel_h[0])
+
+
+# ---------------------------------------------------------------------------
+# Acceptance criterion: spectral-radius ranking on the asymptotic window
+# ---------------------------------------------------------------------------
+
+
+def test_spectral_radius_ranks_on_asymptotic_window(device: torch.device) -> None:
+    """High spectral radius -> high index, low -> low, on the asymptotic window."""
+    torch.manual_seed(0)
+    fb = (torch.randn(2, 100, 3, device=device) * 0.5).to(device)
+
+    low = _esn_model(seq_len=100, size=60, spectral_radius=0.5, device=device)
+    high = _esn_model(seq_len=100, size=60, spectral_radius=10.0, device=device)
+
+    (low_idx,) = esp_index(low, fb, iterations=4, window=20, verbose=False).values()
+    (high_idx,) = esp_index(high, fb, iterations=4, window=20, verbose=False).values()
+
+    assert torch.isfinite(low_idx[0]) and torch.isfinite(high_idx[0])
+    # On the asymptotic window the stable reservoir has all but forgotten its
+    # start, while the unstable one stays far from the base orbit.
+    assert low_idx[0] < high_idx[0]
+    assert low_idx[0] < 1e-2
+    assert high_idx[0] > 1.0
+
+
+def test_relative_window_ranks_spectral_radius(device: torch.device) -> None:
+    """The relative + windowed index also ranks low below high spectral radius."""
+    torch.manual_seed(0)
+    fb = (torch.randn(2, 100, 3, device=device) * 0.5).to(device)
+
+    low = _esn_model(seq_len=100, size=60, spectral_radius=0.5, device=device)
+    high = _esn_model(seq_len=100, size=60, spectral_radius=10.0, device=device)
+
+    (low_idx,) = esp_index(low, fb, iterations=4, window=20, relative=True, verbose=False).values()
+    (high_idx,) = esp_index(
+        high, fb, iterations=4, window=20, relative=True, verbose=False
+    ).values()
+
+    assert torch.isfinite(low_idx[0]) and torch.isfinite(high_idx[0])
+    assert low_idx[0] < high_idx[0]
+
+
+# ---------------------------------------------------------------------------
 # NG-RC path (cell-agnostic discovery + 3-D state)
 # ---------------------------------------------------------------------------
 

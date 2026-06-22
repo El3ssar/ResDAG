@@ -70,12 +70,16 @@ linearization; a strongly driven `tanh` reservoir can keep the ESP well
 above $\rho = 1$, because the input pushes units into their saturating
 region where the effective gain drops. The property can be measured
 directly: `resdag.utils.states.esp_index` runs one orbit from the zero
-state and `iterations` orbits from random states $\mathcal U(-1,1)$ under
-the same input, and reports $\overline{\lVert h^{\text{base}}_t -
+state and `iterations` orbits from standard-normal random states
+$\mathcal N(0,1)$ (the same convention as `set_random_reservoir_states`)
+under the same input, and reports $\overline{\lVert h^{\text{base}}_t -
 h^{\text{rand}}_t \rVert}$ averaged over time, batch, and restarts. An
 index near zero means the trajectories merged and the ESP holds for that
 input signal; a plateau means the reservoir still remembers where it
-started.
+started. Because a healthy reservoir converges fast, the full-window mean
+is dominated by the early transient — pass `window=k` to average only the
+last `k` steps (the asymptotic regime), and `relative=True` to normalise by
+the base-state norm for a scale-free index comparable across reservoirs.
 
 **Leak rate as timescale.** The leak makes forgetting explicit: the
 $h_{t-1}$ contribution decays by $(1-\alpha)$ per step, a relaxation time

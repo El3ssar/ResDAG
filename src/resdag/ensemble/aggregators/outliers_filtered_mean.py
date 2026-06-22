@@ -88,21 +88,57 @@ class OutliersFilteredMean(nn.Module):
     def forward(self, input: torch.Tensor | list[torch.Tensor]) -> torch.Tensor:
         """Aggregate ensemble members with outlier filtering.
 
+        Outlier detection is **norm-based and whole-member**: each member's L2
+        feature-vector norm is scored at every ``(batch, timestep)`` location,
+        and a flagged member is dropped in its entirety (the whole feature
+        vector is excluded from that location's mean). A member that is an
+        outlier in only one feature but normal in norm is therefore *not*
+        caught, and one that is off in a single feature enough to inflate its
+        norm is dropped wholesale rather than per feature.
+
         Parameters
         ----------
         input : torch.Tensor or list of torch.Tensor
-            Either shape ``(samples, batch, timesteps, features)`` or a list
-            of length *samples* with each tensor ``(batch, timesteps, features)``.
+            One of:
+
+            - a 4-D tensor of shape ``(samples, batch, timesteps, features)``;
+            - a 3-D tensor of shape ``(batch, timesteps, features)``, treated
+              as a single-member ensemble (a ``samples`` axis of length one is
+              inserted);
+            - a list of length *samples* whose members are each 3-D
+              ``(batch, timesteps, features)`` tensors.
 
         Returns
         -------
         torch.Tensor
             Shape ``(batch, timesteps, features)``.
+
+        Raises
+        ------
+        ValueError
+            If *input* is a tensor whose rank is neither 3-D nor 4-D (for
+            example a 2-D ``(samples, features)`` tensor, which would otherwise
+            collapse silently to the wrong shape), or a list whose stacked
+            members are not 4-D.
         """
         if isinstance(input, list):
             input = torch.stack(input, dim=0)
+            if input.dim() != 4:
+                raise ValueError(
+                    "OutliersFilteredMean expects a list of 3D "
+                    "(batch, timesteps, features) tensors, but stacking the "
+                    f"members produced a {input.dim()}D tensor with shape "
+                    f"{tuple(input.shape)}"
+                )
         elif input.dim() == 3:
             input = input.unsqueeze(0)
+        elif input.dim() != 4:
+            raise ValueError(
+                "OutliersFilteredMean expects a 4D "
+                "(samples, batch, timesteps, features) tensor, a 3D "
+                "(batch, timesteps, features) tensor, or a list of 3D tensors, "
+                f"but got a {input.dim()}D tensor with shape {tuple(input.shape)}"
+            )
 
         norms = torch.norm(input, p=2, dim=-1)
 

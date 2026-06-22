@@ -446,11 +446,10 @@ class GraphTopology(TopologyInitializer):
         device = weight.device
         dtype = weight.dtype
 
-        # Generate graph
-        G = self.graph_func(n, **self.graph_kwargs)
-
-        # Convert to adjacency matrix
-        adj_matrix = self._graph_to_adjacency(G, n)
+        # Dense fast path: generators decorated with ``register_dense_adjacency``
+        # advertise a vectorized NumPy builder, so the dense adjacency is built
+        # directly and the (pure-overhead) NetworkX round-trip is skipped.
+        adj_matrix = self._build_adjacency(n)
 
         # Convert to torch tensor
         weight_data = torch.from_numpy(adj_matrix).to(device=device, dtype=dtype)
@@ -472,6 +471,47 @@ class GraphTopology(TopologyInitializer):
             weight.copy_(weight_data)
 
         return weight
+
+    def _build_adjacency(self, n: int) -> np.ndarray:
+        """Build the ``(n, n)`` adjacency matrix for the wrapped graph function.
+
+        Prefers the vectorized dense fast path when the graph function was
+        decorated with
+        :func:`~resdag.init.graphs._dense.register_dense_adjacency`: the dense
+        weighted adjacency is built directly in NumPy and the NetworkX object is
+        never materialised. Falls back to building the graph and converting it
+        with :func:`networkx.to_numpy_array` for genuinely graph-shaped
+        generators.
+
+        Parameters
+        ----------
+        n : int
+            Number of nodes / matrix dimension.
+
+        Returns
+        -------
+        numpy.ndarray
+            An ``(n, n)`` ``float32`` weighted adjacency matrix.
+
+        Raises
+        ------
+        ValueError
+            If the produced adjacency does not have shape ``(n, n)``.
+        """
+        from resdag.init.graphs._dense import dense_adjacency_builder
+
+        adjacency_builder = dense_adjacency_builder(self.graph_func)
+        if adjacency_builder is not None:
+            adjacency = np.asarray(adjacency_builder(n, **self.graph_kwargs), dtype=np.float32)
+            if adjacency.shape != (n, n):
+                raise ValueError(
+                    f"Dense adjacency builder produced shape {adjacency.shape}, "
+                    f"expected ({n}, {n})"
+                )
+            return adjacency
+
+        G = self.graph_func(n, **self.graph_kwargs)
+        return self._graph_to_adjacency(G, n)
 
     def _graph_to_adjacency(
         self,

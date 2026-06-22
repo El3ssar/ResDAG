@@ -69,8 +69,9 @@ sufficient. It guarantees only local stability of the zero-input
 linearization; a strongly driven `tanh` reservoir can keep the ESP well
 above $\rho = 1$, because the input pushes units into their saturating
 region where the effective gain drops. The property can be measured
-directly: `resdag.utils.states.esp_index` runs one orbit from the zero
-state and `iterations` orbits from standard-normal random states
+directly: `esp_index` (importable as `from resdag import esp_index`) runs one
+orbit from the zero state and `iterations` orbits from standard-normal random
+states
 $\mathcal N(0,1)$ (the same convention as `set_random_reservoir_states`)
 under the same input, and reports $\overline{\lVert h^{\text{base}}_t -
 h^{\text{rand}}_t \rVert}$ averaged over time, batch, and restarts. An

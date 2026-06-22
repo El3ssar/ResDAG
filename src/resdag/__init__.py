@@ -130,6 +130,9 @@ from .training import ESNTrainer
 from .utils import data as datasets
 from .utils.data import henon, lorenz, mackey_glass, narma, rossler, sine
 
+# Signature stability diagnostic, surfaced at the top level for discoverability.
+from .utils.states import esp_index
+
 __version__ = "0.6.2"
 
 __all__ = [
@@ -199,6 +202,8 @@ __all__ = [
     "mackey_glass",
     "narma",
     "sine",
+    # Diagnostics
+    "esp_index",
 ]
 
 

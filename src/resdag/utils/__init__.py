@@ -9,6 +9,8 @@ Submodules
 ----------
 data
     Data loading and preparation utilities for ESN training.
+states
+    Reservoir-state diagnostics (the Echo State Property index).
 
 Functions
 ---------
@@ -40,6 +42,9 @@ denormalize_data
 lorenz, rossler, henon, mackey_glass, narma, sine
     Canonical reservoir-computing dataset generators (re-exported from
     ``resdag.utils.data``).
+esp_index
+    Echo State Property index — the library's signature stability diagnostic
+    (re-exported from ``resdag.utils.states``).
 
 Examples
 --------
@@ -51,12 +56,15 @@ Examples
 
 >>> series = rd.utils.lorenz(2000)  # (1, 2000, 3) chaotic benchmark series
 
+>>> from resdag.utils import esp_index  # signature stability diagnostic
+
 See Also
 --------
 resdag.utils.data : Data loading and preparation.
+resdag.utils.states : Echo State Property diagnostics.
 """
 
-from . import data
+from . import data, states
 from .data import (
     denormalize_data,
     henon,
@@ -78,6 +86,7 @@ from .general import (
     resolve_device,
     seed_everything,
 )
+from .states import esp_index
 
 __all__ = [
     "DeviceLike",
@@ -88,6 +97,8 @@ __all__ = [
     "resolve_device",
     "seed_everything",
     "data",
+    "states",
+    "esp_index",
     "load_file",
     "prepare_esn_data",
     "normalize_data",

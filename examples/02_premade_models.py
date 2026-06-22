@@ -7,7 +7,8 @@ What it shows
 2. What each architecture computes (readout models vs state extractors)
 3. Driving/exogenous-input support: build a two-input model with
    ``input_size``, fit with driver tuples, forecast with ``forecast_inputs``
-4. A single comparison table: parameters + short-horizon forecast MSE
+4. The ESP index via the top-level ``rd.esp_index`` re-export
+5. A single comparison table: parameters + short-horizon forecast MSE
    on the same Lorenz-63 task
 
 Expected runtime: ~5 s on CPU.
@@ -166,10 +167,28 @@ forecast_drivers via the forecast_inputs argument.
     print("Use cases: reservoir dynamics analysis, custom heads (see 05), ESP checks.")
 
     # ------------------------------------------------------------------
-    # 5. Comparison table
+    # 5. ESP check: the signature stability diagnostic
+    # ------------------------------------------------------------------
+    # ``esp_index`` is re-exported at the top level (``rd.esp_index``) and at
+    # ``resdag.utils`` — no need for the deep ``resdag.utils.states`` path.
+    # A healthy reservoir forgets its initial state, so trajectories from
+    # different random starts converge under the same driving input and the
+    # index trends toward zero.
+    print("\n" + "=" * 70)
+    print("5. ESP check via rd.esp_index (signature stability diagnostic)")
+    print("=" * 70)
+
+    esp_model = rd.classic_esn(SIZE, feedback_size=3, output_size=3, spectral_radius=0.8)
+    # Score only the trailing window (the asymptotic regime), scale-free.
+    indices = rd.esp_index(esp_model, val, window=50, relative=True, verbose=False)
+    (esp_layer, (esp_value,)) = next(iter(indices.items()))
+    print(f"ESP index for '{esp_layer}': {esp_value.item():.4e} (near 0 = stable)")
+
+    # ------------------------------------------------------------------
+    # 6. Comparison table
     # ------------------------------------------------------------------
     print("\n" + "=" * 70)
-    print("5. Comparison (same data, same reservoir size, same readout alpha)")
+    print("6. Comparison (same data, same reservoir size, same readout alpha)")
     print("=" * 70)
     header = f"{'model':<22} {'params':>10} {'fit [s]':>8} {'MSE@50 steps':>14}"
     print(header)

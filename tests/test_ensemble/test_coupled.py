@@ -786,6 +786,134 @@ class TestDrivenForecast:
 
 
 # ---------------------------------------------------------------------------
+# Single-model (n_models=1) fast path
+# ---------------------------------------------------------------------------
+
+
+class TestSingleModel:
+    """``n_models=1`` collapses to a plain single-model forecast.
+
+    With one sub-model, aggregation (mean/median of a singleton stack) is the
+    identity, so the coupled ensemble's two-phase forecast must reproduce the
+    sole sub-model's own :meth:`resdag.core.ESNModel.forecast` step-for-step.
+    These tests pin that equivalence for both the feedback-only and the driven
+    paths, and exercise the ``n_models == 1`` short-circuit in
+    :meth:`CoupledEnsembleESNModel.fit`.
+    """
+
+    def test_n_models_1_constructs(self):
+        ens = rd.coupled_ensemble_esn(
+            n_models=1, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        assert ens.n_models == 1
+        assert len(ens.models) == 1
+
+    def test_n_models_1_forecast_matches_single_submodel(self):
+        """The ensemble forecast equals the sole sub-model's own forecast.
+
+        Fit the singleton ensemble, then run :meth:`ESNModel.forecast` directly
+        on its only sub-model with the same warmup/horizon. Both run under
+        ``no_grad`` from the warmed-and-reset state, so the aggregated ensemble
+        output must match the bare sub-model forecast.
+        """
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=1, reservoir_size=30, feedback_size=2, output_size=2, seed=0
+        )
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        horizon = 20
+        ens_out = ens.forecast(f_warm, horizon=horizon)
+
+        sub_model = next(ens._iter_models())
+        sub_out = sub_model.forecast(f_warm, horizon=horizon)
+        assert isinstance(sub_out, torch.Tensor)
+
+        assert ens_out.shape == (1, horizon, 2)
+        assert ens_out.shape == sub_out.shape
+        assert torch.allclose(ens_out, sub_out, atol=1e-5)
+
+    def test_n_models_1_individual_equals_aggregate(self):
+        """With one model the aggregated and per-model trajectories coincide."""
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=1, reservoir_size=25, feedback_size=2, output_size=2, seed=1
+        )
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        agg, indiv = ens.forecast(f_warm, horizon=12, return_individuals=True)
+        assert len(indiv) == 1
+        assert indiv[0].shape == (1, 12, 2)
+        # mean of a singleton stack is the identity → aggregate == the one member.
+        assert torch.allclose(agg, indiv[0], atol=1e-6)
+
+    def test_n_models_1_driven_forecast_matches_single_submodel(self):
+        """The driven ``n_models=1`` forecast matches the sub-model's driven one.
+
+        Same equivalence as the feedback-only case, but with an exogenous driver
+        threaded through both the ensemble loop and :meth:`ESNModel.forecast`.
+        """
+        ens = rd.coupled_ensemble_esn(n_models=1, model_factory=_driven_submodel_factory, seed=0)
+        x = _toy_data()
+        warmup, train = x[:, :10], x[:, 10:40]
+        driver_w = torch.randn(1, warmup.shape[1], 2)
+        driver_t = torch.randn(1, train.shape[1], 2)
+        ens.fit((warmup, driver_w), (train, driver_t), {"output": train.clone()})
+
+        f_warm = x[:, 40:60]
+        warm_driver = torch.randn(1, f_warm.shape[1], 2)
+        horizon = 12
+        forecast_driver = torch.randn(1, horizon, 2)
+
+        ens_out = ens.forecast(
+            (f_warm, warm_driver),
+            forecast_inputs=(forecast_driver,),
+            horizon=horizon,
+        )
+
+        sub_model = next(ens._iter_models())
+        sub_out = sub_model.forecast(
+            (f_warm, warm_driver),
+            forecast_inputs=(forecast_driver,),
+            horizon=horizon,
+        )
+        assert isinstance(sub_out, torch.Tensor)
+
+        assert ens_out.shape == (1, horizon, 2)
+        assert torch.allclose(ens_out, sub_out, atol=1e-5)
+
+    def test_n_models_1_fit_trains_the_single_readout(self):
+        """The ``n_models == 1`` fit branch actually fits the lone readout.
+
+        Before fitting, the readout weight is the (untrained) default; after a
+        single-model fit it must have changed, proving the short-circuit path in
+        ``fit`` ran the trainer rather than no-opping.
+        """
+        x = _toy_data()
+        warmup, train, f_warm = x[:, :10], x[:, 10:40], x[:, 40:60]
+
+        ens = rd.coupled_ensemble_esn(
+            n_models=1, reservoir_size=20, feedback_size=2, output_size=2, seed=0
+        )
+        sub_model = next(ens._iter_models())
+        readout = next(m for m in sub_model.modules() if isinstance(m, CGReadoutLayer))
+        before = readout.weight.detach().clone()
+
+        ens.fit((warmup,), (train,), {"output": train.clone()})
+
+        after = readout.weight.detach()
+        assert not torch.allclose(before, after)
+        # And the fitted single-model ensemble forecasts a finite trajectory.
+        out = ens.forecast(f_warm, horizon=10)
+        assert out.shape == (1, 10, 2)
+        assert torch.isfinite(out).all()
+
+
+# ---------------------------------------------------------------------------
 # Aggregators
 # ---------------------------------------------------------------------------
 

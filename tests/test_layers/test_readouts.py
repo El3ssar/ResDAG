@@ -1045,29 +1045,18 @@ class TestCGReadoutDegenerateGram:
 
 
 class TestCGReadoutNonFiniteInputs:
-    """NaN/Inf inputs must not be *silently* fitted into garbage weights.
+    """NaN/Inf inputs to ``fit`` are rejected with a clear error.
 
-    A reservoir that diverged (or a corrupt target) feeds ``NaN``/``Inf`` into
-    the readout fit.  The desired contract is that such input is either rejected
-    with a clear error or otherwise not turned into a silently-``is_fitted``
-    model carrying ``NaN`` weights.
-
-    The CG solver currently has **no** ``isfinite`` input guard: a ``NaN``/``Inf``
-    in ``states`` or ``targets`` propagates straight through the Gram-matrix
-    matmuls into the fitted weights, leaving ``is_fitted == True`` with
-    non-finite parameters.  The tests below pin that *current* behaviour as a
-    regression (so a future guard is a deliberate, visible change), and an
-    ``xfail`` records the contract the issue asks for — a clear rejection — which
-    requires a source-side guard outside this test-only change.
+    A reservoir that diverged (or a corrupt target) can feed ``NaN``/``Inf``
+    into the readout fit.  ``ReadoutLayer.fit`` guards against this: a
+    non-finite value in ``states`` or ``targets`` raises a clear ``ValueError``
+    *before* the algebraic solve, rather than propagating through the
+    Gram-matrix matmuls into silently-``is_fitted`` ``NaN`` weights.  The guard
+    lives in the base class, so every readout subclass inherits it.
     """
 
-    def test_nan_state_is_currently_fitted_silently(self) -> None:
-        """Documents the current behaviour: a ``NaN`` state poisons the weights.
-
-        No error is raised and ``is_fitted`` flips to ``True`` even though the
-        fitted weights are non-finite.  This is the gap the issue flags; the
-        ``xfail`` test below records the intended contract.
-        """
+    def test_nan_state_is_rejected(self) -> None:
+        """A ``NaN`` in ``states`` is rejected before the solve, not fitted."""
         torch.manual_seed(20)
 
         X = torch.randn(100, 10, dtype=torch.float64)
@@ -1075,14 +1064,15 @@ class TestCGReadoutNonFiniteInputs:
         y = torch.randn(100, 3, dtype=torch.float64)
 
         readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-6)
-        readout.fit(X, y)
+        with pytest.raises(ValueError, match=r"(?i)finite|nan|inf"):
+            readout.fit(X, y)
 
-        # Current (undesirable) behaviour: silently fitted, weights non-finite.
-        assert readout.is_fitted
-        assert not torch.isfinite(readout.weight).all()
+        # Rejected cleanly: the layer is left unfitted, not carrying NaN weights.
+        assert not readout.is_fitted
+        assert torch.isfinite(readout.weight).all()
 
-    def test_inf_target_is_currently_fitted_silently(self) -> None:
-        """Documents the current behaviour for an ``Inf`` in the targets."""
+    def test_inf_target_is_rejected(self) -> None:
+        """An ``Inf`` in ``targets`` is rejected before the solve, not fitted."""
         torch.manual_seed(21)
 
         X = torch.randn(100, 10, dtype=torch.float64)
@@ -1090,28 +1080,18 @@ class TestCGReadoutNonFiniteInputs:
         y[5, 1] = float("inf")
 
         readout = CGReadoutLayer(in_features=10, out_features=3, alpha=1e-6)
-        readout.fit(X, y)
+        with pytest.raises(ValueError, match=r"(?i)finite|nan|inf"):
+            readout.fit(X, y)
 
-        assert readout.is_fitted
-        assert not torch.isfinite(readout.weight).all()
+        assert not readout.is_fitted
+        assert torch.isfinite(readout.weight).all()
 
-    @pytest.mark.xfail(
-        reason=(
-            "Issue #184 acceptance: NaN/Inf fit inputs should raise a clear error "
-            "(or be rejected) rather than be silently fitted into NaN weights. The "
-            "CG readout has no isfinite input guard yet; adding one is a source "
-            "change outside this test-only issue."
-        ),
-        strict=True,
-        raises=AssertionError,
-    )
     def test_nan_state_should_raise_a_clear_error(self) -> None:
         """Contract test for the intended behaviour: ``NaN`` states are rejected.
 
-        Marked ``xfail(strict=True)``: the assertion fails today (no guard
-        exists, so ``fit`` does not raise and ``is_fitted`` flips to ``True``)
-        and will turn into a reported failure — flagging the contract as met —
-        the moment a source-side ``isfinite`` rejection lands.
+        A ``NaN`` state makes ``fit`` raise a ``ValueError`` whose message names
+        the non-finite condition, and the readout is left unfitted rather than
+        carrying ``NaN`` weights.
         """
         torch.manual_seed(22)
 
@@ -1634,6 +1614,24 @@ class TestIncrementalValidation:
         inc = IncrementalRidgeReadout(20, 5)
         with pytest.raises(ValueError, match="sample count mismatch"):
             inc.partial_fit(torch.randn(100, 20), torch.randn(50, 5))
+
+    def test_nan_state_chunk_is_rejected(self) -> None:
+        """A ``NaN`` in a state chunk is rejected before it poisons the stats."""
+        inc = IncrementalRidgeReadout(20, 5)
+        X = torch.randn(100, 20)
+        X[0, 0] = float("nan")
+        with pytest.raises(ValueError, match=r"(?i)finite|nan|inf"):
+            inc.partial_fit(X, torch.randn(100, 5))
+        assert not inc.is_fitted
+
+    def test_inf_target_chunk_is_rejected(self) -> None:
+        """An ``Inf`` in a target chunk is rejected before it poisons the stats."""
+        inc = IncrementalRidgeReadout(20, 5)
+        y = torch.randn(100, 5)
+        y[3, 2] = float("inf")
+        with pytest.raises(ValueError, match=r"(?i)finite|nan|inf"):
+            inc.partial_fit(torch.randn(100, 20), y)
+        assert not inc.is_fitted
 
 
 class TestIncrementalStateDict:

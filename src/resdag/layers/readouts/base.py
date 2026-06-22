@@ -208,8 +208,9 @@ class ReadoutLayer(nn.Linear):
         ValueError
             If ``states`` and ``targets`` disagree on the sample dimension
             after flattening, if the state's feature dimension does not match
-            ``self.in_features``, or if the target's feature dimension does not
-            match ``self.out_features``.
+            ``self.in_features``, if the target's feature dimension does not
+            match ``self.out_features``, or if ``states`` or ``targets``
+            contain non-finite (NaN or Inf) values.
 
         Notes
         -----
@@ -244,6 +245,25 @@ class ReadoutLayer(nn.Linear):
                 f"{type(self).__name__}.fit({readout_id}): target feature dimension "
                 f"({targets.shape[1]}) does not match readout out_features "
                 f"({self.out_features})."
+            )
+
+        # Reject non-finite inputs *before* the algebraic solve. A diverged
+        # reservoir (or a corrupt target) feeds NaN/Inf into the Gram-matrix
+        # matmuls, which would otherwise propagate straight into the fitted
+        # weights and leave the layer ``is_fitted`` with NaN parameters and no
+        # error. Failing loudly here is far easier to diagnose.
+        if not torch.isfinite(states).all():
+            raise ValueError(
+                f"{type(self).__name__}.fit({readout_id}): states contain "
+                f"non-finite values (NaN or Inf). The readout solve requires "
+                f"finite inputs — clean or impute the reservoir states (a "
+                f"diverged reservoir is the usual cause) before fitting."
+            )
+        if not torch.isfinite(targets).all():
+            raise ValueError(
+                f"{type(self).__name__}.fit({readout_id}): targets contain "
+                f"non-finite values (NaN or Inf). The readout solve requires "
+                f"finite inputs — clean or impute the targets before fitting."
             )
 
         coefs, intercept = self._fit_impl(states, targets)

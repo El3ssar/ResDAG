@@ -223,8 +223,6 @@ class ESNLayer(BaseReservoirLayer):
             seed=seed,
         )
         super().__init__(cell)
-        # Preserve legacy attribute used by existing callsites and tests
-        self._initialized = True
 
     def __getattr__(self, name: str) -> Any:
         """Delegate unknown attribute lookups to the wrapped cell."""

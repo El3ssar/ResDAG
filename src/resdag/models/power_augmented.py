@@ -1,21 +1,28 @@
 """
-Ott's ESN Architecture
-======================
+Power Augmented ESN Architecture
+================================
 
-This module provides :func:`ott_esn`, which builds an ESN model following
-the architecture proposed by Edward Ott for predicting chaotic systems.
+This module provides :func:`power_augmented`, which builds an ESN model that
+augments the reservoir state by raising **every** unit to a configurable
+``exponent`` before concatenating with the input and feeding the readout.
 
-The key innovation is state augmentation: reservoir states are transformed
-by squaring even-indexed units, which helps capture higher-order dynamics.
+It generalises the state augmentation of :func:`ott_esn`: where ``ott_esn``
+squares only the even-indexed units, this factory exponentiates all units by a
+free exponent, so the exponent becomes a hyperparameter you can sweep. The
+default ``exponent=3.0`` is an odd integer, which preserves the sign of the
+(signed, ``[-1, 1]``) ``tanh`` reservoir states — see the ``exponent`` notes in
+:func:`power_augmented` for the trade-offs of other exponents.
 
 References
 ----------
-E. Ott et al., "Model-Free Prediction of Large Spatiotemporally Chaotic
-Systems from Data: A Reservoir Computing Approach," Phys. Rev. Lett., 2018.
+J. Pathak, B. Hunt, M. Girvan, Z. Lu and E. Ott, "Model-Free Prediction of
+Large Spatiotemporally Chaotic Systems from Data: A Reservoir Computing
+Approach," Phys. Rev. Lett. 120, 024102 (2018).
 
 See Also
 --------
-classic_esn : Traditional ESN architecture.
+ott_esn : Fixed even-index squaring; the special case this generalises.
+classic_esn : Traditional ESN architecture without state augmentation.
 headless_esn : Reservoir-only model for analysis.
 """
 
@@ -32,7 +39,7 @@ def power_augmented(
     reservoir_size: int,
     feedback_size: int,
     output_size: int,
-    exponent: float = 2.0,
+    exponent: float = 3.0,
     input_size: int | None = None,
     input_initializer: InitializerSpec | None = None,
     # Reservoir params
@@ -68,10 +75,13 @@ def power_augmented(
         Dimension of feedback signal (input features).
     output_size : int
         Dimension of output signal.
-    exponent : float, default=2.0
-        Exponent to apply to reservoir states. Tanh reservoir states live in
-        ``[-1, 1]`` and routinely include negative and zero values, so the
-        exponent must be chosen with that signed range in mind (see Notes).
+    exponent : float, default=3.0
+        Exponent applied to **every** reservoir state. Tanh reservoir states
+        live in ``[-1, 1]`` and routinely include negative and zero values, so
+        the exponent must be chosen with that signed range in mind (see Notes).
+        The default ``3.0`` is an odd integer and therefore *sign-preserving*;
+        an even exponent such as ``2.0`` maps every state to a non-negative
+        value and so discards the sign of the reservoir activations.
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
         model takes two inputs ``(feedback, driver)`` and the driver feeds the
@@ -145,7 +155,7 @@ def power_augmented(
     ...     reservoir_size=500,
     ...     feedback_size=3,
     ...     output_size=3,
-    ...     exponent=2.0,
+    ...     exponent=3.0,
     ... )
     >>> model.summary()
 
@@ -158,7 +168,7 @@ def power_augmented(
     ...     output_size=3,
     ...     topology=get_topology("watts_strogatz", k=4, p=0.3),
     ...     spectral_radius=0.95,
-    ...     exponent=2.0,
+    ...     exponent=3.0,
     ... )
 
     Training and forecasting:

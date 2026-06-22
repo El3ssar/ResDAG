@@ -45,8 +45,9 @@ class Power(nn.Module):
     exponent is still ``inf`` — ``abs(0) ** -1`` diverges — and is unaffected
     by sign preservation). For integer exponents the two modes are identical
     for non-negative bases and differ only in sign for negative bases raised to
-    an *odd* integer power. Even integer exponents (including the
-    ``power_augmented`` default ``exponent=2.0``) are safe in either mode.
+    an *odd* integer power. Every integer exponent — even ones map negatives to
+    non-negative values, odd ones (including the ``power_augmented`` default
+    ``exponent=3.0``) preserve sign — is safe in either mode.
 
     Examples
     --------

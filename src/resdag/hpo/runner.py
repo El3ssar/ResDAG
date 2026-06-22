@@ -75,6 +75,13 @@ TrialCallback = Callable[[optuna.Trial, dict[str, Any]], None]
 
 _REQUIRED_DATA_KEYS = ("warmup", "train", "target", "f_warmup", "val")
 
+# Per-driver companion prefixes the runner threads through training and
+# forecasting.  When ``drivers_keys`` is set, every declared key ``k`` must have
+# all of ``warmup_k`` / ``train_k`` / ``f_warmup_k`` / ``forecast_k`` present in
+# the data dict, or the driver would be silently dropped (training and
+# forecasting would run feedback-only and produce a misleading score).
+_DRIVER_PREFIXES = ("warmup_", "train_", "f_warmup_", "forecast_")
+
 
 def _cleanup() -> None:
     """Reclaim memory between trials.
@@ -408,17 +415,20 @@ class TrialRunner:
     def _build_train_inputs(
         self, data: dict[str, torch.Tensor]
     ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
-        """Assemble ``(warmup_inputs, train_inputs)`` with optional drivers."""
+        """Assemble ``(warmup_inputs, train_inputs)`` with optional drivers.
+
+        ``_validate_data_keys`` (run in :meth:`_run` before this) guarantees that
+        every declared ``drivers_keys`` entry has its ``warmup_*`` / ``train_*``
+        companions present, so the keys are threaded unconditionally — a missing
+        driver is a hard error there, never a silent feedback-only fallback here.
+        """
         warmup_inputs: tuple[torch.Tensor, ...] = (data["warmup"],)
         train_inputs: tuple[torch.Tensor, ...] = (data["train"],)
 
         if self.drivers_keys:
             for key in self.drivers_keys:
-                warmup_key = f"warmup_{key}"
-                train_key = f"train_{key}"
-                if warmup_key in data and train_key in data:
-                    warmup_inputs = warmup_inputs + (data[warmup_key],)
-                    train_inputs = train_inputs + (data[train_key],)
+                warmup_inputs = warmup_inputs + (data[f"warmup_{key}"],)
+                train_inputs = train_inputs + (data[f"train_{key}"],)
 
         return warmup_inputs, train_inputs
 
@@ -434,15 +444,14 @@ class TrialRunner:
         f_warmup_inputs: tuple[torch.Tensor, ...] = (data["f_warmup"],)
         forecast_drivers_list: list[torch.Tensor] = []
 
+        # ``_validate_data_keys`` guarantees the ``f_warmup_*`` / ``forecast_*``
+        # companions exist for every declared driver, so they are threaded
+        # unconditionally; the number of forecast drivers therefore always
+        # matches ``drivers_keys`` (no silent omission before ``model.forecast``).
         if self.drivers_keys:
             for key in self.drivers_keys:
-                f_warmup_key = f"f_warmup_{key}"
-                if f_warmup_key in data:
-                    f_warmup_inputs = f_warmup_inputs + (data[f_warmup_key],)
-
-                forecast_key = f"forecast_{key}"
-                if forecast_key in data:
-                    forecast_drivers_list.append(data[forecast_key])
+                f_warmup_inputs = f_warmup_inputs + (data[f"f_warmup_{key}"],)
+                forecast_drivers_list.append(data[f"forecast_{key}"])
 
         preds = model.forecast(
             f_warmup_inputs,
@@ -654,8 +663,12 @@ def _validate_data_keys(
 
     The data dict must contain the five required keys (``"warmup"``,
     ``"train"``, ``"target"``, ``"f_warmup"``, ``"val"``), each mapping to a 3-D
-    ``torch.Tensor`` of shape ``(batch, timesteps, features)``.  Driver keys
-    named by ``drivers_keys`` are also validated when present.
+    ``torch.Tensor`` of shape ``(batch, timesteps, features)``.  When
+    ``drivers_keys`` is non-empty, every declared key ``k`` must additionally
+    supply *all four* companion entries (``warmup_k`` / ``train_k`` /
+    ``f_warmup_k`` / ``forecast_k``); a partially- or fully-absent driver is
+    rejected rather than silently dropped — a dropped driver would train and
+    forecast feedback-only and yield a misleading score.
 
     Parameters
     ----------
@@ -663,16 +676,17 @@ def _validate_data_keys(
         Value returned by ``data_loader(trial)``.  Must be a dict-like object.
     drivers_keys : list of str, optional
         Driver feature keys.  If provided, the corresponding ``warmup_*``,
-        ``train_*``, ``f_warmup_*`` and ``forecast_*`` entries (when present) are
-        validated as 3-D tensors.
+        ``train_*``, ``f_warmup_*`` and ``forecast_*`` entries must all be
+        present and are validated as 3-D tensors.
 
     Raises
     ------
     TypeError
         If ``data`` is not a dictionary.
     KeyError
-        If one or more required keys are missing, listed alongside the keys the
-        loader did return for easy typo spotting.
+        If one or more required keys are missing, or if a declared driver key
+        lacks any of its four companion entries.  Missing names are listed
+        alongside the keys the loader did return for easy typo spotting.
     ValueError
         If any required entry is not a ``torch.Tensor`` or is not 3-D.
     """
@@ -692,11 +706,24 @@ def _validate_data_keys(
 
     keys_to_check = list(_REQUIRED_DATA_KEYS)
     if drivers_keys:
-        for key in drivers_keys:
-            for prefix in ("warmup_", "train_", "f_warmup_", "forecast_"):
-                full = f"{prefix}{key}"
-                if full in data:
-                    keys_to_check.append(full)
+        missing_drivers = [
+            f"{prefix}{key}"
+            for key in drivers_keys
+            for prefix in _DRIVER_PREFIXES
+            if f"{prefix}{key}" not in data
+        ]
+        if missing_drivers:
+            raise KeyError(
+                f"drivers_keys={list(drivers_keys)} declared, but the following "
+                f"required driver entries are missing from data_loader output: "
+                f"{missing_drivers}. Each driver key 'k' must supply all of "
+                f"warmup_k, train_k, f_warmup_k and forecast_k (a misnamed or "
+                f"absent driver is rejected rather than silently dropped). "
+                f"Got keys: {sorted(data.keys())}."
+            )
+        keys_to_check.extend(
+            f"{prefix}{key}" for key in drivers_keys for prefix in _DRIVER_PREFIXES
+        )
 
     for key in keys_to_check:
         value = data[key]

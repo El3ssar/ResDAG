@@ -488,6 +488,31 @@ def driven_data_loader(trial):
     }
 
 
+def misnamed_driver_data_loader(trial):
+    """Driver data whose companions use a typo'd key (``drvr`` not ``driver``).
+
+    Every feedback key is present and the driver tensors *are* supplied, but
+    under ``warmup_drvr`` / ``train_drvr`` / ``f_warmup_drvr`` / ``forecast_drvr``
+    instead of the ``*_driver`` names the runner expects for
+    ``drivers_keys=["driver"]``.  Pre-fix this was silently dropped (the model
+    trained feedback-only); now it must raise.
+    """
+    torch.manual_seed(0)
+    fb = torch.randn(1, 200, 3)
+    dr = torch.randn(1, 200, 2)
+    return {
+        "warmup": fb[:, :20, :],
+        "train": fb[:, 20:120, :],
+        "target": fb[:, 21:121, :],
+        "f_warmup": fb[:, 120:140, :],
+        "val": fb[:, 140:180, :],
+        "warmup_drvr": dr[:, :20, :],  # typo: should be warmup_driver
+        "train_drvr": dr[:, 20:120, :],
+        "f_warmup_drvr": dr[:, 120:140, :],
+        "forecast_drvr": dr[:, 140:180, :],
+    }
+
+
 class TestDriversKeysRoundTrip:
     """``drivers_keys`` thread driver inputs through training and forecasting."""
 
@@ -513,6 +538,67 @@ class TestDriversKeysRoundTrip:
         assert np.isfinite(trial.value)
         assert trial.value != penalty
         assert "error" not in trial.user_attrs
+
+
+class TestDriversKeysValidation:
+    """A declared driver key with no matching data entries raises, never drops silently."""
+
+    def test_validate_data_keys_raises_on_misnamed_driver(self):
+        """``_validate_data_keys`` rejects a declared driver whose entries are misnamed.
+
+        The data dict has every feedback key and supplies the driver tensors, but
+        under ``*_drvr`` rather than the ``*_driver`` names ``drivers_keys=["driver"]``
+        expects.  The error must name the missing ``*_driver`` companions so the
+        typo is obvious.
+        """
+        from resdag.hpo.objective import _validate_data_keys
+
+        data = misnamed_driver_data_loader(None)
+        with pytest.raises(KeyError) as excinfo:
+            _validate_data_keys(data, drivers_keys=["driver"])
+
+        message = str(excinfo.value)
+        for expected in (
+            "warmup_driver",
+            "train_driver",
+            "f_warmup_driver",
+            "forecast_driver",
+        ):
+            assert expected in message
+
+    def test_validate_data_keys_reports_only_the_missing_companion(self):
+        """Only the absent companion is flagged; present ones are not listed.
+
+        Dropping a single ``forecast_<key>`` (the entry an input-driven
+        ``model.forecast`` *requires*) must be caught, while the three present
+        companions are accepted — proving the check is per-companion, not all-or-nothing.
+        """
+        from resdag.hpo.objective import _validate_data_keys
+
+        data = driven_data_loader(None)
+        del data["forecast_driver"]
+        with pytest.raises(KeyError, match="forecast_driver"):
+            _validate_data_keys(data, drivers_keys=["driver"])
+
+    def test_misnamed_driver_raises_through_the_runner(self):
+        """End-to-end: a misnamed driver surfaces as an error, not a silent feedback-only run.
+
+        With ``catch_exceptions=False`` the missing-companion ``KeyError`` must
+        propagate out of ``optimize`` (``catch=()``) rather than the model
+        training feedback-only and completing with a misleading score.
+        """
+        runner = build_objective(
+            model_creator=driven_model_creator,
+            search_space=search_space,
+            data_loader=misnamed_driver_data_loader,
+            loss_fn=mae_loss,
+            drivers_keys=["driver"],
+            seed=1,
+            catch_exceptions=False,
+        )
+        study = optuna.create_study(direction="minimize")
+        with pytest.raises(KeyError, match="forecast_driver"):
+            study.optimize(runner, n_trials=1, catch=())
 
 
 def seeded_model_creator(reservoir_size: int = 30, spectral_radius: float = 0.9, seed=None):

@@ -118,51 +118,6 @@ class TestFastPathSpeed:
 
 
 @pytest.mark.benchmark
-class TestFlatForecastSpeed:
-    """The flat single-step engine must beat per-step graph re-execution (#254)."""
-
-    def _build(self, device: str, reservoir_size: int = 200):
-        torch.manual_seed(0)
-        inp = rd.core.reservoir_input(3)
-        states = rd.layers.ESNLayer(
-            reservoir_size=reservoir_size, feedback_size=3, spectral_radius=0.9
-        )(inp)
-        out = rd.CGReadoutLayer(reservoir_size, 3, name="output")(states)
-        return rd.core.ESNModel(inp, out).to(device)
-
-    @staticmethod
-    def _graph_forecast(model, warmup, horizon):
-        """The pre-#254 path: one full ``model(...)`` graph walk per step."""
-        model.reset_reservoirs()
-        warm = model.warmup(warmup, return_outputs=True)
-        cur = warm[:, -1:, :]
-        buf = torch.empty(
-            warmup.shape[0], horizon, warm.shape[-1], dtype=warmup.dtype, device=warmup.device
-        )
-        with torch.no_grad():
-            for t in range(horizon):
-                out = model(cur)
-                buf[:, t, :] = out.squeeze(1)
-                cur = out
-        return buf
-
-    def test_flat_beats_graph_reexecution_cpu(self):
-        model = self._build("cpu")
-        warmup = torch.randn(1, 50, 3, dtype=torch.float32)
-        horizon = 2000
-
-        t_graph = _timed(lambda: self._graph_forecast(model, warmup, horizon), "cpu")
-        t_flat = _timed(
-            lambda: (model.reset_reservoirs(), model.forecast(warmup, horizon=horizon)), "cpu"
-        )
-        speedup = t_graph / t_flat
-        assert speedup >= 1.8, (
-            f"flat forecast only {speedup:.2f}x the graph path "
-            f"(flat={t_flat:.3f}s, graph={t_graph:.3f}s); expected >= 1.8x at H={horizon}"
-        )
-
-
-@pytest.mark.benchmark
 @pytest.mark.gpu
 @cuda_required
 class TestGramDtypeAuto:

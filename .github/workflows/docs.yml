@@ -99,7 +99,7 @@ jobs:
           fail: true
           args: >-
             --no-progress
-            --exclude-mail
+            --exclude=mailto:
             README.md
             CONTRIBUTING.md
             examples/README.md

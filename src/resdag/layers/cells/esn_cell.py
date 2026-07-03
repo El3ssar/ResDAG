@@ -220,11 +220,9 @@ class ESNCell(ReservoirCell):
     ) -> None:
         super().__init__()
 
-        if noise < 0.0:
-            raise ValueError(f"noise must be non-negative, got {noise}")
-
-        if not 0.0 < leak_rate <= 1.0:
-            raise ValueError(f"leak_rate must be in (0, 1], got {leak_rate}")
+        # leak_rate / noise are validated by their property setters (below), so
+        # both the constructor path (``self.leak_rate = ...``) and live writes
+        # (``layer.leak_rate = ...``) share one validation.
 
         # Store configuration
         self.reservoir_size = reservoir_size
@@ -240,7 +238,12 @@ class ESNCell(ReservoirCell):
         self.input_initializer = input_initializer
         self.leak_rate = leak_rate
         self.noise = noise
-        self.trainable = trainable
+        # ``trainable`` is a live property (see below) whose setter flips
+        # ``requires_grad_`` on every parameter.  During ``__init__`` the
+        # parameters do not exist yet, so stash the requested value in the
+        # backing field directly; the actual ``requires_grad`` freeze is applied
+        # after ``_initialize_weights`` (see the block at the end of __init__).
+        self._trainable = trainable
         self.seed = seed
         # Integer form threaded into the NumPy-backed topology builders and the
         # named feedback/input initializers (they take an int/None seed).  A
@@ -266,10 +269,11 @@ class ESNCell(ReservoirCell):
         # Initialize weight matrices
         self._initialize_weights()
 
-        # Freeze weights if not trainable
-        if not self.trainable:
-            for p in self.parameters():
-                p.requires_grad_(False)
+        # Apply the requested trainable state to the freshly-built parameters.
+        # Going through the property setter (rather than an inline freeze loop)
+        # keeps construction and post-init ``cell.trainable = ...`` writes on a
+        # single code path: both flip ``requires_grad_`` on *all* parameters.
+        self.trainable = trainable
 
     # ------------------------------------------------------------------
     # ReservoirCell interface
@@ -284,6 +288,60 @@ class ESNCell(ReservoirCell):
     def output_size(self) -> int:
         """Dimensionality of the per-step output (equals state_size for ESN)."""
         return self.reservoir_size
+
+    @property
+    def trainable(self) -> bool:
+        """
+        bool : Whether the reservoir weights participate in backpropagation.
+
+        This is a *live* switch, not a construction-time-only flag.  Assigning
+        to it flips ``requires_grad_`` on **every** cell parameter
+        (``weight_hh``, ``weight_feedback``, ``weight_input``, ``bias_h``) so a
+        post-construction ``cell.trainable = True`` genuinely unfreezes the
+        reservoir for a BPTT rollout — the documented
+        ``reservoir.trainable = True`` recipe now takes effect instead of being
+        a silent no-op.  The getter reflects the current state.
+        """
+        return self._trainable
+
+    @trainable.setter
+    def trainable(self, value: bool) -> None:
+        self._trainable = bool(value)
+        for p in self.parameters():
+            p.requires_grad_(self._trainable)
+
+    @property
+    def leak_rate(self) -> float:
+        """
+        float : Leaky-integration rate in ``(0, 1]`` read fresh every step.
+
+        A *live* knob: assigning to it (directly or through
+        ``ESNLayer.leak_rate = ...``) validates the value and takes effect on the
+        next forward.  ``1.0`` means no leaking (standard ESN).
+        """
+        return self._leak_rate
+
+    @leak_rate.setter
+    def leak_rate(self, value: float) -> None:
+        if not 0.0 < float(value) <= 1.0:
+            raise ValueError(f"leak_rate must be in (0, 1], got {value}")
+        self._leak_rate = float(value)
+
+    @property
+    def noise(self) -> float:
+        """
+        float : Std-dev of additive train-mode state noise (``>= 0``).
+
+        A *live* knob validated on assignment; ``0.0`` disables noise.  Noise is
+        applied only when the cell is in training mode (see ``_apply_noise``).
+        """
+        return self._noise
+
+    @noise.setter
+    def noise(self, value: float) -> None:
+        if float(value) < 0.0:
+            raise ValueError(f"noise must be non-negative, got {value}")
+        self._noise = float(value)
 
     def init_state(
         self,

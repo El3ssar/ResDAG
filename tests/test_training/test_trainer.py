@@ -25,7 +25,7 @@ import torch
 import resdag as rd
 from resdag.core import ESNModel, Input
 from resdag.layers import ESNLayer
-from resdag.layers.readouts import CGReadoutLayer
+from resdag.layers.readouts import CGReadoutLayer, IncrementalRidgeReadout
 from resdag.training import ESNTrainer
 
 # Tight reconstruction tolerance for the correctness tests.  The readout solves
@@ -784,6 +784,163 @@ class TestESNTrainerFiniteParameters:
 
         assert model.CGReadoutLayer_1.is_fitted
         _assert_all_params_finite(model)
+
+
+class TestESNTrainerIncrementalRidge:
+    """``fit`` / ``fit_stream`` with :class:`IncrementalRidgeReadout`.
+
+    ``IncrementalRidgeReadout``'s forward guard raises ``RuntimeError`` while the
+    readout is unfitted.  The trainer's warmup pass runs *before* any readout is
+    fitted, so ``fit()`` used to crash on that guard (only ``fit_stream`` and a
+    direct ``readout.fit`` bracketed the guard).  These tests pin the documented
+    "drop-in ``ReadoutLayer``" contract: the primary ``fit()`` entry point must
+    complete with this readout, ``fit_stream`` must keep working, and — crucially
+    — the guard must still fire on a *genuinely* unfitted readout at inference
+    time (the flag is bypassed only during warmup, never globally disabled).
+    """
+
+    def test_fit_completes_with_incremental_ridge(self) -> None:
+        """The primary ``fit()`` entry point works with ``IncrementalRidgeReadout``.
+
+        Reconstruction is checked against a learnable affine target of the exact
+        states the trainer fits on, so this asserts a correct solve — not merely
+        that ``fit`` no longer raises on the warmup guard.
+        """
+        torch.manual_seed(0)
+
+        reservoir_size = 64
+        out_features = 2
+        batch_size = 3
+        warmup_steps = 60
+        train_steps = 200
+
+        reservoir_layer = ESNLayer(reservoir_size, 1)
+
+        feedback = Input(shape=(10, 1))
+        reservoir = reservoir_layer(feedback)
+        readout = IncrementalRidgeReadout(reservoir_size, out_features, name="output")(reservoir)
+        model = ESNModel(feedback, readout)
+
+        warmup_data = torch.randn(batch_size, warmup_steps, 1)
+        train_data = torch.randn(batch_size, train_steps, 1)
+
+        # Learnable, deterministic target: exact affine map of the fit-time states.
+        states = _capture_reservoir_states(reservoir_layer, (warmup_data,), (train_data,))
+        w_true = torch.randn(out_features, reservoir_size)
+        b_true = torch.randn(out_features)
+        train_targets = states @ w_true.T + b_true
+
+        readout_layer = model.IncrementalRidgeReadout_1
+
+        trainer = ESNTrainer(model)
+        trainer.fit(
+            warmup_inputs=(warmup_data,),
+            train_inputs=(train_data,),
+            targets={"output": train_targets},
+        )
+
+        assert readout_layer.is_fitted
+        # The warmup-guard bypass must be reset after fit — not left globally on.
+        assert readout_layer._allow_unfitted_forward is False
+
+        model.reset_reservoirs()
+        model.warmup(warmup_data)
+        with torch.no_grad():
+            predictions = model(train_data)
+
+        assert predictions.shape == train_targets.shape
+        assert torch.isfinite(predictions).all()
+        assert torch.allclose(predictions, train_targets, atol=RECON_ATOL), (
+            "max abs error "
+            f"{(predictions - train_targets).abs().max().item():.3e} exceeds {RECON_ATOL}"
+        )
+        _assert_all_params_finite(model)
+
+    def test_fit_stream_still_works_with_incremental_ridge(self) -> None:
+        """``fit_stream`` keeps working after the shared warmup bracket refactor.
+
+        Chunk-streamed accumulation over contiguous windows must still finalize
+        to a fitted, finite-forecasting readout.
+        """
+        torch.manual_seed(0)
+
+        reservoir_size = 64
+        feedback = Input(shape=(10, 1))
+        reservoir = ESNLayer(reservoir_size, 1)(feedback)
+        readout = IncrementalRidgeReadout(reservoir_size, 1, name="output")(reservoir)
+        model = ESNModel(feedback, readout)
+
+        warmup_data = torch.randn(2, 40, 1)
+
+        def chunk_stream():
+            for _ in range(4):
+                x = torch.randn(2, 25, 1)
+                y = torch.randn(2, 25, 1)
+                yield (x,), {"output": y}
+
+        readout_layer = model.IncrementalRidgeReadout_1
+
+        trainer = ESNTrainer(model)
+        trainer.fit_stream(warmup_inputs=(warmup_data,), chunks=chunk_stream())
+
+        assert readout_layer.is_fitted
+        assert readout_layer._allow_unfitted_forward is False
+
+        model.reset_reservoirs()
+        forecast = model.forecast(warmup_data, horizon=20)
+        assert forecast.shape == (2, 20, 1)
+        assert torch.isfinite(forecast).all()
+
+    def test_inference_guard_still_fires_when_unfitted(self) -> None:
+        """The warmup bypass does not globally disable the fitted guard.
+
+        A model whose ``IncrementalRidgeReadout`` was never fitted must still
+        raise ``RuntimeError`` at inference — the guard is bypassed only inside
+        the trainer's warmup context, not for genuine forward calls.
+        """
+        torch.manual_seed(0)
+
+        feedback = Input(shape=(10, 1))
+        reservoir = ESNLayer(64, 1)(feedback)
+        readout = IncrementalRidgeReadout(64, 1, name="output")(reservoir)
+        model = ESNModel(feedback, readout)
+
+        model.reset_reservoirs()
+        with pytest.raises(RuntimeError, match="is not fitted"):
+            model(torch.randn(2, 30, 1))
+
+    def test_fit_resets_guard_flag_on_warmup_exception(self) -> None:
+        """The warmup bypass flag is reset even if the warmup pass raises.
+
+        Uses ``try/finally`` in the shared context manager, so a failure mid-warmup
+        must not leave the readout stuck with ``_allow_unfitted_forward=True``
+        (which would silently disable the guard for all later inference).
+        """
+        torch.manual_seed(0)
+
+        feedback = Input(shape=(10, 1))
+        reservoir = ESNLayer(64, 1)(feedback)
+        readout = IncrementalRidgeReadout(64, 1, name="output")(reservoir)
+        model = ESNModel(feedback, readout)
+        readout_layer = model.IncrementalRidgeReadout_1
+
+        original_warmup = model.warmup
+
+        def _boom(*_args, **_kwargs):
+            raise ValueError("synthetic warmup failure")
+
+        model.warmup = _boom  # type: ignore[method-assign]
+        try:
+            with pytest.raises(ValueError, match="synthetic warmup failure"):
+                ESNTrainer(model).fit(
+                    warmup_inputs=(torch.randn(2, 40, 1),),
+                    train_inputs=(torch.randn(2, 80, 1),),
+                    targets={"output": torch.randn(2, 80, 1)},
+                )
+        finally:
+            model.warmup = original_warmup  # type: ignore[method-assign]
+
+        assert readout_layer._allow_unfitted_forward is False
 
 
 class TestESNTrainerGPU:

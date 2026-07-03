@@ -226,7 +226,15 @@ def run_hpo(
         ``torch.device("cpu")``). If ``None``, uses default device.
     n_workers : int, default=1
         Number of parallel workers. When ``> 1``, uses real OS processes
-        (multiprocessing) that coordinate via shared file storage.
+        (multiprocessing) that coordinate via shared file storage. The workers
+        are started with ``fork`` on CPU-only studies, but with ``spawn`` when
+        the study touches CUDA (``device`` is a CUDA device, or CUDA is already
+        initialised in the parent) because ``fork`` cannot re-initialise CUDA.
+        ``spawn`` pickles the objective, so ``model_creator``, ``search_space``,
+        ``data_loader`` (and any ``loss`` callable) **must be top-level,
+        importable functions** — lambdas or closures defined inside another
+        function are not picklable and will raise ``PicklingError``. Single-worker
+        (``n_workers=1``) studies run in-process and have no such restriction.
     verbosity : int, default=1
         Logging verbosity: ``0`` = silent, ``1`` = normal, ``2`` = verbose.
     catch_exceptions : bool, default=True
@@ -462,6 +470,7 @@ def run_hpo(
                 seed=seed,
                 pruner=resolved_pruner,
                 verbosity=verbosity,
+                device=device,
             )
         else:
             run_single(
@@ -497,6 +506,7 @@ def _dispatch_multiprocess(
     seed: int | None,
     pruner: optuna.pruners.BasePruner,
     verbosity: int,
+    device: torch.device | None,
 ) -> tuple[optuna.Study, optuna.storages.BaseStorage | None]:
     """Prepare the environment and delegate to :func:`run_multiprocess`.
 
@@ -533,6 +543,11 @@ def _dispatch_multiprocess(
         early-stopping policy matches the parent process.
     verbosity : int
         Logging verbosity.
+    device : torch.device or None
+        Device the study places models/data on.  Threaded into
+        :func:`~resdag.hpo.runners.run_multiprocess` so it can pick a
+        device-safe start method (``spawn`` for CUDA, which ``fork`` breaks
+        silently).
 
     Returns
     -------
@@ -580,6 +595,7 @@ def _dispatch_multiprocess(
         seed=seed,
         pruner=pruner,
         verbosity=verbosity,
+        device=device,
     )
 
     # Reopen storage to build the return study object. ``storage_path`` is

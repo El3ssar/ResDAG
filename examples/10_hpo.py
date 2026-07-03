@@ -10,6 +10,14 @@ Each trial: build model -> fit readout -> forecast over the validation
 window -> score with the chosen loss (default "efh", Expected Forecast
 Horizon — tailored to chaotic systems).
 
+The three callbacks are defined at **module level on purpose**. When you scale
+up to ``n_workers > 1`` (or run any CUDA study), ``run_hpo`` distributes trials
+with the ``spawn`` start method, which pickles the objective — so the callbacks
+must be top-level, importable functions. Closures defined inside ``main()``
+would raise ``PicklingError`` there. Single-worker studies have no such
+restriction, but writing them top-level from the start keeps the example
+copy-paste-ready for parallel runs.
+
 This example is intentionally tiny (8 trials, small reservoir) so it runs
 fast; comments point to the knobs you would scale up.
 
@@ -21,6 +29,51 @@ import torch
 
 import resdag as rd
 
+SEED = 42
+
+
+# ----------------------------------------------------------------------
+# The three callbacks — top-level so they pickle for the spawn/multi-worker path
+# ----------------------------------------------------------------------
+
+
+def model_creator(reservoir_size: int, spectral_radius: float, leak_rate: float):
+    """One fresh model per trial. Must accept every key of search_space."""
+    return rd.classic_esn(
+        reservoir_size=reservoir_size,
+        feedback_size=3,
+        output_size=3,
+        spectral_radius=spectral_radius,
+        leak_rate=leak_rate,
+    )
+
+
+def search_space(trial) -> dict:
+    """Maps optuna suggestions onto model_creator's parameters."""
+    return {
+        "reservoir_size": trial.suggest_int("reservoir_size", 100, 300, step=100),
+        "spectral_radius": trial.suggest_float("spectral_radius", 0.5, 1.2),
+        "leak_rate": trial.suggest_float("leak_rate", 0.2, 1.0),
+    }
+
+
+def load_splits():
+    """Prepare the canonical Lorenz splits (rebuilt per worker under spawn)."""
+    data = rd.lorenz(2300, seed=SEED)  # (1, 2300, 3)
+    return rd.utils.prepare_esn_data(data, warmup_steps=200, train_steps=1600, val_steps=300)
+
+
+def data_loader(trial) -> dict:
+    """Required keys: warmup, train, target, f_warmup, val (all (B, T, D))."""
+    warmup, train, target, f_warmup, val = load_splits()
+    return {
+        "warmup": warmup,
+        "train": train,
+        "target": target,
+        "f_warmup": f_warmup,
+        "val": val,
+    }
+
 
 def main() -> None:
     try:
@@ -30,48 +83,10 @@ def main() -> None:
         print("  pip install resdag[hpo]   (or: uv sync --extra hpo)")
         return
 
-    torch.manual_seed(42)
+    torch.manual_seed(SEED)
 
     # ------------------------------------------------------------------
-    # 1. The three callbacks
-    # ------------------------------------------------------------------
-
-    def model_creator(reservoir_size: int, spectral_radius: float, leak_rate: float):
-        """One fresh model per trial. Must accept every key of search_space."""
-        return rd.classic_esn(
-            reservoir_size=reservoir_size,
-            feedback_size=3,
-            output_size=3,
-            spectral_radius=spectral_radius,
-            leak_rate=leak_rate,
-        )
-
-    def search_space(trial) -> dict:
-        """Maps optuna suggestions onto model_creator's parameters."""
-        return {
-            "reservoir_size": trial.suggest_int("reservoir_size", 100, 300, step=100),
-            "spectral_radius": trial.suggest_float("spectral_radius", 0.5, 1.2),
-            "leak_rate": trial.suggest_float("leak_rate", 0.2, 1.0),
-        }
-
-    # Data is loaded per trial (lets you subsample / augment per trial).
-    data = rd.lorenz(2300, seed=42)  # (1, 2300, 3)
-    warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
-        data, warmup_steps=200, train_steps=1600, val_steps=300
-    )
-
-    def data_loader(trial) -> dict:
-        """Required keys: warmup, train, target, f_warmup, val (all (B, T, D))."""
-        return {
-            "warmup": warmup,
-            "train": train,
-            "target": target,
-            "f_warmup": f_warmup,
-            "val": val,
-        }
-
-    # ------------------------------------------------------------------
-    # 2. Run the study
+    # Run the study
     # ------------------------------------------------------------------
     print("=" * 70)
     print("Running a tiny study: 8 trials, single worker, in-memory storage")
@@ -83,16 +98,16 @@ def main() -> None:
         data_loader=data_loader,
         n_trials=8,  # scale up (100+) for real searches
         loss="efh",  # also: "forecast_horizon", "lyapunov", "standard", "soft_horizon"
-        seed=42,  # seeds the sampler and per-trial RNG
+        seed=SEED,  # seeds the sampler and per-trial RNG
         verbosity=0,  # 1 prints per-trial progress
-        # For real runs:
-        #   n_workers=4,           parallel OS processes
+        # For real runs (the callbacks above are already spawn-safe/top-level):
+        #   n_workers=4,           parallel OS processes (spawn if CUDA)
         #   storage="study.log",   journal file -> resumable + multi-worker
         #   monitor_losses=["forecast_horizon"],  log extra metrics without optimizing them
     )
 
     # ------------------------------------------------------------------
-    # 3. Results
+    # Results
     # ------------------------------------------------------------------
     print(get_study_summary(study))
     print("Best hyperparameters:")
@@ -100,6 +115,7 @@ def main() -> None:
         print(f"  {key}: {value}")
 
     # The best configuration is just a model_creator call away:
+    warmup, train, target, f_warmup, val = load_splits()
     best_model = model_creator(**study.best_params)
     rd.ESNTrainer(best_model).fit((warmup,), (train,), {"output": target})
     preds = best_model.forecast(f_warmup, horizon=val.shape[1])

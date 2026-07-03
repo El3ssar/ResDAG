@@ -40,6 +40,15 @@ __all__ = ["TrialRunner", "TrialCallback"]
 
 logger = logging.getLogger(__name__)
 
+# Substring of the RuntimeError PyTorch raises when a *forked* worker touches
+# CUDA after the parent already initialised it. This is a *systematic* failure —
+# it recurs on every trial in every forked worker, so penalising it silently
+# would burn the whole study budget producing ``penalty_value`` for every trial
+# and return nonsense best_params. When a caught exception carries this marker
+# we re-raise instead of penalising, so the study aborts loudly. The matched
+# start-method fix lives in ``resdag.hpo.runners.select_start_method``.
+_CUDA_FORK_REINIT_MARKER = "Cannot re-initialize CUDA in forked subprocess"
+
 
 def _accepts_seed(func: Callable[..., Any]) -> bool:
     """Return ``True`` if ``func`` accepts a ``seed`` keyword argument.
@@ -295,6 +304,27 @@ class TrialRunner:
             # Pruning must propagate so Optuna records the trial as pruned.
             raise
         except Exception as e:  # noqa: BLE001 - intentional broad catch
+            # Systematic failure: a forked worker cannot touch CUDA once the
+            # parent has initialised it. This recurs on *every* trial, so
+            # penalising it would silently burn the whole budget on
+            # ``penalty_value`` and hand back nonsense best_params. Re-raise
+            # (bypassing ``catch_exceptions``) so the failure surfaces instead:
+            # single-process runs raise; under multiprocessing the worker exits
+            # and the study returns zero completed trials rather than a bogus
+            # best_params (``best_value`` is guarded on ``completed > 0``). The
+            # dispatcher should have picked ``spawn`` for CUDA studies anyway. The
+            # match is narrow so genuine per-trial failures are still penalised.
+            if _CUDA_FORK_REINIT_MARKER in str(e):
+                logger.error(
+                    "Trial %s hit the fork/CUDA re-initialisation error — this is "
+                    "a systematic failure that would recur on every trial in every "
+                    "forked worker. Re-raising to abort the study instead of "
+                    "penalising. Use the 'spawn' start method for CUDA studies "
+                    "(run_hpo selects it automatically when device is CUDA or CUDA "
+                    "is already initialised in the parent).",
+                    trial.number,
+                )
+                raise
             if self.catch_exceptions:
                 logger.warning(f"Trial {trial.number} failed: {e}")
                 trial.set_user_attr("error", str(e))

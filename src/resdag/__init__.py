@@ -83,7 +83,7 @@ ESNTrainer : Trainer for fitting readout layers.
 import importlib
 from typing import Any
 
-from . import core, data, ensemble, init, layers, models, training, utils
+from . import core, data, datasets, ensemble, init, layers, models, training, utils
 
 # Convenience imports for common use cases
 from .core import ESNModel, ReservoirFeatureExtractor, reservoir_input
@@ -125,9 +125,11 @@ from .models import (
 )
 from .training import ESNTrainer
 
-# Canonical dataset generators. The ``resdag.utils.data`` submodule is also
-# exposed as ``resdag.datasets`` for a discoverable, library-style entry point.
-from .utils import data as datasets
+# Canonical dataset generators. ``resdag.datasets`` (imported above) is a real
+# package that re-exports these generators, so ``import resdag.datasets`` and
+# ``from resdag.datasets import lorenz`` both work as a discoverable,
+# library-style entry point, alongside attribute access
+# (``resdag.datasets.lorenz``).
 from .utils.data import henon, lorenz, mackey_glass, narma, rossler, sine
 
 # Signature stability diagnostic, surfaced at the top level for discoverability.

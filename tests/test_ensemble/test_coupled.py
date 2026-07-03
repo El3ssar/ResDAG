@@ -43,6 +43,35 @@ def _driven_submodel_factory(
     return ESNModel([feedback, driver], readout)
 
 
+def _two_headed_submodel_factory(
+    *,
+    reservoir_size: int = 24,
+    feedback_size: int = 3,
+    aux_size: int = 2,
+    seed: int | None = None,
+    **_: object,
+) -> ESNModel:
+    """Build a two-headed (multi-output) ESN sub-model.
+
+    The main head matches ``feedback_size`` (so it *would* be coupleable if the
+    ensemble supported multi-head models); the auxiliary head is an extra
+    readout. ``ESNModel.forecast`` supports this pattern, but the coupled
+    ensemble rejects it at construction because it has no meaningful aggregation
+    for the auxiliary head across members.
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+    feedback = Input(shape=(20, feedback_size))
+    states = ESNLayer(
+        reservoir_size=reservoir_size,
+        feedback_size=feedback_size,
+        spectral_radius=0.9,
+    )(feedback)
+    main = CGReadoutLayer(reservoir_size, feedback_size, name="output")(states)
+    aux = CGReadoutLayer(reservoir_size, aux_size, name="aux")(states)
+    return ESNModel(feedback, [main, aux])
+
+
 def _toy_data(seq_len: int = 60, feature_size: int = 2):
     """Smooth synthetic 2-D time series."""
     torch.manual_seed(0)
@@ -192,6 +221,53 @@ class TestConstruction:
             CoupledEnsembleESNModel(models)
         msg = str(excinfo.value)
         assert "(2)" in msg and "(3)" in msg  # names both mismatched dims
+
+    def test_multi_output_sub_models_rejected(self):
+        """A two-headed (multi-output) sub-model is rejected at construction.
+
+        Its main head matches the feedback dimension, so the model constructs
+        and ``ESNModel.forecast`` would drive it fine — but the ensemble has no
+        well-defined aggregation for the auxiliary head across members, so it
+        must fail loudly *now* rather than crash cryptically inside forecast /
+        forward (previously ``AttributeError`` / ``TypeError`` from stacking a
+        tuple).
+        """
+        models = [_two_headed_submodel_factory(seed=i) for i in range(2)]
+        with pytest.raises(ValueError) as excinfo:
+            CoupledEnsembleESNModel(models)
+        msg = str(excinfo.value)
+        # Names the offending sub-model and the multi-output constraint.
+        assert "Sub-model 0" in msg
+        assert "multi-output" in msg
+        # Reports the per-head dims so the user can see which model this is.
+        assert "[3, 2]" in msg
+
+    def test_multi_output_at_later_index_names_that_model(self):
+        """The reported index points at the *first* multi-output sub-model."""
+        good = rd.classic_esn(reservoir_size=20, feedback_size=3, output_size=3)
+        bad = _two_headed_submodel_factory(seed=1)
+        with pytest.raises(ValueError, match="Sub-model 1 is multi-output"):
+            CoupledEnsembleESNModel([good, bad])
+
+    def test_multi_output_via_factory_rejected(self):
+        """The factory path surfaces the same multi-output guard."""
+        with pytest.raises(ValueError, match="multi-output"):
+            rd.coupled_ensemble_esn(
+                n_models=2,
+                model_factory=_two_headed_submodel_factory,
+                reservoir_size=20,
+                feedback_size=3,
+            )
+
+    def test_multi_output_rejected_before_forecast_and_forward(self):
+        """Regression: construction fails, so the old AttributeError/TypeError
+        from forecast()/forward() on a multi-output ensemble can never surface.
+        """
+        # If this ever constructs, ``ens.forecast(...)`` would raise
+        # ``AttributeError: 'tuple' object has no attribute 'shape'`` and
+        # ``ens(...)`` a ``TypeError`` from ``torch.stack`` on tuples.
+        with pytest.raises(ValueError, match="multi-output"):
+            CoupledEnsembleESNModel([_two_headed_submodel_factory(seed=0)])
 
     def test_classic_sub_models_accepted(self):
         """Readout-bearing classic sub-models pass the guard."""

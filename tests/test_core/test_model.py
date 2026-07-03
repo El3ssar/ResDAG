@@ -53,23 +53,55 @@ class TestESNModelForward:
         assert not torch.allclose(out1, out2)
 
 
+class TestPostBuildStateIsClean:
+    """``ESNModel.__init__`` resets reservoirs so no build-time trace leaks.
+
+    ``pytorch_symbolic`` propagates shapes by running each layer's real forward
+    on a ``torch.rand`` placeholder at batch=1, which leaves a stateful reservoir
+    holding a saturated trace state.  A fresh model used directly at batch=1
+    (``y = model(x)``) must not silently continue from that junk.
+    """
+
+    def test_reservoir_state_is_clean_after_build(self, make_tiny_model) -> None:
+        from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
+
+        model = make_tiny_model(feedback_size=3)
+        reservoirs = [m for m in model.modules() if isinstance(m, BaseReservoirLayer)]
+        assert reservoirs, "expected at least one reservoir"
+        for reservoir in reservoirs:
+            assert reservoir.state is None
+
+    def test_first_batch1_forward_matches_post_reset(self, make_tiny_model) -> None:
+        """The very first batch=1 forward equals the same call after a reset.
+
+        Before the fix these differed (the first forward continued from the
+        batch=1 build-trace state); now the constructor's reset makes them equal.
+        """
+        model = make_tiny_model(feedback_size=3)
+        x = torch.randn(1, 40, 3)
+
+        first = model(x)  # immediately after build, no manual reset
+        model.reset_reservoirs()
+        after_reset = model(x)
+
+        assert torch.equal(first, after_reset)
+
+
 class TestESNModelStateManagement:
     """reset / get / set / randomize reservoir states."""
 
-    def test_construction_leaves_trace_state_reset_clears_it(self, make_tiny_model) -> None:
-        """Symbolic tracing at build time leaves a state; reset clears it.
+    def test_construction_clears_trace_state(self, make_tiny_model) -> None:
+        """The constructor resets reservoirs, so no build-time trace leaks.
 
-        pytorch_symbolic runs the layers on placeholder data while the graph
-        is being defined, so a freshly built model already carries a batch-1
-        reservoir state.  ``reset_reservoirs()`` must clear it.
+        pytorch_symbolic runs the layers on placeholder data while the graph is
+        being defined, which would leave a stateful reservoir holding a batch-1
+        trace state.  ``ESNModel.__init__`` resets reservoirs right after the
+        graph is built, so a freshly constructed model carries no residual state
+        (see ``TestPostBuildStateIsClean`` for the observable-behaviour check).
         """
         model = make_tiny_model()
 
-        assert len(model.get_reservoir_states()) > 0  # trace residue
-
-        model.reset_reservoirs()
-
-        assert model.get_reservoir_states() == {}
+        assert model.get_reservoir_states() == {}  # no trace residue after build
 
     def test_reset_reservoirs_clears_states(self, make_tiny_model, seeded: None) -> None:
         """reset_reservoirs drops every reservoir state."""

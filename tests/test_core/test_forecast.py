@@ -969,3 +969,57 @@ class TestDifferentiableForecast:
         assert full.shape == (1, 23, 2)
         assert full.requires_grad
         full.sum().backward()  # must not raise
+
+    # ── Persisted state honours detach_state_between_calls ────────────────
+
+    def test_persisted_state_detached_by_default_allows_later_backward(self) -> None:
+        """A differentiable forecast must not pin its rollout graph on the state.
+
+        With ``detach_state_between_calls=True`` (the default) a
+        ``forecast(no_grad=False)`` + ``backward()`` frees the rollout graph.  The
+        persisted final state must therefore be detached, or the *next* ordinary
+        ``forward`` + ``backward`` would try to backprop through the already-freed
+        graph and raise "Trying to backward through the graph a second time".
+        """
+        torch.manual_seed(0)
+        feedback_size, reservoir_size = 2, 32
+        inp = Input(shape=(20, feedback_size))
+        reservoir = ESNLayer(
+            reservoir_size=reservoir_size,
+            feedback_size=feedback_size,
+            spectral_radius=0.9,
+            trainable=True,
+        )
+        # Leave detach_state_between_calls at its default (True).
+        assert reservoir.detach_state_between_calls is True
+        states = reservoir(inp)
+        out = CGReadoutLayer(reservoir_size, feedback_size, name="output", trainable=True)(states)
+        model = ESNModel(inp, out)
+
+        warmup = torch.randn(1, 20, feedback_size)
+        model.reset_reservoirs()
+        preds = model.forecast(warmup, horizon=4, no_grad=False)
+        (preds**2).mean().backward()  # frees the rollout graph
+
+        # The persisted state must carry no grad_fn (detached before storing).
+        persisted = next(iter(model.get_reservoir_states().values()))
+        assert persisted.grad_fn is None
+
+        # A fresh ordinary forward + backward must succeed (no double-backward).
+        model.zero_grad(set_to_none=True)
+        y = model(torch.randn(1, 10, feedback_size))
+        y.sum().backward()  # must not raise
+
+    def test_persisted_state_keeps_graph_when_detach_disabled(self) -> None:
+        """With detaching off, the persisted state keeps its rollout graph.
+
+        This is the cross-window BPTT contract ``windowed_forecast(no_grad=False)``
+        relies on: ``detach_state_between_calls=False`` preserves the grad_fn so a
+        continuation shares the rollout graph.
+        """
+        model, _ = _build_trainable_model()  # builds with detach disabled
+        warmup = torch.randn(1, 20, 2)
+        model.reset_reservoirs()
+        model.forecast(warmup, horizon=4, no_grad=False)
+        persisted = next(iter(model.get_reservoir_states().values()))
+        assert persisted.grad_fn is not None

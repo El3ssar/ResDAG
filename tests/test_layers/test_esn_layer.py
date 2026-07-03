@@ -381,6 +381,52 @@ class TestESNLayerLeakRate:
         assert not torch.allclose(out_no_leak, out_with_leak)
 
 
+class TestESNLayerLiveHyperparameterWrites:
+    """Writes to live hyperparameters reach the cell (not a shadow attribute).
+
+    ``ESNLayer`` reads attributes off its inner ``ESNCell`` via ``__getattr__``,
+    but plain ``nn.Module`` write semantics used to send ``layer.leak_rate =
+    0.5`` / ``layer.trainable = True`` to the layer's own ``__dict__``, so the
+    cell kept computing with the constructor value.  ``__setattr__`` now forwards
+    the live-config allow-list (``trainable``, ``leak_rate``, ``noise``) to the
+    cell; see ``tests/test_layers/test_setattr_delegation.py`` for the full
+    matrix.
+    """
+
+    def test_trainable_write_unfreezes_and_trains(self) -> None:
+        """layer.trainable=True flips requires_grad and a BPTT step trains weights."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3, seed=0)
+        assert not any(p.requires_grad for p in reservoir.parameters())
+
+        reservoir.trainable = True
+        assert all(p.requires_grad for p in reservoir.parameters())
+
+        before = reservoir.weight_hh.detach().clone()
+        opt = torch.optim.SGD(reservoir.parameters(), lr=0.1)
+        reservoir(torch.randn(2, 8, 3)).pow(2).mean().backward()
+        opt.step()
+        assert not torch.allclose(before, reservoir.weight_hh.detach())
+
+    def test_leak_rate_write_changes_output(self) -> None:
+        """layer.leak_rate=0.5 alters the produced sequence (reaches the cell)."""
+        feedback = torch.randn(2, 12, 3)
+        default = ESNLayer(reservoir_size=40, feedback_size=3, leak_rate=1.0, seed=7)
+        out_default = default(feedback)
+
+        leaked = ESNLayer(reservoir_size=40, feedback_size=3, leak_rate=1.0, seed=7)
+        leaked.leak_rate = 0.5
+        leaked.reset_state()
+        assert leaked.cell.leak_rate == 0.5
+        assert not torch.allclose(out_default, leaked(feedback))
+
+    def test_baked_spectral_radius_write_raises(self) -> None:
+        """Structurally-baked spectral_radius raises rather than silently shadowing."""
+        reservoir = ESNLayer(reservoir_size=40, feedback_size=3, spectral_radius=0.9, seed=1)
+        with pytest.raises(AttributeError, match="baked|cannot be changed"):
+            reservoir.spectral_radius = 0.5
+        assert reservoir.spectral_radius == 0.9  # unchanged, no shadow
+
+
 class TestESNLayerNoise:
     """Train-mode state-noise injection plumbed through the sequence loop."""
 

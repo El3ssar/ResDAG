@@ -25,7 +25,13 @@ import torch
 from resdag.hpo import run_hpo
 from resdag.hpo.losses import get_loss
 from resdag.hpo.objective import build_objective
-from resdag.hpo.runners import _worker_process, select_start_method, worker_budget
+from resdag.hpo.runner import _CUDA_FORK_REINIT_MARKER, TrialRunner
+from resdag.hpo.runners import (
+    _worker_process,
+    preferred_start_method,
+    select_start_method,
+    worker_budget,
+)
 from resdag.hpo.storage import resolve_storage
 from resdag.models import ott_esn
 
@@ -88,6 +94,44 @@ class TestSelectStartMethod:
         assert method in mp.get_all_start_methods()
         # Must be constructable — this is what run_multiprocess does.
         mp.get_context(method)
+
+
+# ── preferred_start_method (device-safety) ───────────────────────────────────
+class TestPreferredStartMethod:
+    """Device-safety: CUDA studies must prefer ``spawn`` (fork breaks CUDA).
+
+    ``fork`` is silently unusable with CUDA — a forked worker raises
+    ``Cannot re-initialize CUDA in forked subprocess`` on every CUDA op, and the
+    runner would penalise that, producing an all-penalty study with nonsense
+    ``best_params``.  The dispatcher must therefore pick ``spawn`` whenever the
+    study will touch the GPU.
+    """
+
+    def test_cpu_device_prefers_fork(self, monkeypatch):
+        """A CPU device with CUDA uninitialised keeps the cheaper ``fork``."""
+        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
+        assert preferred_start_method(torch.device("cpu")) == "fork"
+
+    def test_none_device_prefers_fork_when_cuda_uninitialised(self, monkeypatch):
+        """``device=None`` (framework default) is treated as CPU → ``fork``."""
+        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
+        assert preferred_start_method(None) == "fork"
+
+    def test_cuda_device_forces_spawn(self, monkeypatch):
+        """A CUDA device forces ``spawn`` even if CUDA is not yet initialised."""
+        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
+        assert preferred_start_method(torch.device("cuda")) == "spawn"
+
+    def test_cuda_already_initialised_forces_spawn(self, monkeypatch):
+        """A parent that already initialised CUDA forces ``spawn`` even for CPU.
+
+        This is the near-universal precondition of the bug: a prior trial ran, or
+        the user loaded data/model to the GPU, so CUDA is live in the parent and
+        a forked child would crash on any CUDA op.
+        """
+        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: True)
+        assert preferred_start_method(None) == "spawn"
+        assert preferred_start_method(torch.device("cpu")) == "spawn"
 
 
 # ── worker_budget ────────────────────────────────────────────────────────────
@@ -241,3 +285,104 @@ class TestCooperativeInterruption:
         # At most one trial may have started before the event was observed.
         completed = len([t for t in reloaded.trials if t.state == optuna.trial.TrialState.COMPLETE])
         assert completed <= 1
+
+
+# ── Systematic fork/CUDA failure: re-raise instead of penalise ───────────────
+class TestForkCudaSystematicFailure:
+    """The fork/CUDA re-init error must abort the study, not burn the budget.
+
+    A forked worker touching CUDA raises the same error on *every* trial.  Since
+    :class:`TrialRunner` catches all exceptions and returns ``penalty_value`` by
+    default, penalising it would silently complete the whole study at
+    ``penalty_value`` and return nonsense ``best_params``.  The runner therefore
+    re-raises this *specific* error (bypassing ``catch_exceptions``) so the study
+    fails loudly — while genuine per-trial failures are still penalised.
+    """
+
+    def _runner(self) -> TrialRunner:
+        return TrialRunner(
+            model_creator=lambda **k: None,
+            search_space=lambda t: {},
+            data_loader=lambda t: {},
+            loss_fn=lambda a, b: 0.0,
+            catch_exceptions=True,  # the guard must re-raise *despite* this
+            penalty_value=1e10,
+        )
+
+    def test_fork_cuda_error_is_reraised(self, monkeypatch):
+        """The fork/CUDA re-init RuntimeError propagates instead of penalising."""
+        runner = self._runner()
+
+        def boom(trial):
+            raise RuntimeError(
+                f"{_CUDA_FORK_REINIT_MARKER}. To use CUDA with multiprocessing, "
+                "you must use the 'spawn' start method"
+            )
+
+        monkeypatch.setattr(runner, "_run", boom)
+        study = optuna.create_study(direction="minimize")
+        trial = study.ask()
+
+        with pytest.raises(RuntimeError, match="Cannot re-initialize CUDA"):
+            runner(trial)
+
+    def test_genuine_per_trial_error_still_penalised(self, monkeypatch):
+        """A normal per-trial failure is still caught and penalised as before."""
+        runner = self._runner()
+
+        def boom(trial):
+            raise ValueError("a genuine, non-systematic per-trial failure")
+
+        monkeypatch.setattr(runner, "_run", boom)
+        study = optuna.create_study(direction="minimize")
+        trial = study.ask()
+
+        assert runner(trial) == 1e10
+        assert trial.user_attrs.get("error") == "a genuine, non-systematic per-trial failure"
+
+
+# ── GPU end-to-end: parent-initialised CUDA must not produce all-penalty ─────
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+class TestCudaMultiprocessNoSilentPenalty:
+    """Regression for the fork/CUDA silent-garbage bug (multi-worker, device=cuda).
+
+    With CUDA initialised in the parent (the near-universal precondition), a
+    multi-worker study with ``device='cuda'`` must select ``spawn`` and produce
+    *real* trial values — not a full budget of ``penalty_value``.
+    """
+
+    def test_cuda_study_runs_real_trials(self, tmp_path: Path):
+        # Precondition: initialise CUDA in the parent, as any prior GPU use would.
+        _ = torch.randn(4, device="cuda")
+        assert torch.cuda.is_initialized()
+
+        study = run_hpo(
+            model_creator=_model_creator,
+            search_space=_search_space,
+            data_loader=_data_loader,
+            n_trials=4,
+            n_workers=2,
+            device="cuda",
+            storage=str(tmp_path / "cuda_study.log"),
+            study_name="cuda_no_silent_penalty",
+            seed=0,
+            verbosity=0,
+        )
+
+        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        assert completed, "no trials completed — CUDA study failed entirely"
+
+        values = [t.value for t in completed]
+        penalty = 1e10
+        # The bug's signature is *every* completed trial pinned at penalty_value.
+        assert not all(v is not None and abs(v - penalty) < 1e-3 for v in values), (
+            f"all trials returned penalty_value ({penalty}) — the fork/CUDA "
+            f"silent-garbage bug regressed; values={values}"
+        )
+        # And no trial recorded the fork/CUDA error as a caught per-trial failure.
+        errors = [t.user_attrs.get("error") for t in completed]
+        assert not any(
+            e and _CUDA_FORK_REINIT_MARKER in e for e in errors
+        ), f"a completed trial swallowed the fork/CUDA error: {errors}"

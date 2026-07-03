@@ -100,20 +100,38 @@ class ReadoutLayer(nn.Linear):
         super().__init__(in_features, out_features, bias)
 
         self._name = name
-        self.trainable = trainable
         # ``is_fitted`` is stored as a registered (persistent) buffer so it
         # survives ``state_dict`` / ``load_state_dict`` round-trips. A plain
         # Python attribute would silently reset to ``False`` on reload, leaving
         # a model with fitted weights but ``is_fitted == False``.
         self.register_buffer("_is_fitted", torch.zeros((), dtype=torch.bool))
 
-        if not self.trainable:
-            self._freeze_weights()
+        # ``trainable`` is a live property whose setter flips ``requires_grad_``
+        # on every parameter (``weight``, ``bias``).  ``nn.Linear.__init__`` has
+        # already created those parameters, so a single assignment both records
+        # the flag and applies the freeze/unfreeze — no separate
+        # ``_freeze_weights`` step is needed.
+        self.trainable = trainable
 
-    def _freeze_weights(self) -> None:
-        """Freeze all weights by setting requires_grad=False."""
+    @property
+    def trainable(self) -> bool:
+        """
+        bool : Whether the readout weights participate in backpropagation.
+
+        A *live* switch: assigning to it flips ``requires_grad_`` on **every**
+        readout parameter (``weight`` and, when present, ``bias``).  A
+        post-construction ``readout.trainable = True`` therefore genuinely
+        unfreezes the readout for a gradient-based rollout rather than silently
+        shadowing a construction-time-only flag.  The getter reflects the
+        current state.
+        """
+        return self._trainable
+
+    @trainable.setter
+    def trainable(self, value: bool) -> None:
+        self._trainable = bool(value)
         for param in self.parameters():
-            param.requires_grad_(False)
+            param.requires_grad_(self._trainable)
 
     @property
     def name(self) -> str | None:

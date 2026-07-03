@@ -93,13 +93,16 @@ class CoupledEnsembleESNModel(nn.Module):
         Raises
         ------
         ValueError
-            If ``models`` is empty, if ``aggregator`` is an unknown string, or
-            if any sub-model's first output dimension does not match its
-            feedback (first input) dimension.  The latter rejects headless /
-            linear sub-models, whose output is the raw reservoir state rather
-            than a feedback-dimensioned readout, since the coupled
-            autoregressive loop feeds the aggregated output back as the next
-            feedback input.
+            If ``models`` is empty, if ``aggregator`` is an unknown string, if
+            any sub-model is multi-output (multi-head), or if any sub-model's
+            output dimension does not match its feedback (first input)
+            dimension.  Multi-output sub-models are rejected because the
+            ensemble aggregates the members into a single shared feedback signal
+            and has no meaningful coupled aggregation for auxiliary heads.  The
+            dimension check rejects headless / linear sub-models, whose output is
+            the raw reservoir state rather than a feedback-dimensioned readout,
+            since the coupled autoregressive loop feeds the aggregated output
+            back as the next feedback input.
         """
         super().__init__()
         if len(models) == 0:
@@ -124,12 +127,26 @@ class CoupledEnsembleESNModel(nn.Module):
     def _validate_feedback_output_dims(models: list[ESNModel]) -> None:
         """Check that every sub-model can be driven autoregressively.
 
-        The coupled loop feeds each sub-model's aggregated output back as its
-        next feedback input, so the first output dimension must equal the
-        feedback (first input) dimension.  Headless / linear sub-models emit
-        the raw reservoir state (e.g. ``reservoir_size``) instead of a
-        feedback-dimensioned readout and would silently break the loop — those
-        are rejected here with a clear, sub-model-naming error.
+        Two constraints are enforced, both raising a clear, sub-model-naming
+        :class:`ValueError` at construction rather than a cryptic failure deep
+        inside :meth:`forecast` / :meth:`forward`:
+
+        1. **Single-output only.** The ensemble aggregates the N members'
+           outputs (stack + mean/median across members) into a *single* shared
+           feedback signal, and the warmup/forecast/aggregation paths treat each
+           member's output as one tensor.  A multi-output (multi-head) sub-model
+           has no meaningful ensemble aggregation for its auxiliary heads — the
+           mean of unrelated per-model aux readouts is not a coupled quantity —
+           so such models are rejected here.  (:class:`~resdag.core.ESNModel`'s
+           own ``forecast`` *does* support multi-output by feeding back the
+           first head; the ensemble deliberately does not, to keep the coupling
+           semantics well-defined.)
+        2. **Autoregressive coupleability.** The coupled loop feeds each
+           sub-model's aggregated output back as its next feedback input, so the
+           output dimension must equal the feedback (first input) dimension.
+           Headless / linear sub-models emit the raw reservoir state (e.g.
+           ``reservoir_size``) instead of a feedback-dimensioned readout and
+           would silently break the loop — those are rejected too.
 
         Parameters
         ----------
@@ -139,28 +156,42 @@ class CoupledEnsembleESNModel(nn.Module):
         Raises
         ------
         ValueError
-            If any sub-model's first output dimension does not match its
-            feedback (first input) dimension, naming the offending sub-model
-            and the mismatched dimensions.
+            If any sub-model is multi-output, or if any sub-model's output
+            dimension does not match its feedback (first input) dimension —
+            naming the offending sub-model and the mismatched dimensions.
         """
         for i, model in enumerate(models):
             input_shape = model.input_shape
             output_shape = model.output_shape
 
             # Multi-input / multi-output models expose a tuple of torch.Size;
-            # the feedback signal is always the first input and the
-            # autoregressive feedback is always the first output.
+            # the feedback signal is always the first input.
             multi_input = isinstance(input_shape, tuple) and isinstance(input_shape[0], torch.Size)
             feedback_dim = input_shape[0][-1] if multi_input else input_shape[-1]
 
             multi_output = isinstance(output_shape, tuple) and isinstance(
                 output_shape[0], torch.Size
             )
-            output_dim = output_shape[0][-1] if multi_output else output_shape[-1]
+            if multi_output:
+                n_heads = len(output_shape)
+                head_dims = [int(s[-1]) for s in output_shape]
+                raise ValueError(
+                    f"Sub-model {i} is multi-output ({n_heads} heads with output "
+                    f"dimensions {head_dims}), which CoupledEnsembleESNModel does not "
+                    f"support. The ensemble aggregates the members' outputs into a "
+                    f"single shared feedback signal (stack + mean/median across "
+                    f"models); there is no well-defined coupled aggregation for a "
+                    f"sub-model's auxiliary heads. Use single-output sub-models whose "
+                    f"one output matches the feedback dimension (e.g. classic_esn, "
+                    f"ott_esn, power_augmented). To forecast a multi-head model, use "
+                    f"its own ESNModel.forecast(), which feeds back the first head."
+                )
+
+            output_dim = output_shape[-1]
 
             if output_dim != feedback_dim:
                 raise ValueError(
-                    f"Sub-model {i} is not autoregressively coupleable: its first "
+                    f"Sub-model {i} is not autoregressively coupleable: its "
                     f"output dimension ({output_dim}) does not match its feedback "
                     f"(first input) dimension ({feedback_dim}). The coupled ensemble "
                     f"feeds each model's aggregated output back as its next feedback "
@@ -168,7 +199,7 @@ class CoupledEnsembleESNModel(nn.Module):
                     f"(headless_esn, linear_esn) emit raw reservoir states rather "
                     f"than a feedback-dimensioned readout and cannot be used here; "
                     f"use a readout-bearing factory such as classic_esn, ott_esn, or "
-                    f"power_augmented (or build a sub-model whose first output matches "
+                    f"power_augmented (or build a sub-model whose output matches "
                     f"the feedback dimension)."
                 )
 
@@ -496,8 +527,10 @@ class CoupledEnsembleESNModel(nn.Module):
         # Phase 1: warmup — all models independently, same teacher-forced data
         warmup_outputs_per_model: list[torch.Tensor] = []
         for model in self._iter_models():
-            # ``return_outputs=True`` yields the warmup outputs; sub-models are
-            # single-output (validated in __init__), so this is a single tensor.
+            # ``return_outputs=True`` yields the warmup outputs. Sub-models are
+            # guaranteed single-output by ``_validate_feedback_output_dims`` at
+            # construction (multi-output models are rejected there), so this is
+            # always a single tensor rather than a tuple of per-head tensors.
             out = cast(torch.Tensor, model.warmup(*warmup_inputs, return_outputs=True, reset=reset))
             warmup_outputs_per_model.append(out)  # (batch, W, output_size)
 

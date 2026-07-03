@@ -152,10 +152,37 @@ class TestPublicExports:
     def test_utils_data_namespace(self, name) -> None:
         assert hasattr(rd.utils.data, name)
 
-    def test_datasets_alias(self) -> None:
-        """``rd.datasets`` aliases the ``resdag.utils.data`` submodule."""
-        assert rd.datasets is rd.utils.data
+    def test_datasets_is_real_package(self) -> None:
+        """``resdag.datasets`` is a real, importable package (not a bare attr).
+
+        The two most standard import forms must both work, and ``resdag.datasets``
+        must be exposed in the top-level public API.
+        """
+        import resdag.datasets  # noqa: F401  — `import resdag.datasets` must not raise
+
+        assert rd.datasets.__name__ == "resdag.datasets"
         assert "datasets" in rd.__all__
+
+    @pytest.mark.parametrize("name", GEN_IDS)
+    def test_import_resdag_datasets_generator(self, name) -> None:
+        """``from resdag.datasets import <generator>`` works for every generator."""
+        import importlib
+
+        mod = importlib.import_module("resdag.datasets")
+
+        assert hasattr(mod, name)
+        assert name in mod.__all__
+
+    @pytest.mark.parametrize("name", GEN_IDS)
+    def test_datasets_reexports_same_function_object(self, name) -> None:
+        """Re-exported generators are the SAME objects as in ``resdag.utils.data``."""
+        assert getattr(rd.datasets, name) is getattr(rd.utils.data, name)
+
+    def test_from_resdag_datasets_import_lorenz(self) -> None:
+        """The reservoirpy-migration entry point ``from resdag.datasets import lorenz``."""
+        from resdag.datasets import lorenz
+
+        assert lorenz is rd.utils.data.lorenz
 
     def test_at_least_four_canonical_generators(self) -> None:
         """Acceptance criterion: >=4 canonical generators in the public API."""

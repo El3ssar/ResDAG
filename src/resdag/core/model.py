@@ -145,6 +145,23 @@ class ESNModel(ps.SymbolicModel):
     ESNTrainer : Trainer for fitting readout layers.
     """
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Build the symbolic model and clear reservoir trace residue.
+
+        ``pytorch_symbolic.SymbolicModel`` propagates shapes by running each
+        layer's real ``forward`` on a ``torch.rand`` placeholder (batch size 1).
+        For a stateful :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
+        that leaves the layer holding a *saturated* trace state at ``batch=1``.
+        A fresh model used directly at ``batch=1`` (e.g. ``y = model(x)`` or
+        standard forecasting) would silently continue from this junk instead of a
+        clean zero state — batch sizes ``!= 1`` auto-resize to zeros and escape
+        it, but ``batch=1`` direct calls do not. Resetting here, once, right after
+        the graph is built, makes every freshly constructed model start from a
+        clean state regardless of how it is first called.
+        """
+        super().__init__(*args, **kwargs)
+        self.reset_reservoirs()
+
     def __deepcopy__(self, memo: dict[int, Any]) -> "ESNModel":
         """
         Deep copy preserving the model subclass and its symbolic graph.
@@ -1185,10 +1202,13 @@ class ESNModel(ps.SymbolicModel):
         torch.Size([1, 150, 3])
 
         Differentiable multi-step rollout — train a trainable reservoir on a
-        forecast-error loss with BPTT:
+        forecast-error loss with BPTT.  Build the reservoir trainable at
+        construction (``trainable=True``), then keep the warmup→forecast seam
+        graph by turning off cross-call detaching:
 
-        >>> reservoir.trainable = True             # an ESNLayer(trainable=True)
+        >>> reservoir = ESNLayer(reservoir_size, feedback_size, trainable=True)
         >>> reservoir.detach_state_between_calls = False  # keep the seam graph
+        >>> # ... wire ``reservoir`` into the model and readout ...
         >>> opt = torch.optim.Adam(model.parameters(), lr=1e-3)
         >>> for _ in range(steps):
         ...     opt.zero_grad()
@@ -1426,10 +1446,23 @@ class ESNModel(ps.SymbolicModel):
             # ``forecast(reset=False)`` or ``get_reservoir_states()`` sees them,
             # mirroring the in-place mutation of the legacy per-step loop. Clone
             # so a compiled step's static output buffers cannot be overwritten
-            # under the stored state. With ``no_grad=False`` the clone keeps its
-            # grad_fn, so a continuation forecast shares the rollout graph.
+            # under the stored state.
+            #
+            # Honour the truncated-BPTT contract on the stored state exactly as
+            # ``BaseReservoirLayer.forward`` and ``set_state`` do: under
+            # ``detach_state_between_calls`` (the default) a grad-bearing rollout
+            # state must be detached before it is stored, otherwise the next
+            # ordinary ``forward``+``backward`` would try to backprop through the
+            # already-freed rollout graph ("backward through the graph a second
+            # time"), and the whole rollout graph would stay pinned in memory.
+            # Cross-window BPTT (``windowed_forecast(no_grad=False)``) still works
+            # because it requires ``detach_state_between_calls=False``, which
+            # preserves the grad_fn here so a continuation shares the rollout graph.
             for reservoir, state in zip(flat.reservoir_layers, states):
-                reservoir.state = state.clone()
+                if reservoir.detach_state_between_calls and state.grad_fn is not None:
+                    reservoir.state = state.detach().clone()
+                else:
+                    reservoir.state = state.clone()
 
             if multi_output:
                 if return_warmup:
@@ -1649,15 +1682,34 @@ class ESNModel(ps.SymbolicModel):
                     warmup_inputs = (teacher_window,)
                     forecast_inputs = None
 
-                preds = self.forecast(
+                # ``return_warmup=True`` prepends the teacher-forced window's
+                # outputs so we can recover the *last* warmup output — the model's
+                # prediction of ``series[teacher_end]``, the first step of the gap.
+                # By the forecast seam convention (slot ``t`` is the prediction of
+                # index ``teacher_end + 1 + t``), the raw autoregressive block is
+                # shifted one step ahead of the gap it must fill; without the last
+                # warmup output every gap value would land one dt early. See the
+                # slice below.
+                full = self.forecast(
                     warmup_inputs,
                     forecast_inputs=forecast_inputs,
                     horizon=gap,
+                    return_warmup=True,
                     reset=reset and not ran_a_cycle,
                     no_grad=no_grad,
                 )
-                feedback_preds = preds[0] if isinstance(preds, tuple) else preds
-                reconstruction[:, teacher_end : teacher_end + gap, :] = feedback_preds
+                feedback_full = full[0] if isinstance(full, tuple) else full
+                # ``full`` spans ``[window_len warmup outputs][gap AR steps]``.
+                # The gap must be filled with the predictions of
+                # ``series[teacher_end .. teacher_end + gap - 1]``:
+                #   * ``full[window_len - 1]``  -> prediction of ``series[teacher_end]``
+                #     (last warmup output), and
+                #   * ``full[window_len .. window_len + gap - 2]`` -> predictions of
+                #     ``series[teacher_end + 1 .. teacher_end + gap - 1]``.
+                # i.e. ``full[window_len - 1 : window_len + gap - 1]``. The final AR
+                # slot (prediction of one step past the gap) is discarded.
+                gap_preds = feedback_full[:, window_len - 1 : window_len + gap - 1, :]
+                reconstruction[:, teacher_end : teacher_end + gap, :] = gap_preds
                 mask[teacher_end : teacher_end + gap] = False
 
                 ran_a_cycle = True

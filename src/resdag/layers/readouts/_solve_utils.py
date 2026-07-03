@@ -34,6 +34,10 @@ resolve_gram_dtype
 build_ridge_problem
     Center (when fitting an intercept), cast to ``gram_dtype``, and return a
     :class:`RidgeProblem` carrying the data and centering means.
+solve_ridge
+    Robustly solve the regularised normal equations ``(gram + αI) W = rhs``:
+    Cholesky first, escalated scale-aware jitter on failure, then an
+    ``eigh``-clamped fallback, plus a cheap post-solve accuracy guard.
 recover_intercept
     Recover the unpenalised intercept from a coefficient matrix.
 
@@ -45,9 +49,22 @@ resdag.layers.readouts.SVDReadoutLayer : SVD filter-factor readout.
 resdag.layers.readouts.PinvReadoutLayer : lstsq / pseudo-inverse readout.
 """
 
+import warnings
 from dataclasses import dataclass
 
 import torch
+
+# Multiplier ``k`` for the escalated, scale-aware jitter used when the initial
+# Cholesky factorisation fails. The retry uses
+# ``alpha_eff = max(alpha, k * eps(gram_dtype) * trace(gram) / F)`` — enough to
+# push the rounding-noise-negative eigenvalues of a rank-deficient centered Gram
+# back above zero without materially perturbing a well-conditioned solve.
+_JITTER_K = 16.0
+
+# Relative normal-equations residual above which the post-solve accuracy guard
+# warns. ``float32`` Gram formation in the ill-conditioned regime pushes this
+# well past ``1e-3`` (up to O(1)); a healthy solve sits far below it.
+_RESIDUAL_WARN_TOL = 1e-3
 
 
 def resolve_solve_dtype(input_dtype: torch.dtype, use_float64: bool) -> torch.dtype:
@@ -79,22 +96,36 @@ def resolve_gram_dtype(
 ) -> torch.dtype:
     """Pick the dtype the heavy ``(N, F)`` Gram-formation matmuls run in.
 
-    The ``X.T @ X`` / ``X.T @ y`` products dominate the cost of an algebraic
-    fit. Running them in ``float64`` is free on CPU but catastrophically slow
-    on consumer GPUs (1/32–1/64 throughput), so the default is device-aware.
+    **Accuracy first.** Reservoir readouts are ill-conditioned by construction
+    (spectral radius near 1, raw inputs concatenated back in), and
+    ``cond(XᵀX) = cond(X)²`` amplifies a ``float32`` Gram's ~1e-7 entry error
+    past unity — a ``float64`` *solve* cannot recover precision destroyed at
+    Gram *formation*. On GPU this silently produced wildly wrong (often
+    non-finite, after autoregression) readouts for the premade concatenated-
+    input models. So the default forms the Gram in ``solve_dtype`` (``float64``)
+    on **every** device. The extra cost is a one-time ``O(N F²)`` matmul — a
+    small fraction of a fit, dwarfed by the reservoir sequence pass — and
+    correctness is the north star.
+
+    Users with a large, provably well-conditioned fit who want the ~1/32–1/64
+    GPU ``float64`` throughput back can pass ``gram_dtype=torch.float32``
+    explicitly and opt into the speed/accuracy trade knowingly.
 
     Parameters
     ----------
     input_dtype : torch.dtype
         Dtype of the incoming state matrix.
     device : torch.device
-        Device the state matrix lives on.
+        Device the state matrix lives on (unused now that the default is
+        device-independent; kept for signature stability and explicit-override
+        callers).
     solve_dtype : torch.dtype
         Dtype the small inversion runs in (see :func:`resolve_solve_dtype`).
     gram_dtype : torch.dtype or None
-        Explicit override. When ``None`` (the default), full precision is used
-        where it is cheap (CPU → ``solve_dtype``) and the input dtype is kept
-        where ``float64`` throughput is crippled (CUDA → ``input_dtype``).
+        Explicit override. When ``None`` (the default), the Gram is formed in
+        ``solve_dtype`` (``float64`` unless ``use_float64=False``) regardless of
+        device. Pass ``torch.float32`` to opt into faster, lower-precision GPU
+        Gram formation.
 
     Returns
     -------
@@ -103,7 +134,7 @@ def resolve_gram_dtype(
     """
     if gram_dtype is not None:
         return gram_dtype
-    return solve_dtype if device.type == "cpu" else input_dtype
+    return solve_dtype
 
 
 @dataclass
@@ -224,6 +255,272 @@ def build_ridge_problem(
         original_dtype=original_dtype,
         fit_intercept=fit_intercept,
     )
+
+
+def _normal_equations_residual(
+    gram: torch.Tensor,
+    coefs: torch.Tensor,
+    rhs: torch.Tensor,
+    alpha: float,
+) -> float:
+    """Relative residual ``||(gram + αI) W - rhs|| / ||rhs||`` in ``float64``.
+
+    A cheap post-solve accuracy check: it is one ``(F, F) @ (F, T)`` matmul,
+    negligible next to the factorisation itself, and computed in ``float64`` so
+    it exposes precision lost when the Gram was formed in ``float32``.
+
+    Parameters
+    ----------
+    gram : torch.Tensor
+        The (already regularisation-free) Gram matrix of shape ``(F, F)``.
+    coefs : torch.Tensor
+        The solved coefficient matrix of shape ``(F, T)``.
+    rhs : torch.Tensor
+        The right-hand side of shape ``(F, T)``.
+    alpha : float
+        The (effective) regularisation strength added to the diagonal.
+
+    Returns
+    -------
+    float
+        The relative residual, or ``0.0`` when ``rhs`` is all zeros.
+    """
+    g = gram.to(torch.float64)
+    w = coefs.to(torch.float64)
+    r = rhs.to(torch.float64)
+    resid = g @ w + alpha * w - r
+    rhs_norm = torch.linalg.norm(r)
+    if rhs_norm == 0:
+        return 0.0
+    return float((torch.linalg.norm(resid) / rhs_norm).item())
+
+
+def solve_ridge(
+    gram: torch.Tensor,
+    rhs: torch.Tensor,
+    alpha: float,
+    *,
+    layer_name: str,
+    gram_dtype: torch.dtype | None = None,
+    check_accuracy: bool = True,
+) -> torch.Tensor:
+    """Robustly solve the regularised normal equations ``(gram + αI) W = rhs``.
+
+    This is the single shared solve path for every Gram-based readout
+    (:class:`CholeskyReadoutLayer`, :class:`RidgeReadoutLayer`,
+    :class:`IncrementalRidgeReadout`). It resolves the GPU-default ``float32``
+    Gram footgun: on a rank-deficient centered Gram, ``float32`` rounding noise
+    nudges zero eigenvalues slightly negative, past the default ``alpha=1e-6``
+    jitter, so a bare :func:`torch.linalg.cholesky` raises a raw
+    ``LinAlgError`` on CUDA while the identical ``float64`` CPU solve succeeds.
+
+    The strategy is:
+
+    1. Try a Cholesky factorisation of ``gram + αI`` (fast, exact for an SPD
+       system) and back-substitute.
+    2. On :class:`torch.linalg.LinAlgError`, retry once with escalated,
+       scale-aware jitter ``α_eff = max(α, k · eps(dtype) · tr(gram) / F)`` —
+       just enough to lift the rounding-noise-negative eigenvalues back above
+       zero. A single warning naming the layer is emitted.
+    3. If that still fails, fall back to a symmetric-eigendecomposition solve
+       with eigenvalues clamped to ``≥ α_eff`` (always succeeds; robust to
+       exact rank deficiency).
+
+    **Accuracy guard.** After the solve, two cheap checks run (both reusing
+    quantities the factorisation already produced, so no extra ``O(F³)`` work):
+
+    - a **precision-loss estimate** ``κ̂(A) · eps(gram_dtype)`` from the
+      factor's diagonal (Cholesky) or clamped eigenvalues (eigh). When the
+      Gram was formed in ``float32`` this crosses ``~1e-3`` around
+      ``cond(X) ≈ 3e3`` — exactly the cliff where a ``float32`` Gram starts
+      costing real accuracy (``cond(XᵀX) = cond(X)²`` pushes the ``float32``
+      entry error past unity) — and a ``float64`` solve cannot recover
+      precision destroyed at Gram formation.
+    - a **normal-equations residual** ``‖(gram+αI)W − rhs‖ / ‖rhs‖`` in
+      ``float64`` (one ``(F, F) @ (F, T)`` matmul), which catches a genuinely
+      under-satisfied solve (a ``float32`` *solve* dtype, or a heavily clamped
+      eigh fallback).
+
+    Either check tripping emits one warning naming the layer and suggesting
+    ``gram_dtype=torch.float64`` or :class:`SVDReadoutLayer`. The Gram is now
+    formed in ``float64`` by default on every device (see
+    :func:`resolve_gram_dtype`), so this guard mostly fires when a user has
+    explicitly opted into ``gram_dtype=torch.float32`` for speed.
+
+    Parameters
+    ----------
+    gram : torch.Tensor
+        The (optionally centered) Gram matrix ``XᵀX`` of shape ``(F, F)``, in
+        the solve dtype. Regularisation is added here, so pass it *without*
+        ``αI`` already on the diagonal.
+    rhs : torch.Tensor
+        The (optionally centered) right-hand side ``Xᵀy`` of shape ``(F, T)``,
+        in the solve dtype.
+    alpha : float
+        The L2 regularisation strength (non-negative).
+    layer_name : str
+        Human-readable identifier for the calling layer, used in warnings.
+    gram_dtype : torch.dtype, optional
+        The dtype the Gram was *formed* in (``float32`` on CUDA by default).
+        Used only by the precision-loss estimate to weight the condition
+        number by the right machine epsilon; defaults to ``gram.dtype`` when
+        not supplied.
+    check_accuracy : bool, default=True
+        Whether to run the cheap post-solve accuracy guard. Left on by default;
+        both checks reuse the factorisation and cost a single small matmul.
+
+    Returns
+    -------
+    torch.Tensor
+        The coefficient matrix ``W`` of shape ``(F, T)`` in the solve dtype.
+    """
+    n_features = gram.shape[0]
+    eye = torch.eye(n_features, dtype=gram.dtype, device=gram.device)
+    a = gram + alpha * eye
+
+    alpha_eff = alpha
+    # ``cond_estimate`` is a cheap lower bound on cond(A) extracted from whatever
+    # factorisation succeeded — the Cholesky factor's diagonal or the eigh
+    # spectrum — so the precision guard needs no extra decomposition.
+    cond_estimate: float | None = None
+    escalated = False
+    try:
+        factor = torch.linalg.cholesky(a)
+        coefs = torch.cholesky_solve(rhs, factor)
+        cond_estimate = _cond_from_cholesky(factor)
+    except torch.linalg.LinAlgError:
+        escalated = True
+        used_eigh = False
+        # ``gram + alpha*I`` is not positive-definite: the Gram has an
+        # eigenvalue below ``-alpha``. For a real ``XᵀX`` that can only be
+        # rounding noise (a genuine Gram is PSD), so lift the diagonal by a
+        # scale-aware floor keyed to the Gram's *magnitude* — ``max|diag|`` is a
+        # cheap proxy for ‖gram‖ and dominates the ~``eps·‖gram‖`` noise floor
+        # that produced the negative eigenvalue. (A ``float64`` Gram is PSD to
+        # ~``eps64·‖gram‖`` and reaches this branch only for a genuinely
+        # indefinite input.)
+        eps = torch.finfo(gram.dtype).eps
+        max_diag = float(gram.diagonal().abs().max().item())
+        jitter = _JITTER_K * eps * max_diag
+        alpha_eff = max(alpha, jitter)
+        a_jittered = gram + alpha_eff * eye
+        try:
+            factor = torch.linalg.cholesky(a_jittered)
+            coefs = torch.cholesky_solve(rhs, factor)
+            cond_estimate = _cond_from_cholesky(factor)
+        except torch.linalg.LinAlgError:
+            # Still indefinite: solve on the PSD projection via an
+            # eigendecomposition. Negative eigenvalues are rounding-noise null
+            # directions, so clamp them to zero (NOT sign-invert them) before
+            # adding the ridge floor — the coefficient of a null direction
+            # becomes ``(Vᵀrhs) / alpha_eff`` (bounded), exactly ridge on the
+            # PSD part, never ``1/λ`` with a wrong sign for a spurious negative
+            # eigenvalue. Guaranteed finite.
+            used_eigh = True
+            evals, evecs = torch.linalg.eigh(gram)
+            clamped = torch.clamp(evals, min=0.0) + alpha_eff
+            coefs = evecs @ ((evecs.T @ rhs) / clamped.unsqueeze(1))
+            cond_estimate = float((clamped.max() / clamped.min()).item())
+        how = "an eigendecomposition (PSD-projected)" if used_eigh else "a jittered Cholesky"
+        escalated_note = (
+            f"escalated the ridge jitter from {alpha:g} to {alpha_eff:g}"
+            if alpha_eff > alpha
+            else f"kept alpha={alpha:g}"
+        )
+        warnings.warn(
+            f"{layer_name}: the Gram matrix was not positive-definite for a "
+            f"plain Cholesky at alpha={alpha:g} (an eigenvalue fell below "
+            f"-alpha); recovered a finite solution via {how} and {escalated_note}. "
+            f"This is almost always a float32-Gram rounding artifact on GPU — the "
+            f"default now forms the Gram in float64, so if you see this you likely "
+            f"passed gram_dtype=torch.float32. Drop that override (or use "
+            f"SVDReadoutLayer) for a genuinely rank-deficient feature map.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    # Skip the precision guard when the jitter path already fired: that warning
+    # is the actionable one, and a second (redundant) accuracy warning is noise.
+    if check_accuracy and not escalated:
+        _warn_on_precision_loss(
+            gram=gram,
+            coefs=coefs,
+            rhs=rhs,
+            alpha_eff=alpha_eff,
+            cond_estimate=cond_estimate,
+            gram_dtype=gram_dtype if gram_dtype is not None else gram.dtype,
+            layer_name=layer_name,
+        )
+
+    return coefs
+
+
+def _cond_from_cholesky(factor: torch.Tensor) -> float:
+    """Cheap lower-bound estimate of ``cond(A)`` from its Cholesky factor.
+
+    For ``A = L Lᵀ`` the ratio of the largest to smallest diagonal entry of
+    ``L`` squared lower-bounds ``cond(A)``. It underestimates the true
+    condition number (typically by ~1–2 orders of magnitude) but tracks it
+    closely enough on a log scale to flag the ``float32``-Gram precision cliff,
+    and it is free — the factor is already computed.
+
+    Parameters
+    ----------
+    factor : torch.Tensor
+        The lower-triangular Cholesky factor ``L`` of shape ``(F, F)``.
+
+    Returns
+    -------
+    float
+        The estimated condition number ``(max|Lᵢᵢ| / min|Lᵢᵢ|)²``.
+    """
+    diag = factor.diagonal().abs()
+    dmin = diag.min()
+    if dmin == 0:
+        return float("inf")
+    return float(((diag.max() / dmin) ** 2).item())
+
+
+def _warn_on_precision_loss(
+    *,
+    gram: torch.Tensor,
+    coefs: torch.Tensor,
+    rhs: torch.Tensor,
+    alpha_eff: float,
+    cond_estimate: float | None,
+    gram_dtype: torch.dtype,
+    layer_name: str,
+) -> None:
+    """Emit (at most) one warning when the solve likely lost real accuracy.
+
+    Combines two cheap signals: the estimated precision loss
+    ``κ̂(A) · eps(gram_dtype)`` (predicts error baked in at Gram formation, the
+    dominant ``float32``-on-GPU footgun) and the self-consistency residual
+    ``‖(gram+αI)W − rhs‖ / ‖rhs‖`` (catches an under-satisfied solve). See
+    :func:`solve_ridge` for the parameter meanings.
+    """
+    est_error = None
+    if cond_estimate is not None:
+        est_error = cond_estimate * torch.finfo(gram_dtype).eps
+
+    residual = _normal_equations_residual(gram, coefs, rhs, alpha_eff)
+
+    if (est_error is not None and est_error > _RESIDUAL_WARN_TOL) or (
+        residual > _RESIDUAL_WARN_TOL
+    ):
+        detail = f"residual={residual:.2e}"
+        if est_error is not None:
+            detail = f"est. precision loss={est_error:.2e}, {detail}"
+        warnings.warn(
+            f"{layer_name}: the ridge solve is losing accuracy ({detail} > "
+            f"{_RESIDUAL_WARN_TOL:g}). The Gram matrix is ill-conditioned and "
+            f"forming it in {gram_dtype} (the GPU default is float32) destroys "
+            f"precision the solve cannot recover — the fitted readout will "
+            f"differ from the float64 result. Pass gram_dtype=torch.float64 "
+            f"for an accurate readout, or use SVDReadoutLayer.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
 
 
 def recover_intercept(

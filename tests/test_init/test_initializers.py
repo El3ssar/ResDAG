@@ -242,6 +242,28 @@ class TestPerCallKwargsContract:
         with pytest.raises(ValueError, match="input_scaling"):
             init.initialize(torch.empty(10, 4), input_scaling=float("inf"))
 
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            pytest.param(lambda **kw: OppositeAnchorsInitializer(**kw), id="opposite_anchors"),
+            pytest.param(
+                lambda **kw: RingWindowInputInitializer(c=0.5, window=0.5, **kw), id="ring_window"
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("bad", [0.0, -1.0, None, float("inf")])
+    def test_l2_ring_initializers_reject_bad_per_call_input_scaling(self, factory, bad) -> None:
+        """The L2-based ring initializers require a positive finite per-call override.
+
+        Their bound ``input_scaling`` is the per-channel L2-norm *target* and must
+        be a positive finite float; a per-call override is validated the same way,
+        so ``None`` / non-positive / non-finite values are rejected at
+        ``initialize`` time rather than silently ignored.
+        """
+        init = factory(input_scaling=1.0)
+        with pytest.raises(ValueError, match="input_scaling"):
+            init.initialize(torch.empty(20, 3, dtype=torch.float64), input_scaling=bad)
+
     def test_function_initializer_honors_per_call_kwargs(self) -> None:
         """``FunctionInitializer`` merges per-call kwargs over the bound ones."""
 
@@ -944,6 +966,111 @@ class TestScalingContract:
         factory(0.5).initialize(half)
 
         assert torch.allclose(half, 0.5 * base, atol=1e-12)
+
+
+class TestPerCallInputScalingEveryInitializer:
+    """Every scaling-honoring initializer honors a per-call ``input_scaling`` (issue #436).
+
+    PR #436 claimed the per-call override contract was fixed for the class-based
+    initializers, but only ``random`` actually threaded its ``initialize``
+    ``**kwargs`` into ``_apply_scaling``; the other nine (and the two L2-based
+    ring initializers, which read ``self.input_scaling`` directly) silently
+    dropped the override. This sweep reuses :data:`_SCALING_CONTRACT` — the full
+    (factory, statistic, shape) list of every initializer that honors the shared
+    ``input_scaling`` contract — so a newly registered scaling initializer is
+    covered by adding it there, not here.
+    """
+
+    @pytest.mark.parametrize(("factory", "statistic", "shape"), _SCALING_CONTRACT)
+    def test_per_call_input_scaling_wins_over_bound(self, factory, statistic, shape) -> None:
+        """A per-call ``input_scaling`` override drives the documented statistic.
+
+        The bug repro: an initializer built with a large bound ``input_scaling``
+        used to ignore ``initialize(w, input_scaling=<small>)`` and still yield
+        the *bound* magnitude. The override must now drive the statistic — the
+        magnitude tracks the override, not the bound value. Since ``input_scaling``
+        is a uniform final multiply of the same seeded draw, the statistic scales
+        exactly by the override/bound ratio (``0.001 / 2.0``).
+        """
+        init = factory(2.0)
+
+        bound = torch.empty(*shape, dtype=torch.float64)
+        overridden = torch.empty(*shape, dtype=torch.float64)
+        init.initialize(bound)
+        init.initialize(overridden, input_scaling=0.001)
+
+        s_bound = statistic(bound)
+        s_over = statistic(overridden)
+        assert s_bound > 0.0
+
+        # The drop-bug left ``s_over == s_bound`` (override ignored). Honoring the
+        # override scales the statistic by exactly ``0.001 / 2.0``.
+        assert s_over == pytest.approx((0.001 / 2.0) * s_bound, rel=1e-9)
+        # The override is per-call only: the bound attribute is untouched.
+        assert init.input_scaling == 2.0
+
+    @pytest.mark.parametrize(("factory", "statistic", "shape"), _SCALING_CONTRACT)
+    def test_per_call_matches_construction_time_build(self, factory, statistic, shape) -> None:
+        """A per-call override yields the construction-time-equivalent build.
+
+        Building with ``input_scaling=s`` and building with a different bound
+        value then overriding to ``s`` at ``initialize`` time must agree
+        bit-for-bit (same seed/shape, same final scaling), so the override is a
+        true drop-in for the bound value.
+        """
+        per_call = torch.empty(*shape, dtype=torch.float64)
+        constructed = torch.empty(*shape, dtype=torch.float64)
+        factory(2.0).initialize(per_call, input_scaling=0.5)
+        factory(0.5).initialize(constructed)
+
+        assert torch.equal(per_call, constructed)
+
+
+class TestPerCallConnectivityEveryInitializer:
+    """Every connectivity-honoring initializer honors a per-call ``connectivity``.
+
+    The density initializers (``normal`` / ``uniform`` / ``bernoulli``) thread
+    ``**kwargs`` into ``_apply_connectivity`` too, so a per-call ``connectivity``
+    overrides the bound density for that call only. (Structured initializers such
+    as ``dendrocycle_input`` document that they ignore ``connectivity`` — they
+    define their own pattern — so they are intentionally excluded here.)
+    """
+
+    _CONNECTIVITY = [
+        pytest.param("normal", {}, id="normal"),
+        pytest.param("uniform", {}, id="uniform"),
+        pytest.param("bernoulli", {}, id="bernoulli"),
+    ]
+
+    @pytest.mark.parametrize(("name", "kwargs"), _CONNECTIVITY)
+    def test_per_call_connectivity_wins_over_bound(self, name: str, kwargs: dict) -> None:
+        """A per-call ``connectivity`` override sparsifies a dense-bound build."""
+        rows = 1000
+        init = get_input_feedback(name, connectivity=1.0, seed=0, **kwargs)
+
+        dense = torch.empty(rows, 8)
+        sparse = torch.empty(rows, 8)
+        init.initialize(dense)  # bound connectivity=1.0 -> fully dense
+        init.initialize(sparse, connectivity=0.1)  # override -> ~10% per column
+
+        assert (dense != 0).all()  # bound build is dense
+        per_column_nonzero = (sparse != 0).sum(dim=0)
+        # round(0.1 * 1000) == 100 kept per column, driven purely by the override.
+        assert torch.equal(per_column_nonzero, torch.full((8,), 100))
+        # The override is per-call only: the bound density is untouched.
+        assert init.connectivity == 1.0
+
+    @pytest.mark.parametrize(("name", "kwargs"), _CONNECTIVITY)
+    def test_per_call_connectivity_matches_construction_time(self, name: str, kwargs: dict) -> None:
+        """A per-call ``connectivity`` override matches the bound-density build."""
+        per_call = torch.empty(200, 5, dtype=torch.float64)
+        constructed = torch.empty(200, 5, dtype=torch.float64)
+        get_input_feedback(name, connectivity=1.0, seed=3, **kwargs).initialize(
+            per_call, connectivity=0.3
+        )
+        get_input_feedback(name, connectivity=0.3, seed=3, **kwargs).initialize(constructed)
+
+        assert torch.equal(per_call, constructed)
 
 
 class TestChebyshevColumnBalance:

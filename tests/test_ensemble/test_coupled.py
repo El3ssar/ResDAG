@@ -11,6 +11,7 @@ from resdag.core import ESNModel, Input
 from resdag.ensemble import CoupledEnsembleESNModel
 from resdag.ensemble.aggregators import OutliersFilteredMean
 from resdag.layers import CGReadoutLayer, ESNLayer
+from resdag.layers.readouts import ReadoutLayer
 
 
 def _driven_submodel_factory(
@@ -900,7 +901,7 @@ class TestSingleModel:
             n_models=1, reservoir_size=20, feedback_size=2, output_size=2, seed=0
         )
         sub_model = next(ens._iter_models())
-        readout = next(m for m in sub_model.modules() if isinstance(m, CGReadoutLayer))
+        readout = next(m for m in sub_model.modules() if isinstance(m, ReadoutLayer))
         before = readout.weight.detach().clone()
 
         ens.fit((warmup,), (train,), {"output": train.clone()})

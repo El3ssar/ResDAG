@@ -14,6 +14,7 @@ from resdag.init.input_feedback import (
     get_input_feedback,
 )
 from resdag.init.topology import MatrixTopology, TopologyInitializer, get_topology
+from resdag.init.topology.base import _accepts_generator
 from resdag.utils.general import SeedLike, coerce_seed_to_int
 
 # Type aliases for specification formats
@@ -49,6 +50,23 @@ def _inject_seed(kwargs: dict[str, Any], builder: Callable, seed: int | None) ->
     if seed is None or "seed" in kwargs or not _accepts_seed(builder):
         return kwargs
     return {**kwargs, "seed": seed}
+
+
+def _generator_seed(builder: Callable, params: dict[str, Any], seed: int | None) -> int | None:
+    """Return the seed to hand a :class:`MatrixTopology` for ``generator=`` builders.
+
+    In-place initializers like :func:`torch.nn.init.orthogonal_` take a
+    ``generator=`` keyword rather than ``seed=``; :meth:`MatrixTopology.initialize`
+    then builds a device-correct :class:`torch.Generator` from this seed. The
+    seed is forwarded only when it is not None, the builder does *not* already
+    take a ``seed`` (that path threads the int through ``kwargs`` instead), the
+    builder *does* accept ``generator``, and the spec did not already bind one.
+    """
+    if seed is None or _accepts_seed(builder) or "generator" in params:
+        return None
+    if not _accepts_generator(builder):
+        return None
+    return seed
 
 
 def _topology_builder(topology: TopologyInitializer) -> Callable | None:
@@ -132,14 +150,20 @@ def resolve_topology(
     if isinstance(spec, tuple):
         name, params = spec
         if callable(name):
-            return MatrixTopology(name, _inject_seed(dict(params), name, seed))
+            return MatrixTopology(
+                name,
+                _inject_seed(dict(params), name, seed),
+                seed=_generator_seed(name, dict(params), seed),
+            )
         builder = _topology_builder(get_topology(name))
         injected = (
             _inject_seed(dict(params), builder, seed) if builder is not None else dict(params)
         )
         return get_topology(name, **injected)
     if callable(spec):
-        return MatrixTopology(spec, _inject_seed({}, spec, seed))
+        return MatrixTopology(
+            spec, _inject_seed({}, spec, seed), seed=_generator_seed(spec, {}, seed)
+        )
     raise TypeError(
         f"Invalid topology spec type: {type(spec).__name__}. "
         f"Expected str, callable, tuple[str | callable, dict], or TopologyInitializer."

@@ -26,6 +26,47 @@ from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_gene
 
 from .base_cell import ReservoirCell
 
+# Golden-ratio offsets used to derive independent, deterministic sub-seeds from
+# the single layer-level ``seed``.  ``0x9E3779B9`` (2**32 / phi) is the classic
+# Fibonacci-hashing additive constant; doubling it gives a second, distinct
+# offset for the input-weight stream.
+#
+# ``_NOISE_SEED_OFFSET`` separates the train-mode state-noise stream from the
+# weight-init draws (historical behaviour, unchanged).  ``_INPUT_SEED_OFFSET``
+# separates the *input* weight init from the *feedback* weight init: feeding the
+# same named initializer the identical integer for both roles produced
+# ``weight_input == weight_feedback``, collapsing feedback and driving input
+# into a single projection.  The two offsets differ so the derived integer
+# seeds never coincide.
+_NOISE_SEED_OFFSET = 0x9E3779B9
+_INPUT_SEED_OFFSET = (0x9E3779B9 * 2) % (2**63 - 1)
+
+
+def _salt_seed(seed: int | None, offset: int) -> int | None:
+    """Derive a distinct-but-deterministic integer seed from ``seed``.
+
+    Adds a fixed ``offset`` modulo the 63-bit seed range so a single
+    layer-level seed can drive several independent init streams (feedback vs
+    input weights, weight init vs state noise).  ``None`` is passed through
+    unchanged, keeping the stream tied to torch's global RNG.
+
+    Parameters
+    ----------
+    seed : int or None
+        Base integer seed (typically ``self._seed_int``), or ``None``.
+    offset : int
+        Additive constant that separates this stream from the base stream.
+
+    Returns
+    -------
+    int or None
+        ``(seed + offset) % (2**63 - 1)`` when ``seed`` is an ``int``,
+        otherwise ``None``.
+    """
+    if seed is None:
+        return None
+    return (seed + offset) % (2**63 - 1)
+
 
 def _identity(x: torch.Tensor) -> torch.Tensor:
     """Identity activation.
@@ -430,9 +471,11 @@ class ESNCell(ReservoirCell):
         if generator is None:
             # Offset the integer seed so the noise stream is independent of the
             # weight-init stream; ``None`` keeps it tied to torch's global RNG
-            # (so ``torch.manual_seed`` still propagates).
-            base = self._seed_int
-            noise_seed = None if base is None else (base + 0x9E3779B9) % (2**63 - 1)
+            # (so ``torch.manual_seed`` still propagates).  Uses the same
+            # golden-ratio salt helper as the input weights (see ``_salt_seed``);
+            # the noise generator is a *torch* stream while the input weights are
+            # numpy-backed, so sharing the offset does not couple their draws.
+            noise_seed = _salt_seed(self._seed_int, _NOISE_SEED_OFFSET)
             generator = create_torch_generator(noise_seed, device=device)
             self._noise_generators[device] = generator
         return generator
@@ -553,11 +596,23 @@ class ESNCell(ReservoirCell):
             nn.init.uniform_(self.weight_feedback, -1, 1, generator=generator)
 
     def _initialize_input_weights(self, generator: torch.Generator) -> None:
-        """Initialize driving input weight matrix."""
+        """Initialize driving input weight matrix.
+
+        The input initializer is seeded from a salted copy of ``_seed_int`` (see
+        :data:`_INPUT_SEED_OFFSET`) rather than the raw feedback seed.  Feeding
+        the same named initializer the identical integer for both roles produced
+        ``weight_input == weight_feedback``, silently collapsing feedback and
+        driving input into a single projection.  The salt only alters the
+        layer-level fallback seed forwarded to ``resolve_initializer``; an
+        explicit seed pinned inside a tuple/object spec (e.g.
+        ``('random', {'seed': 7})``) still wins via ``resolve_initializer``'s
+        ``_inject_seed`` (spec seed beats forwarded seed).
+        """
         assert self.input_size is not None
         self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
 
-        resolved = resolve_initializer(self.input_initializer, seed=self._seed_int)
+        input_seed = _salt_seed(self._seed_int, _INPUT_SEED_OFFSET)
+        resolved = resolve_initializer(self.input_initializer, seed=input_seed)
         if resolved is not None:
             resolved.initialize(self.weight_input)
         else:

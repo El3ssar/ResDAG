@@ -107,6 +107,13 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
             Weight tensor of shape (out_features, in_features)
             out_features = reservoir_size (N)
             in_features = num_inputs (M)
+        **kwargs
+            Per-call keyword overrides. A recognized ``input_scaling`` key
+            overrides the bound ``self.input_scaling`` for this call only (the
+            shared per-call contract — see
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored. ``connectivity`` is not honored here (this
+            initializer defines its own core-only pattern).
 
         Returns
         -------
@@ -145,8 +152,10 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
             for input_idx, core_idx in enumerate(mapping):
                 values[core_idx, input_idx] = rng.uniform(-self.draw_width, self.draw_width)
 
-        # Apply the shared uniform scaling contract as the documented final transform.
-        values = self._apply_scaling(values)
+        # Apply the shared uniform scaling contract as the documented final
+        # transform. Forward ``**kwargs`` so a per-call ``input_scaling`` override
+        # wins over the bound value.
+        values = self._apply_scaling(values, **kwargs)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

@@ -77,6 +77,12 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         ----------
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
+        **kwargs
+            Per-call keyword overrides. A recognized ``input_scaling`` key
+            overrides the bound ``self.input_scaling`` for this call only (the
+            shared per-call contract — see
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored.
 
         Returns
         -------
@@ -94,8 +100,9 @@ class RandomBinaryInitializer(InputFeedbackInitializer):
         values = (bits.to(dtype) * 2.0) - 1.0
 
         # Apply the shared uniform scaling contract as the documented final
-        # transform (torch-native, staying on-device).
-        values = self._apply_scaling(values)
+        # transform (torch-native, staying on-device). Forward ``**kwargs`` so a
+        # per-call ``input_scaling`` override wins over the bound value.
+        values = self._apply_scaling(values, **kwargs)
 
         with torch.no_grad():
             weight.copy_(values)

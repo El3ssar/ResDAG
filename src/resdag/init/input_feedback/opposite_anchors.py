@@ -99,6 +99,13 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
             Weight tensor of shape (out_features, in_features)
             out_features = number of ring nodes (n)
             in_features = number of input channels (m)
+        **kwargs
+            Per-call keyword overrides. A recognized ``input_scaling`` key
+            overrides the bound ``self.input_scaling`` (the per-channel L2-norm
+            target) for this call only (the shared per-call contract — see
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored. The override must be a positive finite float
+            (``None`` is not accepted for this structured initializer).
 
         Returns
         -------
@@ -108,8 +115,9 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If ``m`` or ``n`` is non-positive, or if ``m > n`` (more input channels
-            than ring nodes), which would force duplicate columns.
+            If ``m`` or ``n`` is non-positive, if ``m > n`` (more input channels
+            than ring nodes), which would force duplicate columns, or if a
+            per-call ``input_scaling`` override is not a positive finite float.
         """
         n, m = _resolve_shape(weight)  # n=ring nodes, m=input channels
         device = weight.device
@@ -132,10 +140,17 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         values = np.zeros((n, m), dtype=compute_dtype)
         half = n // 2
 
-        # ``input_scaling`` is the per-channel L2 norm target (never None here:
-        # the constructor resolves the alias and defaults it to 1.0).
-        assert self.input_scaling is not None
-        scaling = float(self.input_scaling)
+        # ``input_scaling`` is the per-channel L2 norm target. Resolve the
+        # effective value from the per-call ``**kwargs`` (a recognized
+        # ``input_scaling`` key wins) with the bound value as fallback, so a
+        # per-call override is honored. The bound value is never None (the
+        # constructor resolves the alias and defaults it to 1.0); a per-call
+        # override must likewise be a positive finite float for this structured
+        # initializer.
+        scaling_resolved = self._resolve_input_scaling(kwargs)
+        if scaling_resolved is None or not np.isfinite(scaling_resolved) or scaling_resolved <= 0:
+            raise ValueError("input_scaling must be a positive finite float.")
+        scaling = float(scaling_resolved)
 
         # Special case: n == 1
         if n == 1:

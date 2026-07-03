@@ -25,6 +25,7 @@ from resdag.init.topology import (
     scale_to_spectral_radius,
     show_topologies,
 )
+from resdag.init.topology.base import _DENSE_EIGVALS_MAX_N
 from resdag.layers import ESNLayer
 from resdag.layers.cells.esn_cell import ESNCell
 
@@ -40,7 +41,12 @@ def _dense_spectral_radius(matrix: torch.Tensor) -> float:
 
 
 class TestEstimateSpectralRadius:
-    """Accuracy of the routed spectral-radius estimator."""
+    """Accuracy of the routed spectral-radius estimator.
+
+    Every path is exact or convergence-verified, so the tolerances here are
+    tight (~1e-4 relative or better). The old loose ``rel=0.05`` bounds
+    codified the biased ``||A v||`` power iteration and have been removed.
+    """
 
     def test_tiny_matrix_matches_dense_exactly(self) -> None:
         """Tiny matrices route to the exact dense ``eigvals`` path."""
@@ -49,26 +55,91 @@ class TestEstimateSpectralRadius:
         est = estimate_spectral_radius(w)
         assert est == pytest.approx(_dense_spectral_radius(w), abs=1e-6)
 
-    def test_dense_power_iteration_close_to_dense(self) -> None:
-        """The dense power-iteration path is within ~1% of the true radius."""
+    def test_small_dense_matches_dense_exactly(self) -> None:
+        """Dense matrices at ``n <= 1000`` use exact ``eigvals`` (not iterative)."""
         torch.manual_seed(1)
-        # Fully dense (density 1.0) so it routes to power iteration, not eigs.
+        # Fully dense (density 1.0); at n=300 the exact eigvals path is used.
         w = (torch.rand(300, 300) - 0.5) * 0.05
         est = estimate_spectral_radius(w)
         true = _dense_spectral_radius(w)
-        assert est == pytest.approx(true, rel=0.05)
+        assert est == pytest.approx(true, abs=1e-6)
 
-    def test_sparse_path_matches_dense_small_n(self) -> None:
-        """Sparse parity vs dense for a small N (acceptance: scipy eigs path)."""
+    def test_large_dense_matches_dense_tightly(self) -> None:
+        """A large dense matrix (past the exact-eigvals cutoff) stays within 1e-4.
+
+        This is the DEFAULT ``ESNLayer`` path (``topology=None`` -> dense
+        uniform ``weight_hh``). The old ``||A v||`` power iteration was biased by
+        up to ~5% on such matrices; the new path (robust power iteration with an
+        exact-``eigvals`` fallback on non-convergence) matches dense tightly.
+        """
+        torch.manual_seed(1)
+        w = (torch.rand(1200, 1200) - 0.5) * 2.0 / (1200**0.5)
+        assert not base_mod._is_sparse(w)
+        est = estimate_spectral_radius(w)
+        true = _dense_spectral_radius(w)
+        assert est == pytest.approx(true, rel=1e-4)
+
+    def test_complex_dominant_pair_matches_dense(self) -> None:
+        """A matrix with a known COMPLEX-dominant pair is estimated accurately.
+
+        Regression for the core bug: real non-symmetric reservoir matrices have
+        a complex-conjugate dominant eigenvalue pair, for which ``||A v||``
+        oscillates and never converges (measured errors up to ~66%). We build a
+        strongly non-normal operator whose dominant pair has a known modulus
+        ``r = 0.9`` and assert the estimate lands within 1e-3 relative — both on
+        the exact ``eigvals`` path (small N) and the iterative path (large N).
+        """
+        import math
+
+        for n in (200, 1400):
+            a = torch.zeros(n, n)
+            r, theta = 0.9, math.pi / 2  # purely imaginary dominant pair
+            for i in range(0, n, 2):
+                rr = r if i == 0 else 0.2  # only the first 2x2 block is dominant
+                a[i, i] = rr * math.cos(theta)
+                a[i, i + 1] = -rr * math.sin(theta) * 5.0  # strong non-normality
+                a[i + 1, i] = rr * math.sin(theta) / 5.0
+                a[i + 1, i + 1] = rr * math.cos(theta)
+            # Rotate into a random dense, non-symmetric basis.
+            gen = torch.Generator().manual_seed(0)
+            q, _ = torch.linalg.qr(torch.randn(n, n, generator=gen))
+            a = q @ a @ q.T
+            true = _dense_spectral_radius(a)
+            assert true == pytest.approx(0.9, rel=1e-3)  # ground truth is r=0.9
+            est = estimate_spectral_radius(a)
+            assert est == pytest.approx(true, rel=1e-3), f"n={n}: est={est} true={true}"
+
+    def test_sparse_path_matches_dense(self) -> None:
+        """Sparse parity vs dense on the scipy ``eigs`` path (n > 1000)."""
         torch.manual_seed(2)
-        topo = get_topology("erdos_renyi", p=0.05)
-        w = torch.empty(120, 120)
+        topo = get_topology("erdos_renyi", p=0.02)
+        w = torch.empty(1500, 1500)
         topo.initialize(w)
-        # Confirm this matrix actually takes the sparse path.
+        # Confirm this matrix actually takes the sparse ``eigs`` path.
         assert base_mod._is_sparse(w)
         est = estimate_spectral_radius(w)
         true = _dense_spectral_radius(w)
         assert est == pytest.approx(true, abs=1e-3)
+
+    def test_routing_deterministic_across_density_threshold(self) -> None:
+        """Accuracy does not depend on which side of the 0.1 density it lands.
+
+        ``erdos_renyi`` with the default ``p=0.1`` sits EXACTLY on
+        ``_SPARSE_DENSITY_THRESHOLD``, so tiny per-seed density jitter used to
+        flip routing between the (accurate) sparse ``eigs`` and the (biased)
+        power iteration nondeterministically. With the fix every path is exact
+        or verified, so the estimate matches dense to ~1e-3 regardless of seed
+        (and regardless of ``_is_sparse``).
+        """
+        for seed in range(6):
+            topo = get_topology("erdos_renyi", p=0.1, seed=seed)
+            w = torch.empty(1100, 1100)
+            topo.initialize(w)
+            est = estimate_spectral_radius(w)
+            true = _dense_spectral_radius(w)
+            assert est == pytest.approx(
+                true, rel=1e-3
+            ), f"seed={seed} is_sparse={base_mod._is_sparse(w)}: est={est} true={true}"
 
     def test_zero_matrix_returns_zero(self) -> None:
         """A zero matrix has spectral radius 0 and is handled gracefully."""
@@ -82,13 +153,13 @@ class TestEstimateSpectralRadius:
 
 
 class TestSparseEigsPath:
-    """The sparse branch must go through scipy's ``eigs``."""
+    """The large-sparse branch must go through scipy's ``eigs``."""
 
     def test_sparse_matrix_calls_scipy_eigs(self) -> None:
-        """A sparse matrix is routed through ``scipy.sparse.linalg.eigs``."""
+        """A large sparse matrix is routed through ``scipy.sparse.linalg.eigs``."""
         torch.manual_seed(3)
-        topo = get_topology("erdos_renyi", p=0.05)
-        w = torch.empty(200, 200)
+        topo = get_topology("erdos_renyi", p=0.02)
+        w = torch.empty(1500, 1500)
         topo.initialize(w)
         assert base_mod._is_sparse(w)
 
@@ -100,14 +171,21 @@ class TestSparseEigsPath:
 
         assert spy.called
         _, kwargs = spy.call_args
-        assert kwargs["k"] == 1
+        # A small cluster (k > 1) is requested so ARPACK does not lock onto a
+        # sub-dominant Ritz value when the top eigenvalues are near-degenerate.
+        assert kwargs["k"] == base_mod._EIGS_K
         assert kwargs["which"] == "LM"
         assert est == pytest.approx(true, abs=1e-3)
 
     def test_dense_matrix_does_not_call_eigs(self) -> None:
-        """A dense matrix uses power iteration, not scipy ``eigs``."""
+        """A large dense matrix uses power iteration / eigvals, not scipy ``eigs``.
+
+        scipy ``eigs`` on a dense operator would be a full ``O(n^2)`` matmul per
+        Arnoldi step — slower than the LAPACK dense eigendecomposition at
+        reservoir sizes — so the dense path deliberately avoids it.
+        """
         torch.manual_seed(4)
-        w = (torch.rand(200, 200) - 0.5) * 0.05  # density 1.0 -> not sparse
+        w = (torch.rand(1200, 1200) - 0.5) * 2.0 / (1200**0.5)  # density 1.0
         assert not base_mod._is_sparse(w)
 
         import scipy.sparse.linalg as sla
@@ -117,11 +195,16 @@ class TestSparseEigsPath:
 
         assert not spy.called
 
-    def test_eigs_failure_falls_back_to_power_iteration(self) -> None:
-        """If scipy ``eigs`` raises, the estimate falls back, not crashes."""
+    def test_eigs_failure_falls_back_gracefully(self) -> None:
+        """If scipy ``eigs`` raises, the estimate falls back exactly, not crashes.
+
+        The fallback is a robust power iteration backed by an exact-``eigvals``
+        guard on non-convergence, so the result is accurate (not merely "in the
+        ballpark" as the old ``||A v||`` fallback was).
+        """
         torch.manual_seed(5)
-        topo = get_topology("erdos_renyi", p=0.05)
-        w = torch.empty(200, 200)
+        topo = get_topology("erdos_renyi", p=0.02)
+        w = torch.empty(1500, 1500)
         topo.initialize(w)
         true = _dense_spectral_radius(w)
 
@@ -130,8 +213,7 @@ class TestSparseEigsPath:
         with mock.patch.object(sla, "eigs", side_effect=RuntimeError("no convergence")):
             est = estimate_spectral_radius(w)
 
-        # Power-iteration fallback is approximate but still in the ballpark.
-        assert est == pytest.approx(true, rel=0.1)
+        assert est == pytest.approx(true, rel=1e-3)
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +235,23 @@ class TestScaleToSpectralRadius:
         realized = _dense_spectral_radius(scaled)
         assert realized == pytest.approx(target, abs=1e-3)
 
+    @pytest.mark.parametrize("target", [0.5, 0.9, 1.2])
+    def test_dense_rescale_hits_target_within_1e_3(self, target: float) -> None:
+        """The DEFAULT dense path rescales to target accurately (past the cutoff).
+
+        Regression for the reported ~5% realized-radius error (target 0.9 ->
+        realized 0.945) on the biased dense power-iteration path.
+        """
+        torch.manual_seed(6)
+        w = (torch.rand(1200, 1200) - 0.5) * 2.0
+        assert not base_mod._is_sparse(w)
+        scaled = scale_to_spectral_radius(w, target)
+        realized = _dense_spectral_radius(scaled)
+        assert realized == pytest.approx(target, rel=1e-3)
+
     def test_zero_matrix_unchanged(self) -> None:
         """A numerically-zero matrix is returned unchanged."""
-        w = torch.zeros(64 + 1, 64 + 1)  # past the tiny-N guard
+        w = torch.zeros(_DENSE_EIGVALS_MAX_N + 1, _DENSE_EIGVALS_MAX_N + 1)  # past cutoff
         scaled = scale_to_spectral_radius(w, 0.9)
         assert torch.equal(scaled, w)
 
@@ -372,3 +468,88 @@ class TestFastSpectralInitialization:
     def test_negative_spectral_radius_raises(self) -> None:
         with pytest.raises(ValueError):
             fast_spectral_initialization(100, spectral_radius=-0.5)
+
+
+# ---------------------------------------------------------------------------
+# Seed reproducibility for ``generator=`` (in-place torch.nn.init) topologies
+# ---------------------------------------------------------------------------
+
+
+class TestGeneratorSeededTopologies:
+    """A ``seed`` must reproduce in-place ``torch.nn.init`` recurrent weights.
+
+    In-place initializers (``torch.nn.init.orthogonal_``, ``xavier_uniform_``,
+    ...) take a ``generator=`` keyword, not ``seed=``. Before the fix the seed
+    was dropped for these callables and the draw fell back to torch's GLOBAL
+    RNG, so two layers built with the same explicit seed got DIFFERENT
+    ``weight_hh``. The resolver now threads the seed into a device-correct
+    :class:`torch.Generator`.
+    """
+
+    @pytest.mark.parametrize(
+        "init_fn",
+        [torch.nn.init.orthogonal_, torch.nn.init.xavier_uniform_],
+    )
+    def test_same_seed_bit_identical(self, init_fn) -> None:
+        """Two layers with the same seed produce bit-identical ``weight_hh``."""
+        a = ESNLayer(100, feedback_size=3, topology=init_fn, seed=42)
+        b = ESNLayer(100, feedback_size=3, topology=init_fn, seed=42)
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    @pytest.mark.parametrize(
+        "init_fn",
+        [torch.nn.init.orthogonal_, torch.nn.init.xavier_uniform_],
+    )
+    def test_different_seed_differs(self, init_fn) -> None:
+        """The seed actually matters: different seeds -> different weights."""
+        a = ESNLayer(100, feedback_size=3, topology=init_fn, seed=42)
+        b = ESNLayer(100, feedback_size=3, topology=init_fn, seed=43)
+        assert not torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_tuple_form_with_kwargs_is_seeded(self) -> None:
+        """The ``(callable, kwargs)`` tuple form is seeded too."""
+        spec = (torch.nn.init.orthogonal_, {"gain": 1.5})
+        a = ESNLayer(80, feedback_size=2, topology=spec, seed=7)
+        b = ESNLayer(80, feedback_size=2, topology=spec, seed=7)
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_explicit_generator_wins_over_seed(self) -> None:
+        """An explicitly-bound ``generator`` is honored, not overwritten."""
+        # Same explicit generator but DIFFERENT layer seeds -> identical weights,
+        # proving the bound generator (not the seed) drove the draw.
+        a = ESNLayer(
+            60,
+            feedback_size=2,
+            topology=(torch.nn.init.orthogonal_, {"generator": torch.Generator().manual_seed(123)}),
+            seed=999,
+        )
+        b = ESNLayer(
+            60,
+            feedback_size=2,
+            topology=(torch.nn.init.orthogonal_, {"generator": torch.Generator().manual_seed(123)}),
+            seed=777,
+        )
+        assert torch.equal(a.weight_hh, b.weight_hh)
+
+    def test_seed_none_builds_without_error(self) -> None:
+        """With no seed the in-place topology still builds (global-RNG draw)."""
+        layer = ESNLayer(50, feedback_size=2, topology=torch.nn.init.orthogonal_)
+        assert layer.weight_hh.shape == (50, 50)
+
+    def test_matrix_topology_carries_seed(self) -> None:
+        """``resolve_topology`` records the seed on the ``MatrixTopology``."""
+        from resdag.init.utils import resolve_topology
+
+        topo = resolve_topology(torch.nn.init.orthogonal_, seed=42)
+        assert topo.seed == 42
+
+    def test_reinitialize_same_topology_reproducible(self) -> None:
+        """Re-running ``initialize`` on one seeded topology is deterministic."""
+        from resdag.init.utils import resolve_topology
+
+        topo = resolve_topology(torch.nn.init.orthogonal_, seed=11)
+        w1 = torch.empty(64, 64)
+        w2 = torch.empty(64, 64)
+        topo.initialize(w1)
+        topo.initialize(w2)
+        assert torch.equal(w1, w2)

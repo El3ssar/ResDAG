@@ -397,8 +397,9 @@ def mackey_glass(
         dx/dt = beta * x(t - tau) / (1 + x(t - tau)^n) - gamma * x(t)
 
     Integrated with the Euler method on the history buffer (the standard scheme
-    for this benchmark). The delay ``tau`` and step ``dt`` give an integer lag
-    of ``round(tau / dt)`` samples.
+    for this benchmark). The delay ``tau`` and step ``dt`` give an effective
+    integer lag of exactly ``round(tau / dt)`` samples, so the default
+    ``tau=17`` is the canonical chaotic MG-17 system.
 
     Parameters
     ----------
@@ -417,8 +418,9 @@ def mackey_glass(
     normalize : {"standard", "minmax"} or None, optional
         Normalization of the returned window. Default ``"standard"``.
     seed : int, numpy.random.Generator, or None, optional
-        Seed (accepted for API symmetry; the default trajectory is
-        deterministic). Default ``0``.
+        Accepted for signature symmetry with the other generators but unused:
+        the trajectory is fully deterministic and draws no randomness. Default
+        ``0``.
     dtype : torch.dtype, optional
         Dtype of the returned tensor. Default ``torch.float32`` (matches
         torch's default, so the series drops straight into a model).
@@ -430,22 +432,30 @@ def mackey_glass(
     torch.Tensor
         Trajectory of shape ``(1, n_timesteps, 1)``.
     """
-    create_rng(seed)  # accepted for API symmetry / reproducibility contract
+    # ``seed`` is unused: the trajectory is fully deterministic and draws no
+    # randomness, so no RNG is created (calling ``create_rng(None)`` would draw
+    # from torch's global RNG as a side effect and perturb downstream torch
+    # reproducibility for nothing).
     lag = max(1, round(tau / dt))
     total = n_timesteps + discard
-    history = np.full(lag + 1, float(x0), dtype=np.float64)
-    out = np.empty(total, dtype=np.float64)
+
+    # Flat buffer indexed arithmetically: ``buf[lag:]`` holds the trajectory and
+    # ``buf[:lag]`` is the constant history ``x0`` for ``t <= 0``. Writing the
+    # value at index ``lag + i`` while reading the delayed term at index ``i``
+    # gives an effective delay of exactly ``lag`` samples (the roll-buffer scheme
+    # this replaces was off by one, yielding a ``lag + 1`` delay). This is also
+    # ~15x faster: it drops the per-step ``np.roll`` allocation.
+    buf = np.empty(total + lag, dtype=np.float64)
+    buf[:lag] = float(x0)
 
     x_t = float(x0)
     for i in range(total):
-        out[i] = x_t
-        x_lag = history[0]
+        buf[lag + i] = x_t
+        x_lag = buf[i]
         x_next = x_t + dt * (beta * x_lag / (1.0 + x_lag**n) - gamma * x_t)
-        history = np.roll(history, -1)
-        history[-1] = x_t
         x_t = x_next
 
-    series = _normalize(out[discard:].reshape(-1, 1), normalize)
+    series = _normalize(buf[lag + discard :].reshape(-1, 1), normalize)
     return _to_tensor(series, dtype, device)
 
 

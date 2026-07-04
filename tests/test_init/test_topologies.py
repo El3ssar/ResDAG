@@ -1059,13 +1059,15 @@ class TestEveryTopologyBuildsAndForwards:
         The contract is per-topology (issue #207 acceptance criterion):
 
         - ordinary topologies are rescaled to the requested radius,
-        - ``zeros`` has no spectral structure to scale, so it stays at 0,
+        - topologies with no spectral structure to scale stay at 0: ``zeros``
+          (empty) and ``delay_line`` (strictly sub-diagonal, hence nilpotent —
+          all eigenvalues are zero, so the shared rescale is a no-op),
         - pre-scaled topologies own their radius (the layer one is ignored).
         """
         layer = _build_swept_layer(name)
         radius = _full_spectral_radius(layer.weight_hh.data)
 
-        if name == "zeros":
+        if name in {"zeros", "delay_line"}:
             assert radius == pytest.approx(0.0, abs=1e-6)
         elif get_topology(name).prescaled:
             # Owns its own radius (registry ``prescaled=True``): the layer rescale

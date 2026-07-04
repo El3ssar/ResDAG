@@ -23,8 +23,13 @@ import torch
 
 from resdag.ensemble.aggregators import OutliersFilteredMean
 from resdag.layers.transforms import (
+    NLAT2,
+    NLAT3,
     Concatenate,
+    ExtendedSquare,
     FeaturePartitioner,
+    Pad,
+    PartialSquare,
     Power,
     SelectiveDropout,
     SelectiveExponentiation,
@@ -1407,3 +1412,445 @@ class TestPower:
         repr_str = Power(exponent=2.0).extra_repr()
         assert "exponent=2.0" in repr_str
         assert "sign_preserving=False" in repr_str
+
+
+# ---------------------------------------------------------------------------
+# RC.jl states-modification parity primitives.
+#
+# The reference outputs below are taken verbatim from the ``states.jl``
+# docstrings of ReservoirComputing.jl (SciML/ReservoirComputing.jl), which are
+# 1-based and feature-major. ResDAG puts features on the last (0-based) axis, so
+# a Julia index ``idx`` maps to feature ``i = idx - 1`` and RC.jl's "odd idx"
+# becomes "even 0-based i". On the shared example ``x_old = [0..9]`` the RC.jl
+# docstrings give:
+#   NLAT2 -> [0, 1, 0, 3, 6, 5, 20, 7, 42, 9]
+#   NLAT3 -> [0, 1, 3, 3, 15, 5, 35, 7, 63, 9]
+#   PartialSquare(0.6) -> [0, 1, 4, 9, 16, 25, 6, 7, 8, 9]
+#   ExtendedSquare([1..9]) -> [1..9, 1, 4, 9, 16, 25, 36, 49, 64, 81]
+# ---------------------------------------------------------------------------
+
+
+class TestPad:
+    """Forward and backward contracts for the Pad transform (RC.jl ``Pad``)."""
+
+    def test_appends_constant_column(self) -> None:
+        """A single constant column is appended, matching the RC.jl ``Pad`` example."""
+        layer = Pad()  # default padding 1.0
+        x = torch.arange(10.0).reshape(1, 10)
+
+        out = layer(x)
+
+        expected = torch.tensor([[0.0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1]])
+        assert out.shape == (1, 11)
+        assert torch.equal(out, expected)
+
+    def test_custom_padding_value(self) -> None:
+        """A custom padding value is used for the appended column."""
+        layer = Pad(padding=-2.0)
+        x = torch.zeros(2, 5, 3)
+
+        out = layer(x)
+
+        assert out.shape == (2, 5, 4)
+        assert torch.equal(out[..., :3], x)
+        assert torch.all(out[..., 3] == -2.0)
+
+    def test_2d_and_3d_ranks_agree(self) -> None:
+        """2-D and 3-D inputs are both padded on the last dim, consistently."""
+        layer = Pad()
+        x2 = torch.randn(3, 4)
+
+        out2 = layer(x2)
+        out3 = layer(x2.unsqueeze(1))
+
+        assert out2.shape == (3, 5)
+        assert out3.shape == (3, 1, 5)
+        assert torch.equal(out3.squeeze(1), out2)
+
+    def test_dtype_and_device_inherited(self) -> None:
+        """The padding column inherits the input dtype."""
+        layer = Pad()
+        x = torch.randn(2, 3, dtype=torch.float64)
+
+        out = layer(x)
+
+        assert out.dtype == torch.float64
+
+    def test_gradient_routes_to_original_features_only(self) -> None:
+        """Original features get grad 1; the constant column carries none."""
+        layer = Pad()
+        x = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.equal(x.grad, torch.ones_like(x))
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck for the append map."""
+        layer = Pad(padding=0.5)
+        x = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_compile_matches_eager(self) -> None:
+        """torch.compile output matches eager (branch-free append)."""
+        layer = Pad()
+        compiled = torch.compile(layer, fullgraph=True)
+        x = torch.randn(2, 6, 5)
+
+        assert torch.equal(compiled(x), layer(x))
+
+    def test_extra_repr(self) -> None:
+        """String representation reports the padding value."""
+        assert "padding=2.5" in Pad(padding=2.5).extra_repr()
+
+
+class TestExtendedSquare:
+    """Forward/backward contracts for ExtendedSquare (RC.jl ``ExtendedSquare``)."""
+
+    def test_appends_squared_block(self) -> None:
+        """The output is ``[x, x**2]``, matching the RC.jl example."""
+        layer = ExtendedSquare()
+        x = torch.arange(1.0, 10.0).reshape(1, 9)
+
+        out = layer(x)
+
+        expected = torch.tensor([[1.0, 2, 3, 4, 5, 6, 7, 8, 9, 1, 4, 9, 16, 25, 36, 49, 64, 81]])
+        assert out.shape == (1, 18)
+        assert torch.equal(out, expected)
+
+    def test_doubles_feature_dim(self) -> None:
+        """The feature dimension is exactly doubled for arbitrary rank."""
+        layer = ExtendedSquare()
+        assert layer(torch.randn(2, 5, 4)).shape == (2, 5, 8)
+        assert layer(torch.randn(7, 3)).shape == (7, 6)
+
+    def test_negative_values_squared_finite(self) -> None:
+        """Negative bases square to non-negative finite values (no nan/inf)."""
+        layer = ExtendedSquare()
+        x = torch.tensor([[-2.0, 3.0]])
+
+        out = layer(x)
+
+        assert torch.equal(out, torch.tensor([[-2.0, 3.0, 4.0, 9.0]]))
+        assert torch.isfinite(out).all()
+
+    def test_gradient_combines_linear_and_square_blocks(self) -> None:
+        """Summing the output gives grad ``1 + 2x`` per feature.
+
+        The linear block contributes 1 and the squared block contributes ``2x``,
+        so a plain ``sum().backward()`` lands ``1 + 2x`` on every input feature.
+        """
+        layer = ExtendedSquare()
+        x = torch.tensor([[1.0, -2.0, 3.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        assert torch.allclose(x.grad, 1.0 + 2.0 * x.detach())
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck for the ``[x, x**2]`` map."""
+        layer = ExtendedSquare()
+        x = torch.randn(2, 4, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_compile_matches_eager(self) -> None:
+        """torch.compile output matches eager (branch-free concat)."""
+        layer = ExtendedSquare()
+        compiled = torch.compile(layer, fullgraph=True)
+        x = torch.randn(2, 6, 5)
+
+        assert torch.equal(compiled(x), layer(x))
+
+
+class TestPartialSquare:
+    """Forward/backward and validation for PartialSquare (RC.jl ``PartialSquare``)."""
+
+    def test_fractional_eta_matches_rcjl_example(self) -> None:
+        """``eta=0.6`` squares the leading ``floor(0.6*10)=6`` features."""
+        layer = PartialSquare(0.6)
+        x = torch.arange(10.0).reshape(1, 10)
+
+        out = layer(x)
+
+        expected = torch.tensor([[0.0, 1, 4, 9, 16, 25, 6, 7, 8, 9]])
+        assert out.shape == (1, 10)
+        assert torch.equal(out, expected)
+
+    def test_integer_eta_is_a_direct_count(self) -> None:
+        """An integer ``eta`` squares exactly that many leading features."""
+        layer = PartialSquare(3)
+        x = torch.tensor([[2.0, 2.0, 2.0, 2.0]])
+
+        out = layer(x)
+
+        assert torch.equal(out, torch.tensor([[4.0, 4.0, 4.0, 2.0]]))
+
+    def test_eta_one_squares_all_features(self) -> None:
+        """``eta=1.0`` squares every feature (threshold == num_features)."""
+        layer = PartialSquare(1.0)
+        x = torch.tensor([[1.0, 2.0, 3.0]])
+
+        assert torch.equal(layer(x), torch.tensor([[1.0, 4.0, 9.0]]))
+
+    def test_integer_eta_clamped_to_feature_count(self) -> None:
+        """An integer ``eta`` larger than the feature dim squares everything."""
+        layer = PartialSquare(100)
+        x = torch.tensor([[1.0, 2.0, 3.0]])
+
+        assert torch.equal(layer(x), torch.tensor([[1.0, 4.0, 9.0]]))
+
+    def test_2d_and_3d_ranks_agree(self) -> None:
+        """2-D and 3-D inputs share the same feature-wise transform."""
+        layer = PartialSquare(0.5)
+        x2 = torch.randn(3, 8)
+
+        out2 = layer(x2)
+        out3 = layer(x2.unsqueeze(1))
+
+        assert out2.shape == (3, 8)
+        assert torch.equal(out3.squeeze(1), out2)
+
+    def test_float_eta_out_of_range_raises(self) -> None:
+        """A float ``eta`` outside ``(0, 1]`` is rejected at construction."""
+        with pytest.raises(ValueError, match=r"float eta must be in the interval"):
+            PartialSquare(1.5)
+        with pytest.raises(ValueError, match=r"float eta must be in the interval"):
+            PartialSquare(0.0)
+
+    def test_negative_int_eta_raises(self) -> None:
+        """A negative integer ``eta`` (count) is rejected at construction."""
+        with pytest.raises(ValueError, match=r"non-negative"):
+            PartialSquare(-1)
+
+    def test_non_numeric_eta_raises(self) -> None:
+        """A non-numeric ``eta`` is rejected with a clear TypeError."""
+        with pytest.raises(TypeError, match=r"eta must be an int count or a float fraction"):
+            PartialSquare("0.5")  # type: ignore[arg-type]
+
+    def test_bool_eta_rejected(self) -> None:
+        """``bool`` is an int subclass but nonsensical as a selector; reject it."""
+        with pytest.raises(TypeError, match=r"eta must be an int count or a float fraction"):
+            PartialSquare(True)
+
+    def test_gradient_square_block_and_passthrough(self) -> None:
+        """Squared features get grad ``2x``; pass-through features get grad 1."""
+        layer = PartialSquare(0.5)  # first 2 of 4 squared
+        x = torch.tensor([[1.0, -2.0, 3.0, 4.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # d/dx x^2 = 2x on the first two, identity (grad 1) on the last two.
+        assert torch.allclose(x.grad, torch.tensor([[2.0, -4.0, 1.0, 1.0]], dtype=torch.float64))
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck for the partial-square map."""
+        layer = PartialSquare(0.5)
+        x = torch.randn(2, 6, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_compile_matches_eager(self) -> None:
+        """torch.compile output matches eager (data-independent split)."""
+        layer = PartialSquare(0.5)
+        compiled = torch.compile(layer, fullgraph=True)
+        x = torch.randn(2, 6, 8)
+
+        assert torch.equal(compiled(x), layer(x))
+
+    def test_extra_repr(self) -> None:
+        """String representation reports eta and whether it is a fraction/count."""
+        assert "eta=0.6 (fraction)" in PartialSquare(0.6).extra_repr()
+        assert "eta=3 (count)" in PartialSquare(3).extra_repr()
+
+
+class TestNLAT2:
+    """Forward/backward contracts for NLAT2 (RC.jl ``NLAT2``, Chattopadhyay 2020)."""
+
+    def test_matches_rcjl_vector_example(self) -> None:
+        """Reproduces the RC.jl ``states.jl`` NLAT2 docstring example exactly."""
+        layer = NLAT2()
+        x = torch.arange(10.0).reshape(1, 10)
+
+        out = layer(x)
+
+        expected = torch.tensor([[0.0, 1, 0, 3, 6, 5, 20, 7, 42, 9]])
+        assert out.shape == (1, 10)
+        assert torch.equal(out, expected)
+
+    def test_matches_rcjl_matrix_column(self) -> None:
+        """A single RC.jl matrix column matches ``[1,4,4,10,70,16,208]``.
+
+        RC.jl applies NLAT2 columnwise on a 7x3 feature-major matrix. Column 0 is
+        ``[1,4,7,10,13,16,19]``; the documented result column is
+        ``[1,4,4,10,70,16,208]`` (e.g. feature 2 -> x1*x0 = 4*1 = 4,
+        feature 4 -> x3*x2 = 10*7 = 70, feature 6 -> x5*x4 = 16*13 = 208).
+        """
+        layer = NLAT2()
+        col0 = torch.tensor([[1.0, 4, 7, 10, 13, 16, 19]])
+
+        out = layer(col0)
+
+        assert torch.equal(out, torch.tensor([[1.0, 4, 4, 10, 70, 16, 208]]))
+
+    def test_preserves_feature_dim(self) -> None:
+        """NLAT2 rewrites in place; the feature dimension is unchanged."""
+        assert NLAT2()(torch.randn(2, 5, 8)).shape == (2, 5, 8)
+
+    def test_short_feature_dims_pass_through(self) -> None:
+        """Feature dims below 3 have no eligible position -> identity."""
+        layer = NLAT2()
+        for width in (1, 2):
+            x = torch.randn(2, width)
+            assert torch.equal(layer(x), x)
+
+    def test_2d_and_3d_ranks_agree(self) -> None:
+        """2-D and 3-D inputs share the same feature-wise transform."""
+        layer = NLAT2()
+        x2 = torch.randn(3, 8)
+
+        out2 = layer(x2)
+        out3 = layer(x2.unsqueeze(1))
+
+        assert torch.equal(out3.squeeze(1), out2)
+
+    def test_gradient_is_bilinear_and_finite(self) -> None:
+        """The neighbour product is bilinear, so gradients are finite.
+
+        For ``out[2] = x[1] * x[0]`` (the only rewritten position at width 3),
+        ``sum().backward()`` routes ``d out[2]/d x[0] = x[1]`` and
+        ``d out[2]/d x[1] = x[0]`` on top of the pass-through grad 1 at x0/x1.
+        """
+        layer = NLAT2()
+        x = torch.tensor([[2.0, 3.0, 5.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # x0: 1 (identity) + x1 (from out[2]) = 1 + 3 = 4
+        # x1: 1 (identity) + x0 (from out[2]) = 1 + 2 = 3
+        # x2: rewritten to x1*x0, so its own value no longer flows -> grad 0
+        assert torch.allclose(x.grad, torch.tensor([[4.0, 3.0, 0.0]], dtype=torch.float64))
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck for the bilinear neighbour-product map."""
+        layer = NLAT2()
+        x = torch.randn(2, 7, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_compile_matches_eager(self) -> None:
+        """torch.compile output matches eager (shape-static index ops)."""
+        layer = NLAT2()
+        compiled = torch.compile(layer, fullgraph=True)
+        x = torch.randn(2, 6, 9)
+
+        assert torch.equal(compiled(x), layer(x))
+
+
+class TestNLAT3:
+    """Forward/backward contracts for NLAT3 (RC.jl ``NLAT3``, Chattopadhyay 2020)."""
+
+    def test_matches_rcjl_vector_example(self) -> None:
+        """Reproduces the RC.jl ``states.jl`` NLAT3 docstring example exactly."""
+        layer = NLAT3()
+        x = torch.arange(10.0).reshape(1, 10)
+
+        out = layer(x)
+
+        expected = torch.tensor([[0.0, 1, 3, 3, 15, 5, 35, 7, 63, 9]])
+        assert out.shape == (1, 10)
+        assert torch.equal(out, expected)
+
+    def test_matches_rcjl_matrix_column(self) -> None:
+        """A single RC.jl matrix column matches ``[1,4,40,10,160,16,19]``.
+
+        Column 0 = ``[1,4,7,10,13,16,19]``; the documented NLAT3 result column is
+        ``[1,4,40,10,160,16,19]`` (feature 2 -> x1*x3 = 4*10 = 40,
+        feature 4 -> x3*x5 = 10*16 = 160). The last eligible feature (index 6)
+        has no right neighbour and is left unchanged (19), matching RC.jl's
+        ``idx < lastindex`` guard.
+        """
+        layer = NLAT3()
+        col0 = torch.tensor([[1.0, 4, 7, 10, 13, 16, 19]])
+
+        out = layer(col0)
+
+        assert torch.equal(out, torch.tensor([[1.0, 4, 40, 10, 160, 16, 19]]))
+
+    def test_last_even_feature_without_right_neighbour_unchanged(self) -> None:
+        """An even feature at ``N-1`` has no right neighbour -> left unchanged.
+
+        With an odd feature count the last even index is ``N-1`` (no right
+        neighbour); NLAT3 must leave it untouched (the ``i <= N-2`` guard).
+        """
+        layer = NLAT3()
+        x = torch.tensor([[1.0, 2, 3, 4, 5]])  # width 5, last even index = 4
+
+        out = layer(x)
+
+        # index 2 -> x1*x3 = 2*4 = 8; index 4 (last) unchanged.
+        assert torch.equal(out, torch.tensor([[1.0, 2, 8, 4, 5]]))
+
+    def test_preserves_feature_dim(self) -> None:
+        """NLAT3 rewrites in place; the feature dimension is unchanged."""
+        assert NLAT3()(torch.randn(2, 5, 8)).shape == (2, 5, 8)
+
+    def test_short_feature_dims_pass_through(self) -> None:
+        """Feature dims below 3 have no eligible interior position -> identity."""
+        layer = NLAT3()
+        for width in (1, 2):
+            x = torch.randn(2, width)
+            assert torch.equal(layer(x), x)
+
+    def test_2d_and_3d_ranks_agree(self) -> None:
+        """2-D and 3-D inputs share the same feature-wise transform."""
+        layer = NLAT3()
+        x2 = torch.randn(3, 8)
+
+        out2 = layer(x2)
+        out3 = layer(x2.unsqueeze(1))
+
+        assert torch.equal(out3.squeeze(1), out2)
+
+    def test_gradient_is_bilinear_and_finite(self) -> None:
+        """The surrounding-neighbour product is bilinear -> finite gradients.
+
+        At width 3 the only rewritten position is ``out[2]``... but index 2 is
+        ``N-1`` with no right neighbour, so nothing changes. Use width 5 where
+        ``out[2] = x[1] * x[3]`` is the sole rewrite.
+        """
+        layer = NLAT3()
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0]], dtype=torch.float64, requires_grad=True)
+
+        layer(x).sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        # out[2] = x1*x3. x1: 1 + x3 = 1 + 4 = 5 ; x3: 1 + x1 = 1 + 2 = 3.
+        # x2 rewritten (own value drops) -> grad 0. x0, x4 identity -> grad 1.
+        assert torch.allclose(
+            x.grad, torch.tensor([[1.0, 5.0, 0.0, 3.0, 1.0]], dtype=torch.float64)
+        )
+
+    def test_gradcheck(self) -> None:
+        """Double-precision gradcheck for the bilinear neighbour-product map."""
+        layer = NLAT3()
+        x = torch.randn(2, 7, dtype=torch.float64, requires_grad=True)
+
+        assert torch.autograd.gradcheck(layer, (x,), eps=1e-6, atol=1e-4)
+
+    def test_compile_matches_eager(self) -> None:
+        """torch.compile output matches eager (shape-static index ops)."""
+        layer = NLAT3()
+        compiled = torch.compile(layer, fullgraph=True)
+        x = torch.randn(2, 6, 9)
+
+        assert torch.equal(compiled(x), layer(x))

@@ -278,3 +278,154 @@ class TestNGReservoirForwardStateless:
 
         assert torch.allclose(torch.cat([out_a, out_b], dim=1), full, atol=1e-6)
         assert torch.allclose(state_b, full_state, atol=1e-6)
+
+
+# The compiled teacher-forced scan targets the CUDA reduce-overhead / cudagraph
+# path (its whole benefit is shedding per-step *GPU* launch overhead), so its
+# equivalence and cache-population assertions run only on a GPU.  ``atol``/``rtol``
+# are tight rather than bitwise: chaotic reservoir dynamics under torch.compile
+# need not be bit-exact with eager (empirically the recurrent-only ESN step is,
+# but the contract is allclose).
+_requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+
+
+class TestForwardStatelessCompiledScan:
+    """Opt-in ``compile=True`` engine matches eager and falls back cleanly."""
+
+    @_requires_cuda
+    @pytest.mark.parametrize("seq_len", [200, 130, 63])
+    def test_compiled_matches_eager_feedback_only(self, seq_len: int) -> None:
+        """Chunked compiled scan (incl. < chunk remainder) equals the eager loop."""
+        layer = ESNLayer(128, feedback_size=3, spectral_radius=0.9, seed=0).to("cuda")
+        layer.eval()
+        feedback = torch.randn(1, seq_len, 3, device="cuda")
+
+        with torch.no_grad():
+            layer.reset_state()
+            eager = layer(feedback)
+            layer.reset_state()
+            compiled = layer(feedback, compile=True)
+
+        assert compiled.shape == eager.shape
+        assert torch.allclose(eager, compiled, atol=1e-5, rtol=1e-5)
+
+    @_requires_cuda
+    def test_compiled_matches_eager_with_driver(self) -> None:
+        layer = ESNLayer(96, feedback_size=3, input_size=4, spectral_radius=0.9, seed=2).to("cuda")
+        layer.eval()
+        feedback = torch.randn(1, 200, 3, device="cuda")
+        driver = torch.randn(1, 200, 4, device="cuda")
+
+        with torch.no_grad():
+            layer.reset_state()
+            eager = layer(feedback, driver)
+            layer.reset_state()
+            compiled = layer(feedback, driver, compile=True)
+
+        assert torch.allclose(eager, compiled, atol=1e-5, rtol=1e-5)
+
+    @_requires_cuda
+    def test_compiled_final_state_matches_eager(self) -> None:
+        """The threaded final state (not just per-step outputs) matches eager."""
+        layer = ESNLayer(64, feedback_size=3, spectral_radius=0.9, leak_rate=0.6, seed=5).to("cuda")
+        layer.eval()
+        feedback = torch.randn(1, 150, 3, device="cuda")
+        state0 = layer.cell.init_state(1, feedback.device, feedback.dtype)
+
+        with torch.no_grad():
+            _, eager_state = layer.forward_stateless([feedback], state0)
+            _, compiled_state = layer.forward_stateless([feedback], state0, compile=True)
+
+        assert torch.allclose(eager_state, compiled_state, atol=1e-5, rtol=1e-5)
+
+    @_requires_cuda
+    def test_compiled_scan_populates_and_reuses_cache(self) -> None:
+        """First compiled call fills the per-config cache; the second reuses it."""
+        layer = ESNLayer(64, feedback_size=3, spectral_radius=0.9, seed=1).to("cuda")
+        layer.eval()
+        feedback = torch.randn(1, 200, 3, device="cuda")
+
+        assert len(layer._compiled_scan_cache) == 0
+        with torch.no_grad():
+            layer.reset_state()
+            layer(feedback, compile=True)
+            assert len(layer._compiled_scan_cache) == 1
+            cached_fn = next(iter(layer._compiled_scan_cache.values()))
+
+            layer.reset_state()
+            layer(feedback, compile=True)
+        # Same key, same compiled closure — not recompiled.
+        assert len(layer._compiled_scan_cache) == 1
+        assert next(iter(layer._compiled_scan_cache.values())) is cached_fn
+
+    def test_compile_never_runs_when_grad_required(self) -> None:
+        """A grad-tracked (trainable) forward stays eager and remains differentiable."""
+        layer = ESNLayer(32, feedback_size=3, spectral_radius=0.9, trainable=True, seed=4)
+        if torch.cuda.is_available():
+            layer = layer.to("cuda")
+        dev = next(layer.parameters()).device
+        feedback = torch.randn(2, 40, 3, device=dev, requires_grad=True)
+
+        layer.reset_state()
+        out = layer(feedback, compile=True)  # grad enabled + trainable -> eager
+        out.sum().backward()
+
+        assert len(layer._compiled_scan_cache) == 0  # compiled path never taken
+        assert feedback.grad is not None
+        assert torch.isfinite(feedback.grad).all()
+
+    def test_cpu_compile_falls_back_byte_identical(self) -> None:
+        """On CPU the compiled scan is skipped silently and equals the eager path."""
+        layer = ESNLayer(48, feedback_size=3, spectral_radius=0.9, seed=7)  # CPU
+        layer.eval()
+        feedback = torch.randn(1, 130, 3)
+
+        with torch.no_grad():
+            layer.reset_state()
+            eager = layer(feedback)
+            layer.reset_state()
+            compiled = layer(feedback, compile=True)
+
+        assert torch.equal(eager, compiled)  # byte-identical, no compile attempted
+        assert len(layer._compiled_scan_cache) == 0
+
+    def test_compile_false_default_is_unchanged(self, device: torch.device) -> None:
+        """``compile=False`` (the default) is byte-identical to omitting it."""
+        layer = ESNLayer(64, feedback_size=4, spectral_radius=0.9, seed=3).to(device)
+        layer.eval()
+        feedback = torch.randn(2, 60, 4, device=device)
+
+        layer.reset_state()
+        default = layer(feedback)
+        layer.reset_state()
+        explicit = layer(feedback, compile=False)
+
+        assert torch.equal(default, explicit)
+
+    @_requires_cuda
+    def test_compiled_scan_dropped_on_deepcopy_and_pickle(self) -> None:
+        """The compiled closure is dropped on copy/pickle and rebuilt lazily."""
+        import copy
+        import pickle
+
+        layer = ESNLayer(64, feedback_size=3, spectral_radius=0.9, seed=8).to("cuda")
+        layer.eval()
+        feedback = torch.randn(1, 200, 3, device="cuda")
+        with torch.no_grad():
+            layer.reset_state()
+            layer(feedback, compile=True)
+        assert len(layer._compiled_scan_cache) == 1
+
+        clone = copy.deepcopy(layer)
+        assert len(clone._compiled_scan_cache) == 0
+
+        restored = pickle.loads(pickle.dumps(layer))
+        assert len(restored._compiled_scan_cache) == 0
+
+        # The rebuilt-lazily contract: the restored layer still forwards, and a
+        # fresh compiled call repopulates its own (independent) cache.
+        with torch.no_grad():
+            restored.reset_state()
+            out = restored(feedback, compile=True)
+        assert out.shape == (1, 200, 64)
+        assert len(restored._compiled_scan_cache) == 1

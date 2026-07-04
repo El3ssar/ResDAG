@@ -19,6 +19,17 @@ class SelectiveExponentiation(nn.Module):
     unselected gradients finite even when those positions hold negative bases
     under a non-integer exponent.
 
+    The parity mask depends only on ``(feature_dim, device)`` — never on the
+    input values or dtype — so it is computed once per ``(dim, device)`` pair and
+    cached. This keeps the autoregressive ``forecast`` loop (which calls this
+    layer once per step) off the per-step ``arange``/parity/``ones_like``
+    allocation path. The cache is a plain dict that stays out of ``state_dict``
+    and ``named_buffers``; it is rebuilt lazily when a new dim or device is seen.
+    For the common integer ``exponent=2`` with ``sign_preserving=False`` the
+    forward reduces to ``where(mask, x * x, x)`` (``x * x`` is bit-identical to
+    ``pow(x, 2)`` and finite everywhere, so the safe-base masking is
+    unnecessary); the full safe-base path is retained for every other case.
+
     Parameters
     ----------
     index : int
@@ -79,6 +90,41 @@ class SelectiveExponentiation(nn.Module):
         self.index = index
         self.exponent = exponent
         self.sign_preserving = sign_preserving
+        # Whether ``where(mask, x * x, x)`` reproduces the forward and gradient
+        # exactly: only for a plain (non-sign-preserving) integer square. ``x * x``
+        # is bit-identical to ``pow(x, 2)`` and finite for every real base, so the
+        # safe-base masking is redundant there.
+        self._is_square = (not sign_preserving) and float(exponent) == 2.0
+        # Boolean parity masks cached per (feature_dim, device). Rebuilt lazily on
+        # a new dim/device. Kept out of state_dict / named_buffers on purpose.
+        self._mask_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
+
+    def _get_mask(self, dim: int, device: torch.device) -> torch.Tensor:
+        """Return the cached boolean parity mask for ``(dim, device)``.
+
+        The mask is dtype-independent (boolean) and depends only on the feature
+        dimension and target parity, so it is computed once per ``(dim, device)``
+        pair. Broadcasting against the input's dtype happens at use time.
+
+        Parameters
+        ----------
+        dim : int
+            Size of the last (feature) dimension.
+        device : torch.device
+            Device the input tensor lives on.
+
+        Returns
+        -------
+        torch.Tensor
+            Boolean tensor of shape ``(dim,)`` — ``True`` at selected positions.
+        """
+        key = (dim, device)
+        mask = self._mask_cache.get(key)
+        if mask is None:
+            indices = torch.arange(dim, device=device)
+            mask = (indices % 2) == (self.index % 2)
+            self._mask_cache[key] = mask
+        return mask
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Apply selective exponentiation along the last dimension.
@@ -96,17 +142,21 @@ class SelectiveExponentiation(nn.Module):
             finite; selected positions are finite when ``sign_preserving`` is
             set or the base/exponent combination is real-valued.
         """
-        dim = input.shape[-1]
+        mask = self._get_mask(input.shape[-1], input.device)
 
-        indices = torch.arange(dim, device=input.device)
-        target_parity = self.index % 2
-        mask = (indices % 2) == target_parity
+        # Fast path: a plain integer square is finite for every real base, so the
+        # gate reduces to ``where(mask, x * x, x)``. This is bit-identical to the
+        # safe-base path in both forward and gradient (``x * x == pow(x, 2)``) and
+        # skips the ``ones_like`` allocation and the extra ``where``/``pow`` nodes.
+        if self._is_square:
+            return torch.where(mask, input * input, input)
 
-        # Feed a safe constant (1.0) into ``pow`` at unselected positions so the
-        # pow node never evaluates a value that would back-propagate as 0 * nan
-        # through torch.where (e.g. a negative unselected base with a fractional
-        # exponent). pow(1, e) == 1 with a finite gradient, and the where gate
-        # discards this branch for unselected positions anyway.
+        # General path. Feed a safe constant (1.0) into ``pow`` at unselected
+        # positions so the pow node never evaluates a value that would
+        # back-propagate as 0 * nan through torch.where (e.g. a negative
+        # unselected base with a fractional exponent). pow(1, e) == 1 with a
+        # finite gradient, and the where gate discards this branch for unselected
+        # positions anyway.
         safe_base = torch.where(mask, input, torch.ones_like(input))
 
         if self.sign_preserving:

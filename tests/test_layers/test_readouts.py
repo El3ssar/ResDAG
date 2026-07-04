@@ -1655,6 +1655,259 @@ class TestIncrementalStateDict:
         assert torch.allclose(dst.XtX, src.XtX)
 
 
+class TestIncrementalFittedFlagMirror:
+    """The sync-free ``_fitted_flag`` mirror stays coherent with the buffer.
+
+    ``is_fitted`` reads a plain Python bool (``_fitted_flag``) rather than the
+    ``_is_fitted`` buffer's ``.item()``, so hot paths (the per-step compiled /
+    eager forecast loop) pay no device->host sync and dynamo never breaks on the
+    guard. These tests pin the mirror to the buffer at every lifecycle
+    transition and across a ``load_state_dict`` round-trip.
+    """
+
+    def _buffer(self, ro: IncrementalRidgeReadout) -> bool:
+        return bool(ro._is_fitted.item())
+
+    def test_is_fitted_reads_python_mirror(self) -> None:
+        """``is_fitted`` returns the plain ``_fitted_flag`` mirror."""
+        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        assert inc.is_fitted is inc._fitted_flag is False
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        inc.finalize()
+        assert inc.is_fitted is inc._fitted_flag is True
+
+    def test_mirror_tracks_buffer_across_lifecycle(self) -> None:
+        """Every fittedness transition keeps mirror and buffer in lockstep."""
+        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        assert inc._fitted_flag == self._buffer(inc) is False
+
+        inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        assert inc._fitted_flag == self._buffer(inc) is False  # accumulated, not solved
+
+        inc.finalize()
+        assert inc._fitted_flag == self._buffer(inc) is True
+
+        inc.partial_fit(torch.randn(20, 10), torch.randn(20, 3))
+        assert inc._fitted_flag == self._buffer(inc) is False  # stale after new data
+
+        inc.finalize()
+        assert inc._fitted_flag == self._buffer(inc) is True
+
+        inc.reset_accumulators()
+        assert inc._fitted_flag == self._buffer(inc) is False
+
+    def test_load_state_dict_restores_mirror_from_buffer(self) -> None:
+        """A fitted state_dict restores the Python mirror, not just the buffer.
+
+        Without the post-load hook the ``_is_fitted`` buffer would load
+        correctly but ``_fitted_flag`` would stay stale ``False``, so the loaded
+        readout's ``forward`` guard would wrongly raise "not fitted".
+        """
+        src = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        src.partial_fit(torch.randn(60, 10), torch.randn(60, 3))
+        src.finalize()
+
+        dst = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        assert dst._fitted_flag is False
+        dst.load_state_dict(src.state_dict())
+        # Mirror re-derived from the loaded buffer, and both agree.
+        assert dst._fitted_flag is True
+        assert dst._fitted_flag == self._buffer(dst)
+        # The loaded readout can run forward without the guard tripping.
+        x = torch.randn(4, 10)
+        assert torch.equal(dst(x), src(x))
+
+    def test_load_unfitted_state_dict_clears_mirror(self) -> None:
+        """Loading an unfitted state_dict into a fitted readout clears the mirror."""
+        fitted = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        fitted.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
+        fitted.finalize()
+        assert fitted._fitted_flag is True
+
+        unfitted = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        fitted.load_state_dict(unfitted.state_dict())
+        assert fitted._fitted_flag is False
+        assert fitted._fitted_flag == self._buffer(fitted)
+
+    def test_model_level_load_restores_submodule_mirror(self) -> None:
+        """A model-level ``load_state_dict`` re-syncs the readout's mirror.
+
+        ``ESNModel.save``/``load`` round-trips call ``load_state_dict`` on the
+        whole model; the post-load hook must fire for the nested readout so its
+        mirror is restored from the loaded buffer.
+        """
+        readout = IncrementalRidgeReadout(50, 3, name="output", alpha=1e-6)
+        model = _make_streaming_model(readout, seq_len=40)
+        warmup = torch.randn(1, 40, 3)
+        train = torch.randn(1, 120, 3)
+        target = torch.randn(1, 120, 3)
+
+        def chunks():
+            for i in range(0, 120, 40):
+                yield (train[:, i : i + 40],), {"output": target[:, i : i + 40]}
+
+        ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
+        assert readout.is_fitted
+
+        fresh_readout = IncrementalRidgeReadout(50, 3, name="output", alpha=1e-6)
+        fresh_model = _make_streaming_model(fresh_readout, seq_len=40)
+        assert not fresh_readout.is_fitted
+        fresh_model.load_state_dict(model.state_dict())
+        assert fresh_readout._fitted_flag is True
+        assert fresh_readout.is_fitted
+
+
+class TestIncrementalCompiledForecastFastPath:
+    """The forward guard no longer forfeits the compiled forecast fast path.
+
+    The flat AR forecast engine captures ``readout.forward`` and calls it per
+    step. The guard is short-circuited under ``torch.compiler.is_compiling()``
+    so dynamo never traces (and breaks on) it; fittedness is validated once at
+    forecast entry (the eager warmup pass) instead. These tests pin (a) no
+    dynamo graph break, (b) compiled == eager forecast numerics, and (c) a
+    genuinely-unfitted readout still raising under ``compile=True``.
+    """
+
+    def _build_fitted(self, dev: str) -> tuple[ESNModel, IncrementalRidgeReadout]:
+        torch.manual_seed(0)
+        inp = ps.Input((40, 3))
+        states = ESNLayer(80, feedback_size=3, spectral_radius=0.9)(inp)
+        ro = IncrementalRidgeReadout(80, 3, name="output", alpha=1e-4)
+        model = ESNModel(inp, ro(states)).to(dev)
+        warmup = torch.randn(1, 40, 3, device=dev)
+        train = torch.randn(1, 200, 3, device=dev)
+        target = torch.randn(1, 200, 3, device=dev)
+
+        def chunks():
+            for i in range(0, 200, 50):
+                yield (train[:, i : i + 50],), {"output": target[:, i : i + 50]}
+
+        ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
+        return model, ro
+
+    def test_compiled_forecast_matches_eager(self) -> None:
+        """compile=True and compile=False forecasts agree (guard skip is inert).
+
+        The guard short-circuit under ``torch.compiler.is_compiling()`` returns
+        the *same* ``super().forward`` value the eager guard would, so the first
+        forecast step differs from eager only by inductor's float32 matmul
+        reassociation for that single step — not by the guard. (``torch.compile``
+        never guarantees bitwise identity with eager, and the CPU inductor
+        backend reassociates even the first step, so this is a near-equality
+        check, not ``torch.equal``.) Later steps drift a little more as that tiny
+        error compounds through the autoregressive feedback loop, so the full
+        horizon is compared with a slightly looser tolerance.
+        """
+        model, ro = self._build_fitted("cpu")
+        assert ro.is_fitted
+        warmup = torch.randn(1, 40, 3)
+
+        eager = model.forecast(warmup, horizon=30, compile=False)
+        compiled = model.forecast(warmup, horizon=30, compile=True)
+        # First step: near-identical (guard skip is inert; only single-step
+        # inductor reassociation separates them — no compounding yet).
+        assert torch.allclose(eager[:, 0], compiled[:, 0], atol=1e-4, rtol=1e-4)
+        # Full horizon: close to within the known compiled/eager float32 drift.
+        assert torch.allclose(eager, compiled, atol=1e-3, rtol=1e-3)
+
+    def test_compiled_forecast_no_dynamo_graph_break(self) -> None:
+        """The per-step guard causes no dynamo graph break under compile."""
+        pytest.importorskip("torch._dynamo")
+        import torch._dynamo as dynamo
+
+        model, ro = self._build_fitted("cpu")
+        warmup = torch.randn(1, 40, 3)
+
+        dynamo.reset()
+        counters = dynamo.utils.counters
+        counters.clear()
+        model.forecast(warmup, horizon=40, compile=True)
+        assert not counters.get(
+            "graph_break"
+        ), f"compiled forecast graph-broke: {dict(counters.get('graph_break', {}))}"
+
+    def test_unfitted_compiled_forecast_still_raises(self) -> None:
+        """An unfitted readout still raises under compile=True (caught at entry).
+
+        The compiled fast path skips the per-step guard, but the eager warmup
+        pass that precedes it runs the readout ``forward`` and trips the guard,
+        so a genuinely-unfitted readout can never silently produce garbage.
+        """
+        torch.manual_seed(0)
+        inp = ps.Input((40, 3))
+        states = ESNLayer(80, feedback_size=3, spectral_radius=0.9)(inp)
+        ro = IncrementalRidgeReadout(80, 3, name="output", alpha=1e-4)
+        model = ESNModel(inp, ro(states))  # never fitted
+        warmup = torch.randn(1, 40, 3)
+
+        assert not ro.is_fitted
+        with pytest.raises(RuntimeError, match="not fitted.*finalize"):
+            model.forecast(warmup, horizon=20, compile=True)
+
+    @pytest.mark.gpu
+    def test_compiled_forecast_hits_fast_path_on_cuda(self) -> None:
+        """On CUDA the compiled Incremental forecast reaches CG-grade speed.
+
+        Regression for the 13.7x penalty: the per-step ``.item()`` device sync
+        plus the dynamo graph break used to drop the compiled forecast to the
+        eager flat step (~270 ms/1000 steps vs ~20 ms for CG). With the guard
+        short-circuited and the sync removed, the Incremental compiled forecast
+        must run within a small factor of the CG one.
+        """
+        if not torch.cuda.is_available():  # pragma: no cover - guarded by marker
+            pytest.skip("CUDA not available")
+        import time
+
+        dev = "cuda"
+
+        def build(readout_cls):
+            torch.manual_seed(0)
+            inp = ps.Input((60, 3))
+            st = ESNLayer(300, feedback_size=3, spectral_radius=0.9)(inp)
+            ro = readout_cls(300, 3, name="output", alpha=1e-4)
+            return ESNModel(inp, ro(st)).to(dev), ro
+
+        warmup = torch.randn(1, 60, 3, device=dev)
+        train = torch.randn(1, 400, 3, device=dev)
+        target = torch.randn(1, 400, 3, device=dev)
+
+        m_inc, ro_inc = build(IncrementalRidgeReadout)
+
+        def chunks():
+            for i in range(0, 400, 50):
+                yield (train[:, i : i + 50],), {"output": target[:, i : i + 50]}
+
+        ESNTrainer(m_inc).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
+
+        m_cg, ro_cg = build(CGReadoutLayer)
+        ESNTrainer(m_cg).fit(
+            warmup_inputs=(warmup,), train_inputs=(train,), targets={"output": target}
+        )
+        assert ro_inc.is_fitted and ro_cg.is_fitted
+
+        def bench(m, horizon: int = 1000, n: int = 3) -> float:
+            m.forecast(warmup, horizon=horizon, compile=True)  # warm compile cache
+            torch.cuda.synchronize()
+            best = float("inf")
+            for _ in range(n):
+                torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                m.forecast(warmup, horizon=horizon, compile=True)
+                torch.cuda.synchronize()
+                best = min(best, (time.perf_counter() - t0) * 1000.0)
+            return best
+
+        inc_ms = bench(m_inc)
+        cg_ms = bench(m_cg)
+        # Pre-fix the ratio was ~13.7x; a fixed fast path is within a small
+        # factor of CG. A generous 3x bound is robust to CI jitter while still
+        # failing hard if the guard silently forfeits the compiled path again.
+        assert inc_ms < cg_ms * 3.0, (
+            f"Incremental compiled forecast too slow: {inc_ms:.1f} ms vs "
+            f"CG {cg_ms:.1f} ms ({inc_ms / cg_ms:.1f}x)"
+        )
+
+
 class TestIncrementalDevice:
     """Incremental fitting works on every available device."""
 

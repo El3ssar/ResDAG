@@ -5,6 +5,113 @@ from networkx import Graph
 
 from resdag.init.topology.registry import register_graph_topology
 
+from ._dense import adjacency_to_graph, register_dense_adjacency
+
+
+def spectral_cascade_adjacency(
+    n: int,
+    spectral_radius: float,
+    self_loops: bool = False,
+) -> np.ndarray:
+    """Build the dense weighted adjacency of a spectral-cascade graph.
+
+    Constructs the block-diagonal clique adjacency directly in NumPy — the same
+    matrix :func:`spectral_cascade_graph` describes — without materialising a
+    NetworkX object or the ``O(n^2)`` Python double loop that previously
+    converted the dense matrix into edges only for
+    :class:`~resdag.init.topology.GraphTopology` to collapse it straight back.
+
+    Each clique ``k = 1..N`` (sizes ``1..N`` with ``n = N(N+1)/2``) occupies a
+    contiguous diagonal block filled with deterministic ``{+1, -1}`` weights and
+    spectrally scaled to its graded target radius (see
+    :func:`spectral_cascade_graph` for the cascade definition).
+
+    Parameters
+    ----------
+    n : int
+        Total number of nodes (must be triangular, i.e. ``n = N(N+1)/2``).
+    spectral_radius : float
+        The "starting" radius for the 2-node clique, graded down across larger
+        cliques.
+    self_loops : bool, optional
+        If ``True``, each node carries a self-loop of weight ``(-1)^i``.
+        Default: ``False``.
+
+    Returns
+    -------
+    numpy.ndarray
+        An ``(n, n)`` ``float32`` symmetric block-diagonal weighted adjacency.
+
+    Raises
+    ------
+    ValueError
+        If ``n`` is not triangular.
+
+    See Also
+    --------
+    spectral_cascade_graph : NetworkX-returning wrapper around this builder.
+    """
+    # 1) Check that n is triangular:  n = N(N+1)/2.
+    D = 1 + 8 * n
+    sqrt_D = isqrt(D)
+    if sqrt_D * sqrt_D != D or (sqrt_D - 1) % 2 != 0:
+        raise ValueError(f"{n} is not a triangular number (N(N+1)/2 for some integer N).")
+
+    N = (sqrt_D - 1) // 2  # number of cliques
+
+    # 2) Prepare an n x n adjacency matrix
+    A = np.zeros((n, n), dtype=np.float64)
+
+    offset = 0
+    for k in range(1, N + 1):
+        size_k = k
+        # If k=1 => trivial, spectral radius = 0 => skip edges
+        if k == 1:
+            offset += 1
+            continue
+
+        # Build the local adjacency block. With global indices
+        # ``g = offset + i``, the off-diagonal weight ``(-1)^(g_i + g_j)`` is the
+        # outer product of the per-node sign ``s_i = (-1)^(offset + i)``, and the
+        # optional diagonal self-loop is ``(-1)^(offset + i) == s_i`` too.
+        local = np.arange(size_k)
+        signs = np.power(-1.0, offset + local)  # (-1)^(offset + i)
+        A_sub = np.outer(signs, signs)  # (-1)^(g_i + g_j) elementwise
+        if self_loops:
+            np.fill_diagonal(A_sub, signs)  # diagonal = (-1)^g_i
+        else:
+            np.fill_diagonal(A_sub, 0.0)
+
+        # 3) Desired spectral radius for this clique
+        if k == 2:
+            desired_r = spectral_radius
+        else:
+            desired_r = (N - k + 1) * spectral_radius / N
+
+        # 4) Scale block by ratio (desired_r / actual_r)
+        vals = np.linalg.eigvals(A_sub)
+        current_r = max(abs(vals)) if len(vals) > 0 else 0.0
+
+        if current_r > 1e-14 and desired_r != 0:
+            scale_factor = desired_r / current_r
+            A_sub *= scale_factor
+
+        # 5) Insert A_sub back into the global adjacency matrix A
+        A[offset : offset + k, offset : offset + k] = A_sub
+
+        offset += k
+
+    # Symmetrize exactly as the original did (mirror upper triangle). The block
+    # construction is already symmetric, so this is a no-op numerically but kept
+    # for parity and to zero any floating asymmetry.
+    A = np.triu(A) + np.triu(A, 1).T
+
+    # Drop floating garbage below the original edge threshold so the adjacency
+    # has the same sparsity pattern as the edge-by-edge NetworkX build.
+    A[np.abs(A) <= 1e-14] = 0.0
+
+    return A.astype(np.float32)
+
 
 @register_graph_topology(
     "spectral_cascade",
@@ -12,6 +119,7 @@ from resdag.init.topology.registry import register_graph_topology
     spectral_radius=1.0,
     self_loops=False,
 )
+@register_dense_adjacency(spectral_cascade_adjacency)
 def spectral_cascade_graph(
     n: int,
     spectral_radius: float,
@@ -39,6 +147,11 @@ def spectral_cascade_graph(
     warning). Set the cascade's top radius through this builder's own
     ``spectral_radius`` parameter instead.
 
+    The adjacency is built with vectorized NumPy (see
+    :func:`spectral_cascade_adjacency`); the NetworkX object is materialised only
+    for direct callers. When this generator is used as a topology, the dense fast
+    path skips NetworkX entirely.
+
     Parameters
     ----------
     n : int
@@ -62,81 +175,5 @@ def spectral_cascade_graph(
     ValueError
         If `n` is not triangular.
     """
-
-    # 1) Check that n is triangular:  n = N(N+1)/2.
-    D = 1 + 8 * n
-    sqrt_D = isqrt(D)
-    if sqrt_D * sqrt_D != D or (sqrt_D - 1) % 2 != 0:
-        raise ValueError(f"{n} is not a triangular number (N(N+1)/2 for some integer N).")
-
-    N = (sqrt_D - 1) // 2  # number of cliques
-
-    # 2) Prepare an n x n adjacency matrix
-    A = np.zeros((n, n), dtype=float)
-
-    offset = 0
-    for k in range(1, N + 1):
-        size_k = k
-        # adjacency block for this clique is A_sub, shape (k, k).
-        # We'll fill it, compute its largest eigenvalue, then scale.
-
-        # If k=1 => trivial, spectral radius = 0 => skip edges
-        if k == 1:
-            offset += 1
-            continue
-
-        # Build the local adjacency block
-        A_sub = np.zeros((size_k, size_k), dtype=float)
-
-        for i in range(size_k):
-            global_i = offset + i
-            for j in range(size_k):
-                global_j = offset + j
-                if i == j:
-                    # Self-loop if requested
-                    if self_loops:
-                        # weight = (-1)^global_i
-                        A_sub[i, j] = (-1) ** (global_i)
-                else:
-                    # Normal edge in a "complete" sense
-                    w = (-1) ** (global_i + global_j)
-                    A_sub[i, j] = w
-
-        # 3) Desired spectral radius for this clique
-        if k == 2:
-            desired_r = spectral_radius
-        else:
-            desired_r = (N - k + 1) * spectral_radius / N
-
-        # 4) Scale block by ratio (desired_r / actual_r)
-        #    First compute largest eigenvalue magnitude:
-        vals = np.linalg.eigvals(A_sub)
-        current_r = max(abs(vals)) if len(vals) > 0 else 0.0
-
-        if current_r > 1e-14 and desired_r != 0:
-            scale_factor = desired_r / current_r
-            A_sub *= scale_factor
-
-        # 5) Insert A_sub back into the global adjacency matrix A
-        A[offset : offset + k, offset : offset + k] = A_sub
-
-        offset += k
-
-    # 6) Build the final networkx Graph/DiGraph from adjacency
-    G = Graph()
-    G.add_nodes_from(range(n))
-
-    # Mirror the upper/lower triangle
-    A = np.triu(A) + np.triu(A, 1).T
-
-    # Now add edges with 'weight'
-    for i in range(n):
-        for j in range(n):
-            if i == j and not self_loops:
-                # Possibly remove diagonal if self_loops=False
-                continue
-            w = A[i, j]
-            if abs(w) > 1e-14:  # avoid floating garbage
-                G.add_edge(i, j, weight=w)
-
-    return G
+    adjacency = spectral_cascade_adjacency(n, spectral_radius, self_loops)
+    return adjacency_to_graph(adjacency, directed=False)

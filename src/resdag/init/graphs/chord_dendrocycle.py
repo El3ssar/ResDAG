@@ -4,7 +4,52 @@ import numpy as np
 from networkx import DiGraph
 
 from resdag.init.topology.registry import register_graph_topology
-from resdag.utils.general import create_rng
+
+from ._dense import adjacency_to_graph, register_dense_adjacency
+from .dendrocycle import _dendrocycle_adjacency
+
+
+def dendrocycle_with_chords_adjacency(
+    n: int,
+    c: float,
+    d: float,
+    core_weight: float = 1.0,
+    dendritic_weight: float = 1.0,
+    quiescent_weight: float = 1.0,
+    L: int | Iterable[int] | None = None,
+    w: float = 0.5,
+    alpha: float = 1.0,
+    seed: int | np.random.Generator | None = None,
+) -> np.ndarray:
+    """Build the dense directed adjacency of a chord-dendrocycle graph in NumPy.
+
+    Vectorized construction of the same adjacency
+    :func:`dendrocycle_with_chords_graph` describes. Like
+    :func:`~resdag.init.graphs.dendrocycle.dendrocycle_adjacency` but with a
+    sparser quiescent DAG (edge probability ``0.1`` rather than ``0.5``). The
+    quiescent block is a single strict-upper-triangular
+    ``rng.random((A, A)) < 0.1`` draw, so the draw order — and the exact
+    quiescent edge set under a given seed — differs from the pre-vectorization
+    pair loop while staying deterministic and statistically equivalent.
+
+    See Also
+    --------
+    dendrocycle_with_chords_graph : NetworkX-returning wrapper around this builder.
+    """
+    return _dendrocycle_adjacency(
+        n,
+        c,
+        d,
+        core_weight,
+        dendritic_weight,
+        quiescent_weight,
+        0.1,
+        L,
+        w,
+        alpha,
+        seed,
+        require_positive_c=True,
+    )
 
 
 @register_graph_topology(
@@ -19,6 +64,7 @@ from resdag.utils.general import create_rng
     alpha=1.0,
     seed=None,
 )
+@register_dense_adjacency(dendrocycle_with_chords_adjacency)
 def dendrocycle_with_chords_graph(
     n: int,
     c: float,
@@ -40,6 +86,18 @@ def dendrocycle_with_chords_graph(
       - Optional quiescent DAG remainder (last A=n-C-D nodes)      | weight = quiescent_weight
       - Optional backward chords ONLY on core ring:
             i -> (i - L_k) mod C with weights w * alpha**k (where L_k is the k-th chord length)
+
+    The adjacency is built with vectorized NumPy (see
+    :func:`dendrocycle_with_chords_adjacency`); the NetworkX object is
+    materialised only for direct callers, and the dense topology fast path skips
+    it entirely.
+
+    .. note::
+       The quiescent DAG block is now drawn with a single vectorized
+       ``rng.random((A, A)) < 0.1`` mask instead of a per-pair scalar loop. The
+       result is still deterministic under a seed and statistically identical
+       (Bernoulli(0.1) forward edges on the shuffled ordering), but the exact
+       edge set for a given ``seed`` differs from earlier versions.
 
     Parameters
     ----------
@@ -63,92 +121,16 @@ def dendrocycle_with_chords_graph(
     networkx.DiGraph
         A Dendrocycle + optional small-world chords on the core ring.
     """
-    if not (0 < c <= 1):
-        raise ValueError("c must be in (0, 1]")
-    if not (0 <= d <= 1) or c + d > 1:
-        raise ValueError("d must satisfy: 0 <= d and c + d <= 1")
-
-    # ----- RNG
-    rng = create_rng(seed)
-    G = DiGraph()
-
-    # ----- Node counts
-    C = max(2, int(round(c * n)))
-    D = max(0, int(round(d * n)))
-    A = max(0, n - C - D)
-
-    # ----- Node indexing: core first, dendritic next, quiescent last
-    core_nodes = list(range(C))
-    dend_nodes = list(range(C, C + D))
-    q_nodes = list(range(C + D, n))
-
-    G.add_nodes_from(core_nodes, role="core")
-    G.add_nodes_from(dend_nodes, role="dendritic")
-    G.add_nodes_from(q_nodes, role="quiescent")
-
-    # ======================================================
-    # 1. Core ring
-    # ======================================================
-    for i in range(C):
-        G.add_edge(core_nodes[i], core_nodes[(i + 1) % C], weight=core_weight)
-
-    # ======================================================
-    # 2. Dendrites: deterministic spacing around the ring
-    # ======================================================
-    if D > 0:
-        k = min(C, max(1, int(np.sqrt(D))))  # number of dendrites
-        base_len = D // k
-        remainder = D % k
-        lengths = [base_len + (1 if i < remainder else 0) for i in range(k)]
-
-        anchor_indices = np.linspace(0, C, num=k, endpoint=False, dtype=int)
-
-        start_idx = 0
-        for anchor_idx, Lchain in zip(anchor_indices, lengths):
-            anchor_node = core_nodes[anchor_idx]
-            prev = anchor_node
-            for j in range(Lchain):
-                node = dend_nodes[start_idx + j]
-                G.add_edge(prev, node, weight=dendritic_weight)
-                prev = node
-            start_idx += Lchain
-
-    # ======================================================
-    # 3. Quiescent DAG
-    # ======================================================
-    if A > 0:
-        topo = q_nodes.copy()
-        rng.shuffle(topo)
-        for i in range(len(topo)):
-            for j in range(i + 1, len(topo)):
-                if rng.random() < 0.1:
-                    G.add_edge(topo[i], topo[j], weight=quiescent_weight)
-
-    # ======================================================
-    # 4. Optional small-world chords ON THE CORE RING
-    # ======================================================
-    if L is not None:
-        if isinstance(L, int):
-            Ls = [L]
-        else:
-            Ls = list(L)
-            if not Ls:
-                raise ValueError("L cannot be an empty iterable.")
-
-        # validate L
-        for Lk in Ls:
-            if not (1 <= Lk <= C // 2):
-                raise ValueError(f"Chord L_k must be in [1, {C // 2}]. Got {Lk}")
-
-        if not (0 < alpha <= 1):
-            raise ValueError(f"alpha must be in (0,1]. Given {alpha}")
-
-        # add chords i -> (i - Lk) % C on core only
-        for k_idx, Lk in enumerate(Ls):
-            wk = w * (alpha**k_idx)
-            if wk == 0.0:
-                continue
-            for i in range(C):
-                G.add_edge(i, (i - Lk) % C, weight=float(wk))
-
-    return G
+    adjacency = dendrocycle_with_chords_adjacency(
+        n,
+        c,
+        d,
+        core_weight,
+        dendritic_weight,
+        quiescent_weight,
+        L,
+        w,
+        alpha,
+        seed,
+    )
+    return adjacency_to_graph(adjacency, directed=True)

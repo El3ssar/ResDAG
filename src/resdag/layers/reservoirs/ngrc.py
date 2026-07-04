@@ -137,6 +137,8 @@ class NGReservoir(BaseReservoirLayer):
         self,
         inputs: list[torch.Tensor],
         state: torch.Tensor,
+        *,
+        compile: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Pure whole-sequence NG-RC feature map: thread ``state`` in and out.
@@ -159,6 +161,10 @@ class NGReservoir(BaseReservoirLayer):
             ``inputs[0]`` is consumed.
         state : torch.Tensor
             Incoming delay buffer of shape ``(batch, state_size, input_dim)``.
+        compile : bool, default=False
+            Accepted for signature parity with the base layer's opt-in compiled
+            teacher-forced scan, but a **no-op** here: NG-RC is a vectorized
+            feedforward feature map with no per-step recurrent loop to compile.
 
         Returns
         -------
@@ -175,6 +181,7 @@ class NGReservoir(BaseReservoirLayer):
         self,
         feedback: torch.Tensor,
         *driving_inputs: torch.Tensor,
+        compile: bool = False,
     ) -> torch.Tensor:
         """
         Process an input sequence through the NG-RC feature map in one pass.
@@ -197,6 +204,9 @@ class NGReservoir(BaseReservoirLayer):
             input weight matrix, so it cannot consume driving inputs.  Passing
             any raises :class:`ValueError` rather than silently discarding them
             and producing a misconfigured-but-running model.
+        compile : bool, default=False
+            Accepted for signature parity with the base layer but a **no-op**:
+            NG-RC has no per-step recurrent loop, so there is nothing to compile.
 
         Returns
         -------

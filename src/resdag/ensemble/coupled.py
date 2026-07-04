@@ -21,6 +21,7 @@ import torch
 import torch.nn as nn
 
 from resdag.core import ESNModel
+from resdag.core._flat_inference import FlatStep
 from resdag.training import ESNTrainer
 
 
@@ -558,8 +559,30 @@ class CoupledEnsembleESNModel(nn.Module):
                 for _ in self.models
             ]
 
+        # Resolve each sub-model's flattened single-step executor and its
+        # reservoir states once, *before* the loop. Stepping every member through
+        # its ``FlatStep`` (a straight-line, capture-the-layers step function)
+        # instead of re-invoking ``model(*step_inputs)`` sheds the per-step
+        # symbolic-graph re-walk, ``nn.Module.__call__`` dispatch, and reservoir
+        # sequence-loop bookkeeping — the same overhead the core forecast engine
+        # eliminates for single models. The step is numerically identical to the
+        # graph path (proven bit-exact upstream), so the coupled forecast output
+        # is unchanged. States are threaded explicitly per member rather than
+        # mutated on the module buffers mid-loop; they are persisted back to each
+        # reservoir after the loop so ``reset=False`` / ``get_reservoir_states``
+        # continue to observe the advanced states.
+        flats: list[FlatStep] = [m._get_flat_step() for m in self._iter_models()]
+        states_per_model: list[list[torch.Tensor]] = [
+            self._resolve_member_states(flat, batch_size, device, dtype) for flat in flats
+        ]
+
         # Phase 2: coupled autoregressive loop. Every slot ``0..horizon-1`` is a
-        # genuine coupled step; no teacher-forced warmup echo is emitted.
+        # genuine coupled step; no teacher-forced warmup echo is emitted. The
+        # members are coupled through the aggregator: every member is stepped on
+        # the *same* ``current_feedback`` (the aggregation of all members' outputs
+        # at ``t-1``), and the aggregated output becomes the shared feedback for
+        # the next step — so the members cannot be rolled out independently and
+        # the aggregation must be interleaved between single steps.
         for t in range(horizon):
             if has_drivers:
                 # ``has_drivers`` implies ``forecast_inputs`` was validated as a
@@ -572,7 +595,15 @@ class CoupledEnsembleESNModel(nn.Module):
             else:
                 step_inputs = (current_feedback,)
 
-            step_outputs = [model(*step_inputs) for model in self.models]
+            # Step every member through its flat executor on the shared feedback,
+            # threading each member's own reservoir states in and out. Sub-models
+            # are single-output (enforced at construction), so ``out_tuple`` holds
+            # exactly one ``(batch, 1, output_size)`` slice — identical to what
+            # ``model(*step_inputs)`` returned on the graph path.
+            step_outputs: list[torch.Tensor] = []
+            for i, flat in enumerate(flats):
+                out_tuple, states_per_model[i] = flat.step(step_inputs, states_per_model[i])
+                step_outputs.append(out_tuple[0])
 
             if individual_outputs is not None:
                 for buf, out in zip(individual_outputs, step_outputs):
@@ -588,6 +619,18 @@ class CoupledEnsembleESNModel(nn.Module):
                 self._aggregate(step_outputs), device, dtype
             )  # (batch, 1, output_size)
             forecast_outputs[:, t, :] = current_feedback.squeeze(1)
+
+        # Persist each member's advanced reservoir states back onto its layers so
+        # a follow-up ``forecast(reset=False)`` / ``get_reservoir_states`` sees
+        # them, mirroring the in-place mutation of the legacy per-step loop and
+        # honouring the ``detach_state_between_calls`` contract exactly as
+        # ``ESNModel.forecast`` does.
+        for flat, states in zip(flats, states_per_model):
+            for reservoir, state in zip(flat.reservoir_layers, states):
+                if reservoir.detach_state_between_calls and state.grad_fn is not None:
+                    reservoir.state = state.detach().clone()
+                else:
+                    reservoir.state = state.clone()
 
         if return_warmup:
             warmup_stacked = torch.stack(warmup_outputs_per_model, dim=0)
@@ -901,6 +944,45 @@ class CoupledEnsembleESNModel(nn.Module):
         if step.dtype != buf_dtype:
             return step.to(dtype=buf_dtype)
         return step
+
+    @staticmethod
+    def _resolve_member_states(
+        flat: FlatStep,
+        batch_size: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> list[torch.Tensor]:
+        """Collect a sub-model's reservoir states for explicit threading.
+
+        Warmup leaves each reservoir's state set; this reads them (in the
+        ``flat.reservoir_layers`` order the flat step threads them) and lazily
+        initialises any that are somehow still ``None`` — mirroring the same
+        resolution :meth:`resdag.core.ESNModel.forecast` performs before it hands
+        the states to :func:`resdag.core._flat_inference.rollout`.
+
+        Parameters
+        ----------
+        flat : FlatStep
+            The sub-model's flattened single-step executor; its
+            ``reservoir_layers`` fix the threading order.
+        batch_size : int
+            Batch size used to lazily initialise any missing state.
+        device, dtype : torch.device, torch.dtype
+            Device/dtype used to lazily initialise any missing state.
+
+        Returns
+        -------
+        list of torch.Tensor
+            The reservoir states in ``flat.reservoir_layers`` order, ready to be
+            threaded through :meth:`FlatStep.step`.
+        """
+        states: list[torch.Tensor] = []
+        for reservoir in flat.reservoir_layers:
+            if reservoir.state is None:
+                reservoir._maybe_init_state(batch_size, device, dtype)
+            assert reservoir.state is not None  # narrows for mypy
+            states.append(reservoir.state)
+        return states
 
     def _aggregate(self, outputs: list[torch.Tensor]) -> torch.Tensor:
         """Stack a list of per-model tensors and aggregate them."""

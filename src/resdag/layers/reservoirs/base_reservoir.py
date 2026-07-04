@@ -11,14 +11,36 @@ See Also
 resdag.layers.reservoir : Concrete implementations.
 """
 
+import warnings
 from abc import ABC
 from itertools import chain
-from typing import Any
+from typing import Any, Callable
 
 import torch
 import torch.nn as nn
 
 from resdag.layers.cells import ReservoirCell
+
+# ``torch.compile`` gained the maturity the reduce-overhead / cudagraph path
+# relies on in 2.10; below that we silently drive the eager time loop.  Kept in
+# lockstep with ``resdag.core._flat_inference._MIN_COMPILE_TORCH`` (the forecast
+# engine), which the compiled teacher-forced scan mirrors.
+_MIN_COMPILE_TORCH = "2.10.0"
+
+# Steps unrolled per compiled call.  Matches the forecast engine's
+# ``DEFAULT_COMPILE_CHUNK``: wrapping the teacher-forced loop in
+# ``mode="reduce-overhead"`` only pays off when a single cudagraph replay covers
+# many steps, so unrolling ~64 ``cell.step`` calls amortises the replay
+# overhead into one launch per chunk.
+DEFAULT_COMPILE_CHUNK = 64
+
+# A chunk step maps ``(projected_chunk, state)`` to ``(stacked_outputs, new_state)``:
+# it unrolls ``chunk`` recurrent-only ``cell.step`` updates over the precomputed
+# input projection and stacks the per-step outputs along the time axis.
+_ChunkScanFn = Callable[
+    [torch.Tensor, torch.Tensor],
+    tuple[torch.Tensor, torch.Tensor],
+]
 
 # Cell configuration attributes that are safe to mutate *live* after
 # construction: they are read fresh on every step by the cell (leak_rate, noise)
@@ -33,6 +55,119 @@ _FORWARDABLE_CELL_ATTRS = frozenset({"trainable", "leak_rate", "noise"})
 # layer raises rather than silently shadowing (the old ``nn.Module.__setattr__``
 # behaviour) or forwarding to no effect.
 _BAKED_CELL_ATTRS = frozenset({"spectral_radius", "reservoir_size", "feedback_size", "input_size"})
+
+
+def _build_chunk_scan(cell: ReservoirCell, chunk: int) -> _ChunkScanFn:
+    """
+    Build an eager function that runs ``chunk`` recurrent-only ``cell.step`` updates.
+
+    The returned function threads the reservoir state through ``chunk``
+    teacher-forced steps *internally* (a Python loop that :func:`torch.compile`
+    unrolls into a single graph), slicing the precomputed input projection one
+    timestep at a time and stacking the per-step outputs along the time axis.
+    Driving the teacher-forced loop with this — instead of one compiled call per
+    step — is what lets ``mode="reduce-overhead"`` amortise a cudagraph replay
+    over many steps.
+
+    Parameters
+    ----------
+    cell : ReservoirCell
+        The cell whose :meth:`~resdag.layers.cells.base_cell.ReservoirCell.step`
+        recurrent-only update is unrolled.  Must expose the projected fast path
+        (its ``project_inputs`` must not return ``None``).
+    chunk : int
+        Number of steps per call.
+
+    Returns
+    -------
+    _ChunkScanFn
+        ``f(projected_chunk, state) -> (stacked_outputs, new_state)`` where
+        ``projected_chunk`` is a ``(batch, chunk, reservoir_size)`` slice of the
+        :meth:`~resdag.layers.cells.esn_cell.ESNCell.project_inputs` output and
+        ``stacked_outputs`` is ``(batch, chunk, output_size)``.  Numerically
+        identical to calling :meth:`cell.step` ``chunk`` times.
+    """
+    step = cell.step
+
+    def chunk_scan(
+        projected_chunk: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        outputs: list[torch.Tensor] = []
+        for k in range(chunk):
+            output, state = step(projected_chunk[:, k, :], state)
+            outputs.append(output)
+        return torch.stack(outputs, dim=1), state
+
+    return chunk_scan
+
+
+def _resolve_chunk_scan(
+    cell: ReservoirCell,
+    *,
+    chunk: int,
+    trial_projected: torch.Tensor,
+    trial_state: torch.Tensor,
+) -> _ChunkScanFn | None:
+    """
+    Build and compile a chunked teacher-forced scan, or return ``None`` for eager.
+
+    Wraps :func:`_build_chunk_scan` in :func:`torch.compile`
+    (``fullgraph=True``, ``mode="reduce-overhead"``) and *trial-traces it once*
+    on a cloned seed state so any compilation failure surfaces here.  Returns
+    ``None`` — with a :class:`RuntimeWarning` — when ``torch < 2.10`` or
+    compilation fails, signalling the caller to drive the teacher-forced loop
+    with the eager time loop instead of aborting.  This mirrors
+    :func:`resdag.core._flat_inference.resolve_chunk_step`, the forecast
+    engine's counterpart.
+
+    Parameters
+    ----------
+    cell : ReservoirCell
+        The cell whose ``step`` is unrolled and compiled.
+    chunk : int
+        Steps per compiled call.
+    trial_projected : torch.Tensor
+        Seed projection chunk (``(batch, chunk, reservoir_size)``) used to
+        trial-trace the compiled function.
+    trial_state : torch.Tensor
+        Current reservoir state; cloned internally for the trial call so the
+        real loop's state is never advanced.
+
+    Returns
+    -------
+    _ChunkScanFn or None
+        The warm compiled chunk scan, or ``None`` to fall back to eager.
+    """
+    if torch.__version__ < _MIN_COMPILE_TORCH:
+        warnings.warn(
+            f"forward(compile=True) needs torch>={_MIN_COMPILE_TORCH} for the "
+            f"reduce-overhead teacher-forced scan (found {torch.__version__}); "
+            f"using the eager time loop instead.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return None
+
+    try:
+        compiled: _ChunkScanFn = torch.compile(
+            _build_chunk_scan(cell, chunk), fullgraph=True, mode="reduce-overhead"
+        )
+        # Trial-trace once on a cloned state so a graph break / capture failure
+        # surfaces here, where we can still fall back cleanly.
+        torch.compiler.cudagraph_mark_step_begin()
+        compiled(trial_projected, trial_state.clone())
+        return compiled
+    except Exception as exc:
+        # Any compilation/capture failure degrades to the eager time loop rather
+        # than aborting the forward (e.g. an inductor backend error).
+        warnings.warn(
+            f"forward(compile=True): torch.compile failed ({type(exc).__name__}: {exc}); "
+            f"falling back to the eager time loop.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return None
 
 
 class BaseReservoirLayer(nn.Module, ABC):
@@ -97,6 +232,15 @@ class BaseReservoirLayer(nn.Module, ABC):
         # zero-init.  Only the former is protected against a silent batch-size
         # re-init in ``_maybe_init_state`` — the latter is free to auto-resize.
         self._state_user_set: bool = False
+        # Per-configuration cache of compiled teacher-forced chunk scans, keyed by
+        # ``(id(cell), chunk, dtype, device)``.  Populated lazily by
+        # ``forward_stateless(compile=...)`` and dropped on pickle / deepcopy (it
+        # holds a ``torch.compile`` closure over the live cell that would
+        # otherwise close over stale layers on a copy — mirrors the forecast
+        # engine's ``_flat_step_cache`` hygiene in ``ESNModel``).
+        self._compiled_scan_cache: dict[
+            tuple[int, int, torch.dtype, torch.device], _ChunkScanFn
+        ] = {}
 
     def __setattr__(self, name: str, value: Any) -> None:
         """
@@ -171,10 +315,34 @@ class BaseReservoirLayer(nn.Module, ABC):
         # attributes — registers through nn.Module.__setattr__ unchanged.
         super().__setattr__(name, value)
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Drop the unpicklable compiled-scan cache before pickling / deepcopy.
+
+        The cache holds :func:`torch.compile` closures over the live cell that
+        cannot be pickled and — on a deep copy — would keep closing over the
+        *original* layer's weights.  Dropping it mirrors ``ESNModel``'s
+        ``_flat_step_cache`` hygiene: nothing is lost, the cache is rebuilt
+        lazily on the next ``forward(compile=True)``.  Both pickle and
+        :func:`copy.deepcopy` route through this hook (``nn.Module`` defines no
+        ``__deepcopy__``), so one override covers both.
+        """
+        state: dict[str, Any] = super().__getstate__()
+        state.pop("_compiled_scan_cache", None)
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state, re-creating the empty compiled-scan cache."""
+        super().__setstate__(state)
+        # Dropped in ``__getstate__``; re-materialise an empty cache so the
+        # restored layer can compile fresh on its next ``forward(compile=True)``.
+        self._compiled_scan_cache = {}
+
     def forward_stateless(
         self,
         inputs: list[torch.Tensor],
         state: torch.Tensor,
+        *,
+        compile: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Run the time loop purely: thread ``state`` in and out, touch no ``self`` state.
@@ -197,6 +365,29 @@ class BaseReservoirLayer(nn.Module, ABC):
         state : torch.Tensor
             Initial reservoir state, shape ``(batch, ...)`` as produced by
             ``self.cell.init_state``.
+        compile : bool, keyword-only, default=False
+            Opt-in compiled/chunked engine for the teacher-forced sequence loop
+            (warmup, ``ESNTrainer.fit`` forward, ``windowed_forecast`` re-sync).
+            When ``True`` and the cell exposes the projected fast path (its
+            ``project_inputs`` is not ``None``), the recurrent-only ``cell.step``
+            update is unrolled ``DEFAULT_COMPILE_CHUNK`` steps at a time inside a
+            :func:`torch.compile` (``mode="reduce-overhead"``, ``fullgraph=True``)
+            chunk driven chunk-by-chunk with ``cudagraph_mark_step_begin`` and
+            state clones at boundaries — the teacher-forced analogue of the
+            forecast engine (:mod:`resdag.core._flat_inference`).  On the GPU this
+            sheds the per-step launch/dispatch overhead that dominates the eager
+            loop (~6-7x for a ``N=500``/``T=2000`` warmup).  The default (``False``)
+            keeps the eager time loop below byte-for-byte unchanged.
+
+            The compiled path is **inference-only**: it transparently falls back
+            to the eager loop when any parameter requires grad (a differentiable
+            BPTT rollout must stay eager), when there is no projected fast path
+            (e.g. NG-RC), on ``torch < 2.10``, or on any compilation failure
+            (with a :class:`RuntimeWarning`), so a correct result is always
+            produced.  Because chaotic reservoir dynamics under ``torch.compile``
+            need not be bit-exact with eager, the compiled output matches the
+            eager output to a tight ``allclose`` (typically ``< 1e-5`` max abs
+            diff; closer for identity/linear activation) rather than bitwise.
 
         Returns
         -------
@@ -222,6 +413,14 @@ class BaseReservoirLayer(nn.Module, ABC):
         # the loop, so the loop body itself stays branch-free.
         projected = self.cell.project_inputs(inputs)
 
+        # Opt-in compiled/chunked scan.  Gated to the projected fast path and
+        # inference-only (no grad required): otherwise the eager loop below runs
+        # exactly as before, keeping the default path byte-for-byte unchanged.
+        if compile and projected is not None and seq_len > 0 and self._compile_eligible(projected):
+            compiled = self._maybe_compiled_scan(projected, state)
+            if compiled is not None:
+                return self._run_compiled_scan(compiled, projected, state)
+
         outputs: list[torch.Tensor] = []
         if projected is not None:
             for t in range(seq_len):
@@ -241,6 +440,139 @@ class BaseReservoirLayer(nn.Module, ABC):
             return empty, state
 
         return torch.stack(outputs, dim=1), state
+
+    # ------------------------------------------------------------------
+    # Compiled teacher-forced scan (opt-in)
+    # ------------------------------------------------------------------
+
+    def _compile_eligible(self, projected: torch.Tensor) -> bool:
+        """
+        Report whether the compiled teacher-forced scan may run for this call.
+
+        Two gates, both required:
+
+        * **CUDA only.**  The scan targets the ``reduce-overhead`` / cudagraph
+          path, whose whole benefit is shedding per-step *GPU* launch overhead;
+          on CPU there is nothing to amortise and the cudagraph machinery is
+          unavailable, so a CPU projection falls straight back to the eager loop.
+        * **Inference-only.**  The compiled chunk never builds an autograd graph,
+          so a differentiable BPTT rollout (gradient tracking enabled *and* a
+          cell parameter with ``requires_grad``) must stay on the eager loop,
+          which preserves gradient flow exactly as before.
+
+        Parameters
+        ----------
+        projected : torch.Tensor
+            The precomputed input projection; its device selects the CUDA gate.
+
+        Returns
+        -------
+        bool
+            ``True`` when the compiled scan is safe to run, ``False`` to force
+            the eager fallback.
+        """
+        if projected.device.type != "cuda":
+            return False
+        if not torch.is_grad_enabled():
+            return True
+        return not any(p.requires_grad for p in self.cell.parameters())
+
+    def _maybe_compiled_scan(
+        self,
+        projected: torch.Tensor,
+        state: torch.Tensor,
+    ) -> _ChunkScanFn | None:
+        """
+        Return a cached (or freshly compiled) chunk scan, or ``None`` for eager.
+
+        Looks the compiled scan up in :attr:`_compiled_scan_cache` by
+        ``(id(cell), chunk, dtype, device)`` so a compiled chunk is reused across
+        calls with a matching configuration and never leaks across incompatible
+        dtype/device/chunk configs.  A cache miss compiles once via
+        :func:`_resolve_chunk_scan` (trial-traced on a cloned state); a ``None``
+        result — ``torch < 2.10`` or a compilation failure — is *not* cached, so
+        every call retries the eager fallback cleanly.
+
+        Parameters
+        ----------
+        projected : torch.Tensor
+            The precomputed input projection, ``(batch, timesteps, reservoir_size)``.
+        state : torch.Tensor
+            Initial reservoir state (cloned internally for the trial trace).
+
+        Returns
+        -------
+        _ChunkScanFn or None
+            The warm compiled chunk scan, or ``None`` to fall back to eager.
+        """
+        chunk = min(DEFAULT_COMPILE_CHUNK, projected.shape[1])
+        key = (id(self.cell), chunk, projected.dtype, projected.device)
+        cached = self._compiled_scan_cache.get(key)
+        if cached is not None:
+            return cached
+        compiled = _resolve_chunk_scan(
+            self.cell,
+            chunk=chunk,
+            trial_projected=projected[:, :chunk, :],
+            trial_state=state,
+        )
+        if compiled is not None:
+            self._compiled_scan_cache[key] = compiled
+        return compiled
+
+    def _run_compiled_scan(
+        self,
+        compiled: _ChunkScanFn,
+        projected: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Drive the teacher-forced loop with the compiled chunk scan.
+
+        Runs ``DEFAULT_COMPILE_CHUNK``-step chunks through ``compiled`` (each a
+        single cudagraph replay), filling the ``< chunk`` remainder with the
+        eager ``cell.step`` loop.  ``cudagraph_mark_step_begin`` plus state /
+        block clones at each chunk boundary keep the cudagraph-tree static
+        buffers from being aliased across replays — the same discipline the
+        forecast engine's chunked rollout uses.
+
+        Parameters
+        ----------
+        compiled : _ChunkScanFn
+            The warm compiled chunk scan from :meth:`_maybe_compiled_scan`.
+        projected : torch.Tensor
+            The precomputed input projection, ``(batch, timesteps, reservoir_size)``.
+        state : torch.Tensor
+            Initial reservoir state.
+
+        Returns
+        -------
+        outputs : torch.Tensor
+            Per-step outputs, ``(batch, timesteps, cell.output_size)``.
+        new_state : torch.Tensor
+            Final reservoir state after the last timestep.
+        """
+        seq_len = projected.shape[1]
+        chunk = min(DEFAULT_COMPILE_CHUNK, seq_len)
+        blocks: list[torch.Tensor] = []
+        done = 0
+        for _ in range(seq_len // chunk):
+            # cudagraph trees reuse static output buffers; mark a new step so
+            # this replay's outputs may feed the next, and clone the tensors
+            # carried across the chunk boundary.
+            torch.compiler.cudagraph_mark_step_begin()
+            block, state = compiled(projected[:, done : done + chunk, :], state)
+            blocks.append(block.clone())
+            state = state.clone()
+            done += chunk
+
+        # Eager remainder: the trailing ``< chunk`` steps the chunked path could
+        # not cover, driven through the same recurrent-only ``cell.step``.
+        for t in range(done, seq_len):
+            output, state = self.cell.step(projected[:, t, :], state)
+            blocks.append(output.unsqueeze(1))
+
+        return torch.cat(blocks, dim=1), state
 
     def step_stateless(
         self,
@@ -298,6 +630,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         self,
         feedback: torch.Tensor,
         *driving_inputs: torch.Tensor,
+        compile: bool = False,
     ) -> torch.Tensor:
         """
         Process an input sequence through the reservoir.
@@ -315,6 +648,13 @@ class BaseReservoirLayer(nn.Module, ABC):
         *driving_inputs : torch.Tensor
             Optional driving input of shape ``(batch, timesteps, input_size)``.
             At most one driving input tensor is supported.
+        compile : bool, keyword-only, default=False
+            Route the teacher-forced sequence loop through the opt-in
+            compiled/chunked engine.  Forwarded verbatim to
+            :meth:`forward_stateless` — see its ``compile`` parameter for the
+            eligibility gating (projected fast path, inference-only) and the
+            transparent eager fallback.  The default (``False``) is byte-for-byte
+            identical to the historical eager path.
 
         Returns
         -------
@@ -354,7 +694,9 @@ class BaseReservoirLayer(nn.Module, ABC):
         self._maybe_init_state(batch_size, feedback.device, feedback.dtype)
         assert self.state is not None  # guaranteed by _maybe_init_state; narrows for mypy
 
-        outputs, new_state = self.forward_stateless([feedback, *driving_inputs], self.state)
+        outputs, new_state = self.forward_stateless(
+            [feedback, *driving_inputs], self.state, compile=compile
+        )
 
         # Truncated BPTT at call boundaries: gradients flow through the returned
         # states within this call, but the *stored* state must not keep the

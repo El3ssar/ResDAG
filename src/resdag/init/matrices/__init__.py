@@ -12,6 +12,9 @@ Functions
 ---------
 orthogonal_matrix
     Haar-random orthogonal matrix via QR decomposition (``"orthogonal"``).
+antisymmetric_matrix
+    Random antisymmetric (skew-symmetric) matrix ``A - A^T`` with purely
+    imaginary eigenvalues (``"antisymmetric"``).
 fast_spectral_initialization
     Recurrent matrix built at a target spectral radius analytically, with no
     eigendecomposition (``"fast_spectral_initialization"``).
@@ -32,6 +35,7 @@ resdag.init.graphs : Graph-based topology generators.
 resdag.init.topology : Registry and initializer classes.
 """
 
+from .antisymmetric import antisymmetric_matrix
 from .fsi import fast_spectral_initialization
 from .minimal import (
     cycle_jumps,
@@ -44,6 +48,7 @@ from .orthogonal import orthogonal_matrix
 from .structured import band, block_diagonal, toeplitz
 
 __all__ = [
+    "antisymmetric_matrix",
     "band",
     "block_diagonal",
     "cycle_jumps",

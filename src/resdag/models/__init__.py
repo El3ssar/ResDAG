@@ -68,6 +68,7 @@ from .classic_esn import classic_esn
 from .coupled_ensemble_esn import coupled_ensemble_esn
 from .deep_esn import deep_esn
 from .es2n import es2n
+from .eusn import eusn
 from .gated_esn import gated_esn
 from .headless_esn import headless_esn
 from .hybrid_esn import KnowledgeModel, hybrid_esn
@@ -89,6 +90,7 @@ __all__ = [
     "es2n",
     "resesn",
     "gated_esn",
+    "eusn",
 ]
 
 

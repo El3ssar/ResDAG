@@ -24,7 +24,10 @@ from resdag.init.input_feedback import (
     ChessboardInitializer,
     DendrocycleInputInitializer,
     FunctionInitializer,
+    InformedInputInitializer,
     InputFeedbackInitializer,
+    LogisticMappingInitializer,
+    MinimalInputInitializer,
     NormalInputInitializer,
     OppositeAnchorsInitializer,
     PseudoDiagonalInitializer,
@@ -32,6 +35,8 @@ from resdag.init.input_feedback import (
     RandomInputInitializer,
     RingWindowInputInitializer,
     UniformInputInitializer,
+    WeightedInputInitializer,
+    WeightedMinimalInitializer,
     get_input_feedback,
     register_input_feedback,
     show_input_initializers,
@@ -910,6 +915,36 @@ _SCALING_CONTRACT = [
         id="dendrocycle_input",
     ),
     pytest.param(
+        lambda s: MinimalInputInitializer(weight=1.0, sign_rule="irrational", input_scaling=s),
+        _max_abs,
+        (64, 8),
+        id="minimal_init",
+    ),
+    pytest.param(
+        lambda s: WeightedInputInitializer(input_scaling=s, seed=0),
+        _max_abs,
+        (64, 8),
+        id="weighted_init",
+    ),
+    pytest.param(
+        lambda s: WeightedMinimalInitializer(weight=1.0, sign_rule="irrational", input_scaling=s),
+        _max_abs,
+        (64, 8),
+        id="weighted_minimal",
+    ),
+    pytest.param(
+        lambda s: LogisticMappingInitializer(input_scaling=s),
+        _max_abs,
+        (64, 8),
+        id="logistic_mapping",
+    ),
+    pytest.param(
+        lambda s: InformedInputInitializer(model_in_size=2, gamma=0.5, input_scaling=s, seed=0),
+        _max_abs,
+        (64, 8),
+        id="informed_init",
+    ),
+    pytest.param(
         lambda s: OppositeAnchorsInitializer(input_scaling=s),
         _max_channel_l2,
         (64, 8),
@@ -1281,6 +1316,8 @@ _REQUIRED_KWARGS: dict[str, dict[str, object]] = {
     "dendrocycle_input": {"c": 0.5},
     # ``c`` and ``window`` are both required.
     "ring_window": {"c": 0.5, "window": 0.5},
+    # ``model_in_size`` must be < the weight's column count so state_size > 0.
+    "informed_init": {"model_in_size": 1},
 }
 
 
@@ -1526,3 +1563,273 @@ class TestBinaryBalancedHelpers:
         out = init.initialize(weight)
 
         assert out.shape == (0, 4)
+
+
+# ---------------------------------------------------------------------------
+# ReservoirComputing.jl input-init parity (Rodan & Tiňo deterministic-minimal
+# family + Lu et al. weighted block-diagonal + Pathak informed hybrid split)
+# ---------------------------------------------------------------------------
+#
+# Reference: RC.jl ``src/inits/inits_input.jl`` and ``inits_components.jl``.
+# The structural facts pinned here (block-diagonal wiring, constant magnitude,
+# state/model split, sign rules, logistic orbit) are read off the RC.jl *source*,
+# not its RNG-/version-dependent docstring example matrices.
+
+
+class TestMinimalInitParity:
+    """``minimal_init`` — Rodan & Tiňo dense constant-magnitude input (RC.jl)."""
+
+    def test_dense_constant_magnitude(self) -> None:
+        """Every entry is dense with magnitude ``weight`` (no zeros)."""
+        init = MinimalInputInitializer(weight=0.1, sign_rule="irrational")
+        weight = torch.empty(8, 3, dtype=torch.float64)
+        init.initialize(weight)
+
+        assert (weight != 0).all(), "minimal_init must be dense"
+        assert torch.allclose(weight.abs(), torch.full_like(weight, 0.1))
+
+    def test_irrational_signs_match_pi_digit_rule(self) -> None:
+        """Signs follow the RC.jl pi-digit rule in column-major traversal order.
+
+        RC.jl ``irrational_sample!`` negates flat entry ``element_index`` (1-indexed,
+        column-major) when pi digit ``ir_array[start + element_index]`` is odd. This
+        reproduces that rule independently and checks it entry-for-entry.
+        """
+        rows, cols, start = 8, 3, 1
+        # pi digits (post-decimal-point stripped) 1-indexed: [3,1,4,1,5,9,2,6,5,...]
+        pi = "31415926535897932384626433832795028841971693993751"
+        digits = [int(c) for c in pi]
+        expected = np.ones((rows, cols))
+        k = 0  # column-major flat index (0-based)
+        for col in range(cols):
+            for row in range(rows):
+                element_index = k + 1  # Julia 1-indexed
+                digit = digits[start + element_index - 1]  # ir_array[start+element_index]
+                if digit % 2 == 1:
+                    expected[row, col] = -1.0
+                k += 1
+
+        weight = torch.empty(rows, cols, dtype=torch.float64)
+        MinimalInputInitializer(weight=1.0, sign_rule="irrational").initialize(weight)
+
+        assert torch.equal(weight, torch.from_numpy(expected))
+
+    def test_regular_sign_rule_flips_every_stride(self) -> None:
+        """``sign_rule='regular'`` negates every ``strides``-th flat (col-major) entry."""
+        rows, cols, strides = 6, 2, 2
+        weight = torch.empty(rows, cols, dtype=torch.float64)
+        MinimalInputInitializer(weight=1.0, sign_rule="regular", strides=strides).initialize(weight)
+
+        flat = weight.T.reshape(-1)  # column-major flat order
+        for idx, val in enumerate(flat.tolist(), start=1):
+            assert val == (-1.0 if idx % strides == 0 else 1.0)
+
+    def test_none_sign_rule_all_positive(self) -> None:
+        """``sign_rule='none'`` leaves every entry positive (RC.jl ``no_sample``)."""
+        weight = torch.empty(8, 3, dtype=torch.float64)
+        MinimalInputInitializer(weight=0.1, sign_rule="none").initialize(weight)
+
+        assert (weight > 0).all()
+
+    def test_bernoulli_is_seed_reproducible(self) -> None:
+        """The stochastic ``bernoulli`` rule is reproducible under a fixed seed."""
+        a = torch.empty(32, 4, dtype=torch.float64)
+        b = torch.empty(32, 4, dtype=torch.float64)
+        MinimalInputInitializer(sign_rule="bernoulli", seed=3).initialize(a)
+        MinimalInputInitializer(sign_rule="bernoulli", seed=3).initialize(b)
+
+        assert torch.equal(a, b)
+
+    def test_invalid_sign_rule_raises(self) -> None:
+        """An unknown ``sign_rule`` is rejected at ``initialize`` time."""
+        init = MinimalInputInitializer(sign_rule="not_a_rule")
+        with pytest.raises(ValueError, match="sign_rule"):
+            init.initialize(torch.empty(8, 3))
+
+
+class TestWeightedMinimalParity:
+    """``weighted_minimal`` — block-diagonal constant-magnitude input (RC.jl)."""
+
+    def test_block_diagonal_structure_matches_rcjl_docstring(self) -> None:
+        """``weighted_minimal(9, 3; weight=0.99)`` is the RC.jl block-diagonal matrix.
+
+        RC.jl doctest (``weighted_minimal`` docstring): each of the 3 inputs owns a
+        contiguous block of ``q = floor(9/3) = 3`` units, all ``0.99``; everything
+        else zero. This is a *deterministic* RC.jl output (``:no_sample``), so it is
+        a reliable oracle.
+        """
+        weight = torch.empty(9, 3, dtype=torch.float64)
+        WeightedMinimalInitializer(weight=0.99, sign_rule="none").initialize(weight)
+
+        expected = np.zeros((9, 3))
+        for i in range(3):
+            expected[i * 3 : (i + 1) * 3, i] = 0.99
+        assert torch.equal(weight, torch.from_numpy(expected))
+
+    def test_non_divisible_reservoir_leaves_zero_tail(self) -> None:
+        """``q = floor(res/in)`` blocks; the trailing ``res - q*in`` rows stay zero.
+
+        RC.jl resizes ``res_size`` down to ``q*in_size`` (warning) and leaves no
+        tail; resdag keeps the requested shape and leaves the unconnected tail as
+        zeros — the same nonzero wiring, different handling of the remainder.
+        """
+        weight = torch.empty(8, 3, dtype=torch.float64)  # q = floor(8/3) = 2
+        WeightedMinimalInitializer(weight=0.1).initialize(weight)
+
+        # Blocks: rows 0-1 -> col0, 2-3 -> col1, 4-5 -> col2; rows 6-7 unconnected.
+        per_col_nonzero = (weight != 0).sum(0)
+        assert torch.equal(per_col_nonzero, torch.tensor([2, 2, 2]))
+        assert float(weight[6:8].abs().sum()) == 0.0
+
+    def test_signs_apply_over_full_matrix(self) -> None:
+        """A sign rule flips block entries but never wakes an off-block zero."""
+        weight = torch.empty(9, 3, dtype=torch.float64)
+        WeightedMinimalInitializer(weight=1.0, sign_rule="irrational").initialize(weight)
+
+        # Off-block entries stay exactly zero; block entries are +/-1.
+        nonzero = weight[weight != 0]
+        assert torch.equal(nonzero.abs(), torch.ones_like(nonzero))
+        assert int((weight != 0).sum()) == 9  # 3 blocks x q=3
+
+
+class TestWeightedInitParity:
+    """``weighted_init`` — block-diagonal random-uniform input (RC.jl, Lu 2017)."""
+
+    def test_block_diagonal_uniform_range(self) -> None:
+        """Each input owns a ``q``-unit block with values in ``[-scaling, scaling]``."""
+        init = WeightedInputInitializer(input_scaling=0.1, seed=0)
+        weight = torch.empty(9, 3, dtype=torch.float64)
+        init.initialize(weight)
+
+        assert torch.equal((weight != 0).sum(0), torch.tensor([3, 3, 3]))
+        assert float(weight.abs().max()) <= 0.1 + 1e-12
+        # Off-block entries are exactly zero (block-diagonal).
+        for col in range(3):
+            block = slice(col * 3, (col + 1) * 3)
+            off = weight[:, col].clone()
+            off[block] = 0.0
+            assert float(off.abs().sum()) == 0.0
+
+    def test_seed_reproducible(self) -> None:
+        """Two builds with the same seed are byte-identical."""
+        a = torch.empty(12, 3, dtype=torch.float64)
+        b = torch.empty(12, 3, dtype=torch.float64)
+        WeightedInputInitializer(input_scaling=0.2, seed=5).initialize(a)
+        WeightedInputInitializer(input_scaling=0.2, seed=5).initialize(b)
+
+        assert torch.equal(a, b)
+
+
+class TestInformedInitParity:
+    """``informed_init`` — Pathak hybrid state/model split (RC.jl)."""
+
+    def test_state_model_split_counts(self) -> None:
+        """``gamma`` splits the reservoir rows into state and model groups.
+
+        RC.jl: ``num_for_state = floor(res*gamma)`` rows connect to a state column
+        ``[0, state_size)``; ``num_for_model = floor(res*(1-gamma))`` rows connect to
+        a model column ``[state_size, in_size)``. Each row gets at most one link.
+        """
+        res, in_size, model_in_size, gamma = 10, 3, 1, 0.5
+        state_size = in_size - model_in_size  # = 2
+        init = InformedInputInitializer(
+            model_in_size=model_in_size, gamma=gamma, input_scaling=0.1, seed=42
+        )
+        weight = torch.empty(res, in_size, dtype=torch.float64)
+        init.initialize(weight)
+
+        # At most one connection per reservoir unit.
+        assert int((weight != 0).sum(1).max()) <= 1
+        # Rows wired to the state block and to the model block, respectively.
+        state_rows = int((weight[:, :state_size] != 0).any(1).sum())
+        model_rows = int((weight[:, state_size:] != 0).any(1).sum())
+        assert state_rows == int(np.floor(res * gamma))
+        assert model_rows == int(np.floor(res * (1 - gamma)))
+        # Values live in [-scaling, scaling].
+        assert float(weight.abs().max()) <= 0.1 + 1e-12
+
+    def test_requires_model_in_size(self) -> None:
+        """The bare-name path leaves ``model_in_size=None`` and raises on init."""
+        init = get_input_feedback("informed_init")
+        with pytest.raises(ValueError, match="model_in_size"):
+            init.initialize(torch.empty(10, 3))
+
+    def test_state_size_must_be_positive(self) -> None:
+        """``in_features <= model_in_size`` (state_size <= 0) raises."""
+        init = InformedInputInitializer(model_in_size=3)
+        with pytest.raises(ValueError, match="greater than model_in_size"):
+            init.initialize(torch.empty(10, 3))
+
+    @pytest.mark.parametrize("bad_gamma", [-0.1, 1.1])
+    def test_gamma_out_of_range_raises(self, bad_gamma: float) -> None:
+        """``gamma`` outside ``[0, 1]`` is rejected at construction."""
+        with pytest.raises(ValueError, match="gamma"):
+            InformedInputInitializer(model_in_size=1, gamma=bad_gamma)
+
+
+class TestLogisticMappingParity:
+    """``logistic_mapping`` — deterministic logistic-map input (RC.jl, Wang 2022)."""
+
+    def test_matches_rcjl_docstring_matrix(self) -> None:
+        """``logistic_mapping(8, 3)`` reproduces the RC.jl deterministic doctest.
+
+        RC.jl ``logistic_mapping`` docstring (a deterministic, reliable oracle):
+        first row is a sine seed and each subsequent row is one logistic-map step.
+        """
+        weight = torch.empty(8, 3, dtype=torch.float64)
+        LogisticMappingInitializer().initialize(weight)
+
+        expected = np.array(
+            [
+                [0.0529682, 0.104272, 0.1523],
+                [0.185602, 0.345578, 0.477687],
+                [0.559268, 0.836769, 0.923158],
+                [0.912003, 0.50537, 0.262468],
+                [0.296938, 0.924893, 0.716241],
+                [0.772434, 0.257023, 0.751987],
+                [0.650385, 0.70656, 0.69006],
+                [0.841322, 0.767132, 0.791346],
+            ]
+        )
+        assert np.allclose(weight.numpy(), expected, atol=1e-5)
+
+    def test_first_row_is_sine_seed(self) -> None:
+        """Row 0 is ``amplitude * sin((j+1) * pi / (sine_divisor * in_size))``."""
+        weight = torch.empty(6, 4, dtype=torch.float64)
+        init = LogisticMappingInitializer(amplitude=0.3, sine_divisor=5.9)
+        init.initialize(weight)
+
+        in_size = 4
+        expected_first = 0.3 * np.sin(np.arange(1, in_size + 1) * np.pi / (5.9 * in_size))
+        assert np.allclose(weight[0].numpy(), expected_first)
+
+
+class TestRCjlParityLayerIntegration:
+    """Every new RC.jl-parity initializer drives a working ``ESNLayer``."""
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            "minimal_init",
+            "weighted_init",
+            "weighted_minimal",
+            "logistic_mapping",
+            ("minimal_init", {"sign_rule": "regular"}),
+            ("weighted_minimal", {"weight": 0.5, "sign_rule": "irrational"}),
+            ("informed_init", {"gamma": 0.5, "model_in_size": 1}),
+        ],
+    )
+    def test_builds_and_forwards(self, spec) -> None:
+        """String and ``(name, params)`` specs both wire a working layer."""
+        layer = ESNLayer(
+            reservoir_size=12,
+            feedback_size=3,
+            input_size=3,
+            feedback_initializer="minimal_init",
+            input_initializer=spec,
+        )
+        out = layer(torch.randn(2, 5, 3), torch.randn(2, 5, 3))
+
+        assert out.shape == (2, 5, 12)
+        assert torch.isfinite(out).all()
+        assert torch.isfinite(layer.weight_input).all()

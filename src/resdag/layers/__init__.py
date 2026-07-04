@@ -37,14 +37,24 @@ IncrementalRidgeReadout
     DataLoader / long-sequence path.
 Concatenate
     Layer for concatenating multiple inputs along feature dimension.
+ExtendedSquare
+    Appends the elementwise square of every feature (``[x, x**2]``).
 FeaturePartitioner
     Layer for partitioning features into groups.
+NLAT2
+    T₂ nonlinear algebraic state transform (``x[i-1] * x[i-2]``).
+NLAT3
+    T₃ nonlinear algebraic state transform (``x[i-1] * x[i+1]``).
+Pad
+    Appends a constant column to the feature dimension (``[x, padding]``).
+PartialSquare
+    Squares a leading fraction (or count) of features in place.
 Power
     Per-feature exponentiation by a fixed power.
 SelectiveDropout
     Dropout with per-feature selectivity.
 SelectiveExponentiation
-    Per-feature exponentiation layer.
+    Per-feature exponentiation layer (``index=0, exponent=2`` = T₁/NLAT1).
 Standardize
     Per-feature z-score standardization with fit and inverse.
 
@@ -75,8 +85,13 @@ from .readouts import (
 )
 from .reservoirs import BaseReservoirLayer, ESNLayer, NGReservoir
 from .transforms import (
+    NLAT2,
+    NLAT3,
     Concatenate,
+    ExtendedSquare,
     FeaturePartitioner,
+    Pad,
+    PartialSquare,
     Power,
     SelectiveDropout,
     SelectiveExponentiation,
@@ -103,7 +118,12 @@ __all__ = [
     "IncrementalRidgeReadout",
     # Custom layers
     "Concatenate",
+    "ExtendedSquare",
     "FeaturePartitioner",
+    "NLAT2",
+    "NLAT3",
+    "Pad",
+    "PartialSquare",
     "Power",
     "SelectiveDropout",
     "SelectiveExponentiation",

@@ -340,6 +340,22 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
 
     if current_radius > 1e-8:
         matrix = matrix * (target_radius / current_radius)
+    elif abs(target_radius) > 1e-8:
+        # A nilpotent (all-eigenvalues-zero, e.g. the pure ``delay_line``) or
+        # all-zero matrix cannot be rescaled to a nonzero radius — scaling a zero
+        # spectrum leaves it zero. Warn rather than silently ignore the request,
+        # so ``ESNLayer(topology="delay_line", spectral_radius=0.9)`` does not look
+        # like it took effect. Control the scale through the topology's own weight
+        # parameter instead.
+        warnings.warn(
+            f"spectral_radius={target_radius:g} was requested but the recurrent "
+            f"matrix has a zero spectral radius (nilpotent or all-zero, e.g. the "
+            f"'delay_line' / 'zeros' topologies); it cannot be rescaled to a nonzero "
+            f"radius and is left unchanged. Set the scale via the topology's weight "
+            f"parameter instead.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     return matrix
 

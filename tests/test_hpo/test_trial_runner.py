@@ -1,4 +1,4 @@
-"""Tests for the picklable :class:`resdag.hpo.runner.TrialRunner`.
+"""Tests for the picklable :class:`resdag.hpo.trial_runner.TrialRunner`.
 
 These tests exercise the four acceptance criteria of the HPO-unblocker ticket:
 
@@ -20,7 +20,7 @@ import torch
 optuna = pytest.importorskip("optuna")
 
 from resdag.hpo.objective import build_objective  # noqa: E402
-from resdag.hpo.runner import TrialRunner, _checkpoint_horizons  # noqa: E402
+from resdag.hpo.trial_runner import TrialRunner, _checkpoint_horizons  # noqa: E402
 from resdag.models import ott_esn  # noqa: E402
 
 

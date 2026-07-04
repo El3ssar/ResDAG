@@ -344,3 +344,172 @@ def resolve_chunk_step(
             stacklevel=3,
         )
         return None
+
+
+def rollout(
+    flat: FlatStep,
+    seed_feedback: torch.Tensor,
+    drivers: tuple[torch.Tensor, ...],
+    states: list[torch.Tensor],
+    horizon: int,
+    out_dims: list[int],
+    *,
+    no_grad: bool,
+    compile: bool = False,
+) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    """
+    Roll a flattened single-step engine forward autoregressively.
+
+    Drives ``horizon`` genuinely autoregressive steps: slot ``0`` is produced
+    from ``seed_feedback`` (already the model's own prediction — the last warmup
+    output or a caller-supplied seed), and every later slot feeds back the
+    previous step's first output.  No teacher-forced frame is emitted, so
+    ``horizon=1`` yields one real forecast step.  Driver alignment matches
+    training: step ``t`` consumes ``drivers[i][:, t : t + 1, :]`` alongside the
+    current feedback and writes its prediction to slot ``t``.
+
+    The rollout is the shared core of :meth:`resdag.core.ESNModel.forecast`
+    (and, through it, :meth:`~resdag.core.ESNModel.windowed_forecast` and the
+    ensemble forecast paths): it owns the compile/eager engine choice, the two
+    output-assembly strategies, and threading reservoir states explicitly rather
+    than mutating module buffers.  Callers are responsible for warmup, seed and
+    initial-state resolution, and persisting the returned final states.
+
+    Parameters
+    ----------
+    flat : FlatStep
+        The single-step executor for the model graph (see :func:`build_flat_step`).
+    seed_feedback : torch.Tensor
+        Feedback of shape ``(batch, 1, feedback_dim)`` seeding the first step.
+    drivers : tuple of torch.Tensor
+        One ``(batch, >=horizon, driver_dim)`` tensor per driver input, empty for
+        feedback-only models.  Only the first ``horizon`` timesteps are consumed;
+        step ``t`` uses ``drivers[i][:, t : t + 1, :]``.
+    states : list of torch.Tensor
+        Initial reservoir states in :attr:`FlatStep.reservoir_layers` order.
+        Threaded through the loop and returned (advanced) — not mutated in place
+        beyond the compiled path's internal cloning.
+    horizon : int
+        Number of autoregressive steps to generate (``>= 1``).
+    out_dims : list of int
+        Feature dimension of each model output, in model-output order.  Its
+        length is the number of outputs the step returns.
+    no_grad : bool, keyword-only
+        Selects the output-assembly strategy.  When ``True`` (the historical,
+        graph-free default) each step is written into a preallocated
+        ``torch.empty`` buffer.  When ``False`` (a differentiable BPTT rollout)
+        the per-step ``(batch, 1, dim)`` slices are collected and ``torch.cat``'d
+        at the end, so no in-place ``CopySlices`` grafts autograd-tracked values
+        onto an uninitialised buffer.  This function does **not** open a grad
+        context — the caller wraps the call (and its own seed/warmup work) in the
+        matching ``torch.no_grad()`` / ``nullcontext`` so the whole two-phase
+        forecast is consistent.
+    compile : bool, keyword-only, default=False
+        If ``True``, wrap the step in a compiled chunked executor
+        (``mode="reduce-overhead"``, ``fullgraph=True``) via
+        :func:`resolve_chunk_step`, driving ``DEFAULT_COMPILE_CHUNK``-step chunks
+        per cudagraph replay and filling the ``< chunk`` remainder eagerly.  On
+        ``torch < 2.10`` or a compilation failure it transparently falls back to
+        the eager single-step loop (with a :class:`RuntimeWarning`).  The compile
+        path is inference-only, so callers must gate it to ``no_grad=True`` (the
+        ``forecast`` public method raises otherwise); here it only ever writes
+        into the preallocated buffers.
+
+    Returns
+    -------
+    forecast_buffers : list of torch.Tensor
+        One ``(batch, horizon, out_dim)`` tensor per model output, in
+        model-output order.  With ``no_grad=False`` these carry the BPTT
+        ``grad_fn``.
+    final_states : list of torch.Tensor
+        The reservoir states after the last step, in
+        :attr:`FlatStep.reservoir_layers` order.  The caller persists them
+        (honouring ``detach_state_between_calls``) so a follow-up
+        ``forecast(reset=False)`` continues from here.
+
+    Notes
+    -----
+    The compiled and eager paths are numerically identical to calling
+    :attr:`FlatStep.step` ``horizon`` times, and both are bit-for-bit identical
+    to the per-step symbolic re-execution the engine replaces.
+    """
+    batch_size = seed_feedback.shape[0]
+    dtype = seed_feedback.dtype
+    device = seed_feedback.device
+    n_out = len(out_dims)
+    has_drivers = len(drivers) > 0
+    current_feedback = seed_feedback  # (batch, 1, feedback_dim)
+
+    # Two assembly strategies share the same per-step engine:
+    #
+    # * default (``no_grad=True``): write each step into a preallocated
+    #   buffer — minimal allocation, no graph anyway;
+    # * differentiable (``no_grad=False``): collect per-step slices and
+    #   ``torch.cat`` them at the end.  In-place index writes into a
+    #   ``torch.empty`` buffer would graft autograd-tracked values onto an
+    #   uninitialised tensor (a ``CopySlices`` per step); accumulating in a
+    #   list and concatenating keeps the BPTT graph clean and standard.
+    forecast_buffers: list[torch.Tensor] = []
+    step_accumulators: list[list[torch.Tensor]] = []
+    if no_grad:
+        forecast_buffers = [
+            torch.empty(batch_size, horizon, dim, dtype=dtype, device=device) for dim in out_dims
+        ]
+    else:
+        step_accumulators = [[] for _ in range(n_out)]
+
+    # Optionally compile a chunked step. ``done`` tracks how many steps the
+    # compiled path has produced; the eager single-step loop below fills the
+    # rest (the whole horizon when not compiling, or the < chunk remainder).
+    # The compile path is gated to ``no_grad=True`` by the caller, so it only
+    # ever writes into ``forecast_buffers``.
+    done = 0
+    if compile:
+        chunk = min(DEFAULT_COMPILE_CHUNK, horizon)
+        compiled_chunk = resolve_chunk_step(
+            flat,
+            chunk=chunk,
+            n_outputs=n_out,
+            mode="reduce-overhead",
+            trial_feedback=current_feedback,
+            trial_drivers=tuple(d[:, 0:chunk, :] for d in drivers),
+            trial_states=states,
+        )
+        if compiled_chunk is not None:
+            for _ in range(horizon // chunk):
+                driver_chunk = tuple(d[:, done : done + chunk, :] for d in drivers)
+                # cudagraph trees reuse static output buffers; mark a new
+                # step so this replay's outputs may feed the next, and clone
+                # the tensors carried across the chunk boundary.
+                torch.compiler.cudagraph_mark_step_begin()
+                blocks, states, current_feedback = compiled_chunk(
+                    current_feedback, driver_chunk, states
+                )
+                for i in range(n_out):
+                    forecast_buffers[i][:, done : done + chunk, :] = blocks[i]
+                current_feedback = current_feedback.clone()
+                states = [state.clone() for state in states]
+                done += chunk
+
+    # Eager single-step loop: the whole horizon when not compiling, or the
+    # trailing remainder the chunked path could not cover.
+    for t in range(done, horizon):
+        if has_drivers:
+            step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
+        else:
+            step_inputs = (current_feedback,)
+        step_outputs, states = flat.step(step_inputs, states)
+        if no_grad:
+            for i in range(n_out):
+                forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
+        else:
+            for i in range(n_out):
+                step_accumulators[i].append(step_outputs[i])
+        current_feedback = step_outputs[0]
+
+    if not no_grad:
+        # Concatenate the per-step (batch, 1, dim) slices into the full
+        # (batch, horizon, dim) forecast for each output.
+        forecast_buffers = [torch.cat(acc, dim=1) for acc in step_accumulators]
+
+    return forecast_buffers, states

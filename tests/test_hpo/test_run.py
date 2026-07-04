@@ -439,3 +439,148 @@ class TestRunHPOReproducibility:
         assert seen_seeds, "model_creator was never called"
         # The default sentinel survives → no injection happened.
         assert all(s == "UNSET" for s in seen_seeds)
+
+
+def _data_loader_with_horizon(trial):
+    """Like ``simple_data_loader`` but with a longer val window + an explicit
+    ``short_horizon`` key so ``horizon_key`` has a value different from
+    ``val.shape[1]`` to select."""
+    torch.manual_seed(42)
+    data = torch.randn(1, 200, 3)
+    return {
+        "warmup": data[:, :20, :],
+        "train": data[:, 20:70, :],
+        "target": data[:, 21:71, :],
+        "f_warmup": data[:, 70:90, :],
+        "val": data[:, 90:130, :],  # 40 validation steps
+        "short_horizon": 5,  # forecast only 5 steps when horizon_key is set
+    }
+
+
+class TestRunHPOExposedParams:
+    """The ``horizon_key`` / ``n_checkpoints`` / ``torch_scoring`` / ``trial_callbacks``
+    params are reachable from ``run_hpo`` (issue: unreachable TrialRunner params)
+    and each demonstrably changes behaviour."""
+
+    def test_n_checkpoints_controls_report_count(self):
+        """``n_checkpoints`` sets the number of intermediate reports per trial."""
+        for n_ck in (2, 5, 8):
+            study = run_hpo(
+                model_creator=simple_model_creator,
+                search_space=simple_search_space,
+                data_loader=simple_data_loader,
+                n_trials=1,
+                seed=0,
+                n_checkpoints=n_ck,
+                verbosity=0,
+            )
+            # val has 10 steps here, so every checkpoint count <= 10 fits exactly.
+            assert len(study.trials[0].intermediate_values) == n_ck
+
+    def test_n_checkpoints_one_disables_intermediate_reporting(self):
+        """``n_checkpoints=1`` yields a single (full-horizon) report."""
+        study = run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=simple_data_loader,
+            n_trials=1,
+            seed=0,
+            n_checkpoints=1,
+            verbosity=0,
+        )
+        assert len(study.trials[0].intermediate_values) == 1
+
+    def test_horizon_key_changes_forecast_length(self):
+        """``horizon_key`` selects the forecast horizon from the data dict.
+
+        With the key set the forecast is only 5 steps (vs the 40-step val
+        window), so the reported horizon@last user attr — the concrete prefix
+        length — must equal 5 rather than 40.
+        """
+        default = run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=_data_loader_with_horizon,
+            n_trials=1,
+            seed=0,
+            n_checkpoints=1,
+            verbosity=0,
+        )
+        keyed = run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=_data_loader_with_horizon,
+            n_trials=1,
+            seed=0,
+            n_checkpoints=1,
+            horizon_key="short_horizon",
+            verbosity=0,
+        )
+        # horizon@1 records the concrete prefix length of the (only) checkpoint.
+        assert default.trials[0].user_attrs["horizon@1"] == 40
+        assert keyed.trials[0].user_attrs["horizon@1"] == 5
+
+    def test_torch_scoring_true_passes_tensors_to_loss(self):
+        """``torch_scoring=True`` hands the custom loss ``torch.Tensor`` inputs."""
+        seen = {"is_tensor": None}
+
+        def probe_loss(y_true, y_pred, /, **kwargs):
+            seen["is_tensor"] = isinstance(y_true, torch.Tensor)
+            if isinstance(y_true, torch.Tensor):
+                return float(torch.mean(torch.abs(y_true - y_pred)))
+            return float(np.mean(np.abs(y_true - y_pred)))
+
+        run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=simple_data_loader,
+            n_trials=1,
+            seed=0,
+            loss=probe_loss,
+            torch_scoring=True,
+            verbosity=0,
+        )
+        assert seen["is_tensor"] is True
+
+    def test_torch_scoring_false_passes_numpy_to_loss(self):
+        """``torch_scoring=False`` hands the custom loss NumPy arrays."""
+        seen = {"is_tensor": None}
+
+        def probe_loss(y_true, y_pred, /, **kwargs):
+            seen["is_tensor"] = isinstance(y_true, torch.Tensor)
+            if isinstance(y_true, torch.Tensor):
+                return float(torch.mean(torch.abs(y_true - y_pred)))
+            return float(np.mean(np.abs(y_true - y_pred)))
+
+        run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=simple_data_loader,
+            n_trials=1,
+            seed=0,
+            loss=probe_loss,
+            torch_scoring=False,
+            verbosity=0,
+        )
+        assert seen["is_tensor"] is False
+
+    def test_trial_callbacks_are_invoked(self):
+        """``trial_callbacks`` fire once per successful trial with a context dict."""
+        contexts = []
+
+        def record_cb(trial, context):
+            contexts.append(context)
+            trial.set_user_attr("cb_ran", True)
+
+        study = run_hpo(
+            model_creator=simple_model_creator,
+            search_space=simple_search_space,
+            data_loader=simple_data_loader,
+            n_trials=3,
+            seed=0,
+            trial_callbacks=[record_cb],
+            verbosity=0,
+        )
+        assert len(contexts) == 3
+        assert all({"params", "raw_loss", "loss"} <= set(c) for c in contexts)
+        assert sum(t.user_attrs.get("cb_ran", False) for t in study.trials) == 3

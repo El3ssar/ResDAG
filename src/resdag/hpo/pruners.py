@@ -7,7 +7,7 @@ factory callables, so a study can be early-stopped without the caller importing
 Optuna's pruner classes by hand.
 
 Pruning is driven by the intermediate ``trial.report`` calls that
-:class:`resdag.hpo.runner.TrialRunner` emits at growing forecast-horizon
+:class:`resdag.hpo.trial_runner.TrialRunner` emits at growing forecast-horizon
 checkpoints: a configuration whose forecast has already diverged at an early
 checkpoint reports a large loss, and the pruner can terminate it before paying
 for the full horizon.  Resolution is identical in single- and multi-process
@@ -18,11 +18,10 @@ parent **and** re-resolved (from the same key) inside each worker's
 See Also
 --------
 resdag.hpo.run : High-level orchestrator that resolves and wires the pruner.
-resdag.hpo.runner : Emits the intermediate horizon reports that feed pruning.
-resdag.hpo.runners : Single- and multi-process backends that honor the pruner.
+resdag.hpo.trial_runner : Emits the intermediate horizon reports that feed pruning.
+resdag.hpo.dispatch : Single- and multi-process backends that honor the pruner.
 """
 
-import functools
 import logging
 from typing import Callable
 
@@ -32,15 +31,50 @@ __all__ = ["PRUNERS", "resolve_pruner"]
 
 logger = logging.getLogger(__name__)
 
-# Default upper-loss bound for the registry's ``"threshold"`` entry.
+# Default bound + warmup for the registry's ``"threshold"`` entry.
+#
 # :class:`optuna.pruners.ThresholdPruner` *requires* ``lower`` or ``upper`` at
 # construction (a bare ``ThresholdPruner()`` raises), so the zero-arg factory has
-# to supply one.  ``1.0`` prunes trials whose intermediate forecast loss exceeds
-# 1.0 — divergent reservoir configurations blow well past this within the first
-# few horizon checkpoints.  Callers needing a different bound (or a ``lower``
-# bound) should pass a fully-configured ``ThresholdPruner`` instance instead of
-# the bare key.
-_THRESHOLD_DEFAULT_UPPER = 1.0
+# to supply one.  The default is tuned for the module's **default and recommended
+# loss family** — the *negated forecast-horizon* losses (``"efh"``,
+# ``"forecast_horizon"``, ``"soft_horizon"``).  Those losses return
+# ``-horizon``: a good configuration scores a large *negative* value, while a
+# **divergent** configuration whose forecast collapses immediately scores ``≈ 0``
+# (a zero-length horizon).  The old default ``upper=1.0`` could therefore **never
+# fire** for them — every report is ``≤ 0 < 1.0``.  We instead prune when an
+# intermediate report *rises above* a small negative bound (``upper < 0``),
+# i.e. the forecast horizon has effectively collapsed to zero.
+#
+# ``n_warmup_steps`` is expressed in **checkpoint indices** (the runner reports by
+# 1-based checkpoint index, not horizon length — see
+# :meth:`resdag.hpo.trial_runner.TrialRunner._evaluate_with_checkpoints`), so skipping
+# the first two checkpoints is horizon-independent.  The skip matters because at
+# the earliest checkpoint even a *good* configuration has not yet demonstrated a
+# long horizon and reads ``≈ 0``; by the third checkpoint good and divergent
+# configurations have separated cleanly.
+#
+# This default does **not** suit the raw-error losses (``"standard"``,
+# ``"lyapunov"``), whose reports are strictly *positive* and whose good/bad scale
+# is data-dependent — pass a fully-configured ``ThresholdPruner`` (e.g.
+# ``ThresholdPruner(upper=<your bound>)``) for those, or use ``"median"`` for a
+# scale-free relative policy.
+_THRESHOLD_DEFAULT_UPPER = -0.1
+_THRESHOLD_DEFAULT_WARMUP = 2
+
+
+def _default_threshold_pruner() -> optuna.pruners.ThresholdPruner:
+    """Build the registry's default divergence-catching ``ThresholdPruner``.
+
+    Prunes negated-horizon trials whose intermediate loss rises above
+    :data:`_THRESHOLD_DEFAULT_UPPER` (a collapsed, ``≈ 0`` forecast horizon)
+    once past :data:`_THRESHOLD_DEFAULT_WARMUP` checkpoints.  See the module-level
+    comment for why a fixed positive bound could never fire for the default loss.
+    """
+    return optuna.pruners.ThresholdPruner(
+        upper=_THRESHOLD_DEFAULT_UPPER,
+        n_warmup_steps=_THRESHOLD_DEFAULT_WARMUP,
+    )
+
 
 # Registry of pruner factories keyed by short, user-facing names.  Each factory
 # takes no arguments and returns a fresh :class:`optuna.pruners.BasePruner`.  The
@@ -50,7 +84,7 @@ PRUNERS: dict[str, Callable[[], optuna.pruners.BasePruner]] = {
     "asha": optuna.pruners.SuccessiveHalvingPruner,
     "hyperband": optuna.pruners.HyperbandPruner,
     "median": optuna.pruners.MedianPruner,
-    "threshold": functools.partial(optuna.pruners.ThresholdPruner, upper=_THRESHOLD_DEFAULT_UPPER),
+    "threshold": _default_threshold_pruner,
     "none": optuna.pruners.NopPruner,
 }
 
@@ -75,8 +109,12 @@ def resolve_pruner(
         - A registry key — one of ``"asha"`` (ASHA /
           :class:`~optuna.pruners.SuccessiveHalvingPruner`), ``"hyperband"``,
           ``"median"`` (recommended starting point), or ``"threshold"`` (a
-          :class:`~optuna.pruners.ThresholdPruner` with a default ``upper=1.0``
-          loss bound — pass a configured instance for a different bound).
+          :class:`~optuna.pruners.ThresholdPruner` tuned for the default
+          *negated-horizon* losses: it prunes a trial once its intermediate loss
+          rises above ``upper=-0.1`` after two warmup checkpoints — i.e. its
+          forecast horizon has collapsed to ``≈ 0``.  Pass a configured instance
+          for a different bound, e.g. a positive ``upper`` for the raw-error
+          ``"standard"`` / ``"lyapunov"`` losses).
         - A :class:`optuna.pruners.BasePruner` instance, returned unchanged so
           callers can fully configure a pruner before passing it in.
 

@@ -8,7 +8,7 @@ of workers and user-provided paths.
 See Also
 --------
 resdag.hpo.run : High-level HPO orchestrator that consumes these utilities.
-resdag.hpo.runners : Trial execution backends that reconnect to storage.
+resdag.hpo.dispatch : Trial execution backends that reconnect to storage.
 """
 
 import atexit

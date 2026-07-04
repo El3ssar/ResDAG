@@ -49,6 +49,13 @@ Issues = "https://github.com/El3ssar/ResDAG/issues"
 # lint/format/test tool versions.
 [project.optional-dependencies]
 hpo = ["optuna>=3.0.0"]
+# Optional dynamical-systems stack: `resdag.metrics.largest_lyapunov` uses
+# `tsdynamics` to estimate Lyapunov exponents from a data series or a built-in
+# System. The env marker means pip skips it on Python < 3.12 (tsdynamics needs
+# >=3.12) rather than failing to resolve; the pure-math conversions and the
+# canonical-constant / reservoir-Jacobian paths in `resdag.metrics` work without
+# it. Every `tsdynamics` import in the library is lazy + guarded.
+dynamics = ["tsdynamics>=2.5.0; python_version >= '3.12'"]
 # Optional visualization stack: only `ESNModel.plot_model` imports `graphviz`,
 # and it does so lazily with a friendly ImportError, so the runtime install
 # stays lean. Requires the graphviz *system* binary too (e.g. apt install graphviz).

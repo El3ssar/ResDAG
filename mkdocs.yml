@@ -189,6 +189,7 @@ nav:
       - workflows/index.md
       - Train: workflows/train.md
       - Forecast: workflows/forecast.md
+      - Lyapunov time: workflows/lyapunov.md
       - NG-RC: workflows/ngrc.md
       - Tune: workflows/tune.md
       - Streaming & DataLoaders: workflows/streaming.md
@@ -209,6 +210,7 @@ nav:
       - Layers: reference/layers.md
       - Initialization: reference/init.md
       - Training: reference/training.md
+      - Metrics: reference/metrics.md
       - Models & ensembles: reference/models.md
       - HPO: reference/hpo.md
       - Utilities: reference/utils.md

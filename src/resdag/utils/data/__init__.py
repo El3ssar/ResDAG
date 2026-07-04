@@ -85,7 +85,16 @@ resdag.training.ESNTrainer : Uses prepared data for training.
 resdag.core.ESNModel.forecast : Uses prepared data for forecasting.
 """
 
-from .datasets import henon, lorenz, mackey_glass, narma, rossler, sine
+from .datasets import (
+    DATASET_DT,
+    dataset_lambda_max,
+    henon,
+    lorenz,
+    mackey_glass,
+    narma,
+    rossler,
+    sine,
+)
 from .io import (
     list_files,
     load_csv,
@@ -124,6 +133,9 @@ __all__ = [
     "mackey_glass",
     "narma",
     "sine",
+    # Dataset metadata
+    "DATASET_DT",
+    "dataset_lambda_max",
 ]
 
 

@@ -91,3 +91,31 @@ class TestFastPathEquivalence:
         out_step, _ = cell.step(proj, state)
 
         assert torch.allclose(out_fwd, out_step, atol=1e-6)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+class TestCompiledFastPathEquivalence:
+    """The opt-in compiled scan reproduces the eager projected fast path (GPU)."""
+
+    @pytest.mark.parametrize("leak_rate", [1.0, 0.4])
+    def test_compiled_equals_eager_fast_path(self, leak_rate):
+        """``forward(compile=True)`` equals the eager project+step fast path."""
+        torch.manual_seed(0)
+        layer = ESNLayer(
+            reservoir_size=96,
+            feedback_size=5,
+            spectral_radius=0.9,
+            leak_rate=leak_rate,
+        ).to("cuda")
+        layer.eval()
+        feedback = torch.randn(1, 200, 5, device="cuda")
+
+        with torch.no_grad():
+            layer.reset_state()
+            eager = layer(feedback)
+            layer.reset_state()
+            compiled = layer(feedback, compile=True)
+
+        reference = _manual_per_step(layer.cell, [feedback])
+        assert torch.allclose(eager, reference, atol=1e-6)
+        assert torch.allclose(compiled, eager, atol=1e-5, rtol=1e-5)

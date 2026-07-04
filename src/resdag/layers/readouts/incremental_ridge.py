@@ -223,7 +223,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
         self.sum_y.zero_()
         self._n.zero_()
         self._chunk_gram_dtype = None
-        self._is_fitted.fill_(False)
+        self._set_fitted(False)
 
     @torch.no_grad()
     def partial_fit(self, states: torch.Tensor, targets: torch.Tensor) -> "IncrementalRidgeReadout":
@@ -322,7 +322,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
         self._n += states.shape[0]
 
         # Any prior fit is stale once new data arrives.
-        self._is_fitted.fill_(False)
+        self._set_fitted(False)
         return self
 
     @torch.no_grad()
@@ -389,7 +389,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
             intercept = (y_mean - x_mean @ coefs).squeeze(0)
             self.bias.copy_(intercept.to(self.bias.dtype))
 
-        self._is_fitted.fill_(True)
+        self._set_fitted(True)
 
     def _fit_impl(
         self,
@@ -457,8 +457,31 @@ class IncrementalRidgeReadout(ReadoutLayer):
         streaming accumulation pass (where the readout's forward only flows a
         value downstream while a pre-hook accumulates statistics). Genuine
         inference always goes through the guard.
+
+        Under ``torch.compile`` (the compiled forecast fast path captures this
+        ``forward`` directly and calls it per autoregressive step) the entire
+        Python guard is skipped: it would otherwise force a dynamo graph break
+        on every step and silently drop the model to the ~14x-slower eager
+        rollout. Fittedness is still enforced **before** the compiled loop by the
+        eager teacher-forced warmup pass that ``forecast`` always runs first: it
+        executes the full graph — including this readout's eager ``forward`` —
+        which trips the guard for a genuinely-unfitted readout. So skipping the
+        per-step guard under compile removes a redundant check, not a safety net.
+        The fittedness check itself reads the sync-free ``_fitted_flag`` mirror
+        (see :attr:`~resdag.layers.readouts.ReadoutLayer.is_fitted`), never the
+        ``_is_fitted`` buffer's ``.item()``, so even the eager per-step path
+        pays no device->host sync.
         """
-        if not self._allow_unfitted_forward and not self.is_fitted and not _in_symbolic_build():
+        # Compiled fast path: never let dynamo trace the guard (a graph break
+        # per step forfeits the compiled forecast). The eager warmup pass that
+        # forecast runs first already trips the guard for an unfitted readout,
+        # so skipping the per-step guard under compile is safe here.
+        if torch.compiler.is_compiling():
+            return super().forward(input)
+
+        # Eager path: the fitted bool read is sync-free; the frame walk (the
+        # expensive part) only runs when genuinely unfitted, i.e. rarely.
+        if not self._fitted_flag and not self._allow_unfitted_forward and not _in_symbolic_build():
             readout_id = f"'{self._name}'" if self._name is not None else type(self).__name__
             raise RuntimeError(
                 f"{type(self).__name__}({readout_id}) is not fitted: call finalize() after "

@@ -882,6 +882,88 @@ class TestSelectiveExponentiation:
 
         assert output.dtype == torch.float64
 
+    def test_square_fast_path_matches_safe_base_forward_and_grad(self) -> None:
+        """``exponent=2`` uses a ``x * x`` fast path bit-identical to the pow path.
+
+        The plain integer square is finite for every real base, so the forward
+        gate collapses to ``where(mask, x * x, x)``. ``x * x`` is bit-identical to
+        ``pow(x, 2)`` and the two formulations must agree exactly in both the
+        forward output and the gradient (the ``ott_esn`` augmentation relies on
+        this). A negative base is included so the sign handling is exercised.
+        """
+
+        def safe_base_forward(t: torch.Tensor) -> torch.Tensor:
+            dim = t.shape[-1]
+            mask = (torch.arange(dim) % 2) == 0  # index=0 -> even positions
+            safe = torch.where(mask, t, torch.ones_like(t))
+            return torch.where(mask, safe.pow(2.0), t)
+
+        layer = SelectiveExponentiation(index=0, exponent=2.0)
+        assert layer._is_square  # the fast path is actually taken
+
+        base = torch.tensor([[-2.0, 3.0, 4.0, -5.0]], dtype=torch.float64)
+        x_fast = base.clone().requires_grad_(True)
+        x_ref = base.clone().requires_grad_(True)
+
+        out_fast = layer(x_fast)
+        out_ref = safe_base_forward(x_ref)
+        assert torch.equal(out_fast, out_ref)
+
+        out_fast.sum().backward()
+        out_ref.sum().backward()
+        assert x_fast.grad is not None and x_ref.grad is not None
+        assert torch.equal(x_fast.grad, x_ref.grad)
+
+    def test_integer_and_float_two_take_fast_path(self) -> None:
+        """Both ``exponent=2`` and ``exponent=2.0`` (no sign-preserving) fast-path."""
+        assert SelectiveExponentiation(index=0, exponent=2)._is_square
+        assert SelectiveExponentiation(index=0, exponent=2.0)._is_square
+
+    def test_non_square_and_sign_preserving_use_general_path(self) -> None:
+        """Only a plain integer square fast-paths; other configs keep pow semantics."""
+        assert not SelectiveExponentiation(index=0, exponent=2.0, sign_preserving=True)._is_square
+        assert not SelectiveExponentiation(index=0, exponent=3.0)._is_square
+        assert not SelectiveExponentiation(index=0, exponent=0.5)._is_square
+
+    def test_mask_cache_not_in_state_dict_or_buffers(self) -> None:
+        """The cached parity mask must stay out of state_dict, buffers, params."""
+        layer = SelectiveExponentiation(index=0, exponent=2.0)
+        layer(torch.randn(2, 3, 4))  # populate the cache
+
+        assert layer.state_dict() == {}
+        assert list(layer.named_buffers()) == []
+        assert list(layer.parameters()) == []
+        assert len(layer._mask_cache) == 1  # the mask lives only in the dict cache
+
+    def test_mask_cache_rebuilds_on_dim_change(self) -> None:
+        """A changed feature dim adds a fresh cache entry and stays correct.
+
+        The autoregressive forecast path can feed slices of a different width, so
+        the cache must be keyed on the dim, not frozen at first call.
+        """
+        layer = SelectiveExponentiation(index=0, exponent=2.0)
+
+        x4 = torch.randn(2, 4)
+        out4 = layer(x4)
+        m4 = (torch.arange(4) % 2) == 0
+        assert torch.equal(out4, torch.where(m4, x4 * x4, x4))
+
+        x5 = torch.randn(2, 5)
+        out5 = layer(x5)
+        m5 = (torch.arange(5) % 2) == 0
+        assert torch.equal(out5, torch.where(m5, x5 * x5, x5))
+
+        assert set(layer._mask_cache.keys()) == {(4, x4.device), (5, x5.device)}
+
+    def test_forward_repeatable_across_calls(self) -> None:
+        """Repeated calls (cache hits) return identical results."""
+        layer = SelectiveExponentiation(index=1, exponent=0.5, sign_preserving=True)
+        x = torch.randn(3, 6)
+
+        first = layer(x)
+        second = layer(x)
+        assert torch.equal(first, second)
+
 
 class TestStandardize:
     """Tests for the Standardize per-feature z-score transform."""

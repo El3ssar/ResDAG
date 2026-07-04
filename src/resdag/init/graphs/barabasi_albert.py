@@ -25,6 +25,14 @@ def barabasi_albert_graph(
     degree (preferential attachment). This yields a degree distribution that is
     approximately power-law, ``P(k) ~ k^-3``, for large ``n``.
 
+    .. note::
+       The degree-frequency multiset is now held in a preallocated integer array
+       and sampled with ``rng.integers`` instead of ``rng.choice`` over a growing
+       Python list (an ``O(len)`` list-to-array conversion per draw). The result
+       is still deterministic under a seed and statistically identical
+       (preferential attachment with ``m`` distinct targets per node), but the
+       exact edge set for a given ``seed`` differs from earlier versions.
+
     Parameters
     ----------
     n : int
@@ -75,38 +83,60 @@ def barabasi_albert_graph(
     G.add_nodes_from(range(m))
     for i in range(m):
         for j in range(i + 1, m):
-            G.add_edge(i, j, weight=rng.choice([-1, 1]))
+            G.add_edge(i, j, weight=_rand_sign(rng))
             if directed:
-                G.add_edge(j, i, weight=rng.choice([-1, 1]))
+                G.add_edge(j, i, weight=_rand_sign(rng))
 
-    # Track node 'targets' with frequency proportional to node degree. Drawing a
-    # uniform position from this multiset is equivalent to drawing a node with
-    # probability proportional to its degree.
-    targets = list(G.nodes) * m
+    # Degree-frequency multiset used for preferential attachment: drawing a
+    # uniform position from it picks a node with probability proportional to how
+    # often it appears. The seed clique is entered as ``list(G.nodes) * m`` (each
+    # of the m seed nodes m times), matching the pre-vectorization builder, and
+    # each grown node then extends it by ``2*m`` positions. Held in a
+    # preallocated int array (the final length is known) and filled with a write
+    # cursor, avoiding the per-draw list-to-array conversion of
+    # ``rng.choice(list)``. The ``m*m`` seed positions guarantee a nonempty
+    # multiset even for ``m=1`` (where the seed node has degree 0).
+    total_positions = m * m + 2 * m * (n - m)
+    targets = np.empty(total_positions, dtype=np.int64)
+    # Seed clique: each of the m nodes appears m times (as in ``list(nodes) * m``).
+    cursor = 0
+    for node in range(m):
+        targets[cursor : cursor + m] = node
+        cursor += m
 
     # Add remaining nodes.
     for i in range(m, n):
         G.add_node(i)
 
         # Sample ``m`` *distinct* existing node ids, each draw weighted by the
-        # degree-frequency multiset. ``replace=False`` on the multiset only
-        # guarantees distinct positions (which may repeat node ids), so collect
-        # distinct ids explicitly until we have ``m`` of them.
+        # degree-frequency multiset. Positions may repeat node ids, so collect
+        # distinct ids explicitly until we have ``m`` of them. ``rng.integers``
+        # draws a uniform position index directly into the array — no per-draw
+        # array conversion.
         new_edges: list[int] = []
         seen: set[int] = set()
         while len(new_edges) < m:
-            t = int(rng.choice(targets))
+            pos = int(rng.integers(cursor))
+            t = int(targets[pos])
             if t not in seen:
                 seen.add(t)
                 new_edges.append(t)
 
         for t in new_edges:
-            G.add_edge(i, t, weight=rng.choice([-1, 1]))
+            G.add_edge(i, t, weight=_rand_sign(rng))
             if directed:
-                G.add_edge(t, i, weight=rng.choice([-1, 1]))
+                G.add_edge(t, i, weight=_rand_sign(rng))
 
-        # Update 'targets' to reflect new degrees.
-        targets.extend([i] * m)
-        targets.extend(new_edges)
+        # Update the multiset to reflect the new degrees: node ``i`` gains ``m``
+        # incident edges (appears m times) and each chosen target gains one.
+        targets[cursor : cursor + m] = i
+        cursor += m
+        targets[cursor : cursor + m] = new_edges
+        cursor += m
 
     return G
+
+
+def _rand_sign(rng: np.random.Generator) -> int:
+    """Draw a random edge weight uniformly from ``{-1, +1}``."""
+    return -1 if rng.random() < 0.5 else 1

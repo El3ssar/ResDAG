@@ -33,14 +33,24 @@ from resdag.init.graphs import (
     ring_chord_graph,
 )
 from resdag.init.graphs._dense import adjacency_to_graph, dense_adjacency_builder
+from resdag.init.graphs.chord_dendrocycle import dendrocycle_with_chords_adjacency
 from resdag.init.graphs.complete import complete_adjacency, complete_graph
+from resdag.init.graphs.dendrocycle import dendrocycle_adjacency
 from resdag.init.graphs.erdos_renyi import erdos_renyi_adjacency
 from resdag.init.graphs.kleinberg_small_world import (
     kleinberg_small_world_adjacency,
     kleinberg_small_world_graph,
 )
+from resdag.init.graphs.newman_watts_strogatz import (
+    newman_watts_strogatz_adjacency,
+    newman_watts_strogatz_graph,
+)
 from resdag.init.graphs.random import random_adjacency, random_graph
 from resdag.init.graphs.regular import regular_adjacency
+from resdag.init.graphs.spectral_cascade import (
+    spectral_cascade_adjacency,
+    spectral_cascade_graph,
+)
 from resdag.init.graphs.watts_strogatz import (
     watts_strogatz_adjacency,
     watts_strogatz_graph,
@@ -53,7 +63,7 @@ from resdag.init.topology import (
     show_topologies,
 )
 from resdag.init.utils import resolve_initializer, resolve_topology
-from resdag.init.utils.graph_tools import connected_graph
+from resdag.init.utils.graph_tools import connected_adjacency, connected_graph
 from resdag.layers import ESNLayer
 
 
@@ -1307,6 +1317,19 @@ _DENSE_CASES = [
         False,
     ),
     (random_graph, random_adjacency, {"density": 0.3, "seed": 11}, True),
+    (
+        newman_watts_strogatz_graph,
+        newman_watts_strogatz_adjacency,
+        {"k": 6, "p": 0.3, "seed": 11},
+        False,
+    ),
+    (dendrocycle_graph, dendrocycle_adjacency, {"c": 0.5, "d": 0.2, "seed": 11}, True),
+    (
+        dendrocycle_with_chords_graph,
+        dendrocycle_with_chords_adjacency,
+        {"c": 0.5, "d": 0.2, "seed": 11},
+        True,
+    ),
 ]
 
 _DENSE_NAMES = [
@@ -1316,6 +1339,9 @@ _DENSE_NAMES = [
     "watts_strogatz",
     "kleinberg_small_world",
     "random",
+    "newman_watts_strogatz",
+    "dendrocycle",
+    "chord_dendrocycle",
 ]
 
 
@@ -1462,6 +1488,282 @@ class TestAdjacencyToGraph:
         assert isinstance(g, nx.Graph)
         assert g.number_of_nodes() == 3  # node 2 is isolated but present
         assert np.allclose(_adjacency_of(g), a)
+
+
+# ---------------------------------------------------------------------------
+# spectral_cascade: dense fast path is bit-identical (Phase 4 speed)
+# ---------------------------------------------------------------------------
+#
+# ``spectral_cascade`` used to build its full dense adjacency and then convert it
+# to an ``nx.Graph`` via an O(n^2) Python double loop, only for GraphTopology to
+# collapse it straight back to NumPy. It now returns ``adjacency_to_graph`` of a
+# vectorized builder and advertises that builder for the topology hot path. The
+# matrix is byte-for-byte the same, so the graded per-clique cascade is exactly
+# preserved.
+
+
+class TestSpectralCascadeDenseFastPath:
+    """The vectorized ``spectral_cascade`` builder is bit-identical to the graph."""
+
+    def test_builder_advertised_and_matches_graph(self) -> None:
+        """The topology advertises the dense builder and it equals the graph."""
+        assert dense_adjacency_builder(spectral_cascade_graph) is not None
+
+        n = 36  # triangular: 8 * 9 / 2
+        adjacency = spectral_cascade_adjacency(n, 1.0)
+        graph = spectral_cascade_graph(n, 1.0)
+        assert adjacency.shape == (n, n)
+        assert adjacency.dtype == np.float32
+        assert np.array_equal(_adjacency_of(graph), adjacency)
+
+    def test_builder_is_deterministic(self) -> None:
+        """The builder is deterministic (no RNG) — repeated builds are identical."""
+        a = spectral_cascade_adjacency(36, 1.0)
+        b = spectral_cascade_adjacency(36, 1.0)
+        assert np.array_equal(a, b)
+
+    def test_self_loops_populate_the_diagonal(self) -> None:
+        """``self_loops=True`` fills the diagonal; the graph mirrors it."""
+        n = 36
+        adjacency = spectral_cascade_adjacency(n, 1.0, self_loops=True)
+        assert np.any(np.diag(adjacency) != 0.0)
+        assert np.array_equal(_adjacency_of(spectral_cascade_graph(n, 1.0, True)), adjacency)
+
+    def test_graded_radii_preserved_on_fast_path(self) -> None:
+        """The per-clique graded radii survive the dense fast path (n=10)."""
+        topology = get_topology("spectral_cascade", spectral_radius=1.0)
+        weight = torch.empty(10, 10)
+        topology.initialize(weight, spectral_radius=None)
+
+        assert _block_spectral_radius(weight, slice(1, 3)) == pytest.approx(1.0, abs=1e-4)
+        assert _block_spectral_radius(weight, slice(3, 6)) == pytest.approx(0.5, abs=1e-4)
+        assert _block_spectral_radius(weight, slice(6, 10)) == pytest.approx(0.25, abs=1e-4)
+
+    def test_non_triangular_raises(self) -> None:
+        """A non-triangular ``n`` raises ValueError."""
+        with pytest.raises(ValueError, match="triangular"):
+            spectral_cascade_adjacency(11, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# dendrocycle / newman_watts_strogatz: statistically-equivalent vectorization
+# ---------------------------------------------------------------------------
+#
+# The dendrocycle builders draw their quiescent DAG block with a single
+# vectorized ``rng.random((A, A)) < p`` upper-triangular mask (was an O(A^2)
+# per-pair scalar loop); newman_watts_strogatz fills the ring lattice into a
+# dense matrix. The draw order changes, so these are *statistically* equivalent
+# (deterministic under a seed, same density / DAG-ness / degree structure) rather
+# than bit-identical to the pre-vectorization builders.
+
+
+class TestDendrocycleVectorizedQuiescentBlock:
+    """The vectorized quiescent block stays a deterministic Bernoulli DAG."""
+
+    @pytest.mark.parametrize(
+        "builder, prob",
+        [(dendrocycle_adjacency, 0.5), (dendrocycle_with_chords_adjacency, 0.1)],
+    )
+    def test_deterministic_under_seed(self, builder, prob: float) -> None:
+        """Same seed -> identical adjacency; a different seed differs."""
+        a = builder(2000, c=0.5, d=0.2, seed=42)
+        assert np.array_equal(a, builder(2000, c=0.5, d=0.2, seed=42))
+        assert not np.array_equal(a, builder(2000, c=0.5, d=0.2, seed=43))
+
+    @pytest.mark.parametrize(
+        "builder, prob",
+        [(dendrocycle_adjacency, 0.5), (dendrocycle_with_chords_adjacency, 0.1)],
+    )
+    def test_quiescent_block_is_a_dag_at_expected_density(self, builder, prob: float) -> None:
+        """The quiescent sub-block is acyclic with density close to ``prob``.
+
+        For ``n=2000, c=0.5, d=0.2`` the counts are ``C=1000, D=400, A=600``; the
+        quiescent nodes occupy indices ``C+D..n``. A vectorized strict-upper-
+        triangular draw keeps the block acyclic, and its edge count concentrates
+        on ``prob * C(A, 2)``.
+        """
+        n, C, D, A = 2000, 1000, 400, 600
+        adjacency = builder(n, c=0.5, d=0.2, seed=7)
+        block = adjacency[C + D :, C + D :]
+
+        subgraph = nx.from_numpy_array(block, create_using=nx.DiGraph)
+        assert nx.is_directed_acyclic_graph(subgraph)
+
+        expected = prob * A * (A - 1) / 2
+        assert np.count_nonzero(block) == pytest.approx(expected, rel=0.05)
+
+    @pytest.mark.parametrize("builder", [dendrocycle_adjacency, dendrocycle_with_chords_adjacency])
+    def test_core_ring_and_chords_intact(self, builder) -> None:
+        """The O(n) core ring and optional chords are placed exactly.
+
+        With ``n=40, c=0.5`` the core ring has ``C=20`` nodes; an ``L=2`` chord
+        adds ``i -> (i - 2) % C`` for every core node.
+        """
+        adjacency = builder(40, c=0.5, d=0.2, L=2, seed=0)
+        C = 20
+        for i in range(C):
+            assert adjacency[i, (i + 1) % C] != 0.0  # ring edge
+            assert adjacency[i, (i - 2) % C] != 0.0  # L=2 chord
+
+    def test_spectral_radius_scaling_is_accurate(self) -> None:
+        """dendrocycle is not pre-scaled: the layer rescales to the target."""
+        layer = ESNLayer(200, feedback_size=3, topology="dendrocycle", seed=7, spectral_radius=0.9)
+        radius = _full_spectral_radius(layer.weight_hh.data)
+        assert radius == pytest.approx(0.9, abs=1e-2)
+
+
+class TestNewmanWattsStrogatzVectorized:
+    """The vectorized ring builder is a deterministic small-world lattice."""
+
+    def test_builder_advertised_and_matches_graph(self) -> None:
+        """The topology advertises the dense builder and it equals the graph."""
+        assert dense_adjacency_builder(newman_watts_strogatz_graph) is not None
+        adjacency = newman_watts_strogatz_adjacency(200, k=6, p=0.1, seed=11)
+        graph = newman_watts_strogatz_graph(200, k=6, p=0.1, seed=11)
+        assert np.array_equal(_adjacency_of(graph), adjacency)
+
+    def test_deterministic_under_seed(self) -> None:
+        """Same seed -> identical adjacency; a different seed differs."""
+        a = newman_watts_strogatz_adjacency(500, k=6, p=0.1, seed=3)
+        assert np.array_equal(a, newman_watts_strogatz_adjacency(500, k=6, p=0.1, seed=3))
+        assert not np.array_equal(a, newman_watts_strogatz_adjacency(500, k=6, p=0.1, seed=4))
+
+    def test_undirected_is_symmetric_ring_plus_shortcuts(self) -> None:
+        """The undirected graph is symmetric with base ring degree ``k``."""
+        adjacency = newman_watts_strogatz_adjacency(500, k=6, p=0.1, seed=1)
+        assert np.allclose(adjacency, adjacency.T)
+        # No edge removal, so every node keeps at least its k ring neighbours.
+        degrees = (adjacency != 0.0).sum(axis=1)
+        assert degrees.min() >= 6
+
+    def test_k_ge_n_raises(self) -> None:
+        """``k >= n`` raises ValueError."""
+        with pytest.raises(ValueError, match="k must be smaller than n"):
+            newman_watts_strogatz_adjacency(6, k=6, p=0.1)
+
+
+# ---------------------------------------------------------------------------
+# connected_* topologies: adjacency-level fast path (Phase 4 speed)
+# ---------------------------------------------------------------------------
+#
+# ``connected_erdos_renyi`` / ``connected_watts_strogatz`` were ~18x slower than
+# their unconnected counterparts because the ``@connected_graph`` wrapper does
+# not carry the inner builder's dense ``adjacency_builder``, so GraphTopology
+# fell back to a NetworkX round-trip per attempt. ``connected_adjacency`` retries
+# the dense builder and checks weak connectivity with scipy on a CSR view,
+# registered via ``register_dense_adjacency`` on the connected_* functions.
+
+_CONNECTED_CASES = [
+    ("connected_erdos_renyi", {"p": 0.1, "seed": 3}, True),
+    ("connected_watts_strogatz", {"k": 6, "p": 0.3, "seed": 3}, True),
+]
+
+
+def _weakly_connected(adjacency: np.ndarray, *, directed: bool) -> bool:
+    """Whether ``adjacency`` has a single weak component (scipy CSR check)."""
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    n_components, _ = connected_components(
+        csr_matrix(adjacency != 0.0), directed=directed, connection="weak"
+    )
+    return bool(n_components == 1)
+
+
+class TestConnectedTopologyDenseFastPath:
+    """The connected_* topologies build connected weights via the fast path."""
+
+    @pytest.mark.parametrize("name, kwargs, directed", _CONNECTED_CASES)
+    def test_topology_advertises_dense_builder(
+        self, name: str, kwargs: dict, directed: bool
+    ) -> None:
+        """Each connected_* topology function carries an adjacency builder."""
+        topology = get_topology(name)
+        assert dense_adjacency_builder(topology.graph_func) is not None
+
+    @pytest.mark.parametrize("name, kwargs, directed", _CONNECTED_CASES)
+    def test_fast_path_skips_networkx(self, name: str, kwargs: dict, directed: bool) -> None:
+        """The fast path never falls back to the NetworkX retry wrapper."""
+        topology = get_topology(name, **kwargs)
+        original = topology.graph_func
+        sentinel = {"called": False}
+
+        def _tripwire(*args: object, **kw: object) -> object:
+            sentinel["called"] = True
+            return original(*args, **kw)
+
+        _tripwire.adjacency_builder = original.adjacency_builder  # type: ignore[attr-defined]
+        topology.graph_func = _tripwire
+
+        weight = torch.empty(200, 200)
+        topology.initialize(weight, spectral_radius=0.9)
+
+        assert sentinel["called"] is False, f"{name} fell back to the NetworkX builder"
+
+    @pytest.mark.parametrize("name, kwargs, directed", _CONNECTED_CASES)
+    def test_fast_path_weight_is_weakly_connected(
+        self, name: str, kwargs: dict, directed: bool
+    ) -> None:
+        """The initialized recurrent weight is a single weak component."""
+        topology = get_topology(name, **kwargs)
+        weight = torch.empty(300, 300)
+        topology.initialize(weight, spectral_radius=0.9)
+
+        assert _weakly_connected(weight.numpy(), directed=directed)
+
+    @pytest.mark.parametrize("name, kwargs, directed", _CONNECTED_CASES)
+    def test_fast_path_spectral_radius_scaling(
+        self, name: str, kwargs: dict, directed: bool
+    ) -> None:
+        """Spectral-radius scaling still applies on the connected fast path."""
+        topology = get_topology(name, **kwargs)
+        weight = torch.empty(200, 200)
+        topology.initialize(weight, spectral_radius=0.8)
+
+        radius = _full_spectral_radius(weight)
+        assert radius == pytest.approx(0.8, abs=1e-2)
+
+    def test_connected_adjacency_is_deterministic_under_seed(self) -> None:
+        """A fixed seed yields the same connected adjacency across builds."""
+        builder = dense_adjacency_builder(connected_erdos_renyi_graph)
+        assert builder is not None
+        a = builder(200, p=0.05, directed=True, self_loops=True, seed=9)
+        b = builder(200, p=0.05, directed=True, self_loops=True, seed=9)
+        assert np.array_equal(a, b)
+        assert _weakly_connected(a, directed=True)
+
+    def test_connected_adjacency_retries_vary_under_fixed_seed(self) -> None:
+        """The shared RNG advances across attempts (retries differ, as in nx)."""
+        from resdag.init.graphs.erdos_renyi import erdos_renyi_adjacency
+
+        seen: list[bytes] = []
+
+        def spy(n: int, **kw: object) -> np.ndarray:
+            adjacency = erdos_renyi_adjacency(n, **kw)  # type: ignore[arg-type]
+            seen.append(adjacency.tobytes())
+            return adjacency
+
+        wrapped = connected_adjacency(spy, directed=True, max_tries=5)
+        with pytest.raises(ValueError, match="Failed to generate a connected graph"):
+            wrapped(500, p=0.0005, directed=True, self_loops=True, seed=7)
+
+        assert len(seen) == 5  # all attempts made
+        assert len(set(seen)) == 5  # every attempt differed (shared RNG advanced)
+
+    def test_connected_adjacency_precondition_raises(self) -> None:
+        """The ``p > ln(n)/n`` precondition raises before any attempt."""
+        builder = dense_adjacency_builder(connected_erdos_renyi_graph)
+        assert builder is not None
+        with pytest.raises(ValueError, match="Edge probability p must be"):
+            builder(500, p=0.0001, directed=True, self_loops=True, seed=1)
+
+    def test_connected_adjacency_tries_zero_raises(self) -> None:
+        """``tries=0`` is a clean ValueError, not an ``UnboundLocalError``."""
+        from resdag.init.graphs.erdos_renyi import erdos_renyi_adjacency
+
+        wrapped = connected_adjacency(erdos_renyi_adjacency, directed=True)
+        with pytest.raises(ValueError, match="tries must be a positive integer"):
+            wrapped(100, p=0.5, seed=1, tries=0)
 
 
 @pytest.mark.benchmark

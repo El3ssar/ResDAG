@@ -20,6 +20,12 @@ BaseReservoirLayer
     Abstract sequence-loop base with state management.
 ReservoirCell
     Abstract single-timestep cell interface.
+LIFReservoir
+    Spiking leaky integrate-and-fire reservoir (Liquid State Machine liquid).
+LIFCell
+    Single-timestep leaky integrate-and-fire spiking cell.
+SpikingReservoirCell
+    Abstract base for spiking reservoir cells (surrogate spike + readout trace).
 ReadoutLayer
     Per-timestep linear layer with custom fitting interface.
 CGReadoutLayer
@@ -82,9 +88,11 @@ from .cells import (
     ESNCell,
     EuSNCell,
     GatedReservoirCell,
+    LIFCell,
     NGCell,
     ReservoirCell,
     ResESNCell,
+    SpikingReservoirCell,
 )
 from .readouts import (
     CGReadoutLayer,
@@ -102,6 +110,7 @@ from .reservoirs import (
     ESNLayer,
     EuSNLayer,
     GatedReservoir,
+    LIFReservoir,
     NGReservoir,
     ResESNLayer,
 )
@@ -159,6 +168,9 @@ __all__ = [
     "ContinuousReservoirCell",
     "EuSNCell",
     "EuSNLayer",
+    "SpikingReservoirCell",
+    "LIFCell",
+    "LIFReservoir",
 ]
 
 

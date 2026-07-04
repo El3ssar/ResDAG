@@ -23,6 +23,9 @@ headless_esn
     Reservoir only (no readout) for analysis.
 linear_esn
     Linear reservoir for baseline comparison.
+lsm
+    Spiking Liquid State Machine — leaky integrate-and-fire reservoir with a
+    filtered-spike-trace readout (input-driven; not a chaos forecaster).
 coupled_ensemble_esn
     Build a :class:`~resdag.ensemble.CoupledEnsembleESNModel` of N coupled
     ESN sub-models sharing an averaged feedback signal.
@@ -73,6 +76,7 @@ from .gated_esn import gated_esn
 from .headless_esn import headless_esn
 from .hybrid_esn import KnowledgeModel, hybrid_esn
 from .linear_esn import linear_esn
+from .lsm import lsm
 from .ott_esn import ott_esn
 from .power_augmented import power_augmented
 from .resesn import resesn
@@ -91,6 +95,7 @@ __all__ = [
     "resesn",
     "gated_esn",
     "eusn",
+    "lsm",
 ]
 
 

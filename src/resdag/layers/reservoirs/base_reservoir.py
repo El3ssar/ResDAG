@@ -43,10 +43,14 @@ _ChunkScanFn = Callable[
 ]
 
 # Cell configuration attributes that are safe to mutate *live* after
-# construction: they are read fresh on every step by the cell (leak_rate, noise)
-# or apply their effect through a property setter (trainable), so a write on the
-# layer is forwarded straight through to the cell and takes effect immediately.
-_FORWARDABLE_CELL_ATTRS = frozenset({"trainable", "leak_rate", "noise"})
+# construction: they are read fresh on every step by the cell (leak_rate, noise,
+# and the orthogonal-skip weights beta/alpha of ES2N/ResESN) or apply their
+# effect through a property setter (trainable), so a write on the layer is
+# forwarded straight through to the cell and takes effect immediately.  ``beta``
+# / ``alpha`` are only present on the skip cells; forwarding them is a no-op for
+# plain ESN/NG-RC cells (the ``hasattr(cell, name)`` guard in ``__setattr__``
+# skips names the cell does not carry).
+_FORWARDABLE_CELL_ATTRS = frozenset({"trainable", "leak_rate", "noise", "beta", "alpha"})
 
 # Cell configuration attributes that are *structurally baked* into the weights at
 # construction time (the spectral radius is scaled into ``weight_hh``; the sizes
@@ -257,9 +261,10 @@ class BaseReservoirLayer(nn.Module, ABC):
         This override closes that gap **without disturbing nn.Module's
         registration machinery**.  The write is forwarded to the cell only for a
         small, explicit allow-list of live config attributes
-        (:data:`_FORWARDABLE_CELL_ATTRS`: ``trainable``, ``leak_rate``,
-        ``noise``) — names the cell reads fresh every step or applies through a
-        property setter.  Everything else falls through to
+        (:data:`_FORWARDABLE_CELL_ATTRS`: ``trainable``, ``leak_rate``, ``noise``,
+        and the edge-of-stability knobs ``beta`` / ``alpha``) — names the cell
+        reads fresh every step or applies through a property setter, and only
+        when the inner cell actually owns them.  Everything else falls through to
         ``nn.Module.__setattr__`` unchanged, so Parameters, buffers, submodules,
         and ``_``-prefixed internals register exactly as before.
 

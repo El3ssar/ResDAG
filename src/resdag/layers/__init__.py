@@ -76,7 +76,7 @@ resdag.core.ESNModel : Core model class used to compose these layers.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
-from .cells import ESNCell, NGCell, ReservoirCell
+from .cells import ES2NCell, ESNCell, GatedReservoirCell, NGCell, ReservoirCell, ResESNCell
 from .readouts import (
     CGReadoutLayer,
     CholeskyReadoutLayer,
@@ -87,7 +87,14 @@ from .readouts import (
     RidgeReadoutLayer,
     SVDReadoutLayer,
 )
-from .reservoirs import BaseReservoirLayer, ESNLayer, NGReservoir
+from .reservoirs import (
+    BaseReservoirLayer,
+    ES2NLayer,
+    ESNLayer,
+    GatedReservoir,
+    NGReservoir,
+    ResESNLayer,
+)
 from .transforms import (
     NLAT2,
     NLAT3,
@@ -133,6 +140,12 @@ __all__ = [
     "SelectiveDropout",
     "SelectiveExponentiation",
     "Standardize",
+    "ES2NCell",
+    "ResESNCell",
+    "GatedReservoirCell",
+    "ES2NLayer",
+    "ResESNLayer",
+    "GatedReservoir",
 ]
 
 

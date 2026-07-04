@@ -67,11 +67,14 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 from .classic_esn import classic_esn
 from .coupled_ensemble_esn import coupled_ensemble_esn
 from .deep_esn import deep_esn
+from .es2n import es2n
+from .gated_esn import gated_esn
 from .headless_esn import headless_esn
 from .hybrid_esn import KnowledgeModel, hybrid_esn
 from .linear_esn import linear_esn
 from .ott_esn import ott_esn
 from .power_augmented import power_augmented
+from .resesn import resesn
 
 __all__ = [
     "KnowledgeModel",
@@ -83,6 +86,9 @@ __all__ = [
     "linear_esn",
     "ott_esn",
     "power_augmented",
+    "es2n",
+    "resesn",
+    "gated_esn",
 ]
 
 

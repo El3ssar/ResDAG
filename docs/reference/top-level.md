@@ -20,8 +20,10 @@ trainer = rd.ESNTrainer(model)
 
 | Symbol | Canonical home |
 | ------ | -------------- |
+| [`ESN`][resdag.facade.ESN] | `resdag.facade` |
 | [`ESNModel`][resdag.core.ESNModel] | `resdag.core` |
 | [`ReservoirFeatureExtractor`][resdag.core.ReservoirFeatureExtractor] | `resdag.core` |
+| [`Input`][resdag.core.Input] | `resdag.core` (re-export of `pytorch_symbolic.Input`) |
 | [`reservoir_input`][resdag.core.reservoir_input] | `resdag.core` |
 
 ## Reservoirs and cells
@@ -39,13 +41,19 @@ trainer = rd.ESNTrainer(model)
 
 | Symbol | Canonical home |
 | ------ | -------------- |
-| [`CGReadoutLayer`][resdag.layers.readouts.CGReadoutLayer] | `resdag.layers.readouts` |
 | [`ReadoutLayer`][resdag.layers.readouts.ReadoutLayer] | `resdag.layers.readouts` |
+| [`RidgeReadoutLayer`][resdag.layers.readouts.RidgeReadoutLayer] | `resdag.layers.readouts` |
+| [`CholeskyReadoutLayer`][resdag.layers.readouts.CholeskyReadoutLayer] | `resdag.layers.readouts` |
+| [`CGReadoutLayer`][resdag.layers.readouts.CGReadoutLayer] | `resdag.layers.readouts` |
+| [`SVDReadoutLayer`][resdag.layers.readouts.SVDReadoutLayer] | `resdag.layers.readouts` |
+| [`PinvReadoutLayer`][resdag.layers.readouts.PinvReadoutLayer] | `resdag.layers.readouts` |
+| [`IncrementalRidgeReadout`][resdag.layers.readouts.IncrementalRidgeReadout] | `resdag.layers.readouts` |
 | [`Concatenate`][resdag.layers.transforms.Concatenate] | `resdag.layers.transforms` |
 | [`FeaturePartitioner`][resdag.layers.transforms.FeaturePartitioner] | `resdag.layers.transforms` |
 | [`Power`][resdag.layers.transforms.Power] | `resdag.layers.transforms` |
 | [`SelectiveDropout`][resdag.layers.transforms.SelectiveDropout] | `resdag.layers.transforms` |
 | [`SelectiveExponentiation`][resdag.layers.transforms.SelectiveExponentiation] | `resdag.layers.transforms` |
+| [`Standardize`][resdag.layers.transforms.Standardize] | `resdag.layers.transforms` |
 
 ## Models and ensembles
 
@@ -65,6 +73,20 @@ trainer = rd.ESNTrainer(model)
 | Symbol | Canonical home |
 | ------ | -------------- |
 | [`ESNTrainer`][resdag.training.ESNTrainer] | `resdag.training` |
+
+## Data, datasets, and diagnostics
+
+| Symbol | Canonical home |
+| ------ | -------------- |
+| [`TimeSeriesWindowDataset`][resdag.data.TimeSeriesWindowDataset] | `resdag.data` |
+| [`make_dataloader`][resdag.data.make_dataloader] | `resdag.data` |
+| `lorenz`, `rossler`, `henon`, `mackey_glass`, `narma`, `sine` | `resdag.datasets` |
+| [`esp_index`][resdag.utils.states.esp_index.esp_index] | `resdag.utils.states` |
+
+The generators in `resdag.datasets` each return a `(1, n_timesteps, features)`
+tensor; their first positional argument is `n_timesteps`. `TimeSeriesWindowDataset`
+and `make_dataloader` are the torch `DataLoader` path — see
+[Work · Streaming & DataLoaders](../workflows/streaming.md).
 
 ---
 

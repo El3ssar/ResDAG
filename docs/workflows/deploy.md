@@ -43,13 +43,44 @@ carry real work. In practice:
   Measure your own configuration with `examples/11_gpu_benchmark.py`.
 
 !!! note "Why fit() stays fast on CUDA"
-    `CGReadoutLayer`'s `gram_dtype` is automatic: the heavy Gram-matrix
-    matmuls run in float64 on CPU (cheap there) but in the input dtype on
-    CUDA — consumer GPUs run float64 at 1/32–1/64 throughput, which is
+    The direct ridge readouts (`RidgeReadoutLayer`, the default) and
+    `CGReadoutLayer` share a `gram_dtype` policy that is automatic: the heavy
+    Gram-matrix matmuls run in float64 on CPU (cheap there) but in the input
+    dtype on CUDA — consumer GPUs run float64 at 1/32–1/64 throughput, which is
     why ESN training has often measured slower on GPU. Pass
     `gram_dtype=torch.float64` only for badly scaled states (e.g.
     unnormalized inputs concatenated into the readout); the better fix is
     normalizing the data.
+
+### Long horizons: compile the step
+
+The autoregressive forecast loop is sequential in time — one small kernel
+per step — so on the GPU a long rollout spends most of its wall-clock in
+Python and kernel-launch overhead, not arithmetic. `forecast(compile=True)`
+wraps the flat single-step engine in `torch.compile` (`mode="reduce-overhead"`,
+`fullgraph=True`), fusing the per-step work into one graph and cutting that
+overhead:
+
+```python
+preds = model.forecast(f_warmup, horizon=10_000, compile=True)   # GPU: fewer, fatter launches
+```
+
+The default eager path is already flat and hook-free (bit-for-bit identical
+whether or not you compile), so `compile=True` is a pure opt-in speedup and
+transparently falls back to eager on `torch < 2.10` or a compilation failure
+(emitting a `RuntimeWarning`). It pays off for **long horizons on the GPU**;
+for short rollouts or on CPU the compile warmup can cost more than it saves, so
+leave it off. It is mutually exclusive with the differentiable
+`no_grad=False` rollout ([Train · Differentiable
+forecast](train.md#path-4-differentiable-forecast-bptt-through-the-rollout)) —
+requesting both raises.
+
+!!! tip "Compiling the teacher-forced pass too"
+    Warmup and training run the teacher-forced sequence loop, which also
+    accepts an opt-in `compile=True`: `reservoir(feedback, compile=True)`
+    routes it through a compiled chunked scan (same `reduce-overhead` mode,
+    same eager fallback). Worth it for very long teacher-forced passes on the
+    GPU; the default is byte-for-byte the eager loop.
 
 ---
 

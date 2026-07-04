@@ -33,7 +33,10 @@ were produced by `python -m rc_bench.run` followed by `python -m rc_bench.report
     - **Honest trade-off.** For *generating* a long forecast — an inherently
       sequential loop — reservoirpy's sparse single-step update is faster than
       resdag's dense one on CPU/GPU. resdag wins on training throughput and
-      accuracy; reservoirpy wins on raw autoregressive generation speed.
+      accuracy; reservoirpy wins on raw autoregressive generation speed. The
+      numbers below are the eager loop; `forecast(compile=True)` fuses the
+      per-step engine with `torch.compile` and recovers a chunk of that gap on
+      long GPU rollouts (see [Scale & deploy](deploy.md#long-horizons-compile-the-step)).
 
 ### Training vs reservoir size
 
@@ -114,10 +117,12 @@ worth stating plainly so the numbers are not over-read:
   float64 at a small fraction of float32 throughput).
 - **Sequential forecasting is launch-bound.** The autoregressive forecast loop
   issues one tiny operation per timestep. On the GPU each step is dominated by
-  kernel-launch overhead, so the GPU does **not** help long forecasts at small
-  reservoir sizes — and may be slower than CPU there. resdag's GPU advantage
-  shows up in **training**, where the work batches into large matmuls. See
-  [Scale & deploy](deploy.md#gpu) for when the GPU is worth it.
+  kernel-launch overhead, so the eager GPU loop does **not** help long forecasts
+  at small reservoir sizes — and may be slower than CPU there. `forecast(compile=True)`
+  fuses the per-step engine with `torch.compile` to claw back launch overhead on
+  long GPU rollouts; the tables above are the eager path. resdag's GPU advantage
+  otherwise shows up in **training**, where the work batches into large matmuls.
+  See [Scale & deploy](deploy.md#gpu) for when the GPU is worth it.
 - **ReservoirComputing.jl coverage.** Its current release (v0.12, Lux-based) is
   much slower per call than the others — seconds where resdag and reservoirpy
   take milliseconds — so the harness skips it on the largest cells (shown as

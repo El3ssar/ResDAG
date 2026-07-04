@@ -5,6 +5,14 @@ concatenation, mirroring reservoirpy's ``Reservoir >> Ridge`` and
 ReservoirComputing.jl's ``ESN``. CPU runs float64 (to match the NumPy/Julia
 baselines); GPU runs float32 (the realistic GPU dtype — consumer cards run
 float64 at a small fraction of float32 throughput).
+
+The readout is :class:`RidgeReadoutLayer` (direct Cholesky solve) — the class
+directly comparable to reservoirpy's ``Ridge`` and ReservoirComputing.jl's
+direct linear solve, and resdag's own premade default. An earlier version of
+this adapter used :class:`CGReadoutLayer`, whose iterative solver silently
+under-converges on the near-unregularized (``alpha=1e-6``) Gram at the default
+``max_iter=100``; that halved the measured forecast precision (VPT) versus the
+direct solve and misrepresented resdag on its most important metric.
 """
 
 from __future__ import annotations
@@ -54,7 +62,7 @@ class _ResdagBase(Adapter):
 
         from resdag import ESNModel
         from resdag.layers import ESNLayer
-        from resdag.layers.readouts import CGReadoutLayer
+        from resdag.layers.readouts import RidgeReadoutLayer
 
         torch.manual_seed(hp.seed)
         dtype = torch.float64 if self._dtype_name == "float64" else torch.float32
@@ -68,7 +76,7 @@ class _ResdagBase(Adapter):
             activation=hp.activation,
             topology=("erdos_renyi", {"p": hp.connectivity}),
         )(inp)
-        out = CGReadoutLayer(point.reservoir_size, hp.dim, alpha=hp.ridge, name="output")(res)
+        out = RidgeReadoutLayer(point.reservoir_size, hp.dim, alpha=hp.ridge, name="output")(res)
         model = ESNModel(inp, out)
         model = model.to(device=self._torch_device, dtype=dtype)
         return model, dtype

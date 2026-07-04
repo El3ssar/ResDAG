@@ -533,6 +533,81 @@ class TestCGSolverAccuracy:
             readout._solve_ridge_cg(X, y, alpha=-1.0)
 
 
+class TestCGMaxIterWarning:
+    """CG emits a RuntimeWarning on silent under-convergence.
+
+    A CG solve that exhausts ``max_iter`` while still above ``tol`` silently
+    returns an under-converged readout (the benchmark-credibility bug: a
+    near-unregularized Gram at the default ``max_iter=100`` halved forecast
+    precision). These tests pin the warning contract.
+    """
+
+    def test_warns_when_max_iter_hit_without_convergence(self) -> None:
+        """Hitting max_iter above tol raises RuntimeWarning naming the class."""
+        torch.manual_seed(0)
+        # Ill-conditioned-ish, essentially unregularized, and only a couple of
+        # iterations: CG cannot converge, so the warning must fire.
+        n_samples, n_features, n_outputs = 2000, 60, 3
+        X = torch.randn(n_samples, n_features, dtype=torch.float64)
+        y = torch.randn(n_samples, n_outputs, dtype=torch.float64)
+        readout = CGReadoutLayer(
+            in_features=n_features,
+            out_features=n_outputs,
+            alpha=1e-10,
+            max_iter=2,
+            tol=1e-14,
+        )
+        with pytest.warns(RuntimeWarning, match="max_iter"):
+            readout._solve_ridge_cg(X, y, readout.alpha)
+
+    def test_warning_message_mentions_ridge_alternative(self) -> None:
+        """The message points the user at remedies (max_iter / RidgeReadoutLayer)."""
+        torch.manual_seed(0)
+        X = torch.randn(1000, 40, dtype=torch.float64)
+        y = torch.randn(1000, 2, dtype=torch.float64)
+        readout = CGReadoutLayer(in_features=40, out_features=2, max_iter=1, tol=1e-14)
+        with pytest.warns(RuntimeWarning) as record:
+            readout._solve_ridge_cg(X, y, 1e-10)
+        msg = str(record[0].message)
+        assert "RidgeReadoutLayer" in msg
+        assert "max_iter=1" in msg
+
+    def test_named_layer_appears_in_warning(self) -> None:
+        """A named readout surfaces its name in the warning for identification."""
+        torch.manual_seed(0)
+        X = torch.randn(1000, 40, dtype=torch.float64)
+        y = torch.randn(1000, 2, dtype=torch.float64)
+        readout = CGReadoutLayer(40, 2, name="output", max_iter=1, tol=1e-14)
+        with pytest.warns(RuntimeWarning, match=r"CGReadoutLayer\('output'\)"):
+            readout._solve_ridge_cg(X, y, 1e-10)
+
+    def test_no_warning_when_converged(self) -> None:
+        """A well-regularized fit with ample iterations must not warn."""
+        torch.manual_seed(0)
+        X = torch.randn(500, 20, dtype=torch.float64)
+        y = torch.randn(500, 3, dtype=torch.float64)
+        readout = CGReadoutLayer(
+            in_features=20, out_features=3, alpha=1e-1, max_iter=1000, tol=1e-8
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            # Would raise if any RuntimeWarning were emitted.
+            readout._solve_ridge_cg(X, y, readout.alpha)
+
+    def test_no_warning_on_trivial_zero_target_column(self) -> None:
+        """An all-zero target column is a converged (frozen) column, not a warn."""
+        torch.manual_seed(0)
+        X = torch.randn(400, 15, dtype=torch.float64)
+        y = torch.randn(400, 3, dtype=torch.float64)
+        y[:, 1] = 0.0  # trivial column: frozen immediately, fits to W=0
+        readout = CGReadoutLayer(
+            in_features=15, out_features=3, alpha=1e-1, max_iter=1000, tol=1e-8
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            readout._solve_ridge_cg(X, y, readout.alpha)
+
+
 class TestCGReadoutFit:
     """CGReadoutLayer fit method."""
 

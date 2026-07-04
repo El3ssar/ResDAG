@@ -48,15 +48,18 @@ consecutive batches does not accumulate graph history across calls.
 ## 3 — Readout training is a closed-form solve
 
 Readouts are fitted algebraically on collected states rather than trained
-by gradient descent. The current readout,
-[`CGReadoutLayer`](../build/readouts/cg-readout.md), is a linear layer
-fitted by ridge regression — a closed-form problem solved by conjugate
-gradient in a single pass, with no learning rate or epoch schedule.
+by gradient descent. The default readout,
+[`RidgeReadoutLayer`](../build/readouts/index.md), is a linear layer
+fitted by ridge regression — a closed-form problem solved directly (a
+Cholesky factorization of the normal equations) in a single pass, with no
+learning rate or epoch schedule. Other solvers plug into the same contract:
+`CGReadoutLayer` (iterative conjugate gradient) and SVD/pinv/streaming
+variants (see [Theory · Readout solvers](../theory/readout.md#choosing-a-solver)).
 `ESNTrainer.fit` does exactly three things: reset, teacher-forced warmup,
 and one forward pass during which each readout fits itself at the moment
 it executes, so multi-readout DAGs fit in dependency order.
 
-Because `CGReadoutLayer` is an ordinary `nn.Linear` underneath,
+Because every readout is an ordinary `nn.Linear` underneath,
 gradient-based training remains available: freeze the reservoir and train
 a deep head with Adam, or set `trainable=True` and backpropagate through
 everything. The [Train](../workflows/train.md) page covers all three

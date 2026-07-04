@@ -53,3 +53,20 @@ from resdag.utils.states import esp_index  # canonical home
 ::: resdag.utils.states.esp_index.esp_index
     options:
       heading_level: 3
+
+---
+
+## DataLoader path
+
+`TimeSeriesWindowDataset` and `make_dataloader` (both in `resdag.data`, and
+re-exported at the top level) are the windowed-`DataLoader` training path — see
+[Work · Streaming & DataLoaders](../workflows/streaming.md) for the worked
+loops. The time-series generators in `resdag.datasets` (`lorenz`, `rossler`,
+`henon`, `mackey_glass`, `narma`, `sine`) each return a `(1, n_timesteps,
+features)` tensor and take `n_timesteps` as their first positional argument.
+
+::: resdag.data
+    options:
+      members:
+        - TimeSeriesWindowDataset
+        - make_dataloader

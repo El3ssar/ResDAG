@@ -6,12 +6,15 @@ description: The ridge objective with unpenalized intercept, centered vs. uncent
 
 # Readout solvers
 
-ResDAG fits readouts algebraically. For the current readout,
-`CGReadoutLayer`, training reduces to one linear-algebra problem: ridge
-regression of collected states onto targets. This page states the
-objective the layer solves, the normal equations it forms, and the
-precision choices that keep the solve fast on a GPU without compromising
-accuracy.
+ResDAG fits readouts algebraically: training reduces to one linear-algebra
+problem — ridge regression of collected states onto targets. Every readout
+solver in the library minimizes the *same* objective; they differ only in
+how they solve it. The default, `RidgeReadoutLayer`, forms the normal
+equations and factorizes them directly (Cholesky); `CGReadoutLayer` solves
+the identical system iteratively by conjugate gradient. This page states the
+shared objective, the normal equations it forms, the precision choices that
+keep the solve fast on a GPU, and — at the end — [how to choose a
+solver](#choosing-a-solver) when the default doesn't fit.
 
 ## The objective
 
@@ -34,8 +37,9 @@ ridge should be translation-invariant, and this formulation is.
 
 Eliminating $c$ analytically reduces the problem to ridge on centered
 data. With sample means $\bar x \in \mathbb R^{F}$, $\bar y \in \mathbb
-R^{M}$, the code forms the centered Gram and right-hand side *without
-materializing a centered copy of $X$*:
+R^{M}$, every solver forms the centered Gram and right-hand side *without
+materializing a centered copy of $X$* — this reduction is shared, only the
+final solve of the resulting $F\times F$ system differs by solver:
 
 $$
 \left(X^\top X - N\,\bar x\,\bar x^\top + \alpha I\right) W
@@ -64,10 +68,24 @@ $(X^\top X + \alpha I)\,W = X^\top Y$ — no centering, no intercept.
 
 ---
 
-## Why conjugate gradient on the Gram system
+## Solving the system: direct vs. iterative
 
-The normal equations are an $F \times F$ symmetric positive-definite
-system, independent of $N$. CG exploits both facts:
+The normal equations are an $F \times F$ symmetric positive-definite system,
+independent of $N$. There are two families of solver for it, and ResDAG
+ships both.
+
+**Direct factorization** (`RidgeReadoutLayer`, the default;
+`CholeskyReadoutLayer`). At reservoir-computing widths ($F \approx
+100$–$2000$) the $(F, F)$ Gram factorizes exactly and almost instantly: one
+`torch.linalg.cholesky` plus a `cholesky_solve` returns the *exact* ridge
+solution (up to floating point). This is both faster and more accurate than
+an iterative solve at these sizes, which is why it is the default. Passing
+`solver='solve'` swaps the Cholesky for a general LU (`torch.linalg.solve`),
+tolerating `alpha == 0` on a full-rank Gram.
+
+**Conjugate gradient** (`CGReadoutLayer`). The same SPD system can be solved
+iteratively, which pays off when $F$ is very large or you want a matrix-free
+solve. CG exploits both structural facts:
 
 - **Memory.** Only the $F \times F$ Gram matrix is ever materialized. The
   $N \times F$ state matrix is read exactly twice (once for $X^\top X$,
@@ -117,10 +135,50 @@ linear-layer parameters — `weight.copy_(coefs.T)`,
 forward pass, same `state_dict`.
 
 This makes algebraic fitting and gradient training interchangeable. The
-same layer can be fitted with a single CG solve or trained with an
+same layer can be fitted with a single algebraic solve or trained with an
 optimizer such as Adam (`trainable=True` flips `requires_grad`), and a
 checkpoint does not record which path produced the weights, because the
 layer carries no solver-specific state.
+
+## Choosing a solver
+
+Six readout classes (all in `resdag.layers.readouts`, re-exported from
+`resdag.layers` and the top level) solve the *same* ridge objective above;
+they differ only in the numerical method. Pick by conditioning, whether you
+need `alpha = 0`, problem size, and whether the data streams:
+
+| Readout | Method | `alpha = 0`? | Rank-deficient Gram? | Cost / notes | Reach for it when |
+| --- | --- | --- | --- | --- | --- |
+| **`RidgeReadoutLayer`** *(default)* | Direct Cholesky (`solver='cholesky'`) or LU (`solver='solve'`) of the normal equations | `'solve'` only | No (fails / unstable) | One factorization; **exact**, fastest at $F \le 2000$ | Almost always — well-conditioned readout, `alpha > 0` |
+| `CholeskyReadoutLayer` | Single-shot Cholesky ridge | No | No | Equivalent to `RidgeReadoutLayer(solver='cholesky')`; the streaming-path direct solver | You want the direct Cholesky solver by name (e.g. behind `IncrementalRidgeReadout`) |
+| `CGReadoutLayer` | Iterative conjugate gradient on the Gram | Yes | Tolerates it | Matrix-free, memory-lean in $N$; **approximate** (can under-converge) | Very large $F$, or a memory-bound / matrix-free solve |
+| `SVDReadoutLayer` | SVD with Tikhonov filter factors | Yes | **Yes** (robust) | An SVD of the design; most robust, most expensive | Rank-deficient Gram — high-degree NG-RC maps, more features than samples, or `alpha = 0` |
+| `PinvReadoutLayer` | `torch.linalg.lstsq` / `pinv` with an `rcond` cutoff | Yes | Yes | Least squares with pinv semantics | You want pseudo-inverse / lstsq behavior directly |
+| `IncrementalRidgeReadout` | Streaming ridge — `partial_fit` accumulates the Gram sufficient statistics chunk-by-chunk, `finalize` solves once | No | No | $O(F^2)$ memory, independent of total samples | The state matrix doesn't fit in memory — the DataLoader / long-sequence path ([Streaming](../workflows/streaming.md)) |
+
+Rules of thumb:
+
+- **Default to `RidgeReadoutLayer`.** It is exact, fastest at typical widths,
+  and matches CG to `< 1e-8` on well-conditioned fits. The premade factories
+  (`classic_esn`, `ott_esn`, `power_augmented`) use it via `readout="ridge"`;
+  pass `readout="cg"` for the legacy iterative solver, or a `ReadoutLayer`
+  subclass for any of the others.
+- **`alpha = 0`?** A Cholesky needs `alpha > 0` for guaranteed positive
+  definiteness. Use `RidgeReadoutLayer(solver='solve')` on a full-rank Gram,
+  or `SVDReadoutLayer` / `PinvReadoutLayer` otherwise.
+- **Rank-deficient Gram** (NG-RC with high `p`, or `F > N`) → `SVDReadoutLayer`
+  (filter factors) or `PinvReadoutLayer` (lstsq). A Cholesky/LU solve will
+  fail or be unstable here.
+- **Streaming / too-big-for-memory** → `IncrementalRidgeReadout`, which keeps
+  only the $F\times F$ sufficient statistics.
+
+!!! note "Standardizing readout inputs"
+    Badly-scaled features (e.g. an unnormalized driver concatenated into the
+    readout) hurt conditioning. The
+    [`Standardize`][resdag.layers.transforms.Standardize] transform
+    (`resdag.layers.Standardize`) applies a per-feature z-score with a fixed,
+    exact inverse — drop it into the graph before a readout, or normalize the
+    data upstream, rather than forcing `gram_dtype=torch.float64`.
 
 ## Next
 

@@ -12,6 +12,7 @@ resdag.layers.readouts.ReadoutLayer : Base readout layer.
 resdag.training.ESNTrainer : Trainer for fitting readout layers.
 """
 
+import warnings
 from collections.abc import Callable
 
 import torch
@@ -223,7 +224,7 @@ class CGReadoutLayer(ReadoutLayer):
             B: torch.Tensor,
             max_iter: int,
             tol: float,
-        ) -> torch.Tensor:
+        ) -> tuple[torch.Tensor, torch.Tensor]:
             """Solve ``A @ X = B`` column-by-column with Conjugate Gradient.
 
             The system is solved for every output column simultaneously; each
@@ -257,8 +258,14 @@ class CGReadoutLayer(ReadoutLayer):
 
             Returns
             -------
-            torch.Tensor
+            X : torch.Tensor
                 Solution ``X`` of the same shape as ``B``.
+            converged : torch.Tensor
+                Boolean vector, one entry per output column, ``True`` where the
+                column met the residual tolerance (or was a trivial/frozen
+                zero-residual column) and ``False`` where the iteration hit
+                ``max_iter`` while still above tolerance. Used by the caller to
+                warn on silent under-convergence.
             """
             X = torch.zeros_like(B)
             R = B - A_func(X)
@@ -301,7 +308,12 @@ class CGReadoutLayer(ReadoutLayer):
                 # its next iteration can't divide 0/0.
                 frozen = frozen | (Rs_old == 0)
 
-            return X
+            # A column has converged if it met the tolerance or was frozen (a
+            # trivial zero-residual column). Anything still above tolerance when
+            # the loop exhausts ``max_iter`` under-converged. Computed once at the
+            # end so the per-iteration hot loop is unchanged (numerics preserved).
+            converged = (Rs_old <= tol_sq) | frozen
+            return X, converged
 
         # Right-hand side
         if fit_intercept:
@@ -311,7 +323,29 @@ class CGReadoutLayer(ReadoutLayer):
         rhs = rhs.to(solve_dtype)
 
         # Solve using CG
-        coefs = conjugate_gradient(matvec, rhs, self.max_iter, self.tol)
+        coefs, converged = conjugate_gradient(matvec, rhs, self.max_iter, self.tol)
+
+        # Warn on silent under-convergence: the iteration hit ``max_iter`` while
+        # one or more output columns were still above ``tol``. Left unflagged
+        # this quietly degrades the fitted readout (e.g. a near-unregularized
+        # Gram at the default max_iter can halve downstream forecast accuracy).
+        if not bool(torch.all(converged)):
+            n_bad = int((~converged).sum())
+            layer_name = (
+                f"{type(self).__name__}('{self._name}')"
+                if self._name is not None
+                else type(self).__name__
+            )
+            warnings.warn(
+                f"{layer_name}: Conjugate Gradient hit max_iter={self.max_iter} "
+                f"without reaching tol={self.tol:g} for {n_bad} of "
+                f"{converged.numel()} output column(s); the fitted readout is "
+                f"under-converged and may be inaccurate. Increase max_iter, relax "
+                f"tol, add regularization (larger alpha), or use RidgeReadoutLayer "
+                f"(direct solver) for an exact fit.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
 
         if fit_intercept:
             intercept = (y_mean.to(solve_dtype) - X_mean.to(solve_dtype) @ coefs).squeeze(0)

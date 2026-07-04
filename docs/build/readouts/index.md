@@ -13,8 +13,13 @@ solve, or gradient descent with any PyTorch optimizer.
 
 The solver is a pluggable contract: a new readout implements
 `_fit_impl(states, targets)` and inherits shape handling, validation, and
-parameter copy-back from the `ReadoutLayer` base class. `CGReadoutLayer`,
-the current solver, fits ridge regression by conjugate gradient.
+parameter copy-back from the `ReadoutLayer` base class. Several solvers ship
+with the library — the default, `RidgeReadoutLayer`, fits ridge regression with
+a direct Cholesky solve; `CGReadoutLayer` solves the same problem iteratively by
+conjugate gradient; and `SVDReadoutLayer`, `PinvReadoutLayer`, and
+`IncrementalRidgeReadout` cover rank-deficient, pseudo-inverse, and streaming
+cases. [Theory · Readout solvers](../../theory/readout.md#choosing-a-solver)
+tabulates which to reach for.
 
 <!-- nb-cards: build/readouts -->
 

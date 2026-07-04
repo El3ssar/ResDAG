@@ -3,6 +3,7 @@ from .es2n import ES2NLayer
 from .esn import ESNLayer
 from .eusn import EuSNLayer
 from .gated import GatedReservoir
+from .lif import LIFReservoir
 from .ngrc import NGReservoir
 from .resesn import ResESNLayer
 
@@ -14,6 +15,7 @@ __all__ = [
     "ResESNLayer",
     "GatedReservoir",
     "EuSNLayer",
+    "LIFReservoir",
 ]
 
 

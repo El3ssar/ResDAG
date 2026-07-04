@@ -116,6 +116,8 @@ from .layers import (
     GatedReservoir,
     GatedReservoirCell,
     IncrementalRidgeReadout,
+    LIFCell,
+    LIFReservoir,
     NGCell,
     NGReservoir,
     Pad,
@@ -129,6 +131,7 @@ from .layers import (
     RidgeReadoutLayer,
     SelectiveDropout,
     SelectiveExponentiation,
+    SpikingReservoirCell,
     Standardize,
     SVDReadoutLayer,
 )
@@ -143,6 +146,7 @@ from .models import (
     headless_esn,
     hybrid_esn,
     linear_esn,
+    lsm,
     ott_esn,
     power_augmented,
     resesn,
@@ -200,6 +204,9 @@ __all__ = [
     "ResESNLayer",
     "GatedReservoir",
     "EuSNLayer",
+    "SpikingReservoirCell",
+    "LIFCell",
+    "LIFReservoir",
     "ReservoirCell",
     # Readouts
     "CGReadoutLayer",
@@ -244,6 +251,7 @@ __all__ = [
     "resesn",
     "gated_esn",
     "eusn",
+    "lsm",
     # Canonical dataset generators
     "datasets",
     "lorenz",

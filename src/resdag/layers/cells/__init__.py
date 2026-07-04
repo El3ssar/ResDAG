@@ -4,8 +4,10 @@ from .es2n_cell import ES2NCell
 from .esn_cell import ESNCell
 from .eusn_cell import EuSNCell
 from .gated_cell import GatedReservoirCell
+from .lif_cell import LIFCell
 from .ngrc_cell import NGCell
 from .resesn_cell import ResESNCell
+from .spiking_cell import SpikingReservoirCell
 
 __all__ = [
     "ReservoirCell",
@@ -16,6 +18,8 @@ __all__ = [
     "GatedReservoirCell",
     "ContinuousReservoirCell",
     "EuSNCell",
+    "SpikingReservoirCell",
+    "LIFCell",
 ]
 
 

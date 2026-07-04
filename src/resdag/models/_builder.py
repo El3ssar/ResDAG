@@ -37,6 +37,7 @@ from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, RidgeReadoutLayer
 from resdag.layers.readouts import ReadoutLayer
+from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 
 AugmentFactory = Callable[[], nn.Module]
 
@@ -100,6 +101,7 @@ def _esn_builder(
     concat_input: bool = True,
     input_size: int | None = None,
     input_initializer: InitializerSpec | None = None,
+    reservoir_cls: type[BaseReservoirLayer] = ESNLayer,
     # Reservoir params
     topology: TopologySpec | None = None,
     spectral_radius: float = 0.9,
@@ -166,6 +168,15 @@ def _esn_builder(
     input_initializer : InitializerSpec, optional
         Initializer for the driving-input weights.  Same accepted forms as
         ``topology``.  Only used when ``input_size`` is given.
+    reservoir_cls : type[BaseReservoirLayer], default=ESNLayer
+        Reservoir layer class to instantiate.  Defaults to
+        :class:`~resdag.layers.ESNLayer`; the edge-of-stability factories pass
+        :class:`~resdag.layers.reservoirs.es2n.ES2NLayer` or
+        :class:`~resdag.layers.reservoirs.resesn.ResESNLayer`.  ``leak_rate`` is
+        forwarded only to ``ESNLayer`` (and subclasses accepting it); the
+        skip layers replace leaky integration with their orthogonal skip and
+        receive their own knobs (``beta`` / ``alpha`` / ``orthogonal_scaling``)
+        through ``reservoir_kwargs``.
     topology : TopologySpec, optional
         Topology for recurrent weights.  Accepts a registry name, a
         ``(name, params)`` tuple, a callable, or a pre-configured
@@ -234,20 +245,29 @@ def _esn_builder(
     # readout ``in_features`` stays ``feedback_size + reservoir_size``.
     driver = reservoir_input(input_size) if input_size else None
 
-    reservoir = ESNLayer(
+    # Shared reservoir arguments understood by every ``BaseReservoirLayer``
+    # subclass this builder wires (ESNLayer and the orthogonal-skip ES2NLayer /
+    # ResESNLayer).  ``leak_rate`` is *not* shared: the skip layers replace the
+    # leaky-integrator memory with their orthogonal skip, so it is added only
+    # for ``ESNLayer`` (and subclasses that accept it).  Skip-specific knobs
+    # (``beta`` / ``alpha`` / ``orthogonal_scaling``) arrive via
+    # ``reservoir_kwargs`` from the ES2N / ResESN factories.
+    reservoir_args: dict[str, Any] = dict(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=input_size,
         topology=topology,
         spectral_radius=spectral_radius,
-        leak_rate=leak_rate,
         feedback_initializer=feedback_initializer,
         input_initializer=input_initializer,
         activation=activation,
         bias=bias,
         trainable=trainable,
-        **reservoir_kwargs,
     )
+    if issubclass(reservoir_cls, ESNLayer):
+        reservoir_args["leak_rate"] = leak_rate
+
+    reservoir = reservoir_cls(**reservoir_args, **reservoir_kwargs)
 
     output: SymbolicTensor = reservoir(inp) if driver is None else reservoir(inp, driver)
 

@@ -381,6 +381,51 @@ class TestESNLayerLeakRate:
         assert not torch.allclose(out_no_leak, out_with_leak)
 
 
+class TestESNLayerVectorLeakRate:
+    """Per-neuron leak rate reaches the cell through the layer facade."""
+
+    def test_constructor_forwards_vector(self) -> None:
+        """``ESNLayer(..., leak_rate=<vector>)`` builds and reaches the cell."""
+        n = 200
+        leak = torch.rand(n) * 0.5 + 0.3
+        layer = ESNLayer(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=1)
+
+        assert layer.cell._is_vector_leak is True
+        assert isinstance(layer.leak_rate, torch.Tensor)
+        assert torch.allclose(layer.leak_rate, leak)
+
+        # Forward builds and produces the expected shape.
+        out = layer(torch.randn(2, 10, 3))
+        assert out.shape == (2, 10, n)
+
+    def test_live_vector_write_reaches_cell(self) -> None:
+        """A post-init vector write forwards to the cell (Tensor-forwarding path)."""
+        n = 40
+        layer = ESNLayer(reservoir_size=n, feedback_size=3, seed=3)
+        new_leak = torch.rand(n) * 0.5 + 0.4
+
+        layer.leak_rate = new_leak
+        assert layer.cell._is_vector_leak is True
+        assert torch.allclose(layer.cell.leak_rate, new_leak)
+
+    def test_live_vector_write_changes_output(self) -> None:
+        """Writing a vector leak post-init alters the produced sequence."""
+        n = 40
+        feedback = torch.randn(2, 12, 3)
+        baseline = ESNLayer(reservoir_size=n, feedback_size=3, leak_rate=1.0, seed=7)
+        out_default = baseline(feedback)
+
+        changed = ESNLayer(reservoir_size=n, feedback_size=3, leak_rate=1.0, seed=7)
+        changed.leak_rate = torch.rand(n) * 0.5 + 0.3
+        changed.reset_state()
+        assert not torch.allclose(out_default, changed(feedback))
+
+    def test_layer_surfaces_vector_validation(self) -> None:
+        """A wrong-length vector raises the cell's ValueError through the layer."""
+        with pytest.raises(ValueError, match="shape"):
+            ESNLayer(reservoir_size=10, feedback_size=2, leak_rate=torch.ones(12) * 0.5)
+
+
 class TestESNLayerLiveHyperparameterWrites:
     """Writes to live hyperparameters reach the cell (not a shadow attribute).
 

@@ -107,6 +107,7 @@ from .layers import (
     ESNLayer,
     ExtendedSquare,
     FeaturePartitioner,
+    FISTAReadout,
     IncrementalRidgeReadout,
     NGCell,
     NGReservoir,
@@ -123,9 +124,12 @@ from .layers import (
     SVDReadoutLayer,
 )
 from .models import (
+    KnowledgeModel,
     classic_esn,
     coupled_ensemble_esn,
+    deep_esn,
     headless_esn,
+    hybrid_esn,
     linear_esn,
     ott_esn,
     power_augmented,
@@ -183,6 +187,7 @@ __all__ = [
     "SVDReadoutLayer",
     "PinvReadoutLayer",
     "IncrementalRidgeReadout",
+    "FISTAReadout",
     # Custom / utility layers
     "Concatenate",
     "ExtendedSquare",
@@ -210,6 +215,9 @@ __all__ = [
     "headless_esn",
     "linear_esn",
     "power_augmented",
+    "deep_esn",
+    "hybrid_esn",
+    "KnowledgeModel",
     # Canonical dataset generators
     "datasets",
     "lorenz",

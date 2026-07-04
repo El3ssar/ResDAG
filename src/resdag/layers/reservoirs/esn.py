@@ -14,7 +14,10 @@ resdag.init.topology : Topology initialization for recurrent weights.
 resdag.init.input_feedback : Input/feedback weight initialization.
 """
 
+from collections.abc import Sequence
 from typing import Any
+
+from torch import Tensor
 
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers.cells import ESNCell
@@ -52,9 +55,15 @@ class ESNLayer(BaseReservoirLayer):
         zero bias (pre-0.5 behaviour).  Ignored when ``bias=False``.
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
-    leak_rate : float, default=1.0
-        Leaky integration rate in [0, 1].  Value of 1.0 means no leaking
-        (standard RNN update).  Smaller values create slower dynamics.
+    leak_rate : float or 1-D tensor/sequence of shape ``(reservoir_size,)``, default=1.0
+        Leaky integration rate in ``(0, 1]``.  A scalar 1.0 means no leaking
+        (standard RNN update); smaller values create slower dynamics.  A 1-D
+        tensor/sequence of length ``reservoir_size`` assigns a **per-neuron**
+        leak (heterogeneous timescales in one reservoir, matching RC.jl's
+        ``leak_coefficient`` vector); every entry must be finite and in
+        ``(0, 1]``.  See :class:`~resdag.layers.cells.esn_cell.ESNCell` for the
+        full contract (a vector leak is stored as a buffer that moves with
+        ``.to()`` / ``.double()`` and round-trips through save/load).
     noise : float, default=0.0
         Standard deviation of additive Gaussian state noise injected after the
         activation (the classical ESN readout-conditioning regularizer).
@@ -198,7 +207,7 @@ class ESNLayer(BaseReservoirLayer):
         bias: bool = True,
         bias_scaling: float = 1.0,
         activation: str = "tanh",
-        leak_rate: float = 1.0,
+        leak_rate: float | Tensor | Sequence[float] = 1.0,
         noise: float = 0.0,
         trainable: bool = False,
         feedback_initializer: InitializerSpec = None,

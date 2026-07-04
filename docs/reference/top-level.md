@@ -101,7 +101,7 @@ until one of these attributes is first accessed.
 ## Submodules
 
 `resdag.core`, `resdag.layers`, `resdag.init`, `resdag.training`,
-`resdag.models`, `resdag.ensemble`, `resdag.hpo`, and `resdag.utils` are all
-importable as attributes, alongside the convenience aliases `resdag.graphs`,
-`resdag.topology`, and `resdag.input_feedback` (re-exports of the matching
-`resdag.init` subpackages).
+`resdag.metrics`, `resdag.models`, `resdag.ensemble`, `resdag.hpo`, and
+`resdag.utils` are all importable as attributes, alongside the convenience
+aliases `resdag.graphs`, `resdag.topology`, and `resdag.input_feedback`
+(re-exports of the matching `resdag.init` subpackages).

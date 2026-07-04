@@ -46,7 +46,9 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from resdag.metrics import CANONICAL_LAMBDA_MAX, steps_to_lyapunov  # noqa: E402
 from tests.test_models.golden_forecast import (  # noqa: E402
+    LORENZ_DT,
     SPECS,
     GoldenSpec,
     build_payload,
@@ -73,14 +75,17 @@ def _specs_for(names: list[str] | None) -> list[GoldenSpec]:
 def _regenerate(specs: list[GoldenSpec]) -> None:
     """Build/train/forecast each spec and overwrite its committed fixture."""
     splits = make_lorenz_splits()
-    print(f"{'model':16s} {'vpt':>5s} {'floor':>6s}  fixture")
+    print(f"{'model':16s} {'vpt':>5s} {'Λt':>6s} {'floor':>6s}  fixture")
     for spec in specs:
         payload = build_payload(spec, splits)
         path = fixture_path(spec.name)
         save_fixture(path, payload)
         meta = payload["meta"]
         rel = path.relative_to(_ROOT)
-        print(f"{spec.name:16s} {meta['vpt']:5d} {meta['vpt_floor']:6d}  wrote {rel}")
+        print(
+            f"{spec.name:16s} {meta['vpt']:5d} {meta['vpt_lyap']:6.2f} "
+            f"{meta['vpt_floor']:6d}  wrote {rel}"
+        )
     print(f"\nRegenerated {len(specs)} fixture(s). Review the diff before committing.")
 
 
@@ -89,12 +94,12 @@ def _check(specs: list[GoldenSpec]) -> int:
     splits = make_lorenz_splits()
     *_, val = splits
     ok = True
-    print(f"{'model':16s} {'prefixΔ':>10s} {'vpt':>5s} {'floor':>6s}  status")
+    print(f"{'model':16s} {'prefixΔ':>10s} {'vpt':>5s} {'Λt':>6s} {'floor':>6s}  status")
     for spec in specs:
         try:
             golden, meta = load_fixture(spec.name)
         except FileNotFoundError:
-            print(f"{spec.name:16s} {'-':>10s} {'-':>5s} {'-':>6s}  MISSING fixture")
+            print(f"{spec.name:16s} {'-':>10s} {'-':>5s} {'-':>6s} {'-':>6s}  MISSING fixture")
             ok = False
             continue
 
@@ -110,12 +115,16 @@ def _check(specs: list[GoldenSpec]) -> int:
             val,
             threshold=meta["vpt_threshold"],
         )
+        live_lyap = steps_to_lyapunov(
+            live_vpt, dt=LORENZ_DT, lambda_max=CANONICAL_LAMBDA_MAX["lorenz"]
+        )
         vpt_ok = live_vpt >= meta["vpt_floor"]
         status = "ok" if (prefix_ok and vpt_ok) else "DRIFT"
         if not (prefix_ok and vpt_ok):
             ok = False
         print(
-            f"{spec.name:16s} {prefix_delta:10.2e} {live_vpt:5d} {meta['vpt_floor']:6d}  {status}"
+            f"{spec.name:16s} {prefix_delta:10.2e} {live_vpt:5d} {live_lyap:6.2f} "
+            f"{meta['vpt_floor']:6d}  {status}"
         )
 
     print("\nAll fixtures reproduce." if ok else "\nDRIFT detected — see rows above.")

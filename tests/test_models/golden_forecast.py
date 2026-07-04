@@ -58,6 +58,8 @@ import torch
 import resdag as rd
 from resdag.core import ESNModel, Input
 from resdag.layers import CGReadoutLayer, NGReservoir
+from resdag.metrics import CANONICAL_LAMBDA_MAX, steps_to_lyapunov
+from resdag.metrics import valid_prediction_time as _metrics_vpt
 from resdag.models import classic_esn, ott_esn, power_augmented
 from resdag.training import ESNTrainer
 
@@ -77,6 +79,10 @@ MODEL_SEED = 12345  # seed fixing every reservoir parameter.
 WARMUP_STEPS = 200  # reservoir warmup / synchronisation steps.
 TRAIN_STEPS = 2500  # readout-fit steps.
 HORIZON = 600  # autonomous forecast horizon (== validation length).
+
+# Integration step of the canonical Lorenz-63 series (see ``make_lorenz_splits``);
+# used to report the VPT in Lyapunov times (``steps * LORENZ_DT * lambda_max``).
+LORENZ_DT = 0.02
 
 # The committed golden is compared over a short prefix.  ``PREFIX_ATOL`` is
 # calibrated to sit between two empirically separated scales: cross-platform
@@ -236,7 +242,7 @@ def make_lorenz_splits() -> Splits:
         :data:`DTYPE`, each shaped ``(1, *, 3)``.
     """
     n = WARMUP_STEPS + TRAIN_STEPS + HORIZON + 1
-    data = rd.lorenz(n, dt=0.02, normalize="standard", seed=DATA_SEED, dtype=DTYPE)
+    data = rd.lorenz(n, dt=LORENZ_DT, normalize="standard", seed=DATA_SEED, dtype=DTYPE)
     splits = rd.utils.prepare_esn_data(
         data,
         warmup_steps=WARMUP_STEPS,
@@ -278,14 +284,17 @@ def valid_prediction_time(
     truth: torch.Tensor,
     threshold: float = VPT_THRESHOLD,
 ) -> int:
-    """Contiguous valid forecast horizon (Valid Prediction Time).
+    """Contiguous valid forecast horizon (Valid Prediction Time), in whole steps.
 
-    Per-step error is NRMSE — RMSE normalised by the per-dimension standard
-    deviation of ``truth`` over ``(batch, time)`` — collapsed across the batch
-    with the median, mirroring :func:`resdag.hpo.losses.forecast_horizon`
-    (re-implemented here so the normal suite never imports the optional HPO
-    stack).  The VPT is the number of steps, counting from the start, whose
-    error stays below ``threshold``.
+    A thin ``int``-returning wrapper over the canonical
+    :func:`resdag.metrics.valid_prediction_time`: per-step error is NRMSE — RMSE
+    normalised by the per-dimension standard deviation of ``truth`` over
+    ``(batch, time)`` — collapsed across the batch with the median, and the VPT
+    is the number of steps, counting from the start, whose error stays below
+    ``threshold``.  ``pred`` and ``truth`` here are always the same length
+    (forecast horizon == validation length), so this is bit-identical to the
+    library metric — parity is asserted in
+    ``test_golden_forecast.py::test_vpt_matches_resdag_metrics``.
 
     Parameters
     ----------
@@ -300,16 +309,7 @@ def valid_prediction_time(
         Valid Prediction Time in steps (``0`` if the very first step already
         exceeds the threshold).
     """
-    p = pred.detach().cpu().double().numpy()
-    t = truth.detach().cpu().double().numpy()
-    scale = t.std(axis=(0, 1), keepdims=True)
-    scale = np.where(scale == 0.0, 1.0, scale)
-    err = np.sqrt((((p - t) / scale) ** 2).mean(axis=2))  # (batch, time)
-    e_t = np.median(err, axis=0)  # (time,)
-    below = e_t < threshold
-    if not below[0]:
-        return 0
-    return int(np.argmax(~below)) if (~below).any() else int(below.size)
+    return int(_metrics_vpt(pred, truth, threshold=threshold))
 
 
 def vpt_floor(measured_vpt: int) -> int:
@@ -348,6 +348,11 @@ def build_payload(spec: GoldenSpec, splits: Splits) -> dict[str, Any]:
     model = spec.builder()
     forecast = train_and_forecast(model, splits)
     measured = valid_prediction_time(forecast, val)
+    # Report-only human-readable horizon in Lyapunov times (steps * dt * lambda);
+    # the gate stays the reproducible prefix match + conservative step floor.
+    measured_lyap = steps_to_lyapunov(
+        measured, dt=LORENZ_DT, lambda_max=CANONICAL_LAMBDA_MAX["lorenz"]
+    )
     meta = {
         "fixture_version": FIXTURE_VERSION,
         "name": spec.name,
@@ -364,6 +369,7 @@ def build_payload(spec: GoldenSpec, splits: Splits) -> dict[str, Any]:
         "prefix_rtol": PREFIX_RTOL,
         "vpt_threshold": VPT_THRESHOLD,
         "vpt": int(measured),
+        "vpt_lyap": float(measured_lyap),
         "vpt_floor": int(vpt_floor(measured)),
         "torch_version": torch.__version__,
         "numpy_version": np.__version__,

@@ -215,7 +215,9 @@ attractor's geometry.</figcaption>
 </figure>
 
 If forecasts diverge well before this point, tune the hyperparameters
-before increasing reservoir size.
+before increasing reservoir size. To quantify how far a forecast tracks —
+and to report it in the hardware- and system-independent unit of Lyapunov
+times — see [Work · Lyapunov time](lyapunov.md).
 
 ## Locking the forecast — golden regression fixtures
 
@@ -242,5 +244,6 @@ python tools/regen_golden_forecasts.py --all     # rewrite every fixture
 
 ## Next
 
+- [**Lyapunov time**](lyapunov.md) — score forecast quality and report horizons in Lyapunov times
 - [**Tune**](tune.md) — hyperparameter optimization for forecast quality
 - [Theory · Timing](../theory/timing.md) — derivation of every index in the forecast loop

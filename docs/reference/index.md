@@ -15,12 +15,14 @@ trust your installed version.
 | You are looking for | Page |
 | ------------------- | ---- |
 | Everything importable straight from `resdag` | [Top level](top-level.md) |
-| `ESNModel`, `Input`, `reservoir_input` | [Core](core.md) |
-| Reservoir layers, cells, readouts, transforms | [Layers](layers.md) |
+| The `ESN` one-object estimator (`fit().forecast()`) | [Facade](facade.md) |
+| `ESNModel`, `ReservoirFeatureExtractor`, `Input`, `reservoir_input` | [Core](core.md) |
+| Reservoir layers, cells, readout solvers, transforms | [Layers](layers.md) |
 | Topologies, input/feedback initializers, spec resolvers | [Initialization](init.md) |
 | `ESNTrainer` | [Training](training.md) |
 | Premade architectures, coupled ensembles, aggregators | [Models & ensembles](models.md) |
 | `run_hpo`, loss functions, study utilities | [HPO](hpo.md) |
+| `TimeSeriesWindowDataset`, `make_dataloader`, streaming training | [Work · Streaming](../workflows/streaming.md) |
 | Data loading, splitting, RNG, ESP index | [Utilities](utils.md) |
 
 ---

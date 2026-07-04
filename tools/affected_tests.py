@@ -94,9 +94,11 @@ _BROAD_IMPACT_EXACT = frozenset(
         "src/resdag/__init__.py",
         # This selector and its own tests gate everything when they change.
         "tools/affected_tests.py",
-        # Workflows that run the test suite.
+        # Workflows that run the test suite: ci.yml/release.yml call the
+        # reusable _test.yml, which owns the pytest invocation itself.
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/_test.yml",
     }
 )
 
@@ -109,6 +111,98 @@ def _is_broad_impact(rel_path: str) -> bool:
     if rel_path == "conftest.py" or rel_path.endswith("/conftest.py"):
         return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# Non-source data-dependency edges
+# --------------------------------------------------------------------------- #
+#
+# Some tests are *regression guards* whose behaviour is pinned by files the
+# static import graph cannot see: JSON perf floors read at runtime, ``.npz``
+# golden fixtures loaded from disk, a helper module + regen script that define
+# the golden specs, ... A change to one of these must still select the tests it
+# guards, or the PR gate would run nothing (the guard's whole purpose defeated).
+#
+# ``_DATA_DEP_MAP`` maps a repo-relative path *or* directory prefix (ending in
+# ``/``) to the test targets it should select. Targets are repo-relative paths
+# to a test file or a directory (a directory selects every ``test_*.py`` under
+# it). These edges only ever *add* to the selection, preserving the "never
+# fewer tests" invariant. They are for cross-boundary dependencies that live
+# outside ``src/resdag`` and cannot be inferred from imports.
+_DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
+    # Perf-gate floors read by the perf-regression test (incl. its well-formed
+    # check): a malformed/edited targets.json must run those tests on the PR.
+    "benchmarks/targets.json": ("tests/test_benchmarks/",),
+    # The regen script and the golden-spec helper module both define the golden
+    # forecast tolerances/specs the regression test asserts against.
+    "tools/regen_golden_forecasts.py": ("tests/test_models/test_golden_forecast.py",),
+    # Regenerated golden fixtures (the documented "regen + new .npz, no src
+    # change" workflow) must re-run the golden regression test.
+    "tests/fixtures/golden_forecast/": ("tests/test_models/test_golden_forecast.py",),
+}
+
+
+def _expand_test_target(target: str) -> set[str]:
+    """Expand a test target (a test file or a directory) to concrete test files.
+
+    A directory target selects every ``test_*.py`` beneath it; a file target
+    selects itself if it exists. Non-existent targets expand to nothing (the
+    referenced test may have been renamed/removed — never crash the selector).
+    """
+    path = REPO_ROOT / target
+    if path.is_dir():
+        return {
+            p.resolve().relative_to(REPO_ROOT).as_posix()
+            for p in path.rglob("test_*.py")
+            if p.is_file()
+        }
+    if path.is_file() and path.name.startswith("test_") and path.suffix == ".py":
+        return {path.resolve().relative_to(REPO_ROOT).as_posix()}
+    return set()
+
+
+def _data_dep_tests(rel_path: str) -> set[str]:
+    """Test targets a changed non-source file selects via ``_DATA_DEP_MAP``.
+
+    Matches an exact path first, then the longest matching directory prefix.
+    """
+    targets: tuple[str, ...] | None = _DATA_DEP_MAP.get(rel_path)
+    if targets is None:
+        for prefix, mapped in _DATA_DEP_MAP.items():
+            if prefix.endswith("/") and rel_path.startswith(prefix):
+                targets = mapped
+                break
+    if not targets:
+        return set()
+    out: set[str] = set()
+    for target in targets:
+        out |= _expand_test_target(target)
+    return out
+
+
+def _sibling_tests_for_tests_helper(rel_path: str) -> set[str]:
+    """Tests selected by a changed *non-test* file living under ``tests/``.
+
+    Helper modules and data files under ``tests/`` (e.g.
+    ``tests/test_models/golden_forecast.py``, a ``tests/.../data.py``) are not
+    themselves test files and are invisible to the source import graph, yet the
+    tests beside them depend on them. Select every ``test_*.py`` in the changed
+    file's containing directory subtree. Files directly under ``tests/`` (or
+    with no test dir, e.g. ``tests/fixtures/*``) match nothing here and are
+    covered by ``_DATA_DEP_MAP`` / the broad-impact set instead.
+    """
+    if not rel_path.startswith("tests/"):
+        return set()
+    name = Path(rel_path).name
+    if name.startswith("test_") and name.endswith(".py"):
+        return set()  # a real test file — handled by the changed-tests logic
+    parent = (REPO_ROOT / rel_path).parent
+    # Only descend from a directory that actually holds tests, and never from
+    # ``tests/`` itself (that would be the whole suite — reserved for broad
+    # impact / conftest changes).
+    if parent == TESTS_DIR or TESTS_DIR not in parent.parents:
+        return set()
+    return _expand_test_target(parent.resolve().relative_to(REPO_ROOT).as_posix())
 
 
 # --------------------------------------------------------------------------- #
@@ -637,7 +731,15 @@ def select_tests(changed_files: list[str]) -> Selection:
         f for f in changed if f.startswith("tests/") and Path(f).name.startswith("test_")
     }
 
-    selected: set[str] = set(changed_tests)
+    # Regression-guard edges the import graph can't see: data-dependency maps
+    # (targets.json, golden fixtures, regen script) and non-test helper/data
+    # files under ``tests/`` (e.g. golden_forecast.py). These only ever add.
+    data_dep_selected: set[str] = set()
+    for f in changed:
+        data_dep_selected |= _data_dep_tests(f)
+        data_dep_selected |= _sibling_tests_for_tests_helper(f)
+
+    selected: set[str] = set(changed_tests) | data_dep_selected
     for test_path in _iter_test_files():
         rel = test_path.resolve().relative_to(REPO_ROOT).as_posix()
         if rel in selected:

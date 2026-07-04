@@ -1,4 +1,4 @@
-"""Tests for the HPO trial-execution backends (``resdag.hpo.runners``).
+"""Tests for the HPO trial-execution backends (``resdag.hpo.dispatch``).
 
 These cover the three correctness properties of the multi-process backend
 guaranteed by issue #276:
@@ -23,16 +23,16 @@ import pytest
 import torch
 
 from resdag.hpo import run_hpo
-from resdag.hpo.losses import get_loss
-from resdag.hpo.objective import build_objective
-from resdag.hpo.runner import _CUDA_FORK_REINIT_MARKER, TrialRunner
-from resdag.hpo.runners import (
+from resdag.hpo.dispatch import (
     _worker_process,
     preferred_start_method,
     select_start_method,
     worker_budget,
 )
+from resdag.hpo.losses import get_loss
+from resdag.hpo.objective import build_objective
 from resdag.hpo.storage import resolve_storage
+from resdag.hpo.trial_runner import _CUDA_FORK_REINIT_MARKER, TrialRunner
 from resdag.models import ott_esn
 
 

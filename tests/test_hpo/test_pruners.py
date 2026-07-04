@@ -126,6 +126,65 @@ class TestResolvePruner:
             resolve_pruner(123)  # type: ignore[arg-type]
 
 
+# ── Registry "threshold" default actually fires ───────────────────────────────
+class TestThresholdPrunerFires:
+    """The registry ``"threshold"`` pruner must be able to prune (regression).
+
+    The historic default (``ThresholdPruner(upper=1.0)``) could **never** fire
+    under the module's default/recommended *negated-horizon* losses: those losses
+    return ``-horizon`` and so every intermediate report is ``<= 0 < 1.0``.  The
+    fixed default is a negative ``upper`` after two warmup checkpoints, so a
+    divergent trial (whose forecast horizon collapses to ``≈ 0``) is pruned while
+    a good trial (strongly negative loss) survives.
+    """
+
+    def test_default_threshold_pruner_config(self):
+        """The registry key resolves to a firing-capable ThresholdPruner.
+
+        A negative ``upper`` (so a ``<= 0`` negated-horizon report can exceed it)
+        plus a non-zero warmup (so early, not-yet-developed checkpoints are
+        skipped) — the exact combination the old ``upper=1.0`` lacked.
+        """
+        pruner = resolve_pruner("threshold")
+        assert isinstance(pruner, optuna.pruners.ThresholdPruner)
+        # Private attrs are the only way to read the configured bound/warmup.
+        assert pruner._upper < 0.0  # noqa: SLF001 — must allow a <=0 report to exceed it
+        assert pruner._n_warmup_steps >= 1  # noqa: SLF001 — skip the noisy first checkpoint(s)
+
+    def test_threshold_pruner_prunes_divergent_default_loss(self):
+        """The registry ``"threshold"`` pruner prunes with the default ``efh`` loss.
+
+        This is the regression the old ``upper=1.0`` failed: with the default
+        (negated-horizon) loss it recorded **zero** pruned trials.  The fixed
+        default must record ≥1 PRUNED trial, do strictly less report work than
+        ``pruner=None``, and still leave the true best value COMPLETE.
+        """
+        baseline = run_hpo(
+            _model_creator,
+            _divergent_search_space,
+            _data_loader,
+            n_trials=12,
+            seed=1,
+            pruner=None,
+            verbosity=0,
+        )
+        thresholded = run_hpo(
+            _model_creator,
+            _divergent_search_space,
+            _data_loader,
+            n_trials=12,
+            seed=1,
+            pruner="threshold",
+            verbosity=0,
+        )
+
+        assert _n_pruned(baseline) == 0
+        assert _n_pruned(thresholded) >= 1
+        assert _n_report_steps(thresholded) < _n_report_steps(baseline)
+        # Pruning the divergent tail must not throw away the best config.
+        assert thresholded.best_value == pytest.approx(baseline.best_value, rel=1e-6, abs=1e-6)
+
+
 # ── End-to-end pruning behaviour ──────────────────────────────────────────────
 class TestPruningSingleProcess:
     """A pruner early-stops divergent trials in single-process mode (AC2, AC3)."""

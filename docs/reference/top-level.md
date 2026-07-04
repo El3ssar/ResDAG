@@ -83,7 +83,3 @@ until one of these attributes is first accessed.
 importable as attributes, alongside the convenience aliases `resdag.graphs`,
 `resdag.topology`, and `resdag.input_feedback` (re-exports of the matching
 `resdag.init` subpackages).
-
-!!! warning "Deprecated"
-    `resdag.composition` is a backward-compatibility shim — it forwards to
-    `resdag.core` and will be removed in a future release.

@@ -86,7 +86,7 @@ from typing import Any
 from . import core, data, datasets, ensemble, init, layers, models, training, utils
 
 # Convenience imports for common use cases
-from .core import ESNModel, ReservoirFeatureExtractor, reservoir_input
+from .core import ESNModel, Input, ReservoirFeatureExtractor, reservoir_input
 from .data import TimeSeriesWindowDataset, make_dataloader
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
@@ -156,6 +156,7 @@ __all__ = [
     # High-level facade
     "ESN",
     # Composition helpers
+    "Input",
     "ESNModel",
     "ReservoirFeatureExtractor",
     "reservoir_input",
@@ -210,15 +211,14 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """Lazily resolve optional and deprecated submodules (:pep:`562`).
+    """Lazily resolve the optional :mod:`resdag.hpo` submodule (:pep:`562`).
 
-    ``hpo`` and the deprecated ``composition`` shim are imported only on first
-    access, so a plain ``import resdag`` stays warning-free and does not eagerly
-    pull in scipy/optuna.  The HPO convenience names (``run_hpo``, ``LOSSES``,
-    ``get_study_summary``) likewise resolve through :mod:`resdag.hpo` on demand.
-    Accessing ``resdag.composition`` triggers its :class:`DeprecationWarning`.
+    ``hpo`` is imported only on first access, so a plain ``import resdag`` does
+    not eagerly pull in scipy/optuna.  The HPO convenience names (``run_hpo``,
+    ``LOSSES``, ``get_study_summary``) likewise resolve through
+    :mod:`resdag.hpo` on demand.
     """
-    if name in ("hpo", "composition"):
+    if name == "hpo":
         return importlib.import_module(f".{name}", __name__)
     if name == "run_hpo":
         from .hpo import run_hpo

@@ -52,10 +52,9 @@ import torch
 from pytorch_symbolic.symbolic_data import SymbolicData
 
 from resdag.core._flat_inference import (
-    DEFAULT_COMPILE_CHUNK,
     FlatStep,
     build_flat_step,
-    resolve_chunk_step,
+    rollout,
 )
 from resdag.layers.reservoirs import BaseReservoirLayer
 
@@ -878,7 +877,17 @@ class ESNModel(ps.SymbolicModel):
             return dot_src
 
         try:
-            import graphviz
+            try:
+                import graphviz
+            except ImportError as exc:
+                # graphviz is an optional dependency; the Python package may be
+                # absent. Re-raise with an actionable install hint (the outer
+                # handler turns any ImportError into the printable DOT fallback).
+                raise ImportError(
+                    "graphviz Python package not installed; install it with "
+                    "`pip install resdag[viz]` or `pip install graphviz` "
+                    "(the system binary is also required: e.g. apt install graphviz)."
+                ) from exc
 
             dot_src = _build_dot()
             src = graphviz.Source(dot_src)
@@ -915,9 +924,10 @@ class ESNModel(ps.SymbolicModel):
                 pass
             return src
 
-        except ImportError:
+        except ImportError as exc:
             return _print_dot_fallback(
-                "graphviz not installed: pip install graphviz && apt install graphviz"
+                f"{exc} pip install resdag[viz] (or pip install graphviz) "
+                f"&& apt install graphviz, or render the DOT source below."
             )
 
     def warmup(
@@ -1329,7 +1339,11 @@ class ESNModel(ps.SymbolicModel):
         # is produced by feeding the model its own previous output, seeded by
         # ``initial_feedback`` (if given) or the last warmup output — no
         # teacher-forced frame is emitted, so slot 0 is a genuine forecast step
-        # and the warmup/forecast seam is not duplicated.
+        # and the warmup/forecast seam is not duplicated. The shared
+        # ``rollout`` helper (see :mod:`resdag.core._flat_inference`) owns the
+        # loop body, the compile/eager engine choice, and the two output-assembly
+        # strategies; here we resolve the seed and initial states, delegate, and
+        # persist the advanced states.
         #
         # The whole phase runs under ``_grad_context(no_grad)``: ``torch.no_grad``
         # by default (graph-free, the historical behaviour), or ``nullcontext``
@@ -1338,8 +1352,8 @@ class ESNModel(ps.SymbolicModel):
             flat = self._get_flat_step()
 
             # Resolve reservoir states (warmup leaves them set; init any that are
-            # somehow missing). They are threaded through ``step`` explicitly rather
-            # than mutated in place each iteration.
+            # somehow missing). They are threaded through ``rollout`` explicitly
+            # rather than mutated in place each iteration.
             states: list[torch.Tensor] = []
             for reservoir in flat.reservoir_layers:
                 if reservoir.state is None:
@@ -1365,82 +1379,17 @@ class ESNModel(ps.SymbolicModel):
                 seed = (
                     initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
                 )
-            current_feedback = seed  # (batch, 1, feedback_dim)
 
-            n_out = len(out_dims)
-
-            # Two assembly strategies share the same per-step engine:
-            #
-            # * default (``no_grad=True``): write each step into a preallocated
-            #   buffer — minimal allocation, no graph anyway;
-            # * differentiable (``no_grad=False``): collect per-step slices and
-            #   ``torch.cat`` them at the end.  In-place index writes into a
-            #   ``torch.empty`` buffer would graft autograd-tracked values onto an
-            #   uninitialised tensor (a ``CopySlices`` per step); accumulating in a
-            #   list and concatenating keeps the BPTT graph clean and standard.
-            forecast_buffers: list[torch.Tensor] = []
-            step_accumulators: list[list[torch.Tensor]] = []
-            if no_grad:
-                forecast_buffers = [
-                    torch.empty(batch_size, horizon, dim, dtype=dtype, device=device)
-                    for dim in out_dims
-                ]
-            else:
-                step_accumulators = [[] for _ in range(n_out)]
-
-            # Optionally compile a chunked step. ``done`` tracks how many steps the
-            # compiled path has produced; the eager single-step loop below fills the
-            # rest (the whole horizon when not compiling, or the < chunk remainder).
-            # The compile path is gated to ``no_grad=True`` upfront, so it only ever
-            # writes into ``forecast_buffers``.
-            done = 0
-            if compile:
-                chunk = min(DEFAULT_COMPILE_CHUNK, horizon)
-                compiled_chunk = resolve_chunk_step(
-                    flat,
-                    chunk=chunk,
-                    n_outputs=n_out,
-                    mode="reduce-overhead",
-                    trial_feedback=current_feedback,
-                    trial_drivers=tuple(d[:, 0:chunk, :] for d in drivers),
-                    trial_states=states,
-                )
-                if compiled_chunk is not None:
-                    for _ in range(horizon // chunk):
-                        driver_chunk = tuple(d[:, done : done + chunk, :] for d in drivers)
-                        # cudagraph trees reuse static output buffers; mark a new
-                        # step so this replay's outputs may feed the next, and clone
-                        # the tensors carried across the chunk boundary.
-                        torch.compiler.cudagraph_mark_step_begin()
-                        blocks, states, current_feedback = compiled_chunk(
-                            current_feedback, driver_chunk, states
-                        )
-                        for i in range(n_out):
-                            forecast_buffers[i][:, done : done + chunk, :] = blocks[i]
-                        current_feedback = current_feedback.clone()
-                        states = [state.clone() for state in states]
-                        done += chunk
-
-            # Eager single-step loop: the whole horizon when not compiling, or the
-            # trailing remainder the chunked path could not cover.
-            for t in range(done, horizon):
-                if has_drivers:
-                    step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
-                else:
-                    step_inputs = (current_feedback,)
-                step_outputs, states = flat.step(step_inputs, states)
-                if no_grad:
-                    for i in range(n_out):
-                        forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
-                else:
-                    for i in range(n_out):
-                        step_accumulators[i].append(step_outputs[i])
-                current_feedback = step_outputs[0]
-
-            if not no_grad:
-                # Concatenate the per-step (batch, 1, dim) slices into the full
-                # (batch, horizon, dim) forecast for each output.
-                forecast_buffers = [torch.cat(acc, dim=1) for acc in step_accumulators]
+            forecast_buffers, states = rollout(
+                flat,
+                seed,
+                drivers,
+                states,
+                horizon,
+                out_dims,
+                no_grad=no_grad,
+                compile=compile,
+            )
 
             # Persist the final reservoir states so a follow-up
             # ``forecast(reset=False)`` or ``get_reservoir_states()`` sees them,

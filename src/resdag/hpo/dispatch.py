@@ -7,7 +7,7 @@ platform supports it, switches to ``spawn`` when the study touches CUDA (``fork`
 is silently broken with CUDA — see below), and transparently falls back to
 ``spawn`` on fork-less platforms (Windows, hardened macOS / CPython 3.14).  Spawn
 works because the objective is a top-level *picklable*
-:class:`resdag.hpo.runner.TrialRunner`, not a closure, so it can be shipped to
+:class:`resdag.hpo.trial_runner.TrialRunner`, not a closure, so it can be shipped to
 freshly-interpreted workers along with the other (already picklable) arguments.
 
 Three correctness properties the multi-process backend guarantees:
@@ -118,7 +118,7 @@ def preferred_start_method(device: "torch.device | None") -> str:
     without pickling), but it is **fundamentally incompatible with CUDA**: once
     the parent process has initialised a CUDA context, any CUDA op in a forked
     child raises ``RuntimeError: Cannot re-initialize CUDA in forked
-    subprocess``.  Because :class:`resdag.hpo.runner.TrialRunner` catches all
+    subprocess``.  Because :class:`resdag.hpo.trial_runner.TrialRunner` catches all
     exceptions and returns ``penalty_value`` by default, that failure is
     *silent* — the study runs its full budget marking every trial COMPLETE at
     the penalty and returns nonsense ``best_params``.
@@ -251,7 +251,7 @@ def _worker_process(
     objective : Callable[[Trial], float]
         Objective function.  Inherited via ``fork`` or unpickled under
         ``spawn`` — it is a top-level picklable
-        :class:`resdag.hpo.runner.TrialRunner`, so both work.
+        :class:`resdag.hpo.trial_runner.TrialRunner`, so both work.
     target_total : int
         Global stop threshold: once this many trials are ``COMPLETE`` across all
         workers, the worker stops.  This is a *safety net*; the per-worker hard
@@ -397,7 +397,7 @@ def run_multiprocess(
     .. warning::
         ``fork`` is silently unusable with CUDA: a forked worker raises
         ``Cannot re-initialize CUDA in forked subprocess`` on every CUDA op, and
-        :class:`resdag.hpo.runner.TrialRunner` would penalise that (returning
+        :class:`resdag.hpo.trial_runner.TrialRunner` would penalise that (returning
         ``penalty_value``) rather than crash — producing an all-penalty study
         with nonsense ``best_params``.  This function therefore prefers ``spawn``
         for CUDA studies (see :func:`preferred_start_method`), and the runner
@@ -413,7 +413,7 @@ def run_multiprocess(
     objective : Callable[[Trial], float]
         Objective function.  Inherited via ``fork`` or pickled to workers under
         ``spawn`` (it is a picklable
-        :class:`resdag.hpo.runner.TrialRunner`, so both paths work).
+        :class:`resdag.hpo.trial_runner.TrialRunner`, so both paths work).
     n_trials : int
         Total target number of completed trials (including previously completed).
     remaining : int
@@ -451,7 +451,7 @@ def run_multiprocess(
     ``Study`` object.
 
     Under ``spawn`` the *objective* and every other argument must be picklable.
-    The objective is a top-level :class:`~resdag.hpo.runner.TrialRunner`; the
+    The objective is a top-level :class:`~resdag.hpo.trial_runner.TrialRunner`; the
     user-supplied ``model_creator`` / ``search_space`` / ``data_loader`` it
     holds must likewise be picklable (top-level functions, not lambdas or local
     closures) for fork-less platforms.

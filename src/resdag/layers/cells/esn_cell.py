@@ -14,7 +14,7 @@ resdag.init.topology : Topology initialization for recurrent weights.
 resdag.init.input_feedback : Input/feedback weight initialization.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import torch
 import torch.nn as nn
@@ -128,12 +128,22 @@ class ESNCell(ReservoirCell):
         because the bias was zero-initialized and frozen).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
-    leak_rate : float, default=1.0
-        Leaky integration rate in ``(0, 1]``.  A value of 1.0 means no leaking
-        (standard RNN update); smaller values create slower dynamics.  Values
-        outside ``(0, 1]`` are rejected at construction with a ``ValueError``:
-        ``0.0`` would freeze the state entirely and values ``> 1.0`` (or ``< 0``)
-        produce ill-defined dynamics.
+    leak_rate : float or 1-D tensor/sequence of shape ``(reservoir_size,)``, default=1.0
+        Leaky integration rate in ``(0, 1]``.  A scalar value of 1.0 means no
+        leaking (standard RNN update); smaller values create slower dynamics.
+        Values outside ``(0, 1]`` are rejected at construction with a
+        ``ValueError``: ``0.0`` would freeze the state entirely and values
+        ``> 1.0`` (or ``< 0``) produce ill-defined dynamics.
+
+        A **per-neuron** leak rate — a 1-D tensor or sequence of length
+        ``reservoir_size`` — assigns each unit its own timescale (heterogeneous
+        reservoir, matching RC.jl's ``leak_coefficient`` vector).  Every entry
+        must be finite and in ``(0, 1]``; a wrong length or any out-of-range /
+        non-finite entry raises ``ValueError``.  A vector leak is stored as a
+        registered buffer (``_leak_rate_vec``), so it moves with
+        ``.to(device)`` / ``.double()`` and round-trips through save/load; a
+        scalar stays a plain float with byte-identical dynamics to the
+        pre-vector cell.
     noise : float, default=0.0
         Standard deviation of additive Gaussian state noise injected after the
         activation, following the classical ESN regularizer (Jaeger 2001;
@@ -210,7 +220,7 @@ class ESNCell(ReservoirCell):
         bias: bool = True,
         bias_scaling: float = 1.0,
         activation: str = "tanh",
-        leak_rate: float = 1.0,
+        leak_rate: float | torch.Tensor | Sequence[float] = 1.0,
         noise: float = 0.0,
         trainable: bool = False,
         feedback_initializer: InitializerSpec = None,
@@ -236,6 +246,21 @@ class ESNCell(ReservoirCell):
         self.spectral_radius = spectral_radius
         self.feedback_initializer = feedback_initializer
         self.input_initializer = input_initializer
+        # Backing fields for the leak-rate property.  A scalar leak lives in the
+        # float ``_leak_rate``; a per-neuron leak lives in the *persistent*
+        # buffer ``_leak_rate_vec`` (so it moves with ``.to()`` / ``.double()``
+        # and round-trips through ``state_dict()`` / save-load) and flips
+        # ``_is_vector_leak`` so the ``!= 1.0`` scalar fast path is bypassed.
+        # Both are pre-seeded here so the property setter — shared by the
+        # constructor and live writes — can branch on ``_is_vector_leak`` and
+        # reassign the buffer freely (buffers accept reassignment, incl. back to
+        # ``None``).
+        self._leak_rate: float = 1.0
+        self._is_vector_leak: bool = False
+        self.register_buffer("_leak_rate_vec", None, persistent=True)
+        # ``register_buffer(..., None)`` leaves mypy inferring ``None``; annotate
+        # the true buffer type so the vector-leak paths type-check.
+        self._leak_rate_vec: torch.Tensor | None
         self.leak_rate = leak_rate
         self.noise = noise
         # ``trainable`` is a live property (see below) whose setter flips
@@ -311,21 +336,123 @@ class ESNCell(ReservoirCell):
             p.requires_grad_(self._trainable)
 
     @property
-    def leak_rate(self) -> float:
+    def leak_rate(self) -> float | torch.Tensor:
         """
-        float : Leaky-integration rate in ``(0, 1]`` read fresh every step.
+        float or torch.Tensor : Leaky-integration rate(s) read fresh every step.
 
         A *live* knob: assigning to it (directly or through
         ``ESNLayer.leak_rate = ...``) validates the value and takes effect on the
-        next forward.  ``1.0`` means no leaking (standard ESN).
+        next forward.  Returns the scalar ``float`` for a homogeneous leak
+        (``1.0`` means no leaking, standard ESN) or the ``(reservoir_size,)``
+        buffer for a per-neuron heterogeneous leak.  Every entry stays in
+        ``(0, 1]``.
         """
+        if self._is_vector_leak:
+            assert self._leak_rate_vec is not None  # invariant when flag is set
+            return self._leak_rate_vec
         return self._leak_rate
 
     @leak_rate.setter
-    def leak_rate(self, value: float) -> None:
-        if not 0.0 < float(value) <= 1.0:
+    def leak_rate(self, value: float | torch.Tensor | Sequence[float]) -> None:
+        # A tensor/sequence selects the per-neuron vector path; anything scalar
+        # keeps the byte-identical float path.  ``torch.Tensor`` and
+        # non-str/bytes sequences are treated as vectors; a 0-d tensor is a
+        # scalar in disguise, so it falls through to the float branch.
+        if (isinstance(value, torch.Tensor) and value.dim() > 0) or (
+            not isinstance(value, (str, bytes)) and isinstance(value, Sequence)
+        ):
+            self._set_vector_leak(value)
+        else:
+            self._set_scalar_leak(value)
+
+    def _set_scalar_leak(self, value: float | torch.Tensor | Sequence[float]) -> None:
+        """Validate and store a homogeneous scalar leak (the byte-identical path).
+
+        Accepts a Python scalar or a 0-d tensor; both collapse to a plain
+        ``float`` so the ``!= 1.0`` fast path in :meth:`forward` / :meth:`step`
+        stays unchanged.  Clears any previously-set per-neuron buffer.  The
+        ``Sequence`` arm of the type is never reached at runtime (the setter
+        dispatches sequences to :meth:`_set_vector_leak`); it only widens the
+        signature to the shared leak-rate union.
+        """
+        scalar = float(value)  # type: ignore[arg-type]
+        if not 0.0 < scalar <= 1.0:
             raise ValueError(f"leak_rate must be in (0, 1], got {value}")
-        self._leak_rate = float(value)
+        self._leak_rate = scalar
+        self._is_vector_leak = False
+        # Drop any stale per-neuron buffer so a scalar overwrite of a vector leak
+        # frees the buffer and keeps ``state_dict()`` clean.
+        self._leak_rate_vec = None
+
+    def _set_vector_leak(self, value: float | torch.Tensor | Sequence[float]) -> None:
+        """Validate and store a per-neuron leak vector as a persistent buffer.
+
+        The vector must be 1-D of length ``reservoir_size`` with every entry
+        finite and in ``(0, 1]``.  It is stored as a buffer (matching the
+        cell's current parameter dtype/device when available) so it moves under
+        ``.to()`` / ``.double()`` and round-trips through save/load; the
+        ``_is_vector_leak`` flag then routes the per-step update through an
+        unconditional ``torch.lerp`` (the scalar ``!= 1.0`` shortcut cannot be
+        used once the leak is a tensor).
+        """
+        vec = torch.as_tensor(value, dtype=torch.get_default_dtype())
+        if not vec.is_floating_point():
+            vec = vec.to(torch.get_default_dtype())
+        if vec.dim() != 1 or vec.shape[0] != self.reservoir_size:
+            raise ValueError(
+                f"vector leak_rate must have shape ({self.reservoir_size},) to match "
+                f"reservoir_size, got shape {tuple(vec.shape)}"
+            )
+        if not torch.isfinite(vec).all():
+            raise ValueError("vector leak_rate must be finite (no NaN/Inf entries)")
+        if not bool(((vec > 0.0) & (vec <= 1.0)).all()):
+            raise ValueError("every leak_rate entry must be in (0, 1]")
+
+        # Align the buffer with the cell's existing float parameters (dtype +
+        # device) so a vector passed at construction — before the caller calls
+        # ``.to()`` — already sits where the weights are.  Falls back to the
+        # freshly-built tensor when no float parameter exists yet.
+        ref = next((p for p in self.parameters() if p.is_floating_point()), None)
+        if ref is not None:
+            vec = vec.to(dtype=ref.dtype, device=ref.device)
+        self._leak_rate_vec = vec.contiguous()
+        self._is_vector_leak = True
+
+    def _load_from_state_dict(  # type: ignore[override]
+        self,
+        state_dict: dict,
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list,
+        unexpected_keys: list,
+        error_msgs: list,
+    ) -> None:
+        """Reconcile the optional per-neuron leak buffer with the checkpoint.
+
+        The vector-leak buffer ``_leak_rate_vec`` is present in a checkpoint only
+        when the saved cell had a *vector* leak (a scalar-leak cell registers it
+        as ``None``, so it is absent from ``state_dict``).  Without this override,
+        loading a vector-leak checkpoint into a scalar-rebuilt cell (or vice
+        versa) would raise on the mismatched key or silently drop the leak
+        configuration.  We align our buffer's presence — and the
+        :attr:`_is_vector_leak` flag — to the incoming checkpoint before the
+        normal load, so the loaded leak configuration always wins.
+        """
+        vec_key = prefix + "_leak_rate_vec"
+        if vec_key in state_dict:
+            # Checkpoint carries a vector leak: materialise a buffer of the right
+            # shape so the parent copy has a target, and flip the flag.
+            self._leak_rate_vec = torch.empty_like(state_dict[vec_key])
+            self._is_vector_leak = True
+        else:
+            # Checkpoint has a scalar leak: drop any vector buffer we carry so a
+            # strict load neither reports a missing key nor keeps a stale vector.
+            self._leak_rate_vec = None
+            self._is_vector_leak = False
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+        )
 
     @property
     def noise(self) -> float:
@@ -402,13 +529,7 @@ class ESNCell(ReservoirCell):
         recurrent_contrib = F.linear(state, self.weight_hh)
         new_state = self.activation_fn(projected + recurrent_contrib)
         new_state = self._apply_noise(new_state)
-
-        # leak_rate is validated to (0, 1] at construction, so ``!= 1.0`` here
-        # applies the leaky mix whenever there is actual leaking and never hits
-        # the silent no-leak surprise that ``< 1.0`` allowed for out-of-range
-        # values.  Kept byte-identical to :meth:`step` so the two paths agree.
-        if self.leak_rate != 1.0:
-            new_state = torch.lerp(state, new_state, self.leak_rate)
+        new_state = self._apply_leak(state, new_state)
         return new_state, new_state
 
     def project_inputs(self, inputs: list[torch.Tensor]) -> torch.Tensor:
@@ -495,12 +616,47 @@ class ESNCell(ReservoirCell):
         pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
         new_state = self.activation_fn(pre_activation)
         new_state = self._apply_noise(new_state)
-
-        # Identical leak semantics to :meth:`forward` (see the note there):
-        # ``!= 1.0`` over the construction-validated (0, 1] range.
-        if self.leak_rate != 1.0:
-            new_state = torch.lerp(state, new_state, self.leak_rate)
+        new_state = self._apply_leak(state, new_state)
         return new_state, new_state
+
+    def _apply_leak(self, state: torch.Tensor, new_state: torch.Tensor) -> torch.Tensor:
+        """Blend the previous and freshly-computed state by the leak rate.
+
+        Realises the leaky-integrator mix
+        ``h_t = (1 - α) h_{t-1} + α · f(·)`` shared by :meth:`forward` and the
+        :meth:`step` fast path, so the two never drift.
+
+        Two paths, chosen by :attr:`_is_vector_leak`:
+
+        * **Scalar** — the historical fast path.  ``leak_rate`` is validated to
+          ``(0, 1]`` at construction, so ``!= 1.0`` applies the leaky mix only
+          when there is actual leaking (and ``1.0`` returns ``new_state``
+          untouched, byte-identical to the pre-vector cell).
+        * **Per-neuron vector** — ``leak`` is a ``(reservoir_size,)`` buffer.
+          ``leak != 1.0`` would be a *tensor* (unusable as a Python branch), so
+          the mix is always taken; ``torch.lerp`` broadcasts the leak vector
+          over the ``(batch, reservoir_size)`` state, giving each unit its own
+          timescale.
+
+        Parameters
+        ----------
+        state : torch.Tensor
+            Previous hidden state, shape ``(batch, reservoir_size)``.
+        new_state : torch.Tensor
+            Freshly computed (post-activation, post-noise) state, same shape.
+
+        Returns
+        -------
+        torch.Tensor
+            The leaky-blended state.
+        """
+        if self._is_vector_leak:
+            leak_vec = self._leak_rate_vec
+            assert leak_vec is not None  # invariant when the vector flag is set
+            return torch.lerp(state, new_state, leak_vec)
+        if self._leak_rate != 1.0:
+            return torch.lerp(state, new_state, self._leak_rate)
+        return new_state
 
     # ------------------------------------------------------------------
     # State noise (train-mode regularizer)

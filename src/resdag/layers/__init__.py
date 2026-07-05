@@ -35,6 +35,9 @@ PinvReadoutLayer
 IncrementalRidgeReadout
     Streaming ridge readout (``partial_fit`` / ``finalize``) for the
     DataLoader / long-sequence path.
+FISTAReadout
+    Sparse / robust readout: L1 (lasso) or elastic-net regression via FISTA
+    (accelerated proximal gradient), batched over all output columns.
 Concatenate
     Layer for concatenating multiple inputs along feature dimension.
 ExtendedSquare
@@ -77,6 +80,7 @@ from .cells import ESNCell, NGCell, ReservoirCell
 from .readouts import (
     CGReadoutLayer,
     CholeskyReadoutLayer,
+    FISTAReadout,
     IncrementalRidgeReadout,
     PinvReadoutLayer,
     ReadoutLayer,
@@ -116,6 +120,7 @@ __all__ = [
     "SVDReadoutLayer",
     "PinvReadoutLayer",
     "IncrementalRidgeReadout",
+    "FISTAReadout",
     # Custom layers
     "Concatenate",
     "ExtendedSquare",

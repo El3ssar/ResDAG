@@ -172,6 +172,40 @@ class TestLeakRateWriteThrough:
 
         assert torch.allclose(out_constructed, out_mutated)
 
+    def test_vector_write_forwards_not_registered_as_buffer(self) -> None:
+        """A Tensor-valued leak_rate write forwards to the cell, not a layer buffer.
+
+        The ``__setattr__`` allow-list must route a per-neuron leak vector to the
+        cell (where it is validated + buffered) rather than letting the generic
+        ``nn.Module`` path register a stray ``leak_rate`` buffer on the layer.
+        """
+        n = 40
+        layer = ESNLayer(reservoir_size=n, feedback_size=3, leak_rate=1.0, seed=7)
+        leak = torch.rand(n) * 0.5 + 0.4
+
+        layer.leak_rate = leak
+        # Reached the cell as a validated vector...
+        assert layer.cell._is_vector_leak is True
+        assert torch.allclose(layer.cell.leak_rate, leak)
+        # ...and did NOT shadow as a plain buffer on the layer itself.
+        assert "leak_rate" not in layer._buffers
+
+    def test_vector_write_matches_constructor_value(self) -> None:
+        """Writing a vector leak post-init == building with that vector leak."""
+        n = 40
+        feedback = torch.randn(2, 12, 3)
+        leak = torch.rand(n) * 0.5 + 0.3
+
+        constructed = ESNLayer(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=11)
+        out_constructed = constructed(feedback)
+
+        mutated = ESNLayer(reservoir_size=n, feedback_size=3, leak_rate=1.0, seed=11)
+        mutated.leak_rate = leak
+        mutated.reset_state()
+        out_mutated = mutated(feedback)
+
+        assert torch.allclose(out_constructed, out_mutated)
+
 
 class TestNoiseWriteThrough:
     """``layer.noise = ...`` reaches the cell's train-mode noise injector."""

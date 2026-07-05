@@ -383,3 +383,204 @@ class TestESNCellLeakRate:
 
         assert torch.allclose(out_fwd, expected, atol=1e-6)
         assert torch.allclose(out_step, expected, atol=1e-6)
+
+
+class TestESNCellVectorLeakRate:
+    """Per-neuron (vector) leak rate: validation, storage, math, persistence."""
+
+    def test_scalar_leak_bit_identical_to_pre_vector(self) -> None:
+        """A scalar leak stays a plain float and is byte-identical to the old path.
+
+        The pre-vector cell computed ``lerp(state, tanh(pre), leak)`` for
+        ``leak != 1.0`` and left the state untouched for ``leak == 1.0``.  This
+        pins both branches bit-for-bit so the vector feature cannot regress the
+        homogeneous fast path.
+        """
+        fb = torch.randn(4, 3)
+        state = torch.randn(4, 16)
+
+        # leak == 1.0: no lerp, state returned exactly as tanh(pre).
+        cell1 = ESNCell(reservoir_size=16, feedback_size=3, leak_rate=1.0, seed=9)
+        cell1.eval()
+        proj = cell1.project_inputs([fb])
+        manual1 = torch.tanh(proj + torch.nn.functional.linear(state, cell1.weight_hh))
+        out1, _ = cell1([fb], state)
+        assert isinstance(cell1.leak_rate, float)
+        assert torch.equal(out1, manual1)
+
+        # leak == 0.5: exactly the old lerp line, bit-for-bit.
+        cell2 = ESNCell(reservoir_size=16, feedback_size=3, leak_rate=0.5, seed=9)
+        cell2.eval()
+        proj2 = cell2.project_inputs([fb])
+        ns2 = torch.tanh(proj2 + torch.nn.functional.linear(state, cell2.weight_hh))
+        manual2 = torch.lerp(state, ns2, 0.5)
+        out2, _ = cell2([fb], state)
+        assert torch.equal(out2, manual2)
+
+    def test_zero_d_tensor_is_scalar(self) -> None:
+        """A 0-d tensor collapses to the scalar float path (not a vector buffer)."""
+        cell = ESNCell(reservoir_size=8, feedback_size=2, leak_rate=torch.tensor(0.4))
+
+        assert isinstance(cell.leak_rate, float)
+        assert cell.leak_rate == pytest.approx(0.4)
+        assert cell._is_vector_leak is False
+
+    @pytest.mark.parametrize("as_seq", [False, True])
+    def test_vector_leak_accepted(self, as_seq: bool) -> None:
+        """A ``(reservoir_size,)`` tensor or list is stored as a buffer."""
+        n = 10
+        values = [0.1 + 0.08 * i for i in range(n)]
+        leak = values if as_seq else torch.tensor(values)
+        cell = ESNCell(reservoir_size=n, feedback_size=2, leak_rate=leak)
+
+        assert cell._is_vector_leak is True
+        assert isinstance(cell.leak_rate, torch.Tensor)
+        assert cell.leak_rate.shape == (n,)
+        assert "_leak_rate_vec" in cell.state_dict()  # persistent buffer
+
+    def test_boundary_one_accepted(self) -> None:
+        """A vector of all-1.0 entries is in range (leaking is a no-op per unit)."""
+        cell = ESNCell(reservoir_size=6, feedback_size=2, leak_rate=torch.ones(6))
+        assert cell._is_vector_leak is True
+        assert bool((cell.leak_rate == 1.0).all())
+
+    @pytest.mark.parametrize(
+        "leak",
+        [torch.ones(9) * 0.5, torch.ones(2, 8) * 0.5],
+        ids=["wrong-length", "2d"],
+    )
+    def test_wrong_shape_raises(self, leak: torch.Tensor) -> None:
+        """A wrong length or non-1-D vector raises a shape ValueError."""
+        with pytest.raises(ValueError, match="shape"):
+            ESNCell(reservoir_size=8, feedback_size=2, leak_rate=leak)
+
+    @pytest.mark.parametrize("bad", [1.5, 0.0, -0.1])
+    def test_out_of_range_entry_raises(self, bad: float) -> None:
+        """Any entry outside ``(0, 1]`` raises."""
+        leak = torch.ones(8) * 0.5
+        leak[3] = bad
+        with pytest.raises(ValueError, match=r"\(0, 1\]"):
+            ESNCell(reservoir_size=8, feedback_size=2, leak_rate=leak)
+
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+    def test_non_finite_entry_raises(self, bad: float) -> None:
+        """NaN / Inf entries raise a finiteness ValueError."""
+        leak = torch.ones(8) * 0.5
+        leak[2] = bad
+        with pytest.raises(ValueError, match="finite"):
+            ESNCell(reservoir_size=8, feedback_size=2, leak_rate=leak)
+
+    def test_vector_forward_step_parity(self) -> None:
+        """forward() and the step() fast path apply identical vector-leak math."""
+        n = 20
+        leak = torch.cat([torch.full((n // 2,), 0.2), torch.full((n // 2,), 0.9)])
+        cell = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=5)
+        cell.eval()
+        fb = torch.randn(4, 3)
+        state = torch.randn(4, n)
+
+        out_fwd, _ = cell([fb], state)
+        out_step, _ = cell.step(cell.project_inputs([fb]), state)
+        assert torch.allclose(out_fwd, out_step, atol=1e-6)
+
+    def test_vector_matches_broadcast_lerp(self) -> None:
+        """The vector leak broadcasts over ``(batch, reservoir_size)`` via lerp."""
+        n = 12
+        leak = torch.linspace(0.2, 0.9, n)
+        cell = ESNCell(reservoir_size=n, feedback_size=4, leak_rate=leak, seed=8)
+        cell.eval()
+        fb = torch.randn(5, 4)
+        state = torch.randn(5, n)
+
+        pre = fb @ cell.weight_feedback.T + state @ cell.weight_hh.T + cell.bias_h
+        expected = torch.lerp(state, torch.tanh(pre), leak)
+        out_fwd, _ = cell([fb], state)
+        assert torch.allclose(out_fwd, expected, atol=1e-6)
+
+    def test_per_neuron_effect_is_real(self) -> None:
+        """Two halves with distinct leaks show distinct step-to-step variation.
+
+        The slow half (small leak) integrates slowly, so its state changes far
+        less step-to-step than the fast half (large leak) — proving the
+        per-neuron timescale actually takes effect, not just that outputs
+        differ from a scalar run.
+        """
+        n = 40
+        torch.manual_seed(1)
+        leak = torch.cat([torch.full((n // 2,), 0.15), torch.full((n // 2,), 0.95)])
+        cell = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=3)
+        cell.eval()
+
+        state = torch.zeros(1, n)
+        traj = []
+        for _ in range(40):
+            fb = torch.randn(1, 3)
+            state, _ = cell([fb], state)
+            traj.append(state.squeeze(0))
+        stacked = torch.stack(traj)  # (T, n)
+        step_diff = (stacked[1:] - stacked[:-1]).abs().mean(dim=0)
+        slow_var = step_diff[: n // 2].mean()
+        fast_var = step_diff[n // 2 :].mean()
+        assert slow_var < fast_var
+
+    def test_scalar_overwrite_frees_vector_buffer(self) -> None:
+        """Overwriting a vector leak with a scalar clears the buffer + flag."""
+        n = 10
+        cell = ESNCell(reservoir_size=n, feedback_size=2, leak_rate=torch.ones(n) * 0.5)
+        assert cell._is_vector_leak is True
+
+        cell.leak_rate = 0.7
+        assert cell.leak_rate == 0.7
+        assert cell._is_vector_leak is False
+        assert cell._leak_rate_vec is None
+        assert "_leak_rate_vec" not in cell.state_dict()  # None buffers are omitted
+
+    def test_state_dict_round_trip(self) -> None:
+        """A vector leak survives a state_dict save/load round-trip."""
+        n = 24
+        leak = torch.cat([torch.full((n // 2,), 0.3), torch.full((n // 2,), 0.8)])
+        cell = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=2)
+
+        target = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=torch.ones(n) * 0.5, seed=99)
+        target.load_state_dict(cell.state_dict())
+        assert torch.equal(target.leak_rate, cell.leak_rate)
+
+    def test_load_vector_leak_into_scalar_rebuilt_cell(self) -> None:
+        """A vector-leak checkpoint loads into a cell rebuilt with a scalar leak.
+
+        Without the ``_load_from_state_dict`` reconciliation this raised (the
+        ``_leak_rate_vec`` key was unexpected on a scalar cell whose buffer is
+        ``None``) or silently kept the scalar leak.
+        """
+        n = 24
+        leak = torch.cat([torch.full((n // 2,), 0.3), torch.full((n // 2,), 0.85)])
+        src = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=2)
+
+        target = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=1.0, seed=99)
+        target.load_state_dict(src.state_dict())  # scalar-rebuilt, strict=True
+        assert target._is_vector_leak
+        assert torch.equal(target.leak_rate, src.leak_rate)
+
+    def test_load_scalar_leak_into_vector_rebuilt_cell(self) -> None:
+        """A scalar-leak checkpoint loads into a cell rebuilt with a vector leak."""
+        n = 24
+        src = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=0.7, seed=2)
+
+        target = ESNCell(
+            reservoir_size=n, feedback_size=3, leak_rate=torch.linspace(0.2, 0.9, n), seed=99
+        )
+        target.load_state_dict(src.state_dict())  # scalar checkpoint, strict=True
+        assert not target._is_vector_leak
+        assert target._leak_rate_vec is None
+
+    def test_double_moves_vector_buffer(self) -> None:
+        """``.double()`` casts the vector-leak buffer and forward runs in float64."""
+        n = 16
+        leak = torch.linspace(0.2, 0.9, n)
+        cell = ESNCell(reservoir_size=n, feedback_size=3, leak_rate=leak, seed=2).double()
+        assert cell.leak_rate.dtype == torch.float64
+
+        fb = torch.randn(2, 3, dtype=torch.float64)
+        state = torch.randn(2, n, dtype=torch.float64)
+        out, _ = cell([fb], state)
+        assert out.dtype == torch.float64

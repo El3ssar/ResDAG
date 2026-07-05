@@ -25,6 +25,9 @@ IncrementalRidgeReadout
     Streaming ridge readout: ``partial_fit`` accumulates sufficient
     statistics chunk-by-chunk, ``finalize`` solves once. For the
     DataLoader / long-sequence path.
+FISTAReadout
+    Sparse / robust readout: L1 (lasso) or elastic-net regression solved
+    with FISTA (accelerated proximal gradient), batched over all outputs.
 
 Examples
 --------
@@ -48,6 +51,7 @@ resdag.layers.ESNLayer : ESN layer for generating states.
 from .base import ReadoutLayer
 from .cg_readout import CGReadoutLayer
 from .cholesky_readout import CholeskyReadoutLayer
+from .fista_readout import FISTAReadout
 from .incremental_ridge import IncrementalRidgeReadout
 from .pinv_readout import PinvReadoutLayer
 from .ridge_readout import RidgeReadoutLayer
@@ -61,6 +65,7 @@ __all__ = [
     "SVDReadoutLayer",
     "PinvReadoutLayer",
     "IncrementalRidgeReadout",
+    "FISTAReadout",
 ]
 
 

@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v0.8.0 (2026-07-05)
+
+### Chores
+
+- **release**: Let version bumps cross 1.0 (major_on_zero=true)
+  ([`7ddcd8c`](https://github.com/El3ssar/ResDAG/commit/7ddcd8cb8a066192e746b66ec75dd3d64ce720dc))
+
+### Features
+
+- **api**: Coherent layer names + consolidated data namespace + duplicate-readout guard (phase 12)
+  ([#449](https://github.com/El3ssar/ResDAG/pull/449),
+  [`9abcaf8`](https://github.com/El3ssar/ResDAG/commit/9abcaf82b59e795d5cc12753ace53cb78afd73ec))
+
+### Testing
+
+- **benchmarks**: Full cross-library sweep on 0.7.0 + new-cell profile + reproducible traces
+  ([`b76f576`](https://github.com/El3ssar/ResDAG/commit/b76f576de81a80a2d9a1c54f529ea4d0a08b5c2d))
+
+
 ## v0.7.0 (2026-07-05)
 
 ### Bug Fixes

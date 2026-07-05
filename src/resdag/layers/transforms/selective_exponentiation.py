@@ -11,6 +11,14 @@ class SelectiveExponentiation(nn.Module):
     ``exponent``; if ``index`` is odd, odd positions are exponentiated. Other
     elements are unchanged. Used in Ott-style state-augmented ESNs.
 
+    With ``index=0, exponent=2`` this is the T₁ / NLAT1 nonlinear algebraic
+    transform — squaring every even-0-based feature — of Chattopadhyay,
+    Hassanzadeh & Subramanian (2020) and Pathak et al. (2017), matching
+    ``NLAT1`` in ReservoirComputing.jl (which squares the *odd* entries of a
+    1-based feature-major state; those are the even-0-based features here). Its
+    T₂/T₃ siblings are :class:`~resdag.layers.transforms.NLAT2` and
+    :class:`~resdag.layers.transforms.NLAT3`.
+
     The transform is implemented with a :func:`torch.where` gate so that
     unselected positions never enter the ``pow`` node: they pass through with a
     gradient of ``1`` and are never poisoned by the ``pow`` backward (which is

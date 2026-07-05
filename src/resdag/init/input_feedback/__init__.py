@@ -27,6 +27,16 @@ PseudoDiagonalInitializer
     Structured block-diagonal pattern.
 ChebyshevInitializer
     Deterministic chaotic initialization.
+LogisticMappingInitializer
+    Deterministic logistic-map initialization (RC.jl ``logistic_mapping``).
+MinimalInputInitializer
+    Rodan & Tiňo minimal-complexity dense input (RC.jl ``minimal_init``).
+WeightedInputInitializer
+    Block-diagonal random input (RC.jl ``weighted_init``).
+WeightedMinimalInitializer
+    Block-diagonal constant-magnitude input (RC.jl ``weighted_minimal``).
+InformedInputInitializer
+    State/model split for hybrid ESNs (RC.jl ``informed_init``).
 ChessboardInitializer
     Alternating {-1, +1} pattern.
 BinaryBalancedInitializer
@@ -88,6 +98,9 @@ from .chebyshev import ChebyshevInitializer
 from .chessboard import ChessboardInitializer
 from .dendrocycle_input import DendrocycleInputInitializer
 from .function import FunctionInitializer
+from .informed import InformedInputInitializer
+from .logistic_mapping import LogisticMappingInitializer
+from .minimal import MinimalInputInitializer
 from .normal import NormalInputInitializer
 from .opposite_anchors import OppositeAnchorsInitializer
 from .pseudo_diagonal import PseudoDiagonalInitializer
@@ -100,6 +113,7 @@ from .registry import (
 )
 from .ring_window import RingWindowInputInitializer
 from .uniform import UniformInputInitializer
+from .weighted import WeightedInputInitializer, WeightedMinimalInitializer
 from .zero import ZeroInitializer
 
 __all__ = [
@@ -110,7 +124,10 @@ __all__ = [
     "ChessboardInitializer",
     "DendrocycleInputInitializer",
     "FunctionInitializer",
+    "InformedInputInitializer",
     "InputFeedbackInitializer",
+    "LogisticMappingInitializer",
+    "MinimalInputInitializer",
     "NormalInputInitializer",
     "OppositeAnchorsInitializer",
     "PseudoDiagonalInitializer",
@@ -118,6 +135,8 @@ __all__ = [
     "RandomInputInitializer",
     "RingWindowInputInitializer",
     "UniformInputInitializer",
+    "WeightedInputInitializer",
+    "WeightedMinimalInitializer",
     "ZeroInitializer",
     # Registry functions
     "register_input_feedback",

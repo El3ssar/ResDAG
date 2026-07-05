@@ -41,6 +41,9 @@ PinvReadoutLayer
 IncrementalRidgeReadoutLayer
     Streaming ridge readout (``partial_fit`` / ``finalize``) for the
     DataLoader / long-sequence path.
+RLSReadout
+    True-online Recursive Least Squares readout with a forgetting factor;
+    refines weights one sample at a time, tracking non-stationary targets.
 FISTAReadoutLayer
     Sparse / robust readout: L1 (lasso) or elastic-net regression via FISTA
     (accelerated proximal gradient), batched over all output columns.
@@ -104,6 +107,7 @@ from .readouts import (
     PinvReadoutLayer,
     ReadoutLayer,
     RidgeReadoutLayer,
+    RLSReadout,
     SVDReadoutLayer,
 )
 from .reservoirs import (
@@ -153,6 +157,7 @@ __all__ = [
     "PinvReadoutLayer",
     "IncrementalRidgeReadoutLayer",
     "IncrementalRidgeReadout",
+    "RLSReadout",
     "FISTAReadoutLayer",
     "FISTAReadout",
     # Custom layers

@@ -141,6 +141,7 @@ from .layers import (
     ResESNCell,
     ResESNLayer,
     RidgeReadoutLayer,
+    RLSReadout,
     SelectiveDropout,
     SelectiveExponentiation,
     SpikingReservoirCell,
@@ -225,6 +226,7 @@ __all__ = [
     "PinvReadoutLayer",
     "IncrementalRidgeReadoutLayer",
     "IncrementalRidgeReadout",
+    "RLSReadout",
     "FISTAReadoutLayer",
     "FISTAReadout",
     # Custom / utility layers

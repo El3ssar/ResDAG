@@ -2,14 +2,16 @@
 Incremental Ridge Readout Layer
 ===============================
 
-This module provides :class:`IncrementalRidgeReadout`, a readout that fits ridge
-regression *incrementally* over a stream of state/target chunks. Instead of
+This module provides :class:`IncrementalRidgeReadoutLayer`, a readout that fits
+ridge regression *incrementally* over a stream of state/target chunks. Instead of
 materialising every state in memory and solving once (the single-shot path of
 :class:`CGReadoutLayer` / :class:`CholeskyReadoutLayer`), it accumulates the
 ridge **sufficient statistics** — the Gram matrix ``XᵀX``, the cross-term
 ``Xᵀy``, the column sums of ``X`` and ``y``, and the sample count ``n`` — into
-registered buffers via :meth:`~IncrementalRidgeReadout.partial_fit`, then solves
-once in :meth:`~IncrementalRidgeReadout.finalize`.
+registered buffers via :meth:`~IncrementalRidgeReadoutLayer.partial_fit`, then
+solves once in :meth:`~IncrementalRidgeReadoutLayer.finalize`.
+
+The old name :class:`IncrementalRidgeReadout` is retained as a deprecated alias.
 
 This is the readout half of the ``DataLoader`` / streaming story: a sequence too
 long to fit in memory, or a :class:`torch.utils.data.DataLoader` of windowed
@@ -26,6 +28,8 @@ resdag.training.ESNTrainer : Trainer with a streaming ``fit_stream`` path.
 """
 
 import sys
+import warnings
+from typing import Any
 
 import torch
 
@@ -44,8 +48,9 @@ def _in_symbolic_build() -> bool:
 
     Walks a few caller frames (cheap, bounded) looking for the
     ``pytorch_symbolic`` functions that call a layer's ``forward`` to record
-    output shapes. Used only to let an *unfitted* :class:`IncrementalRidgeReadout`
-    survive graph construction; genuine inference never matches these frames.
+    output shapes. Used only to let an *unfitted*
+    :class:`IncrementalRidgeReadoutLayer` survive graph construction; genuine
+    inference never matches these frames.
     """
     frame = sys._getframe(2) if hasattr(sys, "_getframe") else None
     depth = 0
@@ -59,7 +64,7 @@ def _in_symbolic_build() -> bool:
     return False
 
 
-class IncrementalRidgeReadout(ReadoutLayer):
+class IncrementalRidgeReadoutLayer(ReadoutLayer):
     """Readout layer that fits ridge regression incrementally over chunks.
 
     The classic readout fit requires every state in memory at once. This layer
@@ -139,7 +144,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
     --------
     Fit over three chunks of a long sequence then finalize:
 
-    >>> readout = IncrementalRidgeReadout(in_features=200, out_features=3)
+    >>> readout = IncrementalRidgeReadoutLayer(in_features=200, out_features=3)
     >>> for states_chunk, targets_chunk in chunks:  # doctest: +SKIP
     ...     readout.partial_fit(states_chunk, targets_chunk)
     >>> readout.finalize()  # doctest: +SKIP
@@ -226,7 +231,9 @@ class IncrementalRidgeReadout(ReadoutLayer):
         self._set_fitted(False)
 
     @torch.no_grad()
-    def partial_fit(self, states: torch.Tensor, targets: torch.Tensor) -> "IncrementalRidgeReadout":
+    def partial_fit(
+        self, states: torch.Tensor, targets: torch.Tensor
+    ) -> "IncrementalRidgeReadoutLayer":
         """Accumulate the ridge sufficient statistics for one chunk.
 
         Flattens ``(B, T, F)`` chunks to ``(N, F)``, validates shapes against
@@ -250,7 +257,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
 
         Returns
         -------
-        IncrementalRidgeReadout
+        IncrementalRidgeReadoutLayer
             ``self``, so calls can be chained.
 
         Raises
@@ -398,7 +405,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Single-shot fit: accumulate one chunk then finalize.
 
-        Provided so :class:`IncrementalRidgeReadout` is a drop-in
+        Provided so :class:`IncrementalRidgeReadoutLayer` is a drop-in
         :class:`ReadoutLayer` — ``fit(states, targets)`` works exactly like the
         other readouts (it resets the accumulators, accumulates the whole batch,
         and solves). The hook returns the fitted coefficients so the base
@@ -502,3 +509,32 @@ class IncrementalRidgeReadout(ReadoutLayer):
             f"alpha={self.alpha}"
             f")"
         )
+
+
+class IncrementalRidgeReadout(IncrementalRidgeReadoutLayer):
+    """Deprecated alias for :class:`IncrementalRidgeReadoutLayer`.
+
+    Retained for backward compatibility.  Instantiating this class emits a
+    :class:`DeprecationWarning` and constructs an
+    :class:`IncrementalRidgeReadoutLayer`; the two are otherwise identical
+    (``IncrementalRidgeReadout`` is a subclass, so
+    ``isinstance(IncrementalRidgeReadout(...), IncrementalRidgeReadoutLayer)``
+    holds).
+
+    .. deprecated::
+        Use :class:`IncrementalRidgeReadoutLayer` instead.
+        ``IncrementalRidgeReadout`` will be removed in a future release.
+
+    See Also
+    --------
+    IncrementalRidgeReadoutLayer : The canonical class this aliases.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "IncrementalRidgeReadout is deprecated and will be removed in a future "
+            "release; use IncrementalRidgeReadoutLayer instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)

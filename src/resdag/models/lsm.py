@@ -9,7 +9,7 @@ read out by a ridge regression.  The architecture mirrors
 :func:`~resdag.models.classic_esn` — the raw input is concatenated with the
 reservoir trace before the readout::
 
-    Input -> LIFReservoir -> Concatenate(Input, trace) -> Readout
+    Input -> LIFReservoirLayer -> Concatenate(Input, trace) -> Readout
 
 The reservoir is the flagship *non-ESN* reservoir in resdag: spiking neurons with
 a surrogate-gradient spike (so the liquid is SGD-trainable) instead of the
@@ -54,7 +54,7 @@ See Also
 --------
 classic_esn : Traditional leaky-ESN architecture with the same wiring.
 eusn : Euler State Network (another input-driven reservoir).
-resdag.layers.reservoirs.lif.LIFReservoir : The spiking reservoir layer.
+resdag.layers.reservoirs.lif.LIFReservoirLayer : The spiking reservoir layer.
 """
 
 from typing import Any
@@ -64,7 +64,7 @@ from pytorch_symbolic.symbolic_data import SymbolicTensor
 from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import Concatenate
-from resdag.layers.reservoirs.lif import LIFReservoir
+from resdag.layers.reservoirs.lif import LIFReservoirLayer
 
 from ._builder import ReadoutSpec, _resolve_readout_cls
 
@@ -101,11 +101,11 @@ def lsm(
     r"""Build a spiking Liquid State Machine (LSM) model.
 
     The reservoir is a recurrent network of leaky integrate-and-fire neurons
-    (:class:`~resdag.layers.reservoirs.lif.LIFReservoir`); its real-valued
+    (:class:`~resdag.layers.reservoirs.lif.LIFReservoirLayer`); its real-valued
     synaptic-trace output is concatenated with the raw input and read out by a
     ridge regression, following the classic-ESN wiring::
 
-        Input -> LIFReservoir -> Concatenate(Input, trace) -> Readout
+        Input -> LIFReservoirLayer -> Concatenate(Input, trace) -> Readout
 
     .. important::
        This is an **input-driven** reservoir (Maass 2002), *not* a closed-loop
@@ -183,7 +183,7 @@ def lsm(
         Name for the readout layer (the target key in training).
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
-        :class:`~resdag.layers.reservoirs.lif.LIFReservoir` (e.g. ``bias_scaling``,
+        :class:`~resdag.layers.reservoirs.lif.LIFReservoirLayer` (e.g. ``bias_scaling``,
         ``seed``, ``input_initializer``).
 
     Returns
@@ -209,7 +209,7 @@ def lsm(
     --------
     resdag.models.classic_esn : Traditional leaky ESN with the same wiring.
     resdag.models.eusn : Euler State Network (another input-driven reservoir).
-    resdag.layers.reservoirs.lif.LIFReservoir : The spiking reservoir layer.
+    resdag.layers.reservoirs.lif.LIFReservoirLayer : The spiking reservoir layer.
     """
     if output_size <= 0:
         raise ValueError(f"output_size must be a positive integer, got {output_size!r}")
@@ -220,7 +220,7 @@ def lsm(
     inp = reservoir_input(feedback_size)
     driver = reservoir_input(input_size) if input_size else None
 
-    reservoir = LIFReservoir(
+    reservoir = LIFReservoirLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=input_size,

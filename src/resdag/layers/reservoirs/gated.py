@@ -5,8 +5,10 @@ Gated Reservoir Layer
 This module provides the public-facing sequence layer for the gated
 ("reservoir GRU") cell:
 
-- :class:`GatedReservoir` — stateful RNN layer wrapping
+- :class:`GatedReservoirLayer` — stateful RNN layer wrapping
   :class:`~resdag.layers.cells.gated_cell.GatedReservoirCell`.
+
+The old name :class:`GatedReservoir` is retained as a deprecated alias.
 
 See Also
 --------
@@ -15,6 +17,7 @@ resdag.layers.reservoirs.base_reservoir : Abstract base class (BaseReservoirLaye
 resdag.layers.reservoirs.esn : The ungated ESN sequence layer (ESNLayer).
 """
 
+import warnings
 from typing import Any
 
 from resdag.init.utils import InitializerSpec, TopologySpec
@@ -24,7 +27,7 @@ from resdag.utils.general import SeedLike
 from .base_reservoir import BaseReservoirLayer
 
 
-class GatedReservoir(BaseReservoirLayer):
+class GatedReservoirLayer(BaseReservoirLayer):
     """
     Stateful RNN reservoir layer for the gated (LiGRU-style) reservoir.
 
@@ -91,7 +94,7 @@ class GatedReservoir(BaseReservoirLayer):
     --------
     Basic feedback-only gated reservoir:
 
-    >>> reservoir = GatedReservoir(reservoir_size=200, feedback_size=3)
+    >>> reservoir = GatedReservoirLayer(reservoir_size=200, feedback_size=3)
     >>> feedback = torch.randn(4, 50, 3)     # (batch, time, features)
     >>> states = reservoir(feedback)
     >>> states.shape
@@ -99,7 +102,7 @@ class GatedReservoir(BaseReservoirLayer):
 
     Trainable gated reservoir (the interesting configuration):
 
-    >>> reservoir = GatedReservoir(200, feedback_size=3, trainable=True)
+    >>> reservoir = GatedReservoirLayer(200, feedback_size=3, trainable=True)
 
     See Also
     --------
@@ -161,3 +164,30 @@ class GatedReservoir(BaseReservoirLayer):
     def __repr__(self) -> str:
         """Return string representation (delegates to the cell)."""
         return repr(self.cell)
+
+
+class GatedReservoir(GatedReservoirLayer):
+    """Deprecated alias for :class:`GatedReservoirLayer`.
+
+    Retained for backward compatibility.  Instantiating this class emits a
+    :class:`DeprecationWarning` and constructs a :class:`GatedReservoirLayer`;
+    the two are otherwise identical (``GatedReservoir`` is a subclass, so
+    ``isinstance(GatedReservoir(...), GatedReservoirLayer)`` holds).
+
+    .. deprecated::
+        Use :class:`GatedReservoirLayer` instead.  ``GatedReservoir`` will be
+        removed in a future release.
+
+    See Also
+    --------
+    GatedReservoirLayer : The canonical class this aliases.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "GatedReservoir is deprecated and will be removed in a future release; "
+            "use GatedReservoirLayer instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)

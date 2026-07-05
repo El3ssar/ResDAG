@@ -8,8 +8,8 @@ factorises the regularised normal equations ``(XᵀX + αI)`` with
 :func:`torch.cholesky_solve`.
 
 It is the readout the streaming / minibatch path needs: the same closed-form
-ridge solve that :class:`IncrementalRidgeReadout` performs in
-:meth:`~IncrementalRidgeReadout.finalize`, packaged as a standalone
+ridge solve that :class:`IncrementalRidgeReadoutLayer` performs in
+:meth:`~IncrementalRidgeReadoutLayer.finalize`, packaged as a standalone
 single-shot readout. It reuses the shared centering + auto ``gram_dtype``
 policy (float64 on CPU, input dtype on CUDA) so the GPU-slowness footgun stays
 solved.
@@ -19,7 +19,7 @@ See Also
 resdag.layers.readouts.ReadoutLayer : Base readout layer.
 resdag.layers.readouts.CGReadoutLayer : Iterative CG ridge readout.
 resdag.layers.readouts.RidgeReadoutLayer : Cholesky / LU direct readout (#70).
-resdag.layers.readouts.IncrementalRidgeReadout : Streaming partial_fit readout.
+resdag.layers.readouts.IncrementalRidgeReadoutLayer : Streaming partial_fit readout.
 """
 
 import torch
@@ -42,9 +42,9 @@ class CholeskyReadoutLayer(ReadoutLayer):
     Unlike :class:`CGReadoutLayer`, which only *approximates* the solution
     iteratively, this layer returns the exact ridge solution (up to floating
     point) in a single shot. It is the single-batch counterpart of the
-    streaming :class:`IncrementalRidgeReadout`: both ultimately Cholesky-solve
+    streaming :class:`IncrementalRidgeReadoutLayer`: both ultimately Cholesky-solve
     the same regularised Gram system, so a full-batch ``CholeskyReadoutLayer``
-    fit and an accumulated ``IncrementalRidgeReadout`` fit over the same data
+    fit and an accumulated ``IncrementalRidgeReadoutLayer`` fit over the same data
     agree to within floating-point tolerance.
 
     The solver minimises the same ridge objective as :class:`CGReadoutLayer`,
@@ -106,7 +106,7 @@ class CholeskyReadoutLayer(ReadoutLayer):
     --------
     CGReadoutLayer : Iterative Conjugate Gradient ridge readout.
     RidgeReadoutLayer : Direct ridge readout with a ``solver`` switch.
-    IncrementalRidgeReadout : Streaming partial_fit / finalize counterpart.
+    IncrementalRidgeReadoutLayer : Streaming partial_fit / finalize counterpart.
     resdag.training.ESNTrainer : Trainer that uses this for fitting.
     """
 

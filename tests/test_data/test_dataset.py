@@ -6,7 +6,7 @@ variable-length trajectories (no cross-boundary leakage), the
 ``make_dataloader`` batch contract, an SGD training loop that reduces loss (both
 frozen-reservoir-plus-trainable-head and fully-trainable-reservoir), and an
 algebraic-over-``DataLoader`` fit via
-:class:`~resdag.layers.IncrementalRidgeReadout`.
+:class:`~resdag.layers.IncrementalRidgeReadoutLayer`.
 """
 
 import pytest
@@ -16,8 +16,14 @@ from torch.utils.data import DataLoader
 
 import resdag as rd
 from resdag import ESNLayer, ESNModel, reservoir_input
-from resdag.data import TimeSeriesWindowDataset, make_dataloader
-from resdag.layers import CGReadoutLayer, IncrementalRidgeReadout
+from resdag.data import (
+    TimeSeriesWindowDataset,
+    load_file,
+    make_dataloader,
+    normalize_data,
+    prepare_esn_data,
+)
+from resdag.layers import CGReadoutLayer, IncrementalRidgeReadoutLayer
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +46,18 @@ def test_public_api_exports() -> None:
     assert "TimeSeriesWindowDataset" in rd.__all__
     assert "make_dataloader" in rd.__all__
     assert "data" in rd.__all__
-    assert set(rd.data.__all__) == {"TimeSeriesWindowDataset", "make_dataloader"}
+    # ``resdag.data`` is the canonical home for the streaming-window path *and*
+    # the data prep / file I/O symbols (re-homed from ``resdag.utils.data``).
+    assert {"TimeSeriesWindowDataset", "make_dataloader"}.issubset(set(rd.data.__all__))
+    assert {"prepare_esn_data", "normalize_data", "load_file"}.issubset(set(rd.data.__all__))
     assert rd.data.__dir__() == list(rd.data.__all__)
+    # Canonical prep / I/O imports resolve, and are the same objects the old
+    # ``resdag.utils.data`` path re-exports (back-compat identity).
+    import resdag.utils.data as _legacy
+
+    assert prepare_esn_data is _legacy.prepare_esn_data
+    assert normalize_data is _legacy.normalize_data
+    assert load_file is _legacy.load_file
 
 
 # ---------------------------------------------------------------------------
@@ -333,13 +349,13 @@ def test_sgd_trainable_reservoir_reduces_loss(sine_series: torch.Tensor) -> None
 
 
 # ---------------------------------------------------------------------------
-# Algebraic-over-DataLoader: IncrementalRidgeReadout.partial_fit then finalize
+# Algebraic-over-DataLoader: IncrementalRidgeReadoutLayer.partial_fit then finalize
 # ---------------------------------------------------------------------------
 def test_incremental_ridge_over_dataloader(sine_series: torch.Tensor) -> None:
-    """Stream states/targets per batch into IncrementalRidgeReadout, then finalize."""
+    """Stream states/targets per batch into IncrementalRidgeReadoutLayer, then finalize."""
     torch.manual_seed(0)
     reservoir = ESNLayer(reservoir_size=80, feedback_size=3, spectral_radius=0.9, trainable=False)
-    readout = IncrementalRidgeReadout(in_features=80, out_features=3, alpha=1e-4)
+    readout = IncrementalRidgeReadoutLayer(in_features=80, out_features=3, alpha=1e-4)
     loader = make_dataloader(sine_series, batch_size=8, window_len=120, horizon=1, washout=30)
 
     readout.reset_accumulators()

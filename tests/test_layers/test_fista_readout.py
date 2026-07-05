@@ -1,6 +1,6 @@
-"""FISTAReadout contracts: L1 (lasso) / elastic-net readout via FISTA.
+"""FISTAReadoutLayer contracts: L1 (lasso) / elastic-net readout via FISTA.
 
-Pins down :class:`FISTAReadout`, the sparse / robust readout that solves an
+Pins down :class:`FISTAReadoutLayer`, the sparse / robust readout that solves an
 L1 or elastic-net least-squares problem with the accelerated proximal-gradient
 method FISTA (Beck & Teboulle 2009), batched over every output column at once.
 
@@ -25,7 +25,7 @@ import pytorch_symbolic as ps
 import torch
 
 from resdag import ESNLayer, ESNModel
-from resdag.layers.readouts import FISTAReadout, ReadoutLayer, RidgeReadoutLayer
+from resdag.layers.readouts import FISTAReadoutLayer, ReadoutLayer, RidgeReadoutLayer
 from resdag.training import ESNTrainer
 
 # ---------------------------------------------------------------------------
@@ -60,8 +60,8 @@ class TestInstantiation:
     """Construction, inheritance, and constructor validation."""
 
     def test_is_readout_subclass(self) -> None:
-        """FISTAReadout is a ReadoutLayer (so ESNTrainer accepts it)."""
-        readout = FISTAReadout(in_features=20, out_features=3)
+        """FISTAReadoutLayer is a ReadoutLayer (so ESNTrainer accepts it)."""
+        readout = FISTAReadoutLayer(in_features=20, out_features=3)
         assert isinstance(readout, ReadoutLayer)
         assert readout.in_features == 20
         assert readout.out_features == 3
@@ -72,27 +72,27 @@ class TestInstantiation:
     def test_negative_alpha_rejected(self) -> None:
         """alpha < 0 raises at construction."""
         with pytest.raises(ValueError, match="alpha must be non-negative"):
-            FISTAReadout(10, 2, alpha=-1e-6)
+            FISTAReadoutLayer(10, 2, alpha=-1e-6)
 
     @pytest.mark.parametrize("bad", [-0.1, 1.1])
     def test_l1_ratio_out_of_range_rejected(self, bad: float) -> None:
         """l1_ratio outside [0, 1] raises at construction."""
         with pytest.raises(ValueError, match=r"l1_ratio must be in \[0, 1\]"):
-            FISTAReadout(10, 2, l1_ratio=bad)
+            FISTAReadoutLayer(10, 2, l1_ratio=bad)
 
     def test_bad_max_iter_rejected(self) -> None:
         """max_iter < 1 raises at construction."""
         with pytest.raises(ValueError, match="max_iter must be >= 1"):
-            FISTAReadout(10, 2, max_iter=0)
+            FISTAReadoutLayer(10, 2, max_iter=0)
 
     def test_negative_tol_rejected(self) -> None:
         """tol < 0 raises at construction."""
         with pytest.raises(ValueError, match="tol must be non-negative"):
-            FISTAReadout(10, 2, tol=-1e-6)
+            FISTAReadoutLayer(10, 2, tol=-1e-6)
 
     def test_repr_contains_alpha_and_l1_ratio(self) -> None:
         """repr surfaces the key hyperparameters."""
-        r = repr(FISTAReadout(10, 2, name="fr", alpha=1e-2, l1_ratio=0.7))
+        r = repr(FISTAReadoutLayer(10, 2, name="fr", alpha=1e-2, l1_ratio=0.7))
         assert "alpha=0.01" in r
         assert "l1_ratio=0.7" in r
         assert "name='fr'" in r
@@ -123,7 +123,7 @@ class TestMatchesSklearn:
         sk_coef = torch.from_numpy(lasso.coef_.T)  # (F, T)
         sk_int = torch.from_numpy(lasso.intercept_)  # (T,)
 
-        readout = FISTAReadout(
+        readout = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
             alpha=2 * n * sk_alpha,
@@ -157,7 +157,7 @@ class TestMatchesSklearn:
         en.fit(X.numpy(), y.numpy())
         en_coef = torch.from_numpy(en.coef_.T)
 
-        readout = FISTAReadout(
+        readout = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
             alpha=2 * n * sk_alpha,
@@ -184,7 +184,7 @@ class TestSparsity:
 
         fracs = []
         for sk_alpha in [1e-3, 1e-2, 5e-2, 2e-1, 1.0]:
-            readout = FISTAReadout(
+            readout = FISTAReadoutLayer(
                 X.shape[1],
                 y.shape[1],
                 alpha=2 * n * sk_alpha,
@@ -213,7 +213,9 @@ class TestSparsity:
         w_true[:4] = torch.randn(4, t, dtype=torch.float64, generator=gen)  # 4 active
         y = X @ w_true + 0.01 * torch.randn(n, t, dtype=torch.float64, generator=gen)
 
-        readout = FISTAReadout(f, t, alpha=2 * n * 0.05, l1_ratio=1.0, max_iter=20000, tol=1e-10)
+        readout = FISTAReadoutLayer(
+            f, t, alpha=2 * n * 0.05, l1_ratio=1.0, max_iter=20000, tol=1e-10
+        )
         coefs, _ = readout._fit_impl(X, y)
         # Substantial sparsity: most of the noise coefficients are zeroed.
         assert float((coefs == 0).float().mean()) > 0.5
@@ -242,7 +244,7 @@ class TestRidgeLimit:
         ridge = RidgeReadoutLayer(X.shape[1], y.shape[1], alpha=alpha_ridge)
         rc, ri = ridge._fit_impl(X, y)
 
-        fista = FISTAReadout(
+        fista = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
             alpha=2 * alpha_ridge,
@@ -269,7 +271,7 @@ class TestConvergence:
     def test_converges_sets_diagnostics(self) -> None:
         """A well-posed fit converges and records n_iter_ / converged_."""
         X, y = _sparse_problem()
-        readout = FISTAReadout(X.shape[1], y.shape[1], alpha=1.0, max_iter=10000, tol=1e-8)
+        readout = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=10000, tol=1e-8)
         readout._fit_impl(X, y)
         assert readout.converged_
         assert 0 < readout.n_iter_ < 10000
@@ -277,7 +279,7 @@ class TestConvergence:
     def test_non_convergence_warns(self) -> None:
         """Hitting max_iter without meeting tol warns and marks not-converged."""
         X, y = _sparse_problem()
-        readout = FISTAReadout(X.shape[1], y.shape[1], alpha=1.0, max_iter=2, tol=1e-15)
+        readout = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=2, tol=1e-15)
         with pytest.warns(RuntimeWarning, match="did not converge"):
             readout._fit_impl(X, y)
         assert not readout.converged_
@@ -292,12 +294,12 @@ class TestConvergence:
         """
         X, y = _sparse_problem()
         n = X.shape[0]
-        exact = FISTAReadout(
+        exact = FISTAReadoutLayer(
             X.shape[1], y.shape[1], alpha=2 * n * 1e-2, l1_ratio=1.0, max_iter=50000, tol=1e-11
         )
         ce, _ = exact._fit_impl(X, y)
 
-        power = FISTAReadout(
+        power = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
             alpha=2 * n * 1e-2,
@@ -317,12 +319,12 @@ class TestConvergence:
 
 
 class TestFitBookkeeping:
-    """FISTAReadout inherits the base fit() guards and 2D/3D handling."""
+    """FISTAReadoutLayer inherits the base fit() guards and 2D/3D handling."""
 
     def test_fit_3d_and_is_fitted(self) -> None:
         """3D inputs are flattened and is_fitted flips True."""
         torch.manual_seed(0)
-        readout = FISTAReadout(in_features=10, out_features=3, alpha=1e-2)
+        readout = FISTAReadoutLayer(in_features=10, out_features=3, alpha=1e-2)
         X = torch.randn(4, 25, 10)
         y = torch.randn(4, 25, 3)
         readout.fit(X, y)
@@ -331,14 +333,14 @@ class TestFitBookkeeping:
 
     def test_fit_wrong_in_features_raises(self) -> None:
         """A wrong in_features surfaces the base-class ValueError."""
-        readout = FISTAReadout(in_features=20, out_features=5)
+        readout = FISTAReadoutLayer(in_features=20, out_features=5)
         with pytest.raises(ValueError, match="state feature dimension"):
             readout.fit(torch.randn(100, 16), torch.randn(100, 5))
 
     def test_no_bias_leaves_intercept_none(self) -> None:
         """bias=False fits no intercept and does not center."""
         X, y = _sparse_problem()
-        readout = FISTAReadout(X.shape[1], y.shape[1], bias=False, alpha=1.0)
+        readout = FISTAReadoutLayer(X.shape[1], y.shape[1], bias=False, alpha=1.0)
         coefs, intercept = readout._fit_impl(X, y)
         assert intercept is None
         assert torch.isfinite(coefs).all()
@@ -350,14 +352,14 @@ class TestFitBookkeeping:
 
 
 class TestESNTrainerCompatibility:
-    """FISTAReadout trains end-to-end through ESNTrainer, keyed by name."""
+    """FISTAReadoutLayer trains end-to-end through ESNTrainer, keyed by name."""
 
     def test_trainer_fits_and_forecasts(self) -> None:
         """ESNTrainer fits the named readout via its pre-hook, forecast is finite."""
         torch.manual_seed(0)
         inp = ps.Input((30, 3))
         reservoir = ESNLayer(50, feedback_size=3, spectral_radius=0.9)(inp)
-        readout = FISTAReadout(50, 3, name="output", alpha=1e-3)(reservoir)
+        readout = FISTAReadoutLayer(50, 3, name="output", alpha=1e-3)(reservoir)
         model = ESNModel(inp, readout)
 
         warmup = torch.randn(1, 30, 3)
@@ -388,12 +390,12 @@ class TestESNTrainerCompatibility:
 
 
 class TestDevice:
-    """FISTAReadout fits and predicts on every available device, deterministically."""
+    """FISTAReadoutLayer fits and predicts on every available device, deterministically."""
 
     def test_fit_on_device(self, device: torch.device) -> None:
         """Fitting and predicting land on the target device."""
         torch.manual_seed(0)
-        readout = FISTAReadout(in_features=20, out_features=5, alpha=1e-2).to(device)
+        readout = FISTAReadoutLayer(in_features=20, out_features=5, alpha=1e-2).to(device)
         X = torch.randn(100, 20, device=device)
         y = torch.randn(100, 5, device=device)
         readout.fit(X, y)
@@ -406,8 +408,8 @@ class TestDevice:
     def test_deterministic(self) -> None:
         """FISTA has no RNG: two fits on identical data give identical weights."""
         X, y = _sparse_problem()
-        r1 = FISTAReadout(X.shape[1], y.shape[1], alpha=1.0, max_iter=5000, tol=1e-9)
-        r2 = FISTAReadout(X.shape[1], y.shape[1], alpha=1.0, max_iter=5000, tol=1e-9)
+        r1 = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=5000, tol=1e-9)
+        r2 = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=5000, tol=1e-9)
         c1, _ = r1._fit_impl(X, y)
         c2, _ = r2._fit_impl(X, y)
         assert torch.equal(c1, c2)
@@ -418,7 +420,7 @@ class TestDevice:
         if not torch.cuda.is_available():  # pragma: no cover - guarded by marker
             pytest.skip("CUDA not available")
         X, y = _sparse_problem()
-        cpu = FISTAReadout(
+        cpu = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
             alpha=2 * X.shape[0] * 1e-2,
@@ -427,7 +429,7 @@ class TestDevice:
             tol=1e-11,
         )
         cc, _ = cpu._fit_impl(X, y)
-        gpu = FISTAReadout(
+        gpu = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
             alpha=2 * X.shape[0] * 1e-2,

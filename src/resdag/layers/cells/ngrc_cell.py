@@ -15,7 +15,7 @@ Equations 5, 6, 9, 10.
 
 See Also
 --------
-resdag.layers.reservoirs.ngrc : Sequence wrapper (NGReservoir).
+resdag.layers.reservoirs.ngrc : Sequence wrapper (NGReservoirLayer).
 resdag.layers.cells.esn_cell : Concrete ESN cell (ESNCell).
 """
 
@@ -153,7 +153,7 @@ class NGCell(ReservoirCell):
 
     See Also
     --------
-    resdag.layers.reservoirs.ngrc.NGReservoir : Sequence wrapper for this cell.
+    resdag.layers.reservoirs.ngrc.NGReservoirLayer : Sequence wrapper for this cell.
     """
 
     def __init__(
@@ -353,7 +353,7 @@ class NGCell(ReservoirCell):
             Per-timestep input slices.  ``inputs[0]`` is the current input
             of shape ``(batch, input_dim)``.  NG-RC has no driving inputs, so
             only ``inputs[0]`` is consumed (the wrapping
-            :class:`~resdag.layers.reservoirs.ngrc.NGReservoir` rejects driving
+            :class:`~resdag.layers.reservoirs.ngrc.NGReservoirLayer` rejects driving
             inputs before they reach the cell).
         state : torch.Tensor
             Delay buffer of shape ``(batch, state_size, input_dim)``.
@@ -468,7 +468,7 @@ class NGCell(ReservoirCell):
         Compute NG-RC features for a whole sequence in a single vectorized pass.
 
         This is the batch-forward fast path used by
-        :meth:`~resdag.layers.reservoirs.ngrc.NGReservoir.forward`.  It is
+        :meth:`~resdag.layers.reservoirs.ngrc.NGReservoirLayer.forward`.  It is
         numerically identical to scanning :meth:`forward` step-by-step
         (``0.0`` max-abs-diff, including the warmup region), but contains no
         per-timestep Python loop: the delay-embedded linear features are built

@@ -57,7 +57,7 @@ See Also
 resdag.layers.cells.base_cell.ReservoirCell : Abstract single-step cell interface.
 resdag.layers.cells.gated_cell : Source of the packed multi-tensor-state helpers.
 resdag.layers.cells.lif_cell.LIFCell : Concrete leaky integrate-and-fire cell.
-resdag.layers.reservoirs.lif.LIFReservoir : Layer that sequences the LIF cell.
+resdag.layers.reservoirs.lif.LIFReservoirLayer : Layer that sequences the LIF cell.
 """
 
 from abc import ABC, abstractmethod

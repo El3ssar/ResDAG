@@ -9,7 +9,7 @@ Pins down:
   convergence behaviour, and predictions on every device,
 - ``CholeskyReadoutLayer``: the single-shot Cholesky ridge solver matching CG
   to ``< 1e-5``, the auto ``gram_dtype`` policy, and ``ESNTrainer`` use,
-- ``IncrementalRidgeReadout``: chunked ``partial_fit`` / ``finalize`` matching a
+- ``IncrementalRidgeReadoutLayer``: chunked ``partial_fit`` / ``finalize`` matching a
   full-batch fit to ``< 1e-5``, the ``is_fitted``-after-``finalize`` /
   forward-before-``finalize`` lifecycle, and end-to-end fitting over a
   ``DataLoader`` of windowed chunks via ``ESNTrainer.fit_stream``.
@@ -28,7 +28,7 @@ from resdag.layers import ReadoutLayer
 from resdag.layers.readouts import (
     CGReadoutLayer,
     CholeskyReadoutLayer,
-    IncrementalRidgeReadout,
+    IncrementalRidgeReadoutLayer,
 )
 from resdag.training import ESNTrainer
 
@@ -1292,7 +1292,7 @@ class TestReadoutLayerIsFittedPersistence:
 
 
 # ===========================================================================
-# CholeskyReadoutLayer + IncrementalRidgeReadout (issue #176, the streaming /
+# CholeskyReadoutLayer + IncrementalRidgeReadoutLayer (issue #176, the streaming /
 # DataLoader path). One test class per acceptance criterion.
 # ===========================================================================
 
@@ -1417,7 +1417,7 @@ class TestCholeskyTrainerCompatibility:
 class TestAutoGramDtypePolicy:
     """Both readouts reuse the auto gram_dtype policy: float64 on CPU."""
 
-    @pytest.mark.parametrize("cls", [CholeskyReadoutLayer, IncrementalRidgeReadout])
+    @pytest.mark.parametrize("cls", [CholeskyReadoutLayer, IncrementalRidgeReadoutLayer])
     def test_gram_dtype_default_is_none(self, cls) -> None:
         """The auto policy is the default (gram_dtype is None until overridden)."""
         readout = cls(10, 2)
@@ -1450,11 +1450,11 @@ class TestAutoGramDtypePolicy:
         Float64 accumulation is what keeps the running Gram from drifting across
         many chunks; it is the streaming counterpart of the auto gram policy.
         """
-        readout = IncrementalRidgeReadout(10, 3)  # use_float64=True default
+        readout = IncrementalRidgeReadoutLayer(10, 3)  # use_float64=True default
         assert readout.XtX.dtype == torch.float64
         assert readout.Xty.dtype == torch.float64
 
-        f32 = IncrementalRidgeReadout(10, 3, use_float64=False)
+        f32 = IncrementalRidgeReadoutLayer(10, 3, use_float64=False)
         assert f32.XtX.dtype == torch.float32
 
     def test_incremental_cpu_float32_input_matches_float64(self) -> None:
@@ -1464,7 +1464,7 @@ class TestAutoGramDtypePolicy:
         y = torch.randn(400, 3, dtype=torch.float32)
         alpha = 1e-3
 
-        inc = IncrementalRidgeReadout(12, 3, alpha=alpha)
+        inc = IncrementalRidgeReadoutLayer(12, 3, alpha=alpha)
         for chunk in torch.chunk(torch.arange(400), 5):
             inc.partial_fit(X[chunk], y[chunk])
         inc.finalize()
@@ -1474,7 +1474,7 @@ class TestAutoGramDtypePolicy:
 
 
 # ---------------------------------------------------------------------------
-# IncrementalRidgeReadout
+# IncrementalRidgeReadoutLayer
 # ---------------------------------------------------------------------------
 
 
@@ -1482,8 +1482,8 @@ class TestIncrementalInstantiation:
     """Construction, accumulator buffers, and validation."""
 
     def test_is_readout_subclass(self) -> None:
-        """IncrementalRidgeReadout is a ReadoutLayer."""
-        readout = IncrementalRidgeReadout(in_features=20, out_features=3)
+        """IncrementalRidgeReadoutLayer is a ReadoutLayer."""
+        readout = IncrementalRidgeReadoutLayer(in_features=20, out_features=3)
         assert isinstance(readout, ReadoutLayer)
         assert not readout.is_fitted
         assert readout.n_seen == 0
@@ -1491,11 +1491,11 @@ class TestIncrementalInstantiation:
     def test_negative_alpha_rejected(self) -> None:
         """alpha < 0 raises at construction."""
         with pytest.raises(ValueError, match="alpha must be non-negative"):
-            IncrementalRidgeReadout(10, 2, alpha=-1.0)
+            IncrementalRidgeReadoutLayer(10, 2, alpha=-1.0)
 
     def test_accumulator_buffers_registered(self) -> None:
         """The sufficient-statistic accumulators are registered buffers."""
-        readout = IncrementalRidgeReadout(10, 2)
+        readout = IncrementalRidgeReadoutLayer(10, 2)
         sd = readout.state_dict()
         for key in ("XtX", "Xty", "sum_x", "sum_y", "_n"):
             assert key in sd
@@ -1504,8 +1504,8 @@ class TestIncrementalInstantiation:
 
     def test_repr_contains_alpha(self) -> None:
         """repr surfaces the name and alpha."""
-        r = repr(IncrementalRidgeReadout(10, 2, name="out", alpha=1e-4))
-        assert "IncrementalRidgeReadout" in r
+        r = repr(IncrementalRidgeReadoutLayer(10, 2, name="out", alpha=1e-4))
+        assert "IncrementalRidgeReadoutLayer" in r
         assert "alpha=0.0001" in r
 
 
@@ -1523,7 +1523,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         full = CholeskyReadoutLayer(30, 4, alpha=alpha)
         coefs_full, intercept_full = full._fit_impl(X, y)
 
-        inc = IncrementalRidgeReadout(30, 4, alpha=alpha)
+        inc = IncrementalRidgeReadoutLayer(30, 4, alpha=alpha)
         for chunk in torch.chunk(torch.arange(600), 7):
             inc.partial_fit(X[chunk], y[chunk])
         assert inc.n_seen == 600
@@ -1544,7 +1544,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         cg = CGReadoutLayer(25, 3, alpha=alpha, max_iter=5000, tol=1e-14)
         coefs_cg, intercept_cg = cg._solve_ridge_cg(X, y, alpha)
 
-        inc = IncrementalRidgeReadout(25, 3, alpha=alpha)
+        inc = IncrementalRidgeReadoutLayer(25, 3, alpha=alpha)
         for chunk in torch.chunk(torch.arange(500), 11):
             inc.partial_fit(X[chunk], y[chunk])
         inc.finalize()
@@ -1559,7 +1559,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         y = torch.randn(360, 2, dtype=torch.float64)
 
         def fit_in(k: int) -> torch.Tensor:
-            inc = IncrementalRidgeReadout(12, 2, alpha=1e-4)
+            inc = IncrementalRidgeReadoutLayer(12, 2, alpha=1e-4)
             for chunk in torch.chunk(torch.arange(360), k):
                 inc.partial_fit(X[chunk], y[chunk])
             inc.finalize()
@@ -1575,7 +1575,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         y = torch.randn(400, 3, dtype=torch.float64)
         alpha = 1e-3
 
-        inc = IncrementalRidgeReadout(10, 3, bias=False, alpha=alpha)
+        inc = IncrementalRidgeReadoutLayer(10, 3, bias=False, alpha=alpha)
         for chunk in torch.chunk(torch.arange(400), 5):
             inc.partial_fit(X[chunk], y[chunk])
         inc.finalize()
@@ -1591,7 +1591,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         X3 = torch.randn(2, 50, 8, dtype=torch.float64)
         y3 = torch.randn(2, 50, 3, dtype=torch.float64)
 
-        inc = IncrementalRidgeReadout(8, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(8, 3, alpha=1e-4)
         inc.partial_fit(X3, y3)
         inc.finalize()
         assert inc.n_seen == 2 * 50
@@ -1606,7 +1606,7 @@ class TestIncrementalLifecycle:
 
     def test_is_fitted_only_after_finalize(self) -> None:
         """is_fitted is False until finalize() is called."""
-        inc = IncrementalRidgeReadout(10, 3)
+        inc = IncrementalRidgeReadoutLayer(10, 3)
         assert not inc.is_fitted
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         assert not inc.is_fitted  # accumulated, but not solved yet
@@ -1615,14 +1615,14 @@ class TestIncrementalLifecycle:
 
     def test_forward_before_finalize_raises(self) -> None:
         """Calling forward before finalize raises a clear RuntimeError."""
-        inc = IncrementalRidgeReadout(10, 3)
+        inc = IncrementalRidgeReadoutLayer(10, 3)
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         with pytest.raises(RuntimeError, match="not fitted.*finalize"):
             inc(torch.randn(5, 10))
 
     def test_forward_after_finalize_works(self) -> None:
         """forward succeeds once finalize() has run."""
-        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         inc.finalize()
         out = inc(torch.randn(5, 10))
@@ -1630,7 +1630,7 @@ class TestIncrementalLifecycle:
 
     def test_partial_fit_after_finalize_unfits(self) -> None:
         """New data after finalize clears is_fitted until re-finalized."""
-        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         inc.finalize()
         assert inc.is_fitted
@@ -1641,13 +1641,13 @@ class TestIncrementalLifecycle:
 
     def test_finalize_without_data_raises(self) -> None:
         """finalize before any partial_fit raises a clear RuntimeError."""
-        inc = IncrementalRidgeReadout(10, 3)
+        inc = IncrementalRidgeReadoutLayer(10, 3)
         with pytest.raises(RuntimeError, match="no data accumulated"):
             inc.finalize()
 
     def test_reset_accumulators_clears_state(self) -> None:
         """reset_accumulators zeroes the statistics and the fitted flag."""
-        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         inc.finalize()
         inc.reset_accumulators()
@@ -1661,7 +1661,7 @@ class TestIncrementalLifecycle:
         torch.manual_seed(5)
         X = torch.randn(120, 10, dtype=torch.float64)
         y = torch.randn(120, 3, dtype=torch.float64)
-        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         inc.fit(X, y)
         assert inc.is_fitted
         assert inc.n_seen == 120
@@ -1676,25 +1676,25 @@ class TestIncrementalValidation:
 
     def test_wrong_in_features_raises(self) -> None:
         """A wrong state feature dimension raises a clear ValueError."""
-        inc = IncrementalRidgeReadout(20, 5)
+        inc = IncrementalRidgeReadoutLayer(20, 5)
         with pytest.raises(ValueError, match="state feature dimension"):
             inc.partial_fit(torch.randn(100, 16), torch.randn(100, 5))
 
     def test_wrong_out_features_raises(self) -> None:
         """A wrong target feature dimension raises a clear ValueError."""
-        inc = IncrementalRidgeReadout(20, 5)
+        inc = IncrementalRidgeReadoutLayer(20, 5)
         with pytest.raises(ValueError, match="target feature dimension"):
             inc.partial_fit(torch.randn(100, 20), torch.randn(100, 3))
 
     def test_sample_mismatch_raises(self) -> None:
         """Mismatched sample counts raise a clear ValueError."""
-        inc = IncrementalRidgeReadout(20, 5)
+        inc = IncrementalRidgeReadoutLayer(20, 5)
         with pytest.raises(ValueError, match="sample count mismatch"):
             inc.partial_fit(torch.randn(100, 20), torch.randn(50, 5))
 
     def test_nan_state_chunk_is_rejected(self) -> None:
         """A ``NaN`` in a state chunk is rejected before it poisons the stats."""
-        inc = IncrementalRidgeReadout(20, 5)
+        inc = IncrementalRidgeReadoutLayer(20, 5)
         X = torch.randn(100, 20)
         X[0, 0] = float("nan")
         with pytest.raises(ValueError, match=r"(?i)finite|nan|inf"):
@@ -1703,7 +1703,7 @@ class TestIncrementalValidation:
 
     def test_inf_target_chunk_is_rejected(self) -> None:
         """An ``Inf`` in a target chunk is rejected before it poisons the stats."""
-        inc = IncrementalRidgeReadout(20, 5)
+        inc = IncrementalRidgeReadoutLayer(20, 5)
         y = torch.randn(100, 5)
         y[3, 2] = float("inf")
         with pytest.raises(ValueError, match=r"(?i)finite|nan|inf"):
@@ -1717,11 +1717,11 @@ class TestIncrementalStateDict:
     def test_round_trip_preserves_fit(self) -> None:
         """A finalized readout reloads is_fitted=True with identical weights."""
         torch.manual_seed(6)
-        src = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        src = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         src.partial_fit(torch.randn(80, 10), torch.randn(80, 3))
         src.finalize()
 
-        dst = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        dst = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         assert not dst.is_fitted
         dst.load_state_dict(src.state_dict())
         assert dst.is_fitted
@@ -1740,12 +1740,12 @@ class TestIncrementalFittedFlagMirror:
     transition and across a ``load_state_dict`` round-trip.
     """
 
-    def _buffer(self, ro: IncrementalRidgeReadout) -> bool:
+    def _buffer(self, ro: IncrementalRidgeReadoutLayer) -> bool:
         return bool(ro._is_fitted.item())
 
     def test_is_fitted_reads_python_mirror(self) -> None:
         """``is_fitted`` returns the plain ``_fitted_flag`` mirror."""
-        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         assert inc.is_fitted is inc._fitted_flag is False
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         inc.finalize()
@@ -1753,7 +1753,7 @@ class TestIncrementalFittedFlagMirror:
 
     def test_mirror_tracks_buffer_across_lifecycle(self) -> None:
         """Every fittedness transition keeps mirror and buffer in lockstep."""
-        inc = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        inc = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         assert inc._fitted_flag == self._buffer(inc) is False
 
         inc.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
@@ -1778,11 +1778,11 @@ class TestIncrementalFittedFlagMirror:
         correctly but ``_fitted_flag`` would stay stale ``False``, so the loaded
         readout's ``forward`` guard would wrongly raise "not fitted".
         """
-        src = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        src = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         src.partial_fit(torch.randn(60, 10), torch.randn(60, 3))
         src.finalize()
 
-        dst = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        dst = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         assert dst._fitted_flag is False
         dst.load_state_dict(src.state_dict())
         # Mirror re-derived from the loaded buffer, and both agree.
@@ -1794,12 +1794,12 @@ class TestIncrementalFittedFlagMirror:
 
     def test_load_unfitted_state_dict_clears_mirror(self) -> None:
         """Loading an unfitted state_dict into a fitted readout clears the mirror."""
-        fitted = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        fitted = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         fitted.partial_fit(torch.randn(40, 10), torch.randn(40, 3))
         fitted.finalize()
         assert fitted._fitted_flag is True
 
-        unfitted = IncrementalRidgeReadout(10, 3, alpha=1e-4)
+        unfitted = IncrementalRidgeReadoutLayer(10, 3, alpha=1e-4)
         fitted.load_state_dict(unfitted.state_dict())
         assert fitted._fitted_flag is False
         assert fitted._fitted_flag == self._buffer(fitted)
@@ -1811,7 +1811,7 @@ class TestIncrementalFittedFlagMirror:
         whole model; the post-load hook must fire for the nested readout so its
         mirror is restored from the loaded buffer.
         """
-        readout = IncrementalRidgeReadout(50, 3, name="output", alpha=1e-6)
+        readout = IncrementalRidgeReadoutLayer(50, 3, name="output", alpha=1e-6)
         model = _make_streaming_model(readout, seq_len=40)
         warmup = torch.randn(1, 40, 3)
         train = torch.randn(1, 120, 3)
@@ -1824,7 +1824,7 @@ class TestIncrementalFittedFlagMirror:
         ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
         assert readout.is_fitted
 
-        fresh_readout = IncrementalRidgeReadout(50, 3, name="output", alpha=1e-6)
+        fresh_readout = IncrementalRidgeReadoutLayer(50, 3, name="output", alpha=1e-6)
         fresh_model = _make_streaming_model(fresh_readout, seq_len=40)
         assert not fresh_readout.is_fitted
         fresh_model.load_state_dict(model.state_dict())
@@ -1843,11 +1843,11 @@ class TestIncrementalCompiledForecastFastPath:
     genuinely-unfitted readout still raising under ``compile=True``.
     """
 
-    def _build_fitted(self, dev: str) -> tuple[ESNModel, IncrementalRidgeReadout]:
+    def _build_fitted(self, dev: str) -> tuple[ESNModel, IncrementalRidgeReadoutLayer]:
         torch.manual_seed(0)
         inp = ps.Input((40, 3))
         states = ESNLayer(80, feedback_size=3, spectral_radius=0.9)(inp)
-        ro = IncrementalRidgeReadout(80, 3, name="output", alpha=1e-4)
+        ro = IncrementalRidgeReadoutLayer(80, 3, name="output", alpha=1e-4)
         model = ESNModel(inp, ro(states)).to(dev)
         warmup = torch.randn(1, 40, 3, device=dev)
         train = torch.randn(1, 200, 3, device=dev)
@@ -1911,7 +1911,7 @@ class TestIncrementalCompiledForecastFastPath:
         torch.manual_seed(0)
         inp = ps.Input((40, 3))
         states = ESNLayer(80, feedback_size=3, spectral_radius=0.9)(inp)
-        ro = IncrementalRidgeReadout(80, 3, name="output", alpha=1e-4)
+        ro = IncrementalRidgeReadoutLayer(80, 3, name="output", alpha=1e-4)
         model = ESNModel(inp, ro(states))  # never fitted
         warmup = torch.randn(1, 40, 3)
 
@@ -1946,7 +1946,7 @@ class TestIncrementalCompiledForecastFastPath:
         train = torch.randn(1, 400, 3, device=dev)
         target = torch.randn(1, 400, 3, device=dev)
 
-        m_inc, ro_inc = build(IncrementalRidgeReadout)
+        m_inc, ro_inc = build(IncrementalRidgeReadoutLayer)
 
         def chunks():
             for i in range(0, 400, 50):
@@ -1989,7 +1989,7 @@ class TestIncrementalDevice:
     def test_partial_fit_finalize_on_device(self, device: torch.device) -> None:
         """Accumulating and finalizing land on the target device."""
         torch.manual_seed(0)
-        inc = IncrementalRidgeReadout(20, 5, alpha=1e-4).to(device)
+        inc = IncrementalRidgeReadoutLayer(20, 5, alpha=1e-4).to(device)
         for _ in range(3):
             X = torch.randn(60, 20, device=device)
             y = torch.randn(60, 5, device=device)
@@ -2028,7 +2028,7 @@ class TestFitStreamOverDataLoader:
 
     def test_fit_stream_end_to_end_and_forecast(self) -> None:
         """Fit a readout over windowed DataLoader chunks, then forecast finitely."""
-        readout = IncrementalRidgeReadout(50, 3, name="output", alpha=1e-6)
+        readout = IncrementalRidgeReadoutLayer(50, 3, name="output", alpha=1e-6)
         model = _make_streaming_model(readout, seq_len=50)
 
         torch.manual_seed(11)
@@ -2080,7 +2080,7 @@ class TestFitStreamOverDataLoader:
             targets={"output": target},
         )
 
-        m_str, ro_str = build_and_data(IncrementalRidgeReadout)
+        m_str, ro_str = build_and_data(IncrementalRidgeReadoutLayer)
 
         def chunks():
             for i in range(0, 300, 50):
@@ -2092,7 +2092,7 @@ class TestFitStreamOverDataLoader:
         assert torch.allclose(ro_str.bias, ro_ref.bias, atol=1e-5, rtol=1e-4)
 
     def test_fit_stream_rejects_non_incremental_readout(self) -> None:
-        """fit_stream requires IncrementalRidgeReadout readouts."""
+        """fit_stream requires IncrementalRidgeReadoutLayer readouts."""
         readout = CholeskyReadoutLayer(50, 3, name="output")
         model = _make_streaming_model(readout, seq_len=40)
         warmup = torch.randn(1, 40, 3)
@@ -2100,12 +2100,12 @@ class TestFitStreamOverDataLoader:
         def chunks():
             yield (torch.randn(1, 40, 3),), {"output": torch.randn(1, 40, 3)}
 
-        with pytest.raises(TypeError, match="IncrementalRidgeReadout"):
+        with pytest.raises(TypeError, match="IncrementalRidgeReadoutLayer"):
             ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
 
     def test_fit_stream_empty_chunks_raises(self) -> None:
         """An empty chunk stream raises rather than finalizing nothing."""
-        readout = IncrementalRidgeReadout(50, 3, name="output")
+        readout = IncrementalRidgeReadoutLayer(50, 3, name="output")
         model = _make_streaming_model(readout, seq_len=40)
         warmup = torch.randn(1, 40, 3)
 
@@ -2114,7 +2114,7 @@ class TestFitStreamOverDataLoader:
 
     def test_fit_stream_target_length_mismatch_raises(self) -> None:
         """A target whose length differs from its chunk's inputs raises."""
-        readout = IncrementalRidgeReadout(50, 3, name="output")
+        readout = IncrementalRidgeReadoutLayer(50, 3, name="output")
         model = _make_streaming_model(readout, seq_len=40)
         warmup = torch.randn(1, 40, 3)
 
@@ -2127,7 +2127,7 @@ class TestFitStreamOverDataLoader:
 
 # ===========================================================================
 # Robust Cholesky solve: rank-deficient GPU footgun + ill-conditioned warnings
-# for CholeskyReadoutLayer and IncrementalRidgeReadout (shared solve_ridge).
+# for CholeskyReadoutLayer and IncrementalRidgeReadoutLayer (shared solve_ridge).
 # ===========================================================================
 
 
@@ -2208,12 +2208,12 @@ class TestCholeskyRobustSolve:
 
 
 class TestIncrementalRobustSolve:
-    """IncrementalRidgeReadout.finalize shares the robust solve path."""
+    """IncrementalRidgeReadoutLayer.finalize shares the robust solve path."""
 
     def test_illconditioned_float32_gram_warns(self) -> None:
         """A cond(X)=1e6 streaming fit with float32 chunk matmuls warns."""
         X, y = _ill_conditioned_design(n_features=400, cond=1e6)
-        readout = IncrementalRidgeReadout(400, 3, alpha=1e-6, gram_dtype=torch.float32)
+        readout = IncrementalRidgeReadoutLayer(400, 3, alpha=1e-6, gram_dtype=torch.float32)
         readout.partial_fit(X.float(), y.float())
         with pytest.warns(RuntimeWarning, match="losing accuracy|precision"):
             readout.finalize()
@@ -2221,7 +2221,7 @@ class TestIncrementalRobustSolve:
     def test_well_conditioned_streaming_fit_is_clean(self) -> None:
         """A healthy streaming fit raises no accuracy warning."""
         X, y = _ill_conditioned_design(n_features=100, cond=1e2)
-        readout = IncrementalRidgeReadout(100, 3, alpha=1e-6, gram_dtype=torch.float32)
+        readout = IncrementalRidgeReadoutLayer(100, 3, alpha=1e-6, gram_dtype=torch.float32)
         readout.partial_fit(X.float(), y.float())
         with warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -2235,7 +2235,7 @@ class TestIncrementalRobustSolve:
         torch.manual_seed(0)
         X = torch.randn(200, 256, device="cuda")
         y = torch.randn(200, 3, device="cuda")
-        readout = IncrementalRidgeReadout(256, 3, alpha=1e-6).to("cuda")
+        readout = IncrementalRidgeReadoutLayer(256, 3, alpha=1e-6).to("cuda")
         readout.partial_fit(X, y)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)

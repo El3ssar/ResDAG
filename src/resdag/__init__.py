@@ -90,6 +90,13 @@ from . import core, data, datasets, ensemble, init, layers, metrics, models, tra
 # Convenience imports for common use cases
 from .core import ESNModel, Input, ReservoirFeatureExtractor, reservoir_input
 from .data import TimeSeriesWindowDataset, make_dataloader
+
+# Canonical dataset generators. ``resdag.datasets`` (imported above) is the
+# canonical public home for these generators, so ``import resdag.datasets`` and
+# ``from resdag.datasets import lorenz`` both work as a discoverable,
+# library-style entry point, alongside attribute access
+# (``resdag.datasets.lorenz``).
+from .datasets import henon, lorenz, mackey_glass, narma, rossler, sine
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
 from .facade import ESN
@@ -113,13 +120,18 @@ from .layers import (
     ExtendedSquare,
     FeaturePartitioner,
     FISTAReadout,
+    FISTAReadoutLayer,
     GatedReservoir,
     GatedReservoirCell,
+    GatedReservoirLayer,
     IncrementalRidgeReadout,
+    IncrementalRidgeReadoutLayer,
     LIFCell,
     LIFReservoir,
+    LIFReservoirLayer,
     NGCell,
     NGReservoir,
+    NGReservoirLayer,
     Pad,
     PartialSquare,
     PinvReadoutLayer,
@@ -152,13 +164,6 @@ from .models import (
     resesn,
 )
 from .training import ESNTrainer
-
-# Canonical dataset generators. ``resdag.datasets`` (imported above) is a real
-# package that re-exports these generators, so ``import resdag.datasets`` and
-# ``from resdag.datasets import lorenz`` both work as a discoverable,
-# library-style entry point, alongside attribute access
-# (``resdag.datasets.lorenz``).
-from .utils.data import henon, lorenz, mackey_glass, narma, rossler, sine
 
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
@@ -199,13 +204,16 @@ __all__ = [
     "EuSNCell",
     "ESNLayer",
     "NGCell",
+    "NGReservoirLayer",
     "NGReservoir",
     "ES2NLayer",
     "ResESNLayer",
+    "GatedReservoirLayer",
     "GatedReservoir",
     "EuSNLayer",
     "SpikingReservoirCell",
     "LIFCell",
+    "LIFReservoirLayer",
     "LIFReservoir",
     "ReservoirCell",
     # Readouts
@@ -215,7 +223,9 @@ __all__ = [
     "CholeskyReadoutLayer",
     "SVDReadoutLayer",
     "PinvReadoutLayer",
+    "IncrementalRidgeReadoutLayer",
     "IncrementalRidgeReadout",
+    "FISTAReadoutLayer",
     "FISTAReadout",
     # Custom / utility layers
     "Concatenate",

@@ -87,10 +87,11 @@ def test_facade_name_resolves_to_defining_module() -> None:
 def test_submodule_reexport_resolves_to_submodule() -> None:
     index = AT.build_module_index()
     resolver = AT.ReExportResolver(index)
-    # `from resdag.utils import prepare_esn_data` lives in utils.data.prepare,
+    # `from resdag.utils import prepare_esn_data` re-exports through
+    # ``resdag.utils.data`` to its canonical home ``resdag.data.prepare``,
     # not "all of utils".
     got = resolver.resolve_symbol("resdag.utils", "prepare_esn_data")
-    assert got == {"resdag.utils.data.prepare"}
+    assert got == {"resdag.data.prepare"}
 
 
 # --------------------------------------------------------------------------- #

@@ -1,5 +1,5 @@
 """
-Unit tests for NGCell and NGReservoir.
+Unit tests for NGCell and NGReservoirLayer.
 
 Tests cover:
 - Construction and feature_dim / state_size computation
@@ -21,7 +21,7 @@ import warnings
 import pytest
 import torch
 
-from resdag.layers import NGCell, NGReservoir
+from resdag.layers import NGCell, NGReservoirLayer
 
 cuda_required = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
@@ -456,8 +456,8 @@ class TestNGCellP1NoDuplicateColumns:
         assert features.shape == (2, D)
 
     def test_reservoir_full_rank_design_matrix_p1(self) -> None:
-        """The NGReservoir feature matrix is full column rank for p=1."""
-        layer = NGReservoir(input_dim=3, k=2, p=1, include_constant=True, include_linear=True)
+        """The NGReservoirLayer feature matrix is full column rank for p=1."""
+        layer = NGReservoirLayer(input_dim=3, k=2, p=1, include_constant=True, include_linear=True)
         x = torch.randn(1, 64, 3)
         feats = layer(x)[0]  # (time, feature_dim)
         rank = torch.linalg.matrix_rank(feats.double())
@@ -485,7 +485,7 @@ class TestNGCellExactDegreeUnchanged:
     def test_default_is_exact_degree(self) -> None:
         """``cumulative`` defaults to False on both cell and reservoir."""
         assert NGCell(input_dim=3).cumulative is False
-        assert NGReservoir(input_dim=3).cumulative is False
+        assert NGReservoirLayer(input_dim=3).cumulative is False
 
     @pytest.mark.parametrize(
         "input_dim, k, p, const, lin",
@@ -528,8 +528,8 @@ class TestNGCellExactDegreeUnchanged:
         """``cumulative`` default and explicit ``False`` give identical output."""
         torch.manual_seed(0)
         x = torch.randn(2, 12, 3, dtype=torch.float64)
-        a = NGReservoir(input_dim=3, k=2, p=3)
-        b = NGReservoir(input_dim=3, k=2, p=3, cumulative=False)
+        a = NGReservoirLayer(input_dim=3, k=2, p=3)
+        b = NGReservoirLayer(input_dim=3, k=2, p=3, cumulative=False)
         a.reset_state()
         b.reset_state()
         assert torch.equal(a(x), b(x))
@@ -637,7 +637,7 @@ class TestNGCellCumulativeMode:
 
     def test_cumulative_full_rank_design_matrix(self) -> None:
         """No duplicate columns: the cumulative feature matrix is full rank."""
-        layer = NGReservoir(input_dim=3, k=2, p=3, cumulative=True)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=3, cumulative=True)
         x = torch.randn(1, 256, 3)
         feats = layer(x)[0]
         rank = torch.linalg.matrix_rank(feats.double())
@@ -668,7 +668,7 @@ class TestNGCellCumulativeVectorized:
         self, k: int, s: int, p: int, const: bool, lin: bool
     ) -> None:
         d = 3
-        layer = NGReservoir(
+        layer = NGReservoirLayer(
             input_dim=d,
             k=k,
             s=s,
@@ -688,7 +688,7 @@ class TestNGCellCumulativeVectorized:
         assert max_diff == 0.0, f"max-abs-diff {max_diff} != 0.0 for k={k} s={s} p={p}"
 
     def test_cumulative_gradients_flow(self) -> None:
-        layer = NGReservoir(input_dim=3, k=2, p=3, cumulative=True)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=3, cumulative=True)
         x = torch.randn(2, 5, 3, requires_grad=True)
         layer(x).sum().backward()
         assert x.grad is not None
@@ -721,13 +721,13 @@ class TestNGCellNoParams:
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — construction and properties
+# NGReservoirLayer — construction and properties
 # ---------------------------------------------------------------------------
 
 
 class TestNGReservoirConstruction:
     def test_default_construction(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         assert layer.input_dim == 3
         assert layer.feature_dim == 28
         assert layer.state_size == 1
@@ -735,50 +735,50 @@ class TestNGReservoirConstruction:
         assert layer.state is None
 
     def test_delegate_to_cell(self) -> None:
-        layer = NGReservoir(input_dim=3, k=3, s=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2, p=2)
         assert layer.state_size == layer.cell.state_size
         assert layer.feature_dim == layer.cell.feature_dim
         assert layer.warmup_length == layer.cell.state_size
 
     def test_getattr_delegation(self) -> None:
         """Unknown attributes delegate to cell."""
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         assert layer.k == 2
         assert layer.s == 1
         assert layer.p == 2
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — forward pass shapes
+# NGReservoirLayer — forward pass shapes
 # ---------------------------------------------------------------------------
 
 
 class TestNGReservoirForwardShape:
     def test_output_shape(self) -> None:
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         x = torch.randn(4, 50, 3)
         out = layer(x)
         assert out.shape == (4, 50, layer.feature_dim)
 
     def test_output_shape_k1(self) -> None:
-        layer = NGReservoir(input_dim=5, k=1, p=2)
+        layer = NGReservoirLayer(input_dim=5, k=1, p=2)
         x = torch.randn(2, 30, 5)
         out = layer(x)
         assert out.shape == (2, 30, layer.feature_dim)
 
     def test_output_shape_k3_s2(self) -> None:
-        layer = NGReservoir(input_dim=3, k=3, s=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2, p=2)
         x = torch.randn(1, 20, 3)
         out = layer(x)
         assert out.shape == (1, 20, layer.feature_dim)
 
     def test_non_3d_input_raises(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         with pytest.raises(ValueError, match="3D"):
             layer(torch.randn(4, 3))
 
     def test_state_updated_after_forward(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         x = torch.randn(2, 10, 3)
         layer(x)
         assert layer.state is not None
@@ -786,14 +786,14 @@ class TestNGReservoirForwardShape:
 
     @pytest.mark.parametrize("batch", [1, 4, 16])
     def test_various_batch_sizes(self, batch: int) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         x = torch.randn(batch, 10, 3)
         out = layer(x)
         assert out.shape == (batch, 10, layer.feature_dim)
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir / NGCell — input validation (issue #149)
+# NGReservoirLayer / NGCell — input validation (issue #149)
 # ---------------------------------------------------------------------------
 
 
@@ -809,32 +809,32 @@ class TestNGRCInputValidation:
 
     def test_reservoir_wrong_width_raises_naming_input_dim(self) -> None:
         """Wrong-width feedback raises ValueError naming the expected input_dim."""
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         bad = torch.randn(2, 10, 4)  # feature width 4 != input_dim 3
         with pytest.raises(ValueError, match=r"input_dim=3"):
             layer(bad)
 
     def test_reservoir_wrong_width_message_reports_actual_shape(self) -> None:
         """The error reports the offending tensor's actual feature width."""
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         with pytest.raises(ValueError, match=r"feature dimension 5"):
             layer(torch.randn(2, 8, 5))
 
     def test_reservoir_correct_width_does_not_raise(self) -> None:
         """A correctly-sized feedback sequence still works."""
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         out = layer(torch.randn(2, 10, 3))
         assert out.shape == (2, 10, layer.feature_dim)
 
     def test_reservoir_wrong_width_k1_raises(self) -> None:
         """The k=1 (no-delay) path also validates the feature width."""
-        layer = NGReservoir(input_dim=5, k=1, p=2)
+        layer = NGReservoirLayer(input_dim=5, k=1, p=2)
         with pytest.raises(ValueError, match=r"input_dim=5"):
             layer(torch.randn(2, 10, 4))
 
     def test_reservoir_single_driver_raises(self) -> None:
         """A single driving input is rejected, not silently ignored."""
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         feedback = torch.randn(2, 10, 3)
         driver = torch.randn(2, 10, 5)
         with pytest.raises(ValueError, match=r"does not\s+accept driving inputs"):
@@ -842,7 +842,7 @@ class TestNGRCInputValidation:
 
     def test_reservoir_multiple_drivers_raise_with_count(self) -> None:
         """The driver-rejection message reports how many were passed."""
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         feedback = torch.randn(2, 10, 3)
         d1 = torch.randn(2, 10, 3)
         d2 = torch.randn(2, 10, 3)
@@ -851,7 +851,7 @@ class TestNGRCInputValidation:
 
     def test_reservoir_no_driver_still_works(self) -> None:
         """The feedback-only call path is unaffected by the driver guard."""
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         out = layer(torch.randn(2, 10, 3))
         assert out.shape == (2, 10, layer.feature_dim)
 
@@ -878,24 +878,24 @@ class TestNGRCInputValidation:
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — state management
+# NGReservoirLayer — state management
 # ---------------------------------------------------------------------------
 
 
 class TestNGReservoirStateManagement:
     def test_state_none_before_forward(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         assert layer.get_state() is None
 
     def test_state_set_after_forward(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         layer(torch.randn(2, 10, 3))
         state = layer.get_state()
         assert state is not None
         assert state.shape == (2, 1, 3)
 
     def test_get_state_returns_clone(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         layer(torch.randn(2, 5, 3))
         s1 = layer.get_state()
         s2 = layer.get_state()
@@ -903,13 +903,13 @@ class TestNGReservoirStateManagement:
         assert torch.allclose(s1, s2)
 
     def test_reset_state_no_args(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         layer(torch.randn(2, 5, 3))
         layer.reset_state()
         assert layer.state is None
 
     def test_reset_state_with_batch_size(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         layer(torch.randn(2, 5, 3))  # Initialize state (and device/dtype)
         layer.reset_state(batch_size=4)
         assert layer.state is not None
@@ -918,26 +918,26 @@ class TestNGReservoirStateManagement:
 
     def test_reset_state_before_forward(self) -> None:
         """reset_state(batch_size=N) before any forward → CPU float32."""
-        layer = NGReservoir(input_dim=3, k=2)
+        layer = NGReservoirLayer(input_dim=3, k=2)
         layer.reset_state(batch_size=3)
         assert layer.state is not None
         assert layer.state.shape == (3, 1, 3)
 
     def test_set_state_valid(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         custom_state = torch.randn(2, 1, 3)
         layer.set_state(custom_state)
         assert layer.state is not None
         assert torch.allclose(layer.state, custom_state)
 
     def test_set_state_wrong_shape_raises(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         bad_state = torch.randn(2, 2, 3)  # state_size=1, not 2
         with pytest.raises(ValueError, match="validate_state"):
             layer.set_state(bad_state)
 
     def test_set_random_state(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         layer.reset_state(batch_size=2)
         initial_state = layer.get_state()
         layer.set_random_state()
@@ -945,21 +945,21 @@ class TestNGReservoirStateManagement:
         assert not torch.allclose(layer.state, initial_state)
 
     def test_set_random_state_before_init_raises(self) -> None:
-        layer = NGReservoir(input_dim=3)
+        layer = NGReservoirLayer(input_dim=3)
         with pytest.raises(RuntimeError, match="not initialised"):
             layer.set_random_state()
 
     def test_set_random_state_lazy_initialises(self) -> None:
         """``set_random_state(batch_size=...)`` lazily initialises before
         randomising (P2.3)."""
-        layer = NGReservoir(input_dim=3, k=2, s=1)
+        layer = NGReservoirLayer(input_dim=3, k=2, s=1)
         layer.set_random_state(batch_size=4)
         assert layer.state is not None
         assert layer.state.shape[0] == 4
 
     def test_state_persists_across_forward_passes(self) -> None:
         """State at end of forward is used as init for next forward."""
-        layer = NGReservoir(input_dim=2, k=2, s=1)
+        layer = NGReservoirLayer(input_dim=2, k=2, s=1)
 
         # Run two separate sequences and verify different from fresh-run
         torch.manual_seed(0)
@@ -980,16 +980,16 @@ class TestNGReservoirStateManagement:
         assert not torch.allclose(out2_continued, out2_fresh)
 
     def test_warmup_length_k1_is_zero(self) -> None:
-        layer = NGReservoir(input_dim=3, k=1)
+        layer = NGReservoirLayer(input_dim=3, k=1)
         assert layer.warmup_length == 0
 
     def test_warmup_length_k3_s2(self) -> None:
-        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)
         assert layer.warmup_length == 4
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — state is a non-persistent buffer (issue #132)
+# NGReservoirLayer — state is a non-persistent buffer (issue #132)
 # ---------------------------------------------------------------------------
 
 
@@ -1003,7 +1003,7 @@ class TestNGReservoirStateBuffer:
 
     def test_state_is_registered_buffer(self) -> None:
         """``state`` lives in ``named_buffers()`` but not ``state_dict()``."""
-        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)
         layer(torch.randn(2, 20, 3))  # warm up so the buffer fills
 
         assert "state" in dict(layer.named_buffers())
@@ -1011,19 +1011,19 @@ class TestNGReservoirStateBuffer:
 
     def test_state_not_in_state_dict_before_warmup(self) -> None:
         """A ``None`` delay buffer never appears in ``state_dict()``."""
-        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)
         assert layer.state is None
         assert "state" not in layer.state_dict()
 
     def test_state_does_not_require_grad(self) -> None:
         """The delay buffer must not carry gradients by default."""
-        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)
         layer(torch.randn(2, 20, 3))
         assert layer.state.requires_grad is False
 
     def test_double_preserves_warmed_3d_buffer(self) -> None:
         """``.double()`` moves and preserves the 3-D buffer (no zero-reinit)."""
-        layer = NGReservoir(input_dim=3, k=3, s=2)  # state_size = (k-1)*s = 4
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)  # state_size = (k-1)*s = 4
         layer(torch.randn(2, 20, 3))  # warm up on CPU/float32
         warmed = layer.get_state().clone()
 
@@ -1047,7 +1047,7 @@ class TestNGReservoirStateBuffer:
         holds the last input is content-addressed by recent inputs.
         """
         torch.manual_seed(0)
-        layer = NGReservoir(input_dim=2, k=2, s=1)  # state_size = 1
+        layer = NGReservoirLayer(input_dim=2, k=2, s=1)  # state_size = 1
         warm = torch.randn(1, 6, 2)
         probe = torch.randn(1, 4, 2)
 
@@ -1066,7 +1066,7 @@ class TestNGReservoirStateBuffer:
 
     def test_maybe_init_state_reinits_on_batch_change(self) -> None:
         """A genuine batch-size change still triggers a fresh zero buffer."""
-        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)
         layer(torch.randn(2, 20, 3))
         assert layer.state.shape[0] == 2
 
@@ -1077,7 +1077,7 @@ class TestNGReservoirStateBuffer:
     @cuda_required
     def test_to_cuda_preserves_warmed_buffer(self) -> None:
         """Warm on CPU, ``.to('cuda')``: the 3-D buffer moves with values intact."""
-        layer = NGReservoir(input_dim=3, k=3, s=2)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2)
         layer(torch.randn(2, 20, 3))
         warmed = layer.get_state().clone()
 
@@ -1088,7 +1088,7 @@ class TestNGReservoirStateBuffer:
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — causality & correctness
+# NGReservoirLayer — causality & correctness
 # ---------------------------------------------------------------------------
 
 
@@ -1096,9 +1096,9 @@ class TestNGReservoirCausality:
     """Verify sequential processing matches step-by-step cell calls."""
 
     def test_matches_manual_cell_scan(self) -> None:
-        """NGReservoir.forward must produce same output as manual cell scan."""
+        """NGReservoirLayer.forward must produce same output as manual cell scan."""
         d, k, s, p = 3, 2, 1, 2
-        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        layer = NGReservoirLayer(input_dim=d, k=k, s=s, p=p)
         x = torch.randn(2, 10, d)
 
         # Run via layer
@@ -1118,7 +1118,9 @@ class TestNGReservoirCausality:
 
     def test_first_steps_use_zero_buffer(self) -> None:
         """Before buffer is filled, delay taps are zero."""
-        layer = NGReservoir(input_dim=2, k=2, s=1, include_constant=False, include_linear=True, p=2)
+        layer = NGReservoirLayer(
+            input_dim=2, k=2, s=1, include_constant=False, include_linear=True, p=2
+        )
         # The buffer starts at zero. At step 0, X_{i-1} = 0.
         x0 = torch.tensor([[[5.0, 6.0]]])  # (1, 1, 2)
         layer.reset_state()
@@ -1131,11 +1133,13 @@ class TestNGReservoirCausality:
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — vectorized whole-sequence forward (issue #255)
+# NGReservoirLayer — vectorized whole-sequence forward (issue #255)
 # ---------------------------------------------------------------------------
 
 
-def _manual_cell_scan(layer: NGReservoir, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _manual_cell_scan(
+    layer: NGReservoirLayer, x: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Reference per-step scan over the inner cell from a fresh zero buffer."""
     cell = layer.cell
     batch = x.shape[0]
@@ -1165,7 +1169,9 @@ class TestNGReservoirVectorizedForward:
         path visible.
         """
         d = 3
-        layer = NGReservoir(input_dim=d, k=k, s=s, p=p, include_constant=const, include_linear=lin)
+        layer = NGReservoirLayer(
+            input_dim=d, k=k, s=s, p=p, include_constant=const, include_linear=lin
+        )
         torch.manual_seed(k * 100 + s * 10 + p)
         # seq_len exceeds the warmup length for every k here, so the comparison
         # spans both the unfilled-buffer (warmup) region and the filled region.
@@ -1181,7 +1187,7 @@ class TestNGReservoirVectorizedForward:
     def test_final_state_matches_per_step_loop(self) -> None:
         """Final delay buffer after a batch forward equals the per-step buffer."""
         d, k, s, p = 3, 3, 2, 2
-        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        layer = NGReservoirLayer(input_dim=d, k=k, s=s, p=p)
         torch.manual_seed(7)
         x = torch.randn(2, 15, d, dtype=torch.float64)
 
@@ -1195,7 +1201,9 @@ class TestNGReservoirVectorizedForward:
     def test_warmup_region_exact(self) -> None:
         """The first ``warmup_length`` steps (unfilled buffer) match exactly."""
         d, k, s, p = 2, 3, 2, 2
-        layer = NGReservoir(input_dim=d, k=k, s=s, p=p, include_constant=False, include_linear=True)
+        layer = NGReservoirLayer(
+            input_dim=d, k=k, s=s, p=p, include_constant=False, include_linear=True
+        )
         torch.manual_seed(3)
         x = torch.randn(1, 8, d, dtype=torch.float64)
 
@@ -1215,7 +1223,7 @@ class TestNGReservoirVectorizedForward:
         delay buffer.  The streamed tail must match the fully-vectorized run.
         """
         d, k, s, p = 3, 3, 2, 2
-        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        layer = NGReservoirLayer(input_dim=d, k=k, s=s, p=p)
         torch.manual_seed(11)
         full = torch.randn(2, 30, d, dtype=torch.float64)
 
@@ -1240,7 +1248,7 @@ class TestNGReservoirVectorizedForward:
     def test_continued_batch_forward_matches_single_pass(self) -> None:
         """Two consecutive batch forwards equal one batch forward over the join."""
         d, k, s, p = 2, 2, 1, 3
-        layer = NGReservoir(input_dim=d, k=k, s=s, p=p)
+        layer = NGReservoirLayer(input_dim=d, k=k, s=s, p=p)
         torch.manual_seed(5)
         x = torch.randn(2, 24, d, dtype=torch.float64)
 
@@ -1257,12 +1265,12 @@ class TestNGReservoirVectorizedForward:
     def test_no_python_loop_on_batch_forward_path(self) -> None:
         """No per-step Python loop runs on the batch-forward path.
 
-        ``NGReservoir.forward`` is a single vectorized call, so a sequence of
+        ``NGReservoirLayer.forward`` is a single vectorized call, so a sequence of
         any length triggers exactly one ``NGCell.forward_sequence`` invocation
         and zero per-step ``NGCell.forward`` calls.
         """
         d = 3
-        layer = NGReservoir(input_dim=d, k=2, s=1, p=2)
+        layer = NGReservoirLayer(input_dim=d, k=2, s=1, p=2)
         x = torch.randn(1, 64, d)
 
         seq_calls = 0
@@ -1295,7 +1303,7 @@ class TestNGReservoirVectorizedForward:
     def test_state_3d_validation_intact(self) -> None:
         """set_state / get_state 3-D validation survives the vectorized path."""
         d, k, s = 3, 3, 2
-        layer = NGReservoir(input_dim=d, k=k, s=s)
+        layer = NGReservoirLayer(input_dim=d, k=k, s=s)
         layer(torch.randn(2, 20, d))
 
         # get_state returns a 3-D clone.
@@ -1315,14 +1323,14 @@ class TestNGReservoirVectorizedForward:
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — gradients
+# NGReservoirLayer — gradients
 # ---------------------------------------------------------------------------
 
 
 class TestNGReservoirGradients:
     def test_gradients_flow_through(self) -> None:
         """Gradients flow from features back to the input."""
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         x = torch.randn(2, 5, 3, requires_grad=True)
         out = layer(x)
         loss = out.sum()
@@ -1332,11 +1340,11 @@ class TestNGReservoirGradients:
 
     def test_no_parameter_gradients(self) -> None:
         """No parameters → no parameter gradients to worry about."""
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         assert list(layer.parameters()) == []
 
     def test_gradients_k1(self) -> None:
-        layer = NGReservoir(input_dim=4, k=1, p=2)
+        layer = NGReservoirLayer(input_dim=4, k=1, p=2)
         x = torch.randn(1, 10, 4, requires_grad=True)
         out = layer(x)
         out.sum().backward()
@@ -1344,13 +1352,13 @@ class TestNGReservoirGradients:
 
 
 # ---------------------------------------------------------------------------
-# NGReservoir — repr
+# NGReservoirLayer — repr
 # ---------------------------------------------------------------------------
 
 
 class TestNGReservoirRepr:
     def test_repr_contains_cell_info(self) -> None:
-        layer = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         r = repr(layer)
         assert "NGCell" in r
         assert "input_dim=3" in r
@@ -1359,17 +1367,17 @@ class TestNGReservoirRepr:
 
 
 # ---------------------------------------------------------------------------
-# Integration: NGReservoir + CGReadoutLayer composition
+# Integration: NGReservoirLayer + CGReadoutLayer composition
 # ---------------------------------------------------------------------------
 
 
 class TestNGRCWithReadout:
     def test_feature_dim_feeds_readout(self) -> None:
-        """NGReservoir output can feed into CGReadoutLayer."""
+        """NGReservoirLayer output can feed into CGReadoutLayer."""
         from resdag.layers import CGReadoutLayer
 
         d, out_dim = 3, 1
-        layer = NGReservoir(input_dim=d, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=d, k=2, p=2)
         readout = CGReadoutLayer(in_features=layer.feature_dim, out_features=out_dim)
 
         x = torch.randn(2, 20, d)
@@ -1378,10 +1386,10 @@ class TestNGRCWithReadout:
         assert pred.shape == (2, 20, out_dim)
 
     def test_composes_into_esnmodel(self) -> None:
-        """NGReservoir slots into the pytorch_symbolic DAG inside an ESNModel.
+        """NGReservoirLayer slots into the pytorch_symbolic DAG inside an ESNModel.
 
         A smoke check that the layer composes at the *model* level (not just as
-        a directly-called layer): ``Input -> NGReservoir -> CGReadoutLayer``
+        a directly-called layer): ``Input -> NGReservoirLayer -> CGReadoutLayer``
         builds an :class:`~resdag.core.ESNModel` whose forward yields the
         expected shape.  Full train/forecast/state-management coverage lives in
         ``tests/test_core/test_ngrc_integration.py``.
@@ -1392,7 +1400,7 @@ class TestNGRCWithReadout:
         d = 3
         torch.manual_seed(0)
         inp = Input(shape=(20, d))
-        reservoir = NGReservoir(input_dim=d, k=2, p=2)
+        reservoir = NGReservoirLayer(input_dim=d, k=2, p=2)
         feats = reservoir(inp)
         readout = CGReadoutLayer(reservoir.feature_dim, d, name="output")(feats)
         model = ESNModel(inp, readout)

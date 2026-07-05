@@ -12,14 +12,14 @@ pin the contract that makes it compile-scan / vmap / export friendly:
   trajectory seamlessly;
 - the cross-call ``grad_fn`` detach lives in the wrapper, not the pure loop.
 
-``NGReservoir`` overrides it with the vectorized ``NGCell.forward_sequence`` and
+``NGReservoirLayer`` overrides it with the vectorized ``NGCell.forward_sequence`` and
 is held to the same contract.
 """
 
 import pytest
 import torch
 
-from resdag.layers import ESNLayer, NGReservoir
+from resdag.layers import ESNLayer, NGReservoirLayer
 
 
 def _legacy_forward(
@@ -238,7 +238,7 @@ class TestNGReservoirForwardStateless:
     """NG-RC overrides ``forward_stateless`` with the vectorized feature map."""
 
     def test_matches_forward(self, device: torch.device) -> None:
-        layer = NGReservoir(input_dim=3, k=3, s=2, p=2).to(device)
+        layer = NGReservoirLayer(input_dim=3, k=3, s=2, p=2).to(device)
         x = torch.randn(2, 50, 3, device=device)
 
         layer.reset_state()
@@ -250,7 +250,7 @@ class TestNGReservoirForwardStateless:
         assert torch.equal(fwd, pure)
 
     def test_is_pure(self) -> None:
-        layer = NGReservoir(input_dim=3, k=2, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, p=2)
         x = torch.randn(2, 30, 3)
         state0 = layer.cell.init_state(2, x.device, x.dtype)
         state0_clone = state0.clone()
@@ -266,7 +266,7 @@ class TestNGReservoirForwardStateless:
 
     def test_threads_state_across_split(self) -> None:
         """The carried delay buffer makes a split sequence reconstruct the whole."""
-        layer = NGReservoir(input_dim=2, k=3, s=2, p=2)
+        layer = NGReservoirLayer(input_dim=2, k=3, s=2, p=2)
         x = torch.randn(1, 60, 2)
         state0 = layer.cell.init_state(1, x.device, x.dtype)
 

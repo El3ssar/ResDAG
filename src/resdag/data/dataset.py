@@ -36,14 +36,14 @@ The intended training loop over a :func:`make_dataloader` is::
 graph at each forward-call boundary, so even without the per-window
 ``reset_reservoirs()`` consecutive minibatches do not raise "backward through
 the graph a second time". Pair this loader with
-:class:`~resdag.layers.IncrementalRidgeReadout` for an *algebraic*
+:class:`~resdag.layers.IncrementalRidgeReadoutLayer` for an *algebraic*
 over-:class:`DataLoader` path — call ``partial_fit(states, targets)`` per batch,
 then ``finalize()`` once.
 
 See Also
 --------
-resdag.utils.data.prepare_esn_data : Whole-tensor warmup/train/val splitting.
-resdag.layers.IncrementalRidgeReadout : Streaming ridge readout for the loader.
+resdag.data.prepare_esn_data : Whole-tensor warmup/train/val splitting.
+resdag.layers.IncrementalRidgeReadoutLayer : Streaming ridge readout for the loader.
 resdag.layers.ESNLayer.detach_state_between_calls : Cross-batch graph hygiene.
 """
 
@@ -52,7 +52,7 @@ from collections.abc import Sequence
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from resdag.utils.data.prepare import NormMethod
+from resdag.data.prepare import NormMethod
 
 __all__ = ["TimeSeriesWindowDataset", "make_dataloader"]
 
@@ -181,7 +181,7 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         ignored.
     stats : dict, optional
         Pre-computed normalization statistics from
-        :func:`resdag.utils.data.normalize_data`. When given, every window is
+        :func:`resdag.data.normalize_data`. When given, every window is
         normalized on access with the matching method. Requires ``norm_method``.
     norm_method : {"minmax", "standard", "noncentered", "meanpreserving"}, optional
         Normalization method matching ``stats``. Required when ``stats`` is
@@ -223,7 +223,7 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
     See Also
     --------
     make_dataloader : Wrap this dataset in a batched ``DataLoader``.
-    resdag.layers.IncrementalRidgeReadout : Algebraic over-``DataLoader`` fit.
+    resdag.layers.IncrementalRidgeReadoutLayer : Algebraic over-``DataLoader`` fit.
     """
 
     def __init__(
@@ -310,7 +310,7 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         """
         if self._stats is None or self._norm_method is None:
             return window
-        from resdag.utils.data import normalize_data
+        from resdag.data import normalize_data
 
         normalized, _ = normalize_data(
             window.unsqueeze(0), method=self._norm_method, stats=self._stats

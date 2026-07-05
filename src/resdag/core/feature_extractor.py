@@ -79,7 +79,7 @@ class ReservoirFeatureExtractor(nn.Module):
     layers : BaseReservoirLayer or sequence of BaseReservoirLayer, optional
         Pre-built reservoir layer(s) to wrap directly instead of constructing
         new ones.  Any :class:`~resdag.layers.reservoirs.BaseReservoirLayer`
-        subclass is accepted (``ESNLayer``, ``NGReservoir``, future reservoir
+        subclass is accepted (``ESNLayer``, ``NGReservoirLayer``, future reservoir
         types), not just :class:`ESNLayer`.  When given, ``reservoir_size`` /
         ``feedback_size`` / ``input_size`` must be omitted (the layers already
         define them), but ``trainable`` still applies as a freeze/unfreeze

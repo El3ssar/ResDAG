@@ -2,13 +2,15 @@
 FISTA Readout Layer (Lasso / Elastic-Net)
 =========================================
 
-This module provides :class:`FISTAReadout`, a sparse / robust readout that
+This module provides :class:`FISTAReadoutLayer`, a sparse / robust readout that
 solves an L1 (lasso) or elastic-net regularised least-squares problem with
 **FISTA** — the Fast Iterative Shrinkage-Thresholding Algorithm of Beck &
 Teboulle (2009). Unlike the ridge readouts (:class:`RidgeReadoutLayer`,
 :class:`CholeskyReadoutLayer`, ...), whose L2 penalty only *shrinks* weights,
 the L1 term here drives irrelevant coefficients **exactly to zero**, yielding a
 sparse readout that ignores uninformative reservoir states.
+
+The old name :class:`FISTAReadout` is retained as a deprecated alias.
 
 The solve is batched over **all** output columns at once (one FISTA run, not a
 per-output loop as in RC.jl's Float64-only implementation), runs on GPU or CPU,
@@ -17,7 +19,7 @@ and supports ``float32`` / ``float64``.
 Objective
 ---------
 The layer minimises the sklearn ``ElasticNet`` objective (see the
-:class:`FISTAReadout` docstring for the exact scaling / parameterisation),
+:class:`FISTAReadoutLayer` docstring for the exact scaling / parameterisation),
 
 .. math::
 
@@ -44,6 +46,7 @@ References
 
 import math
 import warnings
+from typing import Any
 
 import torch
 
@@ -51,7 +54,7 @@ from ._solve_utils import build_ridge_problem, finalize_fit
 from .base import ReadoutLayer
 
 
-class FISTAReadout(ReadoutLayer):
+class FISTAReadoutLayer(ReadoutLayer):
     r"""Sparse / robust readout via L1 (lasso) or elastic-net FISTA.
 
     Solves the elastic-net least-squares problem
@@ -187,7 +190,7 @@ class FISTAReadout(ReadoutLayer):
 
     Examples
     --------
-    >>> readout = FISTAReadout(in_features=200, out_features=3, alpha=1e-2)
+    >>> readout = FISTAReadoutLayer(in_features=200, out_features=3, alpha=1e-2)
     >>> states = torch.randn(8, 50, 200)  # (batch, time, features)
     >>> targets = torch.randn(8, 50, 3)
     >>> readout.fit(states, targets)
@@ -408,6 +411,33 @@ class FISTAReadout(ReadoutLayer):
             f"l1_ratio={self.l1_ratio}"
             f")"
         )
+
+
+class FISTAReadout(FISTAReadoutLayer):
+    """Deprecated alias for :class:`FISTAReadoutLayer`.
+
+    Retained for backward compatibility.  Instantiating this class emits a
+    :class:`DeprecationWarning` and constructs a :class:`FISTAReadoutLayer`;
+    the two are otherwise identical (``FISTAReadout`` is a subclass, so
+    ``isinstance(FISTAReadout(...), FISTAReadoutLayer)`` holds).
+
+    .. deprecated::
+        Use :class:`FISTAReadoutLayer` instead.  ``FISTAReadout`` will be
+        removed in a future release.
+
+    See Also
+    --------
+    FISTAReadoutLayer : The canonical class this aliases.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "FISTAReadout is deprecated and will be removed in a future release; "
+            "use FISTAReadoutLayer instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
 
 def _soft_threshold(z: torch.Tensor, threshold: float) -> torch.Tensor:

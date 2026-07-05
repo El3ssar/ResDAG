@@ -5,7 +5,9 @@ NG-RC Reservoir Layer
 This module provides the Next Generation Reservoir Computer (NG-RC) sequence
 layer:
 
-- :class:`NGReservoir` — stateful sequence layer wrapping :class:`NGCell`.
+- :class:`NGReservoirLayer` — stateful sequence layer wrapping :class:`NGCell`.
+
+The old name :class:`NGReservoir` is retained as a deprecated alias.
 
 See Also
 --------
@@ -13,6 +15,7 @@ resdag.layers.cells.ngrc_cell : Single-step NG-RC cell (NGCell).
 resdag.layers.reservoirs.base_reservoir : Abstract base (BaseReservoirLayer).
 """
 
+import warnings
 from typing import Any, cast
 
 import torch
@@ -22,7 +25,7 @@ from resdag.layers.cells.ngrc_cell import NGCell
 from .base_reservoir import BaseReservoirLayer
 
 
-class NGReservoir(BaseReservoirLayer):
+class NGReservoirLayer(BaseReservoirLayer):
     """
     Stateful sequence layer for Next Generation Reservoir Computing.
 
@@ -84,7 +87,7 @@ class NGReservoir(BaseReservoirLayer):
     --------
     Basic usage:
 
-    >>> layer = NGReservoir(input_dim=3)
+    >>> layer = NGReservoirLayer(input_dim=3)
     >>> x = torch.randn(4, 100, 3)   # (batch=4, seq_len=100, d=3)
     >>> features = layer(x)
     >>> features.shape
@@ -92,7 +95,7 @@ class NGReservoir(BaseReservoirLayer):
 
     Double-scroll configuration (odd-symmetry, Eq. 10):
 
-    >>> layer = NGReservoir(
+    >>> layer = NGReservoirLayer(
     ...     input_dim=2, k=2, s=1, p=3,
     ...     include_constant=False, include_linear=True
     ... )
@@ -234,7 +237,7 @@ class NGReservoir(BaseReservoirLayer):
 
         if driving_inputs:
             raise ValueError(
-                f"NGReservoir is a weightless feedforward feature map and does not "
+                f"NGReservoirLayer is a weightless feedforward feature map and does not "
                 f"accept driving inputs, but {len(driving_inputs)} were passed. "
                 f"NG-RC has no input weight matrix to consume them; wire only the "
                 f"feedback sequence (shape (batch, timesteps, input_dim={self.input_dim})) "
@@ -306,3 +309,30 @@ class NGReservoir(BaseReservoirLayer):
 
     def __repr__(self) -> str:
         return repr(self.cell)
+
+
+class NGReservoir(NGReservoirLayer):
+    """Deprecated alias for :class:`NGReservoirLayer`.
+
+    Retained for backward compatibility.  Instantiating this class emits a
+    :class:`DeprecationWarning` and constructs an :class:`NGReservoirLayer`;
+    the two are otherwise identical (``NGReservoir`` is a subclass, so
+    ``isinstance(NGReservoir(...), NGReservoirLayer)`` holds).
+
+    .. deprecated::
+        Use :class:`NGReservoirLayer` instead.  ``NGReservoir`` will be removed
+        in a future release.
+
+    See Also
+    --------
+    NGReservoirLayer : The canonical class this aliases.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "NGReservoir is deprecated and will be removed in a future release; "
+            "use NGReservoirLayer instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)

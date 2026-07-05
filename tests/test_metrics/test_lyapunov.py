@@ -211,10 +211,10 @@ class TestReservoirLyapunov:
         import pytorch_symbolic as ps
 
         from resdag import CGReadoutLayer, ESNModel
-        from resdag.layers import NGReservoir
+        from resdag.layers import NGReservoirLayer
 
         inp = ps.Input((100, 3))
-        ng = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        ng = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         feats = ng(inp)
         out = CGReadoutLayer(ng.feature_dim, 3, name="output")(feats)
         model = ESNModel(inp, out)

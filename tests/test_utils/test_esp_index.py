@@ -26,7 +26,7 @@ import pytorch_symbolic as ps
 import torch
 
 from resdag import ESNModel
-from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, NGReservoir
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, NGReservoirLayer
 from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 from resdag.utils.states import esp_index
 
@@ -56,9 +56,9 @@ def _esn_model(
 
 
 def _ngrc_model(seq_len: int = 20, feedback_dim: int = 3, k: int = 2) -> ESNModel:
-    """NG-RC-only model: Input -> NGReservoir -> CGReadout."""
+    """NG-RC-only model: Input -> NGReservoirLayer -> CGReadout."""
     inp = ps.Input((seq_len, feedback_dim))
-    res = NGReservoir(input_dim=feedback_dim, k=k, s=1, p=2)(inp)
+    res = NGReservoirLayer(input_dim=feedback_dim, k=k, s=1, p=2)(inp)
     out = CGReadoutLayer(res.shape[-1], feedback_dim, name="output")(res)
     return ESNModel(inp, out)
 
@@ -67,7 +67,7 @@ def _mixed_model(seq_len: int = 20, feedback_dim: int = 3) -> ESNModel:
     """Parallel ESN + NG-RC reservoirs concatenated into one readout."""
     inp = ps.Input((seq_len, feedback_dim))
     esn = ESNLayer(40, feedback_size=feedback_dim, spectral_radius=0.9)(inp)
-    ng = NGReservoir(input_dim=feedback_dim, k=2, s=1, p=2)(inp)
+    ng = NGReservoirLayer(input_dim=feedback_dim, k=2, s=1, p=2)(inp)
     feat = Concatenate()(esn, ng)
     out = CGReadoutLayer(feat.shape[-1], feedback_dim, name="output")(feat)
     return ESNModel(inp, out)
@@ -363,7 +363,7 @@ def test_ngrc_reservoir_is_discovered_and_scored() -> None:
 
     result = esp_index(model, fb, iterations=3, verbose=False)
 
-    assert len(result) == 1  # the NGReservoir was found and scored
+    assert len(result) == 1  # the NGReservoirLayer was found and scored
     (value,) = result.values()
     assert torch.isfinite(value[0])
     # FIFO delay buffers driven by identical inputs converge exactly once the
@@ -406,7 +406,7 @@ def test_partial_skip_keeps_defined_reservoirs() -> None:
     feedback_dim = 3
     inp = ps.Input((15, feedback_dim))
     esn = ESNLayer(40, feedback_size=feedback_dim, spectral_radius=0.9)(inp)
-    ng1 = NGReservoir(input_dim=feedback_dim, k=1, p=2)(inp)  # empty state -> skipped
+    ng1 = NGReservoirLayer(input_dim=feedback_dim, k=1, p=2)(inp)  # empty state -> skipped
     feat = Concatenate()(esn, ng1)
     out = CGReadoutLayer(feat.shape[-1], feedback_dim, name="output")(feat)
     model = ESNModel(inp, out)

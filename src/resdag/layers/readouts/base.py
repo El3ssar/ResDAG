@@ -123,7 +123,7 @@ class ReadoutLayer(nn.Linear):
         # via ``.item()`` is a device->host sync on CUDA — cheap once, but
         # ruinous inside a per-step autoregressive forecast loop (and it also
         # graph-breaks ``torch.compile``). The mirror lets hot paths (e.g.
-        # ``IncrementalRidgeReadout.forward``) check fittedness with a plain
+        # ``IncrementalRidgeReadoutLayer.forward``) check fittedness with a plain
         # attribute read and no sync. It is kept coherent with the buffer via
         # :meth:`_set_fitted` and re-derived from the buffer after every
         # ``load_state_dict`` (see :meth:`_load_from_state_dict`).
@@ -184,7 +184,7 @@ class ReadoutLayer(nn.Linear):
         """Set the fitted state, keeping the buffer and Python mirror coherent.
 
         Every place that flips fittedness (base :meth:`fit`, and the
-        streaming :class:`IncrementalRidgeReadout` lifecycle) must go through
+        streaming :class:`IncrementalRidgeReadoutLayer` lifecycle) must go through
         here so the persistent ``_is_fitted`` buffer and the sync-free
         ``_fitted_flag`` mirror never disagree.
         """

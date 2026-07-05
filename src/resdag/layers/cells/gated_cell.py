@@ -175,7 +175,7 @@ class GatedReservoirCell(ReservoirCell):
     Owns all weight matrices and biases; **frozen by default**
     (``trainable=False``), like a classical ESN, so only a downstream readout is
     fitted.  Sequence iteration is delegated to the enclosing
-    :class:`~resdag.layers.reservoirs.gated.GatedReservoir`.
+    :class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`.
 
     The update is the Light Gated Recurrent Unit (Ravanelli et al. 2018;
     :func:`torchrecurrent`'s ``LiGRUCell`` for parity — see the module
@@ -286,7 +286,7 @@ class GatedReservoirCell(ReservoirCell):
 
     See Also
     --------
-    resdag.layers.reservoirs.gated.GatedReservoir : Layer that sequences this cell.
+    resdag.layers.reservoirs.gated.GatedReservoirLayer : Layer that sequences this cell.
     resdag.layers.cells.esn_cell.ESNCell : Ungated ESN cell.
     resdag.layers.cells.base_cell.ReservoirCell : Abstract cell interface.
     """

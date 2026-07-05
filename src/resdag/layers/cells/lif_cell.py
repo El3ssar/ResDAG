@@ -53,7 +53,7 @@ See Also
 --------
 resdag.layers.cells.spiking_cell.SpikingReservoirCell : Shared spiking base.
 resdag.layers.cells.esn_cell.ESNCell : Source of the weight / topology machinery.
-resdag.layers.reservoirs.lif.LIFReservoir : Layer that sequences this cell.
+resdag.layers.reservoirs.lif.LIFReservoirLayer : Layer that sequences this cell.
 """
 
 import math
@@ -160,7 +160,7 @@ class LIFCell(SpikingReservoirCell):
     See Also
     --------
     resdag.layers.cells.spiking_cell.SpikingReservoirCell : Shared spiking base.
-    resdag.layers.reservoirs.lif.LIFReservoir : Layer that sequences this cell.
+    resdag.layers.reservoirs.lif.LIFReservoirLayer : Layer that sequences this cell.
     """
 
     def __init__(

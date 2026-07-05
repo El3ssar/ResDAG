@@ -11,7 +11,7 @@ before its forward method executes, ensuring downstream layers receive
 outputs from already-fitted readouts.
 
 For sequences too long to materialise in memory, :meth:`ESNTrainer.fit_stream`
-fits :class:`~resdag.layers.IncrementalRidgeReadout` readouts over a stream of
+fits :class:`~resdag.layers.IncrementalRidgeReadoutLayer` readouts over a stream of
 contiguous chunks (e.g. a :class:`torch.utils.data.DataLoader`), accumulating
 ridge sufficient statistics per chunk and solving once at the end.
 
@@ -19,17 +19,18 @@ See Also
 --------
 resdag.ESNModel : ESN model class.
 resdag.layers.readouts.CGReadoutLayer : Conjugate gradient readout layer.
-resdag.layers.readouts.IncrementalRidgeReadout : Streaming partial_fit readout.
+resdag.layers.readouts.IncrementalRidgeReadoutLayer : Streaming partial_fit readout.
 """
 
 import warnings
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 
 import torch
 
 from resdag.core import ESNModel
-from resdag.layers import IncrementalRidgeReadout, ReadoutLayer
+from resdag.layers import IncrementalRidgeReadoutLayer, ReadoutLayer
 
 # A streaming chunk: a tuple of contiguous input tensors (feedback, driver1,
 # ...) paired with a dict mapping each readout name to its target tensor for
@@ -198,7 +199,7 @@ class ESNTrainer:
 
         # Single warmup to sync reservoir states (warmup resets by default).
         # Readouts are unfitted during warmup, so let any guarded readout (e.g.
-        # IncrementalRidgeReadout) flow a value while the reservoir synchronises.
+        # IncrementalRidgeReadoutLayer) flow a value while the reservoir synchronises.
         with self._allow_unfitted_warmup(readouts):
             self.model.warmup(*warmup_inputs)
 
@@ -235,16 +236,16 @@ class ESNTrainer:
         warmup_inputs: tuple[torch.Tensor, ...],
         chunks: Iterable[StreamChunk],
     ) -> None:
-        """Fit :class:`IncrementalRidgeReadout` readouts over a stream of chunks.
+        """Fit :class:`IncrementalRidgeReadoutLayer` readouts over a stream of chunks.
 
         The streaming counterpart of :meth:`fit`. Instead of fitting from one
         in-memory ``(B, T, F)`` block, it warms the reservoir once and then
         consumes ``chunks`` one at a time — e.g. windows yielded by a
         :class:`torch.utils.data.DataLoader` — accumulating each readout's ridge
         sufficient statistics with
-        :meth:`~resdag.layers.IncrementalRidgeReadout.partial_fit` and solving
+        :meth:`~resdag.layers.IncrementalRidgeReadoutLayer.partial_fit` and solving
         once at the end with
-        :meth:`~resdag.layers.IncrementalRidgeReadout.finalize`. No more than a
+        :meth:`~resdag.layers.IncrementalRidgeReadoutLayer.finalize`. No more than a
         single chunk's states are ever held in memory, which is what lets a
         sequence too long to materialise — or one streamed off disk — be fitted.
 
@@ -255,7 +256,7 @@ class ESNTrainer:
         supported.
 
         Every readout in the model must be an
-        :class:`~resdag.layers.IncrementalRidgeReadout` (the only readout with a
+        :class:`~resdag.layers.IncrementalRidgeReadoutLayer` (the only readout with a
         ``partial_fit`` / ``finalize`` interface). The accumulators are reset at
         the start, so calling ``fit_stream`` again re-fits from scratch.
 
@@ -282,7 +283,7 @@ class ESNTrainer:
             targets, or if a target's sequence length does not match its chunk's
             input length.
         TypeError
-            If any readout in the model is not an ``IncrementalRidgeReadout``.
+            If any readout in the model is not an ``IncrementalRidgeReadoutLayer``.
         RuntimeError
             If ``chunks`` is empty (no statistics were accumulated, so there is
             nothing to finalize).
@@ -294,8 +295,8 @@ class ESNTrainer:
 
         Examples
         --------
-        >>> from resdag.layers import IncrementalRidgeReadout
-        >>> trainer = ESNTrainer(model)  # model uses IncrementalRidgeReadout
+        >>> from resdag.layers import IncrementalRidgeReadoutLayer
+        >>> trainer = ESNTrainer(model)  # model uses IncrementalRidgeReadoutLayer
         >>> def chunk_stream():
         ...     for x, y in dataloader:  # contiguous windows  # doctest: +SKIP
         ...         yield (x,), {"output": y}
@@ -307,27 +308,27 @@ class ESNTrainer:
         See Also
         --------
         fit : Single-pass in-memory fitting.
-        resdag.layers.IncrementalRidgeReadout : The streaming readout.
+        resdag.layers.IncrementalRidgeReadoutLayer : The streaming readout.
         """
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input is required")
 
         readouts = self._discover_readouts()
         non_incremental = [
-            name for name, ro in readouts if not isinstance(ro, IncrementalRidgeReadout)
+            name for name, ro in readouts if not isinstance(ro, IncrementalRidgeReadoutLayer)
         ]
         if non_incremental:
             raise TypeError(
-                f"fit_stream() requires every readout to be an IncrementalRidgeReadout, "
+                f"fit_stream() requires every readout to be an IncrementalRidgeReadoutLayer, "
                 f"but these are not: {non_incremental}. Use fit() for single-pass readouts, "
-                f"or rebuild the model with IncrementalRidgeReadout."
+                f"or rebuild the model with IncrementalRidgeReadoutLayer."
             )
 
         # Reset accumulators so a re-fit starts clean, then warm up once. The
         # readouts are unfitted during warmup too, so let their forward flow a
         # value while the reservoir synchronises (shared with ``fit``).
         for _, readout in readouts:
-            assert isinstance(readout, IncrementalRidgeReadout)
+            assert isinstance(readout, IncrementalRidgeReadoutLayer)
             readout.reset_accumulators()
         with self._allow_unfitted_warmup(readouts):
             self.model.warmup(*warmup_inputs)
@@ -357,14 +358,14 @@ class ESNTrainer:
                     )
 
                 def make_partial_fit_hook(
-                    layer: IncrementalRidgeReadout, tgt: torch.Tensor
+                    layer: IncrementalRidgeReadoutLayer, tgt: torch.Tensor
                 ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], None]:
                     def hook(module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
                         layer.partial_fit(args[0], tgt)
 
                     return hook
 
-                assert isinstance(readout, IncrementalRidgeReadout)
+                assert isinstance(readout, IncrementalRidgeReadoutLayer)
                 handle = readout.register_forward_pre_hook(make_partial_fit_hook(readout, target))
                 hooks.append(handle)
                 # The readout is unfitted during accumulation; its forward only
@@ -378,7 +379,7 @@ class ESNTrainer:
                 for h in hooks:
                     h.remove()
                 for _, readout in readouts:
-                    assert isinstance(readout, IncrementalRidgeReadout)
+                    assert isinstance(readout, IncrementalRidgeReadoutLayer)
                     readout._allow_unfitted_forward = False
             n_chunks += 1
 
@@ -389,7 +390,7 @@ class ESNTrainer:
 
         # Solve every readout once from its accumulated statistics.
         for _, readout in readouts:
-            assert isinstance(readout, IncrementalRidgeReadout)
+            assert isinstance(readout, IncrementalRidgeReadoutLayer)
             readout.finalize()
 
     @staticmethod
@@ -400,10 +401,10 @@ class ESNTrainer:
         """Bypass the unfitted-forward guard for the duration of a warmup pass.
 
         The warmup pass in :meth:`fit` and :meth:`fit_stream` runs *before* any
-        readout is fitted, so an :class:`IncrementalRidgeReadout`'s forward guard
+        readout is fitted, so an :class:`IncrementalRidgeReadoutLayer`'s forward guard
         would otherwise raise ``RuntimeError('... is not fitted ...')`` while the
         reservoir merely synchronises. Inside this context, every
-        :class:`IncrementalRidgeReadout` (the only readout carrying the
+        :class:`IncrementalRidgeReadoutLayer` (the only readout carrying the
         ``_allow_unfitted_forward`` flag) has it set to
         ``True`` so its forward flows a value downstream; the flag is reset to
         ``False`` on exit (including on exception, via ``try/finally``), so the
@@ -420,7 +421,7 @@ class ESNTrainer:
         ------
         None
         """
-        guarded = [ro for _, ro in readouts if isinstance(ro, IncrementalRidgeReadout)]
+        guarded = [ro for _, ro in readouts if isinstance(ro, IncrementalRidgeReadoutLayer)]
         for readout in guarded:
             readout._allow_unfitted_forward = True
         try:
@@ -441,6 +442,16 @@ class ESNTrainer:
         The list order matches ``named_modules`` traversal, which is not the
         graph's topological order — that's fine because each hook fires at
         the moment its own forward executes during ``self.model(...)``.
+
+        Raises
+        ------
+        ValueError
+            If two or more distinct readouts resolve to the same name. Because
+            ``targets`` and all downstream bookkeeping are keyed by name, a
+            collision would silently map one target onto several readouts (and
+            drop the others), training a readout on the wrong data with no
+            error. Detecting it here — the single point every fitting path
+            funnels through — turns that silent data loss into a clear failure.
         """
         readouts: list[tuple[str, ReadoutLayer]] = []
         seen: set[int] = set()
@@ -449,6 +460,17 @@ class ESNTrainer:
                 resolved_name = module.name if module.name else module_name
                 readouts.append((resolved_name, module))
                 seen.add(id(module))
+
+        name_counts = Counter(name for name, _ in readouts)
+        duplicates = sorted(name for name, count in name_counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(
+                f"Duplicate readout name(s) {duplicates}: the model has multiple "
+                "readout layers sharing a name, but targets and fitted-readout "
+                "bookkeeping are keyed by name, so they would silently collapse "
+                "onto one target. Give each readout a unique 'name'."
+            )
+
         return readouts
 
     def _validate_targets(

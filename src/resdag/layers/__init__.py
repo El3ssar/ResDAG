@@ -11,7 +11,7 @@ ESNLayer
     Stateful RNN reservoir layer for Echo State Networks (public-facing).
 ESNCell
     Single-timestep ESN state update cell.
-NGReservoir
+NGReservoirLayer
     Next-Generation Reservoir Computing layer (delay-embedded polynomial
     features; no recurrent weights).
 NGCell
@@ -20,7 +20,7 @@ BaseReservoirLayer
     Abstract sequence-loop base with state management.
 ReservoirCell
     Abstract single-timestep cell interface.
-LIFReservoir
+LIFReservoirLayer
     Spiking leaky integrate-and-fire reservoir (Liquid State Machine liquid).
 LIFCell
     Single-timestep leaky integrate-and-fire spiking cell.
@@ -38,10 +38,10 @@ SVDReadoutLayer
     SVD filter-factor readout; robust to rank-deficient Gram matrices.
 PinvReadoutLayer
     Least-squares readout via ``lstsq`` / pseudo-inverse with ``rcond``.
-IncrementalRidgeReadout
+IncrementalRidgeReadoutLayer
     Streaming ridge readout (``partial_fit`` / ``finalize``) for the
     DataLoader / long-sequence path.
-FISTAReadout
+FISTAReadoutLayer
     Sparse / robust readout: L1 (lasso) or elastic-net regression via FISTA
     (accelerated proximal gradient), batched over all output columns.
 Concatenate
@@ -98,7 +98,9 @@ from .readouts import (
     CGReadoutLayer,
     CholeskyReadoutLayer,
     FISTAReadout,
+    FISTAReadoutLayer,
     IncrementalRidgeReadout,
+    IncrementalRidgeReadoutLayer,
     PinvReadoutLayer,
     ReadoutLayer,
     RidgeReadoutLayer,
@@ -110,8 +112,11 @@ from .reservoirs import (
     ESNLayer,
     EuSNLayer,
     GatedReservoir,
+    GatedReservoirLayer,
     LIFReservoir,
+    LIFReservoirLayer,
     NGReservoir,
+    NGReservoirLayer,
     ResESNLayer,
 )
 from .transforms import (
@@ -137,6 +142,7 @@ __all__ = [
     "ESNLayer",
     # NG-RC layers / cells
     "NGCell",
+    "NGReservoirLayer",
     "NGReservoir",
     # Readouts
     "ReadoutLayer",
@@ -145,7 +151,9 @@ __all__ = [
     "CholeskyReadoutLayer",
     "SVDReadoutLayer",
     "PinvReadoutLayer",
+    "IncrementalRidgeReadoutLayer",
     "IncrementalRidgeReadout",
+    "FISTAReadoutLayer",
     "FISTAReadout",
     # Custom layers
     "Concatenate",
@@ -164,12 +172,14 @@ __all__ = [
     "GatedReservoirCell",
     "ES2NLayer",
     "ResESNLayer",
+    "GatedReservoirLayer",
     "GatedReservoir",
     "ContinuousReservoirCell",
     "EuSNCell",
     "EuSNLayer",
     "SpikingReservoirCell",
     "LIFCell",
+    "LIFReservoirLayer",
     "LIFReservoir",
 ]
 

@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from resdag.layers import ESNLayer, NGReservoir
+from resdag.layers import ESNLayer, NGReservoirLayer
 from resdag.layers.readouts import CGReadoutLayer
 from resdag.layers.readouts.base import ReadoutLayer
 
@@ -344,27 +344,27 @@ class TestSetattrDoesNotBreakModule:
 
 
 class TestNGReservoirSetattr:
-    """NGReservoir (weightless cell) is unaffected by the write-through logic."""
+    """NGReservoirLayer (weightless cell) is unaffected by the write-through logic."""
 
     def test_arbitrary_attr_falls_through(self) -> None:
         """A name the NGCell does not own registers on the layer as usual."""
-        ng = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        ng = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         ng.some_flag = True
         assert ng.some_flag is True
 
     def test_readonly_property_still_readonly(self) -> None:
         """The layer's own read-only ``feature_dim`` property stays read-only."""
-        ng = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        ng = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         with pytest.raises(AttributeError):
             ng.feature_dim = 99
 
     def test_detach_flag_settable(self) -> None:
-        ng = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        ng = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         ng.detach_state_between_calls = False
         assert ng.detach_state_between_calls is False
 
     def test_forward_still_works(self) -> None:
-        ng = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        ng = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         out = ng(torch.randn(2, 20, 3))
         assert out.shape[0] == 2 and out.shape[1] == 20
 

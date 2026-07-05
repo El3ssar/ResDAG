@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from resdag import ESNLayer, ESNModel, ReservoirFeatureExtractor, reservoir_input
-from resdag.layers import NGReservoir
+from resdag.layers import NGReservoirLayer
 
 
 class TestForwardAndBackward:
@@ -192,8 +192,8 @@ class TestStackingAndDrivingInputs:
         assert extractor.reservoirs[0] is layer
 
     def test_wraps_non_esn_reservoir_layer(self, seeded: None) -> None:
-        """A non-ESN BaseReservoirLayer (NGReservoir) wraps and runs end to end."""
-        layer = NGReservoir(input_dim=3, k=2, s=1, p=2)  # not an ESNLayer
+        """A non-ESN BaseReservoirLayer (NGReservoirLayer) wraps and runs end to end."""
+        layer = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)  # not an ESNLayer
         extractor = ReservoirFeatureExtractor(layers=layer)
 
         assert len(extractor.reservoirs) == 1  # single non-ESN layer accepted

@@ -2,11 +2,11 @@
 
 This module provides the :func:`gated_esn` factory, which builds a model whose
 reservoir is a frozen (or trainable) light-gated recurrent cell
-(:class:`~resdag.layers.reservoirs.gated.GatedReservoir`) instead of the plain
+(:class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`) instead of the plain
 leaky ESN reservoir.  The architecture mirrors :func:`resdag.models.classic_esn`
 — the raw input is concatenated with the reservoir output before the readout::
 
-    Input -> GatedReservoir -> Concatenate(Input, Reservoir) -> Readout
+    Input -> GatedReservoirLayer -> Concatenate(Input, Reservoir) -> Readout
 
 The gated reservoir uses the LiGRU update (Ravanelli et al. 2018); see
 :mod:`resdag.layers.cells.gated_cell` for the equations and attribution.  A
@@ -16,7 +16,7 @@ The gated reservoir uses the LiGRU update (Ravanelli et al. 2018); see
 See Also
 --------
 resdag.models.classic_esn : The ungated classic ESN with the same wiring.
-resdag.layers.reservoirs.gated.GatedReservoir : The gated reservoir layer.
+resdag.layers.reservoirs.gated.GatedReservoirLayer : The gated reservoir layer.
 """
 
 from typing import Any
@@ -26,7 +26,7 @@ from pytorch_symbolic.symbolic_data import SymbolicTensor
 from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import Concatenate
-from resdag.layers.reservoirs.gated import GatedReservoir
+from resdag.layers.reservoirs.gated import GatedReservoirLayer
 
 from ._builder import ReadoutSpec, _resolve_readout_cls
 
@@ -61,7 +61,7 @@ def gated_esn(
     The raw input is concatenated with the reservoir output before the readout,
     following the classic-ESN wiring::
 
-        Input -> GatedReservoir -> Concatenate(Input, Reservoir) -> Readout
+        Input -> GatedReservoirLayer -> Concatenate(Input, Reservoir) -> Readout
 
     Parameters
     ----------
@@ -118,7 +118,7 @@ def gated_esn(
         Name for the readout layer (used as the target key in training).
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
-        :class:`~resdag.layers.reservoirs.gated.GatedReservoir`.
+        :class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`.
 
     Returns
     -------
@@ -144,7 +144,7 @@ def gated_esn(
     See Also
     --------
     resdag.models.classic_esn : The ungated classic ESN with the same wiring.
-    resdag.layers.reservoirs.gated.GatedReservoir : The gated reservoir layer.
+    resdag.layers.reservoirs.gated.GatedReservoirLayer : The gated reservoir layer.
     """
     if output_size <= 0:
         raise ValueError(f"output_size must be a positive integer, got {output_size!r}")
@@ -155,7 +155,7 @@ def gated_esn(
     inp = reservoir_input(feedback_size)
     driver = reservoir_input(input_size) if input_size else None
 
-    reservoir = GatedReservoir(
+    reservoir = GatedReservoirLayer(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         input_size=input_size,

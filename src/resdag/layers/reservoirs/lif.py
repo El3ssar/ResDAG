@@ -4,9 +4,11 @@ LIF Reservoir Layer (Liquid State Machine)
 
 This module provides the public-facing spiking-reservoir sequence layer:
 
-- :class:`LIFReservoir` — stateful RNN layer wrapping a
+- :class:`LIFReservoirLayer` — stateful RNN layer wrapping a
   :class:`~resdag.layers.cells.lif_cell.LIFCell`, the reservoir of a Liquid State
   Machine (LSM; Maass, Natschläger & Markram, *Neural Computation* 14(11), 2002).
+
+The old name :class:`LIFReservoir` is retained as a deprecated alias.
 
 References
 ----------
@@ -21,6 +23,7 @@ resdag.layers.cells.lif_cell : Underlying single-step LIF cell.
 resdag.layers.reservoirs.esn : Standard leaky-ESN layer.
 """
 
+import warnings
 from typing import Any
 
 from resdag.init.utils import InitializerSpec, TopologySpec
@@ -30,7 +33,7 @@ from resdag.utils.general import SeedLike
 from .base_reservoir import BaseReservoirLayer
 
 
-class LIFReservoir(BaseReservoirLayer):
+class LIFReservoirLayer(BaseReservoirLayer):
     r"""
     Stateful leaky integrate-and-fire (LIF) reservoir layer — the LSM liquid.
 
@@ -113,7 +116,7 @@ class LIFReservoir(BaseReservoirLayer):
     Examples
     --------
     >>> import torch
-    >>> reservoir = LIFReservoir(reservoir_size=200, feedback_size=3, seed=0)
+    >>> reservoir = LIFReservoirLayer(reservoir_size=200, feedback_size=3, seed=0)
     >>> feedback = torch.randn(4, 50, 3)  # (batch, time, features)
     >>> traces = reservoir(feedback)
     >>> traces.shape
@@ -190,3 +193,30 @@ class LIFReservoir(BaseReservoirLayer):
     def __repr__(self) -> str:
         """Return string representation (delegates to the cell)."""
         return repr(self.cell)
+
+
+class LIFReservoir(LIFReservoirLayer):
+    """Deprecated alias for :class:`LIFReservoirLayer`.
+
+    Retained for backward compatibility.  Instantiating this class emits a
+    :class:`DeprecationWarning` and constructs a :class:`LIFReservoirLayer`;
+    the two are otherwise identical (``LIFReservoir`` is a subclass, so
+    ``isinstance(LIFReservoir(...), LIFReservoirLayer)`` holds).
+
+    .. deprecated::
+        Use :class:`LIFReservoirLayer` instead.  ``LIFReservoir`` will be
+        removed in a future release.
+
+    See Also
+    --------
+    LIFReservoirLayer : The canonical class this aliases.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "LIFReservoir is deprecated and will be removed in a future release; "
+            "use LIFReservoirLayer instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)

@@ -2,15 +2,15 @@
 Canonical Dataset Generators
 ============================
 
-Discoverable, library-style entry point for resdag's benchmark time-series
-generators. This package re-exports the generators that live in
-:mod:`resdag.utils.data` so that the two most standard import forms both work::
+Canonical public home for resdag's benchmark time-series generators. The two
+most standard import forms both work::
 
     import resdag.datasets
     from resdag.datasets import lorenz
 
-The re-exported callables are the *same* function objects as
-``resdag.utils.data.lorenz`` (etc.), so identity checks hold::
+For back-compat the same callables are also reachable through
+:mod:`resdag.utils.data`, and they are the *same* function objects, so identity
+checks hold::
 
     resdag.datasets.lorenz is resdag.utils.data.lorenz  # True
 
@@ -37,8 +37,7 @@ Examples
 
 See Also
 --------
-resdag.utils.data : Full data-loading / preparation module (the canonical home
-    of these generators).
+resdag.data : Canonical home for data preparation, file I/O, and streaming windows.
 """
 
 from ..utils.data.datasets import henon, lorenz, mackey_glass, narma, rossler, sine

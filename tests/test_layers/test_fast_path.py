@@ -8,7 +8,7 @@ produce the same states as driving `cell.forward()` one step at a time.
 import pytest
 import torch
 
-from resdag.layers import ESNLayer, NGReservoir
+from resdag.layers import ESNLayer, NGReservoirLayer
 from resdag.layers.cells import ESNCell
 
 
@@ -73,7 +73,7 @@ class TestFastPathEquivalence:
 
     def test_ngcell_has_no_projection(self):
         """NG-RC keeps the per-step fallback (delay-buffer state)."""
-        layer = NGReservoir(input_dim=3, k=2, s=1, p=2)
+        layer = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
         assert layer.cell.project_inputs([torch.randn(1, 10, 3)]) is None
 
         out = layer(torch.randn(1, 10, 3))

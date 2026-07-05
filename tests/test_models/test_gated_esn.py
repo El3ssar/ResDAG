@@ -2,7 +2,7 @@
 
 Pins down :func:`resdag.models.gated_esn.gated_esn`:
 
-- architecture (a GatedReservoir + input concatenation + ridge readout),
+- architecture (a GatedReservoirLayer + input concatenation + ridge readout),
 - forward shapes (feedback-only and driven),
 - frozen vs trainable plumbing,
 - an end-to-end train (ESNTrainer.fit) + finite Lorenz forecast with a
@@ -22,7 +22,7 @@ import torch
 import resdag as rd
 from resdag import ESNModel
 from resdag.layers.readouts import RidgeReadoutLayer
-from resdag.layers.reservoirs.gated import GatedReservoir
+from resdag.layers.reservoirs.gated import GatedReservoirLayer
 from resdag.metrics import valid_prediction_time
 from resdag.models.gated_esn import gated_esn
 from resdag.training import ESNTrainer
@@ -32,11 +32,11 @@ class TestGatedESNArchitecture:
     """Structure and forward shapes of the gated_esn factory."""
 
     def test_basic_instantiation(self) -> None:
-        """The model wires a GatedReservoir and a ridge readout."""
+        """The model wires a GatedReservoirLayer and a ridge readout."""
         model = gated_esn(reservoir_size=50, feedback_size=2, output_size=3)
         assert model is not None
         submodules = [m for _, m in model.named_modules()]
-        assert any(isinstance(m, GatedReservoir) for m in submodules)
+        assert any(isinstance(m, GatedReservoirLayer) for m in submodules)
         assert any(isinstance(m, RidgeReadoutLayer) for m in submodules)
 
     def test_forward_pass_shape(self) -> None:
@@ -66,14 +66,14 @@ class TestGatedESNArchitecture:
     def test_frozen_by_default(self) -> None:
         """The reservoir is frozen by default."""
         model = gated_esn(reservoir_size=32, feedback_size=3, output_size=3)
-        reservoir = next(m for _, m in model.named_modules() if isinstance(m, GatedReservoir))
+        reservoir = next(m for _, m in model.named_modules() if isinstance(m, GatedReservoirLayer))
         assert reservoir.trainable is False
         assert all(not p.requires_grad for p in reservoir.cell.parameters())
 
     def test_trainable_reservoir_plumbed(self) -> None:
         """``trainable=True`` reaches the underlying cell."""
         model = gated_esn(reservoir_size=32, feedback_size=3, output_size=3, trainable=True)
-        reservoir = next(m for _, m in model.named_modules() if isinstance(m, GatedReservoir))
+        reservoir = next(m for _, m in model.named_modules() if isinstance(m, GatedReservoirLayer))
         assert reservoir.trainable is True
         assert all(p.requires_grad for p in reservoir.cell.parameters())
 

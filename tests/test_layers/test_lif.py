@@ -30,7 +30,7 @@ from resdag.layers.cells.spiking_cell import (
     _pack_state,
     _split_state,
 )
-from resdag.layers.reservoirs.lif import LIFReservoir
+from resdag.layers.reservoirs.lif import LIFReservoirLayer
 
 
 class TestLIFCellConstruction:
@@ -347,7 +347,7 @@ class TestSGDTrainability:
     """Surrogate-gradient SGD: finite grads into the liquid, toy loss decreases."""
 
     def test_finite_gradients_into_liquid_weights(self) -> None:
-        layer = LIFReservoir(64, feedback_size=1, tau_mem=10.0, trainable=True, seed=0)
+        layer = LIFReservoirLayer(64, feedback_size=1, tau_mem=10.0, trainable=True, seed=0)
         x = torch.randn(1, 40, 1)
         layer.reset_state()
         traces = layer(x)
@@ -362,7 +362,7 @@ class TestSGDTrainability:
 
     def test_toy_driven_regression_loss_decreases(self) -> None:
         torch.manual_seed(0)
-        layer = LIFReservoir(
+        layer = LIFReservoirLayer(
             80,
             feedback_size=1,
             tau_mem=8.0,
@@ -393,12 +393,12 @@ class TestSGDTrainability:
 class TestSeparationProperty:
     """The LSM hallmark: same input -> same state; distinct inputs -> distinct states."""
 
-    def _final_state(self, layer: LIFReservoir, x: torch.Tensor) -> torch.Tensor:
+    def _final_state(self, layer: LIFReservoirLayer, x: torch.Tensor) -> torch.Tensor:
         layer.reset_state()
         return layer(x)[:, -1, :]
 
     def test_same_input_same_state(self) -> None:
-        layer = LIFReservoir(128, feedback_size=1, spectral_radius=0.9, seed=1)
+        layer = LIFReservoirLayer(128, feedback_size=1, spectral_radius=0.9, seed=1)
         x = torch.randn(1, 60, 1)
         s1 = self._final_state(layer, x.clone())
         s2 = self._final_state(layer, x.clone())
@@ -407,7 +407,7 @@ class TestSeparationProperty:
     def test_state_distance_grows_with_input_distance(self) -> None:
         """Perturbing the input along a fixed direction by growing eps grows the
         liquid-state distance monotonically (separation)."""
-        layer = LIFReservoir(
+        layer = LIFReservoirLayer(
             256,
             feedback_size=1,
             tau_mem=12.0,
@@ -446,23 +446,23 @@ class TestLIFReservoirLayer:
     """The public layer wrapper."""
 
     def test_forward_shape(self) -> None:
-        layer = LIFReservoir(64, feedback_size=3, seed=3)
+        layer = LIFReservoirLayer(64, feedback_size=3, seed=3)
         traces = layer(torch.randn(4, 20, 3))
         assert traces.shape == (4, 20, 64)
 
     def test_driving_input(self) -> None:
-        layer = LIFReservoir(48, feedback_size=3, input_size=2, seed=1)
+        layer = LIFReservoirLayer(48, feedback_size=3, input_size=2, seed=1)
         traces = layer(torch.randn(2, 15, 3), torch.randn(2, 15, 2))
         assert traces.shape == (2, 15, 48)
 
     def test_attribute_delegation(self) -> None:
-        layer = LIFReservoir(32, feedback_size=3, tau_mem=12.0, seed=1)
+        layer = LIFReservoirLayer(32, feedback_size=3, tau_mem=12.0, seed=1)
         assert layer.reservoir_size == 32
         assert layer.tau_mem == 12.0
         assert layer.weight_rec.shape == (32, 32)
 
     def test_live_write_surrogate_beta_and_trace_decay_through_layer(self) -> None:
-        layer = LIFReservoir(16, feedback_size=3, surrogate_beta=5.0, trace_decay=0.5, seed=1)
+        layer = LIFReservoirLayer(16, feedback_size=3, surrogate_beta=5.0, trace_decay=0.5, seed=1)
         layer.surrogate_beta = 15.0
         layer.trace_decay = 0.8
         assert layer.cell.surrogate_beta == 15.0
@@ -472,7 +472,7 @@ class TestLIFReservoirLayer:
         assert "trace_decay" not in layer.__dict__
 
     def test_state_roundtrip(self) -> None:
-        layer = LIFReservoir(16, feedback_size=3, seed=1)
+        layer = LIFReservoirLayer(16, feedback_size=3, seed=1)
         assert layer.get_state() is None
         layer.reset_state(batch_size=2)
         state = layer.get_state()
@@ -484,7 +484,7 @@ class TestLIFReservoirLayer:
             layer.set_state(torch.randn(2, 47))
 
     def test_cuba_layer_state_width(self) -> None:
-        layer = LIFReservoir(16, feedback_size=3, synaptic_current=True, seed=1)
+        layer = LIFReservoirLayer(16, feedback_size=3, synaptic_current=True, seed=1)
         layer.reset_state(batch_size=2)
         assert layer.get_state().shape == (2, 64)  # 4 * 16 packed
 
@@ -519,15 +519,16 @@ class TestPublicExports:
         # Cells package.
         for name in ("SpikingReservoirCell", "LIFCell"):
             assert name in cells.__all__ and hasattr(cells, name)
-        # Reservoirs package.
-        assert "LIFReservoir" in reservoirs.__all__ and hasattr(reservoirs, "LIFReservoir")
+        # Reservoirs package: canonical name plus the deprecated alias.
+        for name in ("LIFReservoirLayer", "LIFReservoir"):
+            assert name in reservoirs.__all__ and hasattr(reservoirs, name)
         # layers aggregate.
-        for name in ("SpikingReservoirCell", "LIFCell", "LIFReservoir"):
+        for name in ("SpikingReservoirCell", "LIFCell", "LIFReservoirLayer", "LIFReservoir"):
             assert name in layers.__all__ and hasattr(layers, name)
         # models package.
         assert "lsm" in models.__all__ and hasattr(models, "lsm")
         # Top-level resdag.
-        for name in ("SpikingReservoirCell", "LIFCell", "LIFReservoir", "lsm"):
+        for name in ("SpikingReservoirCell", "LIFCell", "LIFReservoirLayer", "LIFReservoir", "lsm"):
             assert name in resdag.__all__ and hasattr(resdag, name)
 
     def test_dir_equals_all(self) -> None:

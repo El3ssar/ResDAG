@@ -57,7 +57,7 @@ import torch
 
 import resdag as rd
 from resdag.core import ESNModel, Input
-from resdag.layers import CGReadoutLayer, NGReservoir
+from resdag.layers import CGReadoutLayer, NGReservoirLayer
 from resdag.metrics import CANONICAL_LAMBDA_MAX, steps_to_lyapunov
 from resdag.metrics import valid_prediction_time as _metrics_vpt
 from resdag.models import classic_esn, ott_esn, power_augmented
@@ -175,7 +175,7 @@ def _build_power() -> ESNModel:
 
 
 def _build_ngrc() -> ESNModel:
-    """NG-RC forecaster: ``Input -> NGReservoir -> CGReadoutLayer``, float64.
+    """NG-RC forecaster: ``Input -> NGReservoirLayer -> CGReadoutLayer``, float64.
 
     NG-RC has no random weights, so the build is deterministic regardless of the
     seed; ``torch.manual_seed`` is set anyway for symmetry with the ESN builders.
@@ -184,7 +184,7 @@ def _build_ngrc() -> ESNModel:
     """
     torch.manual_seed(MODEL_SEED)
     inp = Input(shape=(100, 3))
-    reservoir = NGReservoir(input_dim=3, k=2, s=1, p=2)
+    reservoir = NGReservoirLayer(input_dim=3, k=2, s=1, p=2)
     features = reservoir(inp)
     readout = CGReadoutLayer(reservoir.feature_dim, 3, alpha=1e-3, name="output")(features)
     model = ESNModel(inp, readout)

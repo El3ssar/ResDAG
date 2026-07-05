@@ -1,7 +1,7 @@
 """Contract of the gated ("reservoir GRU") cell and layer.
 
 Covers :class:`~resdag.layers.cells.gated_cell.GatedReservoirCell` and
-:class:`~resdag.layers.reservoirs.gated.GatedReservoir`:
+:class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`:
 
 - the packed multi-tensor-state convention (``_split_state`` / ``_pack_state``),
   including a hypothetical 2-state layout proving Phase 10/11 readiness,
@@ -27,7 +27,7 @@ from resdag.layers.cells.gated_cell import (
     _pack_state,
     _split_state,
 )
-from resdag.layers.reservoirs.gated import GatedReservoir
+from resdag.layers.reservoirs.gated import GatedReservoirLayer
 
 
 class TestPackedStateConvention:
@@ -216,24 +216,24 @@ class TestGatedLayer:
 
     def test_forward_shape(self) -> None:
         """A ``(B, T, F)`` feedback sequence yields ``(B, T, hidden)``."""
-        layer = GatedReservoir(reservoir_size=64, feedback_size=5, seed=1)
+        layer = GatedReservoirLayer(reservoir_size=64, feedback_size=5, seed=1)
         out = layer(torch.randn(4, 50, 5))
         assert out.shape == (4, 50, 64)
 
     def test_forward_with_driver(self) -> None:
         """A driven layer accepts ``(feedback, driver)``."""
-        layer = GatedReservoir(64, feedback_size=3, input_size=2, seed=1)
+        layer = GatedReservoirLayer(64, feedback_size=3, input_size=2, seed=1)
         out = layer(torch.randn(4, 20, 3), torch.randn(4, 20, 2))
         assert out.shape == (4, 20, 64)
 
     def test_spectral_radius_scaled(self) -> None:
         """The candidate weight is scaled to the requested spectral radius."""
-        layer = GatedReservoir(64, feedback_size=3, seed=1, spectral_radius=0.7)
+        layer = GatedReservoirLayer(64, feedback_size=3, seed=1, spectral_radius=0.7)
         assert layer.spectral_radius_achieved == pytest.approx(0.7, abs=1e-3)
 
     def test_state_roundtrip(self) -> None:
         """get_state / set_state round-trip the packed 2-D state."""
-        layer = GatedReservoir(48, feedback_size=3, seed=1)
+        layer = GatedReservoirLayer(48, feedback_size=3, seed=1)
         layer(torch.randn(2, 10, 3))
         saved = layer.get_state()
         assert saved is not None and saved.shape == (2, 48)
@@ -242,19 +242,19 @@ class TestGatedLayer:
 
     def test_set_state_validates_shape(self) -> None:
         """A wrong-width state is rejected by the base 2-D validator."""
-        layer = GatedReservoir(48, feedback_size=3, seed=1)
+        layer = GatedReservoirLayer(48, feedback_size=3, seed=1)
         with pytest.raises(ValueError):
             layer.set_state(torch.randn(2, 47))
 
     def test_attribute_delegation_to_cell(self) -> None:
         """Unknown attribute reads fall through to the inner cell."""
-        layer = GatedReservoir(32, feedback_size=3, seed=1)
+        layer = GatedReservoirLayer(32, feedback_size=3, seed=1)
         assert layer.reservoir_size == 32
         assert layer.weight_hz.shape == (32, 32)
 
     def test_repr_delegates_to_cell(self) -> None:
         """The layer repr is the cell repr."""
-        layer = GatedReservoir(16, feedback_size=3, seed=1)
+        layer = GatedReservoirLayer(16, feedback_size=3, seed=1)
         assert repr(layer) == repr(layer.cell)
         assert "GatedReservoirCell" in repr(layer)
 
@@ -264,7 +264,7 @@ class TestFrozenStability:
 
     def test_state_bounded_and_non_collapsing(self) -> None:
         """Over a long sequence ||h|| stays finite/bounded and varies in time."""
-        layer = GatedReservoir(300, feedback_size=3, seed=7, spectral_radius=0.9)
+        layer = GatedReservoirLayer(300, feedback_size=3, seed=7, spectral_radius=0.9)
         layer.eval()
         out = layer(torch.randn(1, 1500, 3)).squeeze(0)  # (T, N)
 
@@ -278,7 +278,7 @@ class TestFrozenStability:
 
     def test_state_depends_on_input(self) -> None:
         """Two different drives produce two different trajectories."""
-        layer = GatedReservoir(200, feedback_size=3, seed=7, spectral_radius=0.9)
+        layer = GatedReservoirLayer(200, feedback_size=3, seed=7, spectral_radius=0.9)
         layer.eval()
         x1 = torch.randn(1, 800, 3)
         x2 = torch.randn(1, 800, 3)
@@ -294,7 +294,9 @@ class TestTrainableBPTT:
 
     def test_grads_flow_through_all_gates(self) -> None:
         """A BPTT step produces non-zero grads on candidate + gate weights."""
-        layer = GatedReservoir(32, feedback_size=3, seed=1, spectral_radius=0.9, trainable=True)
+        layer = GatedReservoirLayer(
+            32, feedback_size=3, seed=1, spectral_radius=0.9, trainable=True
+        )
         out = layer(torch.randn(2, 40, 3))
         out.pow(2).mean().backward()
         for name, p in layer.cell.named_parameters():
@@ -303,7 +305,7 @@ class TestTrainableBPTT:
 
     def test_optimizer_step_updates_weights(self) -> None:
         """An SGD step actually moves the gate weights."""
-        layer = GatedReservoir(24, feedback_size=3, seed=1, trainable=True)
+        layer = GatedReservoirLayer(24, feedback_size=3, seed=1, trainable=True)
         w0 = layer.cell.weight_hz.detach().clone()
         out = layer(torch.randn(2, 20, 3))
         out.pow(2).mean().backward()
@@ -312,7 +314,7 @@ class TestTrainableBPTT:
 
     def test_frozen_has_no_grads(self) -> None:
         """A frozen layer accumulates no gradients on a backward."""
-        layer = GatedReservoir(24, feedback_size=3, seed=1)  # frozen default
+        layer = GatedReservoirLayer(24, feedback_size=3, seed=1)  # frozen default
         out = layer(torch.randn(2, 20, 3))
         # No leaf requires grad => the graph has no parameter to backprop into.
         assert not out.requires_grad
@@ -349,7 +351,7 @@ class TestCompileAndSerialize:
 
     def test_layer_deepcopy_roundtrip(self) -> None:
         """The layer deep-copies (the base drops its unpicklable compile cache)."""
-        layer = GatedReservoir(32, feedback_size=3, seed=5)
+        layer = GatedReservoirLayer(32, feedback_size=3, seed=5)
         layer(torch.randn(2, 10, 3))
         clone = copy.deepcopy(layer)
         clone.reset_state()

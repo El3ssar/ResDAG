@@ -1,9 +1,9 @@
 """End-to-end integration tests for NG-RC inside ESNModel.
 
-``NGReservoir`` / ``NGCell`` have thorough *unit* coverage in
+``NGReservoirLayer`` / ``NGCell`` have thorough *unit* coverage in
 ``tests/test_layers/test_ngrc.py``, and one test there chains a
 ``CGReadoutLayer`` directly onto the layer output.  This module instead drops
-an ``NGReservoir`` into the ``pytorch_symbolic`` DAG, wraps it in an
+an ``NGReservoirLayer`` into the ``pytorch_symbolic`` DAG, wraps it in an
 :class:`~resdag.core.ESNModel`, trains it with
 :class:`~resdag.training.ESNTrainer`, and forecasts — exercising the pieces no
 unit test reaches:
@@ -26,7 +26,7 @@ import pytest
 import torch
 
 from resdag.core import ESNModel, Input
-from resdag.layers import CGReadoutLayer, NGReservoir
+from resdag.layers import CGReadoutLayer, NGReservoirLayer
 from resdag.layers.readouts import ReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
 from resdag.training import ESNTrainer
@@ -79,8 +79,8 @@ def _build_ngrc_model(
     p: int = 2,
     seq_len: int = 100,
     alpha: float = 1e-6,
-) -> tuple[ESNModel, NGReservoir]:
-    """Build ``Input -> NGReservoir -> CGReadoutLayer`` wrapped in an ESNModel.
+) -> tuple[ESNModel, NGReservoirLayer]:
+    """Build ``Input -> NGReservoirLayer -> CGReadoutLayer`` wrapped in an ESNModel.
 
     The readout emits ``input_dim`` features so the first (only) output matches
     the feedback dimension — the precondition for autoregressive
@@ -101,12 +101,12 @@ def _build_ngrc_model(
     -------
     model : ESNModel
         The assembled model.
-    reservoir : NGReservoir
+    reservoir : NGReservoirLayer
         The NG-RC layer instance (handy for asserting on its state/warmup).
     """
     torch.manual_seed(SEED)
     inp = Input(shape=(seq_len, input_dim))
-    reservoir = NGReservoir(input_dim=input_dim, k=k, s=s, p=p)
+    reservoir = NGReservoirLayer(input_dim=input_dim, k=k, s=s, p=p)
     features = reservoir(inp)
     readout = CGReadoutLayer(reservoir.feature_dim, input_dim, alpha=alpha, name="output")(features)
     model = ESNModel(inp, readout)
@@ -138,16 +138,16 @@ def _readout_by_name(model: ESNModel, name: str) -> ReadoutLayer:
 
 
 class TestNGRCInESNModelConstruction:
-    """An NGReservoir wires cleanly into the symbolic DAG and ESNModel."""
+    """An NGReservoirLayer wires cleanly into the symbolic DAG and ESNModel."""
 
     def test_model_builds_with_ngrc_reservoir(self) -> None:
-        """``Input -> NGReservoir -> CGReadoutLayer`` builds an ESNModel."""
+        """``Input -> NGReservoirLayer -> CGReadoutLayer`` builds an ESNModel."""
         model, reservoir = _build_ngrc_model(input_dim=3, k=2, p=2)
         assert isinstance(model, ESNModel)
         # The NG-RC layer is discoverable as a reservoir submodule.
         reservoirs = _reservoir_modules(model)
         assert len(reservoirs) == 1
-        assert isinstance(reservoirs[0], NGReservoir)
+        assert isinstance(reservoirs[0], NGReservoirLayer)
 
     def test_forward_output_shape(self) -> None:
         """A plain forward pass yields ``(batch, time, input_dim)``."""
@@ -447,7 +447,7 @@ class TestNGRCWarmupLengthAtModelLevel:
         input_dim, k, s = 3, 2, 1
         torch.manual_seed(SEED)
         inp = Input(shape=(20, input_dim))
-        reservoir = NGReservoir(input_dim=input_dim, k=k, s=s, p=2)
+        reservoir = NGReservoirLayer(input_dim=input_dim, k=k, s=s, p=2)
         feats = reservoir(inp)
         feat_model = ESNModel(inp, feats)
 

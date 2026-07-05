@@ -209,7 +209,7 @@ def esp_index(
 
     try:
         # Discover every reservoir layer (cell-agnostic): any
-        # BaseReservoirLayer, not just ESNLayer.  This includes NGReservoir and
+        # BaseReservoirLayer, not just ESNLayer.  This includes NGReservoirLayer and
         # any custom-cell layer.
         all_reservoirs: list[tuple[str, "BaseReservoirLayer"]] = []
         for name, module in model.named_modules():

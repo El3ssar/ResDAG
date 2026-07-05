@@ -308,7 +308,7 @@ def solve_ridge(
 
     This is the single shared solve path for every Gram-based readout
     (:class:`CholeskyReadoutLayer`, :class:`RidgeReadoutLayer`,
-    :class:`IncrementalRidgeReadout`). It resolves the GPU-default ``float32``
+    :class:`IncrementalRidgeReadoutLayer`). It resolves the GPU-default ``float32``
     Gram footgun: on a rank-deficient centered Gram, ``float32`` rounding noise
     nudges zero eigenvalues slightly negative, past the default ``alpha=1e-6``
     jitter, so a bare :func:`torch.linalg.cholesky` raises a raw

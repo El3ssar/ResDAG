@@ -316,6 +316,60 @@ class TestOutliersFilteredMean:
         # Mean of the three inliers (1.0, 1.1, 0.9) == 1.0; outlier excluded.
         assert torch.allclose(output, torch.ones(1, 1, 1) * 1.0, atol=1e-4)
 
+    @pytest.mark.parametrize("method", ["z_score", "iqr"])
+    def test_identical_members_no_nan_aggregate_equals_value(self, method: str) -> None:
+        """Zero-dispersion ensembles must not blow up to NaN/inf.
+
+        When every member agrees, the per-member dispersion (MAD or IQR) is
+        exactly zero. A naive z-score divides the deviation by that zero scale
+        and produces NaN/inf, which can nuke the aggregate. The degenerate-case
+        guard must instead treat all members as inliers, so the aggregate is
+        finite and equals the common value exactly.
+        """
+        value = 3.5
+        layer = OutliersFilteredMean(method=method)
+        x = torch.full((6, 2, 3, 4), value)
+
+        output = layer(x)
+
+        assert torch.isfinite(output).all(), "degenerate zero-dispersion case produced NaN/inf"
+        assert torch.allclose(output, torch.full((2, 3, 4), value))
+
+    @pytest.mark.parametrize("method", ["z_score", "iqr"])
+    def test_single_member_no_nan(self, method: str) -> None:
+        """A single-member ensemble has zero dispersion and must stay finite."""
+        value = -2.0
+        layer = OutliersFilteredMean(method=method)
+        x = torch.full((1, 2, 3, 4), value)
+
+        output = layer(x)
+
+        assert torch.isfinite(output).all()
+        assert torch.allclose(output, torch.full((2, 3, 4), value))
+
+    def test_one_outlier_among_many_identical_is_dropped(self) -> None:
+        """A lone outlier among otherwise-identical members is correctly dropped.
+
+        The degenerate (zero-MAD) branch must not swing the other way and swallow
+        the aggregate: with a majority of identical members the robust
+        median/MAD estimator flags the single deviating member and the mean
+        collapses onto the agreed value, not the outlier-contaminated plain mean.
+        """
+        layer = OutliersFilteredMean(method="z_score")
+        # Nine members at 1.0, one blatant outlier at 500.0.
+        inliers = [torch.ones(2, 3, 4) for _ in range(9)]
+        outlier = torch.ones(2, 3, 4) * 500.0
+        x = torch.stack(inliers + [outlier], dim=0)
+
+        output = layer(x)
+        plain_mean = x.mean(dim=0)
+
+        assert torch.isfinite(output).all()
+        # Outlier dropped -> result sits at the agreed inlier value (1.0), far
+        # from the contaminated plain mean (~50.9).
+        assert torch.allclose(output, torch.ones(2, 3, 4), atol=1e-4)
+        assert torch.all(plain_mean > 40.0)
+
     def test_default_threshold_is_method_aware(self) -> None:
         """Default threshold differs by method; explicit values are preserved."""
         assert OutliersFilteredMean(method="z_score").threshold == 3.5

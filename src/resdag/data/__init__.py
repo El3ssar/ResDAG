@@ -1,11 +1,19 @@
 """
-Streaming / SGD Data Pipeline
-=============================
+Data Pipeline: Preparation, I/O, and Streaming Windows
+======================================================
 
-PyTorch-native data plumbing for the SGD and streaming-algebraic training paths.
-Where :mod:`resdag.utils.data` returns fixed whole-tensor warmup/train/val
-splits, this package slices a long trajectory (or many) into fixed-length,
-batchable windows behind a standard :class:`torch.utils.data.DataLoader`.
+Canonical public home for resdag's data plumbing. Three layers live here:
+
+**Whole-tensor preparation** — split a long trajectory into the fixed
+warmup/train/target/f_warmup/val tensors the algebraic (:class:`resdag.training.ESNTrainer`)
+path consumes, with optional normalization.
+
+**File I/O** — load and save time series from CSV / NPY / NPZ / NetCDF, always
+returning the ``(B, T, D)`` convention.
+
+**Streaming / SGD windows** — slice a long trajectory (or many) into
+fixed-length, batchable windows behind a standard
+:class:`torch.utils.data.DataLoader`, for the SGD and streaming-algebraic paths.
 
 Classes
 -------
@@ -20,9 +28,29 @@ Functions
 make_dataloader
     Wrap :class:`TimeSeriesWindowDataset` in a ``DataLoader`` whose batches are
     ``(B, window_len, D)`` and feed straight into ``ESNLayer`` / ``ESNModel``.
+prepare_esn_data
+    Split a series into warmup, train, target, f_warmup, val.
+normalize_data, denormalize_data
+    Normalize a series (and invert it) using various methods.
+load_and_prepare
+    Load and prepare data from file(s) in one step.
+load_file, load_csv, load_npy, load_npz, load_nc
+    Auto-detecting and format-specific loaders.
+save_csv, save_npy, save_npz, save_nc, list_files
+    Savers and a directory listing helper.
 
 Examples
 --------
+Whole-tensor preparation for the algebraic path:
+
+>>> from resdag.data import load_file, prepare_esn_data
+>>> data = load_file("lorenz.csv")  # doctest: +SKIP
+>>> warmup, train, target, f_warmup, val = prepare_esn_data(  # doctest: +SKIP
+...     data, warmup_steps=100, train_steps=500, val_steps=200, normalize="minmax"
+... )
+
+Streaming windows for the SGD path:
+
 >>> import torch
 >>> from resdag.data import make_dataloader
 >>> series = torch.randn(2000, 3)
@@ -34,15 +62,45 @@ Examples
 
 See Also
 --------
-resdag.utils.data.prepare_esn_data : Whole-tensor split for the algebraic path.
-resdag.layers.IncrementalRidgeReadout : Streaming ridge readout for the loader.
+resdag.datasets : Canonical benchmark time-series generators.
+resdag.layers.IncrementalRidgeReadoutLayer : Streaming ridge readout for the loader.
 """
 
 from .dataset import TimeSeriesWindowDataset, make_dataloader
+from .io import (
+    list_files,
+    load_csv,
+    load_file,
+    load_nc,
+    load_npy,
+    load_npz,
+    save_csv,
+    save_nc,
+    save_npy,
+    save_npz,
+)
+from .prepare import denormalize_data, load_and_prepare, normalize_data, prepare_esn_data
 
 __all__ = [
+    # Streaming / SGD data pipeline
     "TimeSeriesWindowDataset",
     "make_dataloader",
+    # Data preparation
+    "prepare_esn_data",
+    "normalize_data",
+    "denormalize_data",
+    "load_and_prepare",
+    # File I/O
+    "load_file",
+    "load_csv",
+    "load_npy",
+    "load_npz",
+    "load_nc",
+    "save_csv",
+    "save_npy",
+    "save_npz",
+    "save_nc",
+    "list_files",
 ]
 
 

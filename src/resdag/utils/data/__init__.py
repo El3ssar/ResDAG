@@ -1,22 +1,27 @@
 """
-Data Loading and Preparation
-============================
+Data Loading and Preparation (compatibility shim)
+=================================================
 
-This module provides utilities for loading time series data and preparing
-it for ESN training and forecasting.
+.. deprecated:: 0.7.0
+    The canonical home for data preparation and file I/O is now
+    :mod:`resdag.data`. This module re-exports those symbols unchanged for
+    back-compat, so ``from resdag.utils.data import prepare_esn_data`` (etc.)
+    keeps working. New code should import from :mod:`resdag.data`.
+
+The re-exported callables are the *same* function objects as their
+:mod:`resdag.data` counterparts, so identity checks hold::
+
+    resdag.utils.data.prepare_esn_data is resdag.data.prepare_esn_data  # True
+
+The canonical dataset generators (:func:`lorenz`, :func:`rossler`, …) still
+live here and are re-exported by :mod:`resdag.datasets`.
 
 File I/O Functions
 ------------------
 load_file
     Auto-detect format and load time series data.
-load_csv
-    Load data from CSV file.
-load_npy
-    Load data from NumPy .npy file.
-load_npz
-    Load data from NumPy .npz archive.
-load_nc
-    Load data from NetCDF file.
+load_csv, load_npy, load_npz, load_nc
+    Format-specific loaders.
 save_csv, save_npy, save_npz, save_nc
     Save data in respective formats.
 list_files
@@ -51,51 +56,27 @@ supports a transient/discard period, and supports optional normalization.
 
 Examples
 --------
-Loading and preparing data:
+Loading and preparing data (canonical home is :mod:`resdag.data`):
 
->>> from resdag.utils.data import load_file, prepare_esn_data
->>> data = load_file("lorenz.csv")
->>> warmup, train, target, f_warmup, val = prepare_esn_data(
-...     data,
-...     warmup_steps=100,
-...     train_steps=500,
-...     val_steps=200,
-...     normalize="minmax",
+>>> from resdag.data import load_file, prepare_esn_data
+>>> data = load_file("lorenz.csv")  # doctest: +SKIP
+>>> warmup, train, target, f_warmup, val = prepare_esn_data(  # doctest: +SKIP
+...     data, warmup_steps=100, train_steps=500, val_steps=200, normalize="minmax"
 ... )
-
-Using load_and_prepare for convenience:
-
->>> from resdag.utils.data import load_and_prepare
->>> splits = load_and_prepare(
-...     "lorenz.csv",
-...     warmup_steps=100,
-...     train_steps=500,
-...     val_steps=200,
-... )
->>> warmup, train, target, f_warmup, val = splits
 
 Generating a canonical benchmark series:
 
->>> from resdag.utils.data import lorenz
+>>> from resdag.datasets import lorenz
 >>> series = lorenz(2000)  # (1, 2000, 3) — chaotic Lorenz-63 trajectory
 
 See Also
 --------
-resdag.training.ESNTrainer : Uses prepared data for training.
-resdag.core.ESNModel.forecast : Uses prepared data for forecasting.
+resdag.data : Canonical home for data preparation, file I/O, and streaming windows.
+resdag.datasets : Canonical benchmark time-series generators.
 """
 
-from .datasets import (
-    DATASET_DT,
-    dataset_lambda_max,
-    henon,
-    lorenz,
-    mackey_glass,
-    narma,
-    rossler,
-    sine,
-)
-from .io import (
+# Data prep / file I/O now live in ``resdag.data``; re-exported here unchanged.
+from ...data.io import (
     list_files,
     load_csv,
     load_file,
@@ -107,7 +88,24 @@ from .io import (
     save_npy,
     save_npz,
 )
-from .prepare import denormalize_data, load_and_prepare, normalize_data, prepare_esn_data
+from ...data.prepare import (
+    denormalize_data,
+    load_and_prepare,
+    normalize_data,
+    prepare_esn_data,
+)
+
+# Canonical dataset generators still live in this package.
+from .datasets import (
+    DATASET_DT,
+    dataset_lambda_max,
+    henon,
+    lorenz,
+    mackey_glass,
+    narma,
+    rossler,
+    sine,
+)
 
 __all__ = [
     # File I/O

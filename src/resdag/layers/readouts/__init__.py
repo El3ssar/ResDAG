@@ -21,13 +21,16 @@ SVDReadoutLayer
 PinvReadoutLayer
     Least-squares readout via ``torch.linalg.lstsq`` / ``pinv`` with an
     ``rcond`` cutoff.
-IncrementalRidgeReadout
+IncrementalRidgeReadoutLayer
     Streaming ridge readout: ``partial_fit`` accumulates sufficient
     statistics chunk-by-chunk, ``finalize`` solves once. For the
     DataLoader / long-sequence path.
-FISTAReadout
+FISTAReadoutLayer
     Sparse / robust readout: L1 (lasso) or elastic-net regression solved
     with FISTA (accelerated proximal gradient), batched over all outputs.
+
+The old names ``IncrementalRidgeReadout`` and ``FISTAReadout`` are retained as
+deprecated aliases of ``IncrementalRidgeReadoutLayer`` / ``FISTAReadoutLayer``.
 
 Examples
 --------
@@ -51,8 +54,8 @@ resdag.layers.ESNLayer : ESN layer for generating states.
 from .base import ReadoutLayer
 from .cg_readout import CGReadoutLayer
 from .cholesky_readout import CholeskyReadoutLayer
-from .fista_readout import FISTAReadout
-from .incremental_ridge import IncrementalRidgeReadout
+from .fista_readout import FISTAReadout, FISTAReadoutLayer
+from .incremental_ridge import IncrementalRidgeReadout, IncrementalRidgeReadoutLayer
 from .pinv_readout import PinvReadoutLayer
 from .ridge_readout import RidgeReadoutLayer
 from .svd_readout import SVDReadoutLayer
@@ -64,7 +67,9 @@ __all__ = [
     "CholeskyReadoutLayer",
     "SVDReadoutLayer",
     "PinvReadoutLayer",
+    "IncrementalRidgeReadoutLayer",
     "IncrementalRidgeReadout",
+    "FISTAReadoutLayer",
     "FISTAReadout",
 ]
 

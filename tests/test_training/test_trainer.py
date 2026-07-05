@@ -25,7 +25,11 @@ import torch
 import resdag as rd
 from resdag.core import ESNModel, Input
 from resdag.layers import ESNLayer
-from resdag.layers.readouts import CGReadoutLayer, IncrementalRidgeReadout
+from resdag.layers.readouts import (
+    CGReadoutLayer,
+    IncrementalRidgeReadoutLayer,
+    RidgeReadoutLayer,
+)
 from resdag.training import ESNTrainer
 
 # Tight reconstruction tolerance for the correctness tests.  The readout solves
@@ -586,6 +590,64 @@ class TestESNTrainerValidation:
                 targets={"wrong_name": torch.randn(4, 150, 1)},
             )
 
+    def test_duplicate_readout_names_raise_error(self):
+        """Two readouts sharing a name must raise, not silently collapse.
+
+        ``targets`` and the fitted-readout bookkeeping are keyed by name, so two
+        readouts named ``"output"`` would both bind to the single
+        ``targets["output"]`` — one trained on a target meant for the other, the
+        collision invisible. This is silent data loss, so ``fit`` must raise a
+        clear ``ValueError`` naming the collision instead.
+        """
+        from resdag.layers.transforms import Concatenate
+
+        torch.manual_seed(0)
+        feedback = Input(shape=(10, 1))
+        reservoir = rd.ESNLayer(50, 1)(feedback)
+        # Two distinct readout layers, both named "output".
+        readout1 = RidgeReadoutLayer(50, 1, name="output")(reservoir)
+        readout2 = RidgeReadoutLayer(50, 1, name="output")(reservoir)
+        concat = Concatenate()(readout1, readout2)
+        model = ESNModel(feedback, concat)
+
+        trainer = ESNTrainer(model)
+
+        with pytest.raises(ValueError, match="Duplicate readout name"):
+            trainer.fit(
+                warmup_inputs=(torch.randn(4, 50, 1),),
+                train_inputs=(torch.randn(4, 150, 1),),
+                targets={"output": torch.randn(4, 150, 1)},
+            )
+
+    def test_distinct_readout_names_do_not_raise(self):
+        """The duplicate-name guard leaves the normal distinct-name case intact.
+
+        Two parallel readouts with *different* names fit without error — the
+        collision check must not fire on a well-formed multi-readout model.
+        """
+        from resdag.layers.transforms import Concatenate
+
+        torch.manual_seed(0)
+        feedback = Input(shape=(10, 1))
+        reservoir = rd.ESNLayer(50, 1)(feedback)
+        readout1 = RidgeReadoutLayer(50, 1, name="position")(reservoir)
+        readout2 = RidgeReadoutLayer(50, 1, name="velocity")(reservoir)
+        concat = Concatenate()(readout1, readout2)
+        model = ESNModel(feedback, concat)
+
+        trainer = ESNTrainer(model)
+        trainer.fit(
+            warmup_inputs=(torch.randn(4, 50, 1),),
+            train_inputs=(torch.randn(4, 150, 1),),
+            targets={
+                "position": torch.randn(4, 150, 1),
+                "velocity": torch.randn(4, 150, 1),
+            },
+        )
+
+        fitted = {name: ro.is_fitted for name, ro in trainer._discover_readouts()}
+        assert fitted == {"position": True, "velocity": True}
+
     def test_input_count_mismatch_raises_error(self):
         """Test that mismatched warmup/train input counts raise error."""
         torch.manual_seed(0)
@@ -787,9 +849,9 @@ class TestESNTrainerFiniteParameters:
 
 
 class TestESNTrainerIncrementalRidge:
-    """``fit`` / ``fit_stream`` with :class:`IncrementalRidgeReadout`.
+    """``fit`` / ``fit_stream`` with :class:`IncrementalRidgeReadoutLayer`.
 
-    ``IncrementalRidgeReadout``'s forward guard raises ``RuntimeError`` while the
+    ``IncrementalRidgeReadoutLayer``'s forward guard raises ``RuntimeError`` while the
     readout is unfitted.  The trainer's warmup pass runs *before* any readout is
     fitted, so ``fit()`` used to crash on that guard (only ``fit_stream`` and a
     direct ``readout.fit`` bracketed the guard).  These tests pin the documented
@@ -800,7 +862,7 @@ class TestESNTrainerIncrementalRidge:
     """
 
     def test_fit_completes_with_incremental_ridge(self) -> None:
-        """The primary ``fit()`` entry point works with ``IncrementalRidgeReadout``.
+        """The primary ``fit()`` entry point works with ``IncrementalRidgeReadoutLayer``.
 
         Reconstruction is checked against a learnable affine target of the exact
         states the trainer fits on, so this asserts a correct solve — not merely
@@ -818,7 +880,9 @@ class TestESNTrainerIncrementalRidge:
 
         feedback = Input(shape=(10, 1))
         reservoir = reservoir_layer(feedback)
-        readout = IncrementalRidgeReadout(reservoir_size, out_features, name="output")(reservoir)
+        readout = IncrementalRidgeReadoutLayer(reservoir_size, out_features, name="output")(
+            reservoir
+        )
         model = ESNModel(feedback, readout)
 
         warmup_data = torch.randn(batch_size, warmup_steps, 1)
@@ -830,7 +894,7 @@ class TestESNTrainerIncrementalRidge:
         b_true = torch.randn(out_features)
         train_targets = states @ w_true.T + b_true
 
-        readout_layer = model.IncrementalRidgeReadout_1
+        readout_layer = model.IncrementalRidgeReadoutLayer_1
 
         trainer = ESNTrainer(model)
         trainer.fit(
@@ -867,7 +931,7 @@ class TestESNTrainerIncrementalRidge:
         reservoir_size = 64
         feedback = Input(shape=(10, 1))
         reservoir = ESNLayer(reservoir_size, 1)(feedback)
-        readout = IncrementalRidgeReadout(reservoir_size, 1, name="output")(reservoir)
+        readout = IncrementalRidgeReadoutLayer(reservoir_size, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
         warmup_data = torch.randn(2, 40, 1)
@@ -878,7 +942,7 @@ class TestESNTrainerIncrementalRidge:
                 y = torch.randn(2, 25, 1)
                 yield (x,), {"output": y}
 
-        readout_layer = model.IncrementalRidgeReadout_1
+        readout_layer = model.IncrementalRidgeReadoutLayer_1
 
         trainer = ESNTrainer(model)
         trainer.fit_stream(warmup_inputs=(warmup_data,), chunks=chunk_stream())
@@ -894,7 +958,7 @@ class TestESNTrainerIncrementalRidge:
     def test_inference_guard_still_fires_when_unfitted(self) -> None:
         """The warmup bypass does not globally disable the fitted guard.
 
-        A model whose ``IncrementalRidgeReadout`` was never fitted must still
+        A model whose ``IncrementalRidgeReadoutLayer`` was never fitted must still
         raise ``RuntimeError`` at inference — the guard is bypassed only inside
         the trainer's warmup context, not for genuine forward calls.
         """
@@ -902,7 +966,7 @@ class TestESNTrainerIncrementalRidge:
 
         feedback = Input(shape=(10, 1))
         reservoir = ESNLayer(64, 1)(feedback)
-        readout = IncrementalRidgeReadout(64, 1, name="output")(reservoir)
+        readout = IncrementalRidgeReadoutLayer(64, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
 
         model.reset_reservoirs()
@@ -920,9 +984,9 @@ class TestESNTrainerIncrementalRidge:
 
         feedback = Input(shape=(10, 1))
         reservoir = ESNLayer(64, 1)(feedback)
-        readout = IncrementalRidgeReadout(64, 1, name="output")(reservoir)
+        readout = IncrementalRidgeReadoutLayer(64, 1, name="output")(reservoir)
         model = ESNModel(feedback, readout)
-        readout_layer = model.IncrementalRidgeReadout_1
+        readout_layer = model.IncrementalRidgeReadoutLayer_1
 
         original_warmup = model.warmup
 

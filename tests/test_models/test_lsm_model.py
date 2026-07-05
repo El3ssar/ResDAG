@@ -34,7 +34,7 @@ class TestLSMFactory:
         """Model wires a LIF reservoir, a concatenation, and a ridge readout."""
         model = lsm(reservoir_size=64, feedback_size=2, output_size=3, seed=0)
         names = [name for name, _ in model.named_modules()]
-        assert any("LIFReservoir" in name for name in names)
+        assert any("LIFReservoirLayer" in name for name in names)
         assert any("Concatenate" in name for name in names)
         assert any("RidgeReadoutLayer" in name for name in names)
 

@@ -29,19 +29,19 @@ SeedLike
 DeviceLike
     Type alias for accepted device specs (``str | torch.device | None``).
 load_file
-    Load a time series from disk (re-exported from ``resdag.utils.data``).
+    Load a time series from disk (re-exported from ``resdag.data``).
 prepare_esn_data
     Split a series into ESN train/forecast segments (re-exported from
-    ``resdag.utils.data``).
+    ``resdag.data``).
 normalize_data
     Normalize a series and return the fitted statistics (re-exported from
-    ``resdag.utils.data``).
+    ``resdag.data``).
 denormalize_data
     Invert a normalization back to the original scale (re-exported from
-    ``resdag.utils.data``).
+    ``resdag.data``).
 lorenz, rossler, henon, mackey_glass, narma, sine
     Canonical reservoir-computing dataset generators (re-exported from
-    ``resdag.utils.data``).
+    ``resdag.datasets``).
 esp_index
     Echo State Property index — the library's signature stability diagnostic
     (re-exported from ``resdag.utils.states``).

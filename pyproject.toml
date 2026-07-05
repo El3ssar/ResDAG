@@ -171,7 +171,8 @@ exclude_lines = [
 # Release automation — python-semantic-release
 # Version bumps are computed from conventional commit messages on main:
 #   feat: -> minor, fix:/perf: -> patch, "BREAKING CHANGE:" -> major
-# (major_on_zero=false: while 0.x, breaking changes bump the minor instead).
+# (major_on_zero=true: a breaking change bumps the major even from 0.x, so the
+# first breaking release crosses to 1.0.0 — no artificial holding below 1.0).
 # The version lives in src/resdag/__init__.py and is mirrored into
 # CITATION.cff; PSR rewrites both, commits, tags vX.Y.Z, and creates the
 # GitHub release. CI publishes to PyPI.
@@ -185,7 +186,7 @@ build_command = "python -m pip install build && python -m build"
 commit_message = "chore(release): v{version} [skip ci]"
 tag_format = "v{version}"
 allow_zero_version = true
-major_on_zero = false
+major_on_zero = true
 
 [tool.semantic_release.commit_parser_options]
 parse_squash_commits = true

@@ -30,7 +30,7 @@ from contextlib import contextmanager
 import torch
 
 from resdag.core import ESNModel
-from resdag.layers import IncrementalRidgeReadoutLayer, ReadoutLayer
+from resdag.layers import IncrementalRidgeReadoutLayer, ReadoutLayer, RLSReadout
 
 # A streaming chunk: a tuple of contiguous input tensors (feedback, driver1,
 # ...) paired with a dict mapping each readout name to its target tensor for
@@ -392,6 +392,309 @@ class ESNTrainer:
         for _, readout in readouts:
             assert isinstance(readout, IncrementalRidgeReadoutLayer)
             readout.finalize()
+
+    def fit_force(
+        self,
+        warmup_inputs: tuple[torch.Tensor, ...],
+        targets: torch.Tensor,
+        *,
+        forgetting: float | None = None,
+        delta: float | None = None,
+        initial_feedback: torch.Tensor | None = None,
+        reset: bool = True,
+    ) -> torch.Tensor:
+        r"""FORCE-train the readout to autonomously *generate* a target pattern.
+
+        Implements FORCE learning (Sussillo & Abbott 2009, "Generating Coherent
+        Patterns of Activity from Chaotic Neural Networks"): the reservoir is run
+        **closed-loop** — driven at every step by the network's *own* readout
+        output fed back as the next input — while the single
+        :class:`~resdag.layers.RLSReadout` is updated online (one rank-1 RLS step
+        per timestep) toward the target signal ``d_t`` at that step.  Because the
+        readout is trained *inside* the feedback loop it will actually run in, the
+        fed-back output progressively locks onto the target; after training the
+        network **free-runs** and reproduces the pattern autonomously.
+
+        When to use FORCE (honest scope)
+        --------------------------------
+        FORCE's value is training the readout *inside the closed loop*, so its
+        weights are fit against the states the loop actually visits rather than
+        the teacher-forced states an open-loop fit sees. Its classic advantage is
+        **stabilising autonomous generation in regimes where an open-loop
+        teacher-forced ridge fit would diverge in closed loop** — high-dimensional
+        or strongly chaotic reservoirs where teacher-forced and free-running state
+        trajectories pull apart and open-loop errors compound.
+
+        It is **not** a free win over open-loop ridge in general. For a *clean,
+        low-dimensional periodic* target trained over a long window, an open-loop
+        teacher-forced ridge readout (:meth:`fit`) is already an excellent
+        closed-loop generator — the smooth target leaves little error to compound
+        — and FORCE will *match* it rather than beat it (empirically, across
+        seeds, FORCE reproduces such a target to a small fraction of its scale and
+        stays competitive with ridge, but any seed-specific win is not a
+        guaranteed property). Reach for FORCE when the reservoir is chaotic enough
+        that the open-loop free run is unstable, or when the target is
+        non-stationary and you want the online / forgetting machinery of
+        :class:`RLSReadout`; for a stationary, easily-generated target, the
+        simpler :meth:`fit` is often sufficient.
+
+        Per step ``t`` (after an optional teacher-forced warmup that settles the
+        reservoir on the target):
+
+        1. Feed the current feedback ``z_t`` (the network's own last output, or
+           the warmup's for the first step) through the model, reading the
+           readout's input feature vector ``r_t`` (reservoir state, possibly
+           concatenated with the input, exactly as the graph presents it).
+        2. RLS-update the readout toward ``d_t`` using ``r_t`` — the a-priori
+           error ``d_t - W_t^\top r_t`` drives a rank-1 update of ``W`` and the
+           inverse-correlation matrix ``P`` (see :class:`RLSReadout`).
+        3. Recompute the output ``z_{t+1} = W_{t+1}^\top r_t`` with the *updated*
+           weights and feed it back as the next step's input.
+
+        The readout's RLS state (``P`` and the weights) is reset at the start of
+        the FORCE pass (via :meth:`RLSReadout.reset_state`) so a re-run trains
+        from scratch; pass ``forgetting`` / ``delta`` to override the readout's
+        recursion hyperparameters for the pass.
+
+        Parameters
+        ----------
+        warmup_inputs : tuple of torch.Tensor
+            Teacher-forced warmup driving the reservoir *open-loop* with the true
+            signal to settle its state before the closed-loop FORCE phase.
+            Format ``(feedback, driver1, ...)``; the feedback is typically the
+            leading slice of the target series.  Each tensor has shape
+            ``(batch, warmup_steps, features)``.  May be empty-length in time
+            (``warmup_steps == 0``) to start FORCE from the reset state, but at
+            least the feedback tensor must be present (its dtype/device/batch and
+            the driver arity are read from it).
+        targets : torch.Tensor
+            The pattern to generate, shape ``(batch, T, feedback_dim)``.  Its
+            feature dimension **must** equal the model's feedback input dimension
+            (and the readout's ``out_features``) — the autoregression contract,
+            since the readout output is fed back as the next feedback.  ``T`` is
+            the number of closed-loop FORCE steps.
+        forgetting : float, optional
+            Overrides the readout's forgetting factor :math:`\lambda \in (0, 1]`
+            for this pass.  ``None`` (default) keeps the readout's configured
+            value.  FORCE is classically run with ``1.0`` (growing window).
+        delta : float, optional
+            Overrides the readout's :math:`P_0 = I / \delta` prior for this pass.
+            ``None`` (default) keeps the readout's configured value.  A moderate
+            ``delta`` (around ``1.0``) is the standard FORCE choice; a very small
+            ``delta`` (huge initial ``P``) makes the early closed-loop updates
+            explode.
+        initial_feedback : torch.Tensor, optional
+            Feedback of shape ``(batch, 1, feedback_dim)`` seeding the first
+            closed-loop step.  If ``None`` (default) the last warmup target slice
+            is used (or a zero seed when the warmup is empty).
+        reset : bool, default=True
+            If ``True`` (default), reset the reservoir states before the
+            teacher-forced warmup.  Set ``False`` to continue from the current
+            (already warmed) reservoir state.
+
+        Returns
+        -------
+        torch.Tensor
+            The closed-loop training outputs of shape ``(batch, T, feedback_dim)``
+            — the network's own generated signal at each FORCE step, *after* that
+            step's RLS update.  By the end of training these track ``targets``
+            closely; free-run generation with :meth:`ESNModel.forecast` continues
+            the pattern from the final reservoir state.
+
+        Raises
+        ------
+        TypeError
+            If the model's readout is not an :class:`RLSReadout` (FORCE needs the
+            online RLS ``partial_fit`` machinery).
+        ValueError
+            If the model has more than one readout (FORCE trains a single
+            generator readout), if ``warmup_inputs`` is empty, if ``targets`` is
+            not 3-D, if the readout's ``out_features`` (and hence the fed-back
+            output dimension) does not match ``targets``'s feature dimension (the
+            autoregression contract), if the driver arity of ``warmup_inputs``
+            does not match the model, or if ``initial_feedback`` has the wrong
+            shape.
+
+        Notes
+        -----
+        - **Single-readout, self-generating only.**  FORCE here trains exactly one
+          readout whose output is fed straight back as the model's feedback, so
+          the readout must be an ``RLSReadout`` and its ``out_features`` must equal
+          the feedback dimension.  Multi-readout or driven-generation setups are
+          out of scope and rejected with a clear error.
+        - **Driven models.**  If the model has driver inputs, pass the driver
+          warmup slices in ``warmup_inputs``; during the closed-loop phase the
+          drivers are held at their last warmup value (FORCE classically targets
+          autonomous generation, not driven mapping).  A feedback-only model is
+          the common case.
+        - **Reservoir regime.**  FORCE works best with a *chaotic* reservoir
+          (spectral radius ``> 1``, e.g. ``1.5``); the online readout tames the
+          chaos into the target pattern.  See the module example.
+
+        Examples
+        --------
+        >>> from resdag.models import classic_esn
+        >>> from resdag import RLSReadout
+        >>> from resdag.training import ESNTrainer
+        >>> model = classic_esn(  # doctest: +SKIP
+        ...     600, feedback_size=1, output_size=1, spectral_radius=1.5,
+        ...     readout=RLSReadout, readout_name="output", readout_bias=False,
+        ... )
+        >>> trainer = ESNTrainer(model)  # doctest: +SKIP
+        >>> trainer.fit_force(  # doctest: +SKIP
+        ...     warmup_inputs=(target[:, :200, :],),
+        ...     targets=target[:, 200:, :],
+        ...     delta=1.0,
+        ... )
+        >>> generated = model.forecast(target, horizon=1000)  # doctest: +SKIP
+
+        See Also
+        --------
+        fit : Open-loop teacher-forced algebraic readout fitting.
+        resdag.layers.RLSReadout : The online RLS readout FORCE drives.
+        resdag.core.ESNModel.forecast : Free-run generation after FORCE training.
+        """
+        if len(warmup_inputs) == 0:
+            raise ValueError(
+                "fit_force() requires at least one warmup input (the feedback tensor), "
+                "even if it is length-0 in time; the model's dtype/device/batch and "
+                "driver arity are read from it."
+            )
+        if targets.dim() != 3:
+            raise ValueError(
+                f"fit_force() targets must be 3-D (batch, T, feedback_dim); "
+                f"got shape {tuple(targets.shape)}."
+            )
+
+        # FORCE trains exactly one online RLS readout whose output is the
+        # generated signal fed straight back as feedback.
+        readouts = self._discover_readouts()
+        if len(readouts) != 1:
+            names = [name for name, _ in readouts]
+            raise ValueError(
+                f"fit_force() trains a single self-generating readout, but the model has "
+                f"{len(readouts)} readout(s): {names}. FORCE feeds one readout's output "
+                f"straight back as the model feedback; multi-readout generation is out of "
+                f"scope."
+            )
+        readout_name, readout = readouts[0]
+        if not isinstance(readout, RLSReadout):
+            raise TypeError(
+                f"fit_force() requires the readout ('{readout_name}') to be an RLSReadout "
+                f"(the online recursive-least-squares readout whose partial_fit drives the "
+                f"FORCE update), but it is a {type(readout).__name__}. Rebuild the model "
+                f"with readout=RLSReadout."
+            )
+
+        feedback_dim = targets.shape[-1]
+        if readout.out_features != feedback_dim:
+            raise ValueError(
+                f"fit_force(): the readout ('{readout_name}') has out_features="
+                f"{readout.out_features}, but targets have feedback_dim={feedback_dim}. "
+                f"FORCE feeds the readout output back as the next feedback, so the readout "
+                f"output dimension must equal the feedback (target) dimension."
+            )
+
+        num_drivers = len(warmup_inputs) - 1
+        expected_drivers = len(self.model.inputs) - 1
+        if num_drivers != expected_drivers:
+            raise ValueError(
+                f"fit_force(): the model has {expected_drivers} driver input(s) but "
+                f"warmup_inputs carries {num_drivers}. Pass (feedback, driver1, ...) matching "
+                f"the model's inputs."
+            )
+
+        # Driven models hold each driver at its last warmup value during the
+        # closed-loop phase, so an empty warmup leaves no value to hold.
+        if num_drivers and warmup_inputs[0].shape[1] == 0:
+            raise ValueError(
+                "fit_force(): a driven model needs a non-empty warmup so each driver has a "
+                "last value to hold during the autonomous closed-loop phase; the warmup "
+                "feedback has 0 timesteps. Provide at least one warmup step."
+            )
+
+        batch_size = warmup_inputs[0].shape[0]
+        device = warmup_inputs[0].device
+        dtype = warmup_inputs[0].dtype
+
+        if initial_feedback is not None:
+            expected = (batch_size, 1, feedback_dim)
+            if initial_feedback.dim() != 3 or tuple(initial_feedback.shape) != expected:
+                raise ValueError(
+                    f"fit_force(): initial_feedback must have shape {expected} "
+                    f"(batch, 1, feedback_dim); got {tuple(initial_feedback.shape)}."
+                )
+
+        # Apply per-pass overrides, then reset the RLS recursion (P = I/delta,
+        # zero weights) so a re-run trains from scratch.
+        if forgetting is not None:
+            if not 0.0 < forgetting <= 1.0:
+                raise ValueError(
+                    f"fit_force(): forgetting (lambda) must be in (0, 1], got {forgetting}."
+                )
+            readout.forgetting = forgetting
+        if delta is not None:
+            if delta <= 0.0:
+                raise ValueError(f"fit_force(): delta must be positive, got {delta}.")
+            readout.delta = delta
+        readout.reset_state()
+
+        # Capture the readout's input feature vector each step via a pre-hook.
+        # The normal graph forward (unlike the flat forecast engine) fires hooks,
+        # so this sees exactly what the readout consumes — reservoir state,
+        # concatenated input, etc. — regardless of the architecture upstream.
+        captured: dict[str, torch.Tensor] = {}
+
+        def _capture_hook(_module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
+            captured["features"] = args[0]
+
+        handle = readout.register_forward_pre_hook(_capture_hook)
+
+        total_steps = targets.shape[1]
+        outputs = torch.empty(batch_size, total_steps, feedback_dim, dtype=dtype, device=device)
+
+        # Drivers are held at their last warmup value during the closed-loop
+        # phase (FORCE generates autonomously). Feedback-only models skip this.
+        held_drivers: tuple[torch.Tensor, ...] = ()
+        try:
+            with torch.no_grad():
+                # Phase 1: teacher-forced warmup, driving the reservoir open-loop
+                # with the true signal. ``RLSReadout.forward`` is plain linear
+                # (no fitted-guard, weights zero after reset_state), so it flows a
+                # harmless zero downstream while the reservoir synchronises — the
+                # warmup only needs the reservoir state, not the readout output.
+                if warmup_inputs[0].shape[1] > 0:
+                    self.model.warmup(*warmup_inputs, reset=reset)
+                    seed = warmup_inputs[0][:, -1:, :]
+                elif reset:
+                    self.model.reset_reservoirs()
+                    seed = torch.zeros(batch_size, 1, feedback_dim, dtype=dtype, device=device)
+                else:
+                    seed = torch.zeros(batch_size, 1, feedback_dim, dtype=dtype, device=device)
+
+                if num_drivers:
+                    held_drivers = tuple(d[:, -1:, :] for d in warmup_inputs[1:])
+
+                if initial_feedback is not None:
+                    z = initial_feedback
+                else:
+                    z = seed
+
+                # Phase 2: closed-loop FORCE. Each step drives the model with the
+                # network's own feedback, reads the readout feature vector, applies
+                # one RLS update toward the target, and feeds the *updated* output
+                # back into the next step.
+                for t in range(total_steps):
+                    d = targets[:, t : t + 1, :]
+                    self.model(z, *held_drivers)
+                    features = captured["features"]
+                    readout.partial_fit(features, d)
+                    z = readout(features)
+                    outputs[:, t, :] = z.squeeze(1)
+        finally:
+            handle.remove()
+
+        return outputs
 
     @staticmethod
     @contextmanager

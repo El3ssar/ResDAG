@@ -1,7 +1,7 @@
 """Objective function builder for Optuna optimization.
 
 This module exposes :func:`build_objective`, a thin wrapper that constructs a
-:class:`resdag.hpo.runner.TrialRunner` and returns it as the per-trial
+:class:`resdag.hpo.trial_runner.TrialRunner` and returns it as the per-trial
 objective.  ``TrialRunner`` carries the full per-trial lifecycle (seeding, model
 creation, training, a single forecast with horizon-checkpoint pruning, and loss
 evaluation).  Keeping ``build_objective`` as a wrapper preserves backward
@@ -16,7 +16,7 @@ feedback output rather than crashing on ``preds.shape``.
 
 See Also
 --------
-resdag.hpo.runner : The picklable :class:`TrialRunner` doing the real work.
+resdag.hpo.trial_runner : The picklable :class:`TrialRunner` doing the real work.
 resdag.hpo.run : High-level orchestrator that calls :func:`build_objective`.
 resdag.hpo.losses : Loss functions available for evaluation.
 """
@@ -29,7 +29,7 @@ import torch
 from resdag.core import ESNModel
 
 from .losses import LossProtocol
-from .runner import TrialCallback, TrialRunner, _cleanup, _validate_data_keys
+from .trial_runner import TrialCallback, TrialRunner, _cleanup, _validate_data_keys
 
 __all__ = ["build_objective"]
 
@@ -61,7 +61,7 @@ def build_objective(
 ) -> TrialRunner:
     """Build an Optuna objective from user-defined callbacks.
 
-    Thin wrapper around :class:`resdag.hpo.runner.TrialRunner`.  The returned
+    Thin wrapper around :class:`resdag.hpo.trial_runner.TrialRunner`.  The returned
     object is a *picklable* callable: invoke it with an :class:`optuna.Trial`
     and it returns the (possibly clipped) loss to minimize.  Because it is a
     real object rather than a closure, it can be shipped to ``spawn``-ed worker

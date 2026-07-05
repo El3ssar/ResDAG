@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # would burn the whole study budget producing ``penalty_value`` for every trial
 # and return nonsense best_params. When a caught exception carries this marker
 # we re-raise instead of penalising, so the study aborts loudly. The matched
-# start-method fix lives in ``resdag.hpo.runners.select_start_method``.
+# start-method fix lives in ``resdag.hpo.dispatch.select_start_method``.
 _CUDA_FORK_REINIT_MARKER = "Cannot re-initialize CUDA in forked subprocess"
 
 
@@ -506,6 +506,16 @@ class TrialRunner:
         at any checkpoint, :class:`optuna.TrialPruned` is raised.  The loss at
         the final (full-horizon) checkpoint is returned as the raw loss.
 
+        Reports are keyed by the **1-based checkpoint index** (``1, 2, …, n``),
+        *not* the horizon length in timesteps.  A pruner's step-based knobs
+        (e.g. :class:`~optuna.pruners.ThresholdPruner`'s ``n_warmup_steps`` or a
+        successive-halving rung schedule) are therefore expressed in
+        *checkpoints* and stay horizon-independent — a warmup of ``2`` skips the
+        first two checkpoints whether the horizon is 100 or 10 000 steps.  The
+        actual prefix length used to slice the forecast is recorded per report
+        as the ``horizon@<idx>`` user attribute so the timestep mapping is still
+        recoverable for diagnostics.
+
         Parameters
         ----------
         trial : optuna.Trial
@@ -527,13 +537,18 @@ class TrialRunner:
         checkpoints = _checkpoint_horizons(timesteps, self.n_checkpoints)
 
         raw_loss = self.penalty_value
-        for step in checkpoints:
+        for idx, prefix_len in enumerate(checkpoints, start=1):
             # Loss convention is ``loss_fn(y_true, y_pred)`` → (val, preds).
-            raw_loss = self._score(val[:, :step, :], preds[:, :step, :])
-            trial.report(raw_loss, step=step)
+            raw_loss = self._score(val[:, :prefix_len, :], preds[:, :prefix_len, :])
+            # Report by checkpoint *index* (horizon-independent step axis) so
+            # pruner step knobs (n_warmup_steps, halving rungs) are portable;
+            # record the concrete prefix length for diagnostics.
+            trial.report(raw_loss, step=idx)
+            trial.set_user_attr(f"horizon@{idx}", prefix_len)
             if trial.should_prune():
                 raise optuna.TrialPruned(
-                    f"pruned at horizon checkpoint step={step} (loss={raw_loss:.6f})"
+                    f"pruned at checkpoint {idx}/{len(checkpoints)} "
+                    f"(horizon={prefix_len} steps, loss={raw_loss:.6f})"
                 )
         return raw_loss
 

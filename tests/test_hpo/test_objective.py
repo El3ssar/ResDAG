@@ -1,6 +1,6 @@
 """Tests for the HPO objective built by :func:`build_objective`.
 
-The following behaviours of the :class:`resdag.hpo.runner.TrialRunner` returned
+The following behaviours of the :class:`resdag.hpo.trial_runner.TrialRunner` returned
 by :func:`build_objective` are pinned here:
 
 * **Clip / prune + ``raw_loss``.**  ``clip_value`` clamps the returned objective
@@ -20,7 +20,7 @@ by :func:`build_objective` are pinned here:
   every trial value bit-for-bit; a different base seed diverges.
 * **Non-finite loss handling.**  A non-finite (NaN/inf) loss is a *value*, not an
   exception, so it slips past the ``catch_exceptions`` / ``penalty_value``
-  machinery in :class:`resdag.hpo.runner.TrialRunner` (built by
+  machinery in :class:`resdag.hpo.trial_runner.TrialRunner` (built by
   :func:`resdag.hpo.objective.build_objective`).  Optuna then rejects the value
   and records the trial as ``FAIL`` — starving the sampler of the signal that the
   region is bad and excluding the trial from the study summary.  Diverged

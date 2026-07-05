@@ -7,7 +7,7 @@ execution into a complete hyperparameter optimization pipeline.
 See Also
 --------
 resdag.hpo.storage : Storage backend resolution.
-resdag.hpo.runners : Single- and multi-process trial execution.
+resdag.hpo.dispatch : Single- and multi-process trial execution.
 resdag.hpo.objective : Objective function builder.
 resdag.hpo.losses : Available loss functions.
 """
@@ -23,12 +23,13 @@ from optuna.samplers import TPESampler
 
 from resdag.core import ESNModel
 
+from .dispatch import run_multiprocess, run_single
 from .losses import LossProtocol, get_loss
 from .objective import build_objective
 from .pruners import resolve_pruner
-from .runners import run_multiprocess, run_single
 from .storage import enable_sqlite_wal, resolve_storage
 from .transfer import apply_warm_start, transfer_trials
+from .trial_runner import TrialCallback
 from .utils import make_study_name
 
 __all__ = ["run_hpo"]
@@ -117,6 +118,10 @@ def run_hpo(
     penalty_value: float = 1e10,
     clip_value: float | None = None,
     prune_on_clip: bool = False,
+    horizon_key: str | None = None,
+    n_checkpoints: int = 5,
+    torch_scoring: bool = True,
+    trial_callbacks: list[TrialCallback] | None = None,
 ) -> optuna.Study:
     """Run an Optuna hyperparameter optimization study for ESN models.
 
@@ -251,6 +256,36 @@ def run_hpo(
     prune_on_clip : bool, default=False
         If ``True`` **and** *clip_value* is set, trials whose raw loss exceeds
         *clip_value* are pruned instead of returning the clipped value.
+    horizon_key : str, optional
+        Key in the ``data_loader`` output dict giving the forecast horizon (an
+        ``int``) for the autoregressive phase.  When ``None`` (default), the
+        horizon defaults to ``val.shape[1]`` (the number of validation steps).
+        Set this to forecast a horizon that differs from the validation window
+        length.
+    n_checkpoints : int, default=5
+        Number of growing forecast-horizon checkpoints at which each trial
+        reports an intermediate loss and the configured *pruner* is consulted.
+        The single forecast is sliced to each checkpoint (no repeated
+        forecasts), and reports are keyed by 1-based checkpoint index.  Values
+        ``<= 1`` disable intermediate reporting (one report at the full
+        horizon), which also disables checkpoint-based pruning — set this ``>= 2``
+        for *pruner* to have any early-stopping signal to act on.
+    torch_scoring : bool, default=True
+        If ``True``, evaluate the loss on the forecast's device with
+        ``torch.Tensor`` inputs, only moving the final scalar to the host, and
+        fall back to NumPy when the loss rejects tensors.  The five built-in
+        losses are NumPy-based and always take the fallback; a **custom
+        torch-native** ``loss`` benefits from staying on-device (no GPU→CPU→NumPy
+        round-trip per checkpoint).  Set ``False`` to always score in NumPy.
+    trial_callbacks : list of callable, optional
+        Per-trial callbacks invoked after each successful evaluation.  Each is
+        called as ``callback(trial, context)`` where *context* is a dict with
+        ``"params"``, ``"raw_loss"`` and ``"loss"``.  A callback may call
+        ``trial.report`` / raise ``optuna.TrialPruned`` to act as an extra
+        pruning signal; any *other* exception it raises is logged and swallowed,
+        so a callback can never fail a trial.  Under ``n_workers > 1`` with the
+        ``spawn`` start method the callbacks must be picklable (top-level
+        functions, not lambdas or closures).
 
     Returns
     -------
@@ -441,6 +476,7 @@ def run_hpo(
         loss_fn=resolved_loss,
         targets_key=targets_key,
         drivers_keys=drivers_keys,
+        horizon_key=horizon_key,
         catch_exceptions=catch_exceptions,
         penalty_value=penalty_value,
         monitor_losses=resolved_monitor_losses,
@@ -449,6 +485,9 @@ def run_hpo(
         seed=seed,
         clip_value=clip_value,
         prune_on_clip=prune_on_clip,
+        n_checkpoints=n_checkpoints,
+        torch_scoring=torch_scoring,
+        trial_callbacks=trial_callbacks,
     )
 
     # ── Run optimization ─────────────────────────────────────────────
@@ -545,7 +584,7 @@ def _dispatch_multiprocess(
         Logging verbosity.
     device : torch.device or None
         Device the study places models/data on.  Threaded into
-        :func:`~resdag.hpo.runners.run_multiprocess` so it can pick a
+        :func:`~resdag.hpo.dispatch.run_multiprocess` so it can pick a
         device-safe start method (``spawn`` for CUDA, which ``fork`` breaks
         silently).
 

@@ -8,10 +8,7 @@ mechanics; the design rationale lives in the
 > **Looking for something to work on?** The roadmap is tracked as a
 > dependency-ordered set of issues, grouped under the `type:epic` tracking
 > issues and organized by the `pillar:*` labels (correctness, speed, api,
-> pipeline, hpo). Pick any issue labelled `status:ready`. If you're running
-> multiple parallel (agent or human) sessions, follow
-> [PARALLEL_DEVELOPMENT.md](https://github.com/El3ssar/ResDAG/blob/main/PARALLEL_DEVELOPMENT.md)
-> for the worktree → branch → PR protocol and how dependencies/`status:ready` are maintained.
+> pipeline, hpo). Pick any issue labelled `status:ready`.
 
 ## Development setup
 

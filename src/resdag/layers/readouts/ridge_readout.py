@@ -17,7 +17,12 @@ resdag.layers.readouts.PinvReadoutLayer : lstsq / pseudo-inverse readout.
 
 import torch
 
-from ._solve_utils import build_ridge_problem, finalize_fit
+from ._solve_utils import (
+    _warn_on_precision_loss,
+    build_ridge_problem,
+    finalize_fit,
+    solve_ridge,
+)
 from .base import ReadoutLayer
 
 
@@ -173,18 +178,38 @@ class RidgeReadoutLayer(ReadoutLayer):
             gram_dtype=self.gram_dtype,
         )
 
-        eye = torch.eye(
-            problem.n_features,
-            dtype=problem.solve_dtype,
-            device=problem.gram.device,
+        layer_name = (
+            f"{type(self).__name__}('{self._name}')"
+            if self._name is not None
+            else type(self).__name__
         )
-        a = problem.gram + self.alpha * eye
 
         if self.solver == "cholesky":
-            factor = torch.linalg.cholesky(a)
-            coefs = torch.cholesky_solve(problem.rhs, factor)
-        else:  # "solve"
-            coefs = torch.linalg.solve(a, problem.rhs)
+            coefs = solve_ridge(
+                problem.gram,
+                problem.rhs,
+                self.alpha,
+                layer_name=layer_name,
+                gram_dtype=problem.X.dtype,
+            )
+        else:  # "solve" — general LU. Does not need positive-definiteness, so
+            # it tolerates alpha == 0 on a full-rank Gram; it still benefits
+            # from the shared post-solve accuracy residual guard.
+            eye = torch.eye(
+                problem.n_features,
+                dtype=problem.solve_dtype,
+                device=problem.gram.device,
+            )
+            coefs = torch.linalg.solve(problem.gram + self.alpha * eye, problem.rhs)
+            _warn_on_precision_loss(
+                gram=problem.gram,
+                coefs=coefs,
+                rhs=problem.rhs,
+                alpha_eff=self.alpha,
+                cond_estimate=None,
+                gram_dtype=problem.X.dtype,
+                layer_name=layer_name,
+            )
 
         return finalize_fit(problem, coefs)
 

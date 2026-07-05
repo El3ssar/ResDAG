@@ -154,6 +154,12 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
         ----------
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
+        **kwargs
+            Per-call keyword overrides. A recognized ``input_scaling`` key
+            overrides the bound ``self.input_scaling`` for this call only (the
+            shared per-call contract — see
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored.
 
         Returns
         -------
@@ -198,8 +204,10 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
         # input_scaling survives a float64 weight intact.
         values = V.astype(compute_dtype)
 
-        # Apply the shared uniform scaling contract as the documented final transform.
-        values = self._apply_scaling(values)
+        # Apply the shared uniform scaling contract as the documented final
+        # transform. Forward ``**kwargs`` so a per-call ``input_scaling`` override
+        # wins over the bound value.
+        values = self._apply_scaling(values, **kwargs)
 
         # Convert to tensor and copy to weight
         weight_data = torch.from_numpy(values).to(device=device, dtype=dtype)

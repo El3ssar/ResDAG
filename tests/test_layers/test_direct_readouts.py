@@ -16,6 +16,8 @@ reuse (no copy-paste of the CG centering block), and that all three are
 exported and drop-in compatible with ``ESNTrainer``.
 """
 
+import warnings
+
 import pytest
 import pytorch_symbolic as ps
 import torch
@@ -459,3 +461,171 @@ class TestDevice:
         pred = readout(torch.randn(10, 20, device=device))
         assert pred.device.type == device.type
         assert pred.shape == (10, 5)
+
+
+# ---------------------------------------------------------------------------
+# Robust ridge solve: the shared solve_ridge helper (Cholesky footgun fixes)
+# ---------------------------------------------------------------------------
+
+
+def _ill_conditioned_design(
+    n_features: int,
+    cond: float,
+    n_samples: int | None = None,
+    seed: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """A design matrix ``X`` with a prescribed ``cond(X)`` and its targets.
+
+    The singular values are spaced logarithmically from ``1`` to ``1/cond`` so
+    ``cond(XᵀX) = cond²`` is controllable — the regime where forming the Gram in
+    float32 destroys accuracy a float64 solve cannot recover.
+    """
+    n = n_samples if n_samples is not None else 4 * n_features
+    gen = torch.Generator().manual_seed(seed)
+    a = torch.randn(n, n_features, dtype=torch.float64, generator=gen)
+    u, _, vh = torch.linalg.svd(a, full_matrices=False)
+    s = torch.logspace(0, -torch.log10(torch.tensor(cond)), n_features, dtype=torch.float64)
+    x = (u * s) @ vh
+    true_w = torch.randn(n_features, 3, dtype=torch.float64, generator=gen)
+    y = x @ true_w + 1e-3 * torch.randn(n, 3, dtype=torch.float64, generator=gen)
+    return x, y
+
+
+class TestSolveRidgeRobustness:
+    """The shared robust solver: no crash on rank deficiency, self-announcing loss."""
+
+    def test_well_conditioned_bit_identical_to_bare_cholesky(self) -> None:
+        """On a healthy Gram, solve_ridge is bit-identical to a bare Cholesky solve.
+
+        The robustness wrapper must not perturb the well-conditioned default
+        path — the escalated jitter and fallbacks only fire on failure.
+        """
+        torch.manual_seed(0)
+        X = torch.randn(300, 30, dtype=torch.float64)
+        y = torch.randn(300, 4, dtype=torch.float64)
+        alpha = 1e-4
+
+        prob = _solve_utils.build_ridge_problem(
+            X, y, fit_intercept=True, use_float64=True, gram_dtype=None
+        )
+        eye = torch.eye(prob.n_features, dtype=prob.solve_dtype)
+        bare = torch.cholesky_solve(prob.rhs, torch.linalg.cholesky(prob.gram + alpha * eye))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # a warning here would fail the test
+            robust = _solve_utils.solve_ridge(
+                prob.gram, prob.rhs, alpha, layer_name="ridge", gram_dtype=prob.X.dtype
+            )
+        assert torch.equal(robust, bare)
+
+    def test_rank_deficient_no_crash_and_warns(self) -> None:
+        """A rank-deficient Gram (F > N) is solved finitely with an escalation warning.
+
+        This is the CPU analogue of the CUDA float32 footgun: F=64 features from
+        N=40 samples makes the centered Gram singular. A bare Cholesky raises;
+        solve_ridge escalates the jitter (or falls back to eigh) and warns.
+        """
+        torch.manual_seed(0)
+        # float32 gram so the singular Gram trips Cholesky the way it does on GPU.
+        X = torch.randn(40, 64, dtype=torch.float32)
+        y = torch.randn(40, 3, dtype=torch.float32)
+        prob = _solve_utils.build_ridge_problem(
+            X, y, fit_intercept=True, use_float64=False, gram_dtype=torch.float32
+        )
+        with pytest.warns(RuntimeWarning, match="rank-deficient|escalated"):
+            coefs = _solve_utils.solve_ridge(
+                prob.gram, prob.rhs, 1e-6, layer_name="ridge", gram_dtype=torch.float32
+            )
+        assert torch.isfinite(coefs).all()
+        assert coefs.shape == (64, 3)
+
+    def test_indefinite_gram_eigh_fallback(self) -> None:
+        """An indefinite Gram (negative eigenvalue > jitter) uses the eigh fallback.
+
+        Both the plain and the jitter-escalated Cholesky fail on a genuinely
+        indefinite matrix (a float32-rounding artifact can drive a near-zero
+        eigenvalue meaningfully negative); the eigh-clamped fallback must still
+        recover a finite solution.
+        """
+        torch.manual_seed(3)
+        n_features = 10
+        q, _ = torch.linalg.qr(torch.randn(n_features, n_features, dtype=torch.float64))
+        # A spectrum with one eigenvalue that stays negative past the jitter.
+        evals = torch.tensor(
+            [5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1, 0.01, 1e-4, -0.3], dtype=torch.float64
+        )
+        gram = q @ torch.diag(evals) @ q.T
+        gram = (gram + gram.T) / 2  # enforce exact symmetry
+        rhs = torch.randn(n_features, 2, dtype=torch.float64)
+
+        eigh_calls = 0
+        original_eigh = torch.linalg.eigh
+
+        def _counting_eigh(*args, **kwargs):
+            nonlocal eigh_calls
+            eigh_calls += 1
+            return original_eigh(*args, **kwargs)
+
+        torch.linalg.eigh = _counting_eigh
+        try:
+            with pytest.warns(RuntimeWarning, match="rank-deficient|escalated"):
+                coefs = _solve_utils.solve_ridge(
+                    gram, rhs, 1e-6, layer_name="ridge", gram_dtype=torch.float64
+                )
+        finally:
+            torch.linalg.eigh = original_eigh
+
+        assert eigh_calls == 1  # the fallback genuinely fired
+        assert torch.isfinite(coefs).all()
+
+    def test_illconditioned_float32_gram_warns(self) -> None:
+        """A cond(X)=1e6 fit with a float32 Gram warns about lost precision.
+
+        cond(XᵀX)=1e12 pushes float32's ~1e-7 entry error past unity, so the
+        float64 solve returns a materially different readout than a float64 Gram
+        would. The accuracy guard must surface that.
+        """
+        X, y = _ill_conditioned_design(n_features=400, cond=1e6)
+        readout = RidgeReadoutLayer(400, 3, alpha=1e-6, gram_dtype=torch.float32)
+        with pytest.warns(RuntimeWarning, match="losing accuracy|precision"):
+            readout.fit(X.float(), y.float())
+
+    def test_illconditioned_float64_gram_is_clean(self) -> None:
+        """The same cond(X)=1e6 fit with a float64 Gram raises no warning.
+
+        The precision guard keys off the Gram-formation dtype, so a float64 Gram
+        (which does *not* lose the precision) must stay quiet.
+        """
+        X, y = _ill_conditioned_design(n_features=400, cond=1e6)
+        readout = RidgeReadoutLayer(400, 3, alpha=1e-6, gram_dtype=torch.float64)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            readout.fit(X, y)
+
+    def test_well_conditioned_fit_does_not_warn(self) -> None:
+        """A healthy fit (even with a float32 Gram) is silent."""
+        X, y = _ill_conditioned_design(n_features=100, cond=1e2)
+        readout = RidgeReadoutLayer(100, 3, alpha=1e-6, gram_dtype=torch.float32)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            readout.fit(X.float(), y.float())
+
+    @pytest.mark.gpu
+    def test_rank_deficient_cuda_fit_no_longer_raises(self) -> None:
+        """Regression: the library-default CUDA fit on a rank-deficient Gram.
+
+        With F=256 features from N=200 samples on CUDA the auto float32 Gram is
+        rank-deficient; a bare Cholesky used to raise a raw ``LinAlgError`` with
+        no fallback. solve_ridge must now recover a finite fit.
+        """
+        if not torch.cuda.is_available():  # pragma: no cover - guarded by marker
+            pytest.skip("CUDA not available")
+        torch.manual_seed(0)
+        X = torch.randn(1, 200, 256, device="cuda")
+        y = torch.randn(1, 200, 3, device="cuda")
+        readout = RidgeReadoutLayer(256, 3, alpha=1e-6).to("cuda")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            readout.fit(X, y)  # previously raised torch.linalg.LinAlgError
+        assert readout.is_fitted
+        assert torch.isfinite(readout.weight).all()

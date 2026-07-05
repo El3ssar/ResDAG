@@ -12,7 +12,7 @@ import torch
 
 from resdag.layers import Power
 from resdag.layers.cells import ESNCell
-from resdag.layers.readouts import CGReadoutLayer
+from resdag.layers.readouts import CGReadoutLayer, ReadoutLayer, RidgeReadoutLayer
 from resdag.models import classic_esn, headless_esn, linear_esn, ott_esn, power_augmented
 from resdag.training import ESNTrainer
 
@@ -25,10 +25,11 @@ class TestClassicESN:
         model = classic_esn(reservoir_size=50, feedback_size=2, output_size=3)
 
         assert model is not None
-        # Check that model has expected layers
+        # Check that model has expected layers. The default readout is now the
+        # exact Cholesky ridge solver (RidgeReadoutLayer), not the legacy CG one.
         layer_names = [name for name, _ in model.named_modules()]
         assert any("ESNLayer" in name for name in layer_names)
-        assert any("CGReadoutLayer" in name for name in layer_names)
+        assert any("RidgeReadoutLayer" in name for name in layer_names)
 
     def test_forward_pass(self) -> None:
         """Test forward pass through classic ESN."""
@@ -279,7 +280,8 @@ class TestPowerAugmented:
         assert model is not None
         layer_names = [name for name, _ in model.named_modules()]
         assert any("ESNLayer" in name for name in layer_names)
-        assert any("CGReadoutLayer" in name for name in layer_names)
+        # Default readout is the exact Cholesky ridge solver, not legacy CG.
+        assert any("RidgeReadoutLayer" in name for name in layer_names)
         # The augmentation node is a Power transform, not Ott's selective one.
         assert any(isinstance(m, Power) for m in model.modules())
 
@@ -377,6 +379,81 @@ class TestModelComparison:
         assert not torch.allclose(out_headless, out_linear, atol=1e-5)
 
 
+READOUT_FACTORIES = [
+    ("classic_esn", classic_esn),
+    ("ott_esn", ott_esn),
+    ("power_augmented", power_augmented),
+]
+
+
+class TestReadoutSelection:
+    """The ``readout`` selector on the readout-bearing premade factories.
+
+    The default readout is the exact direct Cholesky ridge solve
+    (:class:`RidgeReadoutLayer`); the legacy iterative
+    :class:`CGReadoutLayer` remains opt-in via ``readout="cg"`` or by passing a
+    :class:`ReadoutLayer` subclass directly.
+    """
+
+    def _readouts(self, model):  # type: ignore[no-untyped-def]
+        return [m for m in model.modules() if isinstance(m, ReadoutLayer)]
+
+    @pytest.mark.parametrize("name, factory", READOUT_FACTORIES, ids=lambda v: v)
+    def test_default_readout_is_ridge_cholesky(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """The default readout is RidgeReadoutLayer with solver='cholesky'."""
+        model = factory(reservoir_size=40, feedback_size=2, output_size=3)
+        readouts = self._readouts(model)
+        assert readouts, f"{name} should contain a readout layer"
+        assert all(isinstance(r, RidgeReadoutLayer) for r in readouts)
+        assert all(r.solver == "cholesky" for r in readouts)
+        # It must not be the legacy CG readout by default.
+        assert not any(isinstance(r, CGReadoutLayer) for r in readouts)
+
+    @pytest.mark.parametrize("name, factory", READOUT_FACTORIES, ids=lambda v: v)
+    def test_cg_opt_in_by_string(self, name: str, factory) -> None:  # type: ignore[no-untyped-def]
+        """``readout='cg'`` restores the legacy CGReadoutLayer."""
+        model = factory(reservoir_size=40, feedback_size=2, output_size=3, readout="cg")
+        readouts = self._readouts(model)
+        assert readouts
+        assert all(isinstance(r, CGReadoutLayer) for r in readouts)
+
+    def test_readout_class_passthrough(self) -> None:
+        """A ReadoutLayer subclass passed directly is instantiated verbatim."""
+        model = classic_esn(
+            reservoir_size=40, feedback_size=2, output_size=3, readout=CGReadoutLayer
+        )
+        assert all(isinstance(r, CGReadoutLayer) for r in self._readouts(model))
+
+    def test_readout_params_threaded_through(self) -> None:
+        """alpha / bias / name still reach the (Ridge) readout under selection."""
+        model = classic_esn(
+            reservoir_size=40,
+            feedback_size=2,
+            output_size=3,
+            readout="ridge",
+            readout_alpha=1e-3,
+            readout_bias=False,
+            readout_name="predictions",
+        )
+        readouts = self._readouts(model)
+        assert readouts
+        r = readouts[0]
+        assert isinstance(r, RidgeReadoutLayer)
+        assert r.alpha == 1e-3
+        assert r.bias is None
+        assert r.name == "predictions"
+
+    def test_unknown_readout_string_raises(self) -> None:
+        """An unknown readout key is rejected with a ValueError."""
+        with pytest.raises(ValueError, match="Unknown readout"):
+            classic_esn(reservoir_size=20, feedback_size=2, output_size=3, readout="bogus")
+
+    def test_non_readout_class_raises(self) -> None:
+        """A non-ReadoutLayer readout spec is rejected with a TypeError."""
+        with pytest.raises(TypeError, match="ReadoutLayer subclass"):
+            classic_esn(reservoir_size=20, feedback_size=2, output_size=3, readout=int)
+
+
 DRIVEN_FACTORIES = [
     ("classic_esn", classic_esn),
     ("ott_esn", ott_esn),
@@ -408,8 +485,10 @@ class TestDrivenFactories:
         """Driver stays out of the concat: in_features == feedback + reservoir."""
         model = factory(reservoir_size=50, feedback_size=2, output_size=3, input_size=4)
 
-        readouts = [m for m in model.modules() if isinstance(m, CGReadoutLayer)]
-        assert readouts, f"{name} should contain a CGReadoutLayer"
+        readouts = [m for m in model.modules() if isinstance(m, ReadoutLayer)]
+        assert readouts, f"{name} should contain a readout layer"
+        # Default readout is the exact Cholesky ridge solver.
+        assert all(isinstance(r, RidgeReadoutLayer) for r in readouts)
         # feedback_size (2) + reservoir_size (50); the driver (4) is excluded.
         assert all(r.in_features == 52 for r in readouts)
 
@@ -464,7 +543,8 @@ class TestDrivenFactories:
         # No driving input means a zero-size driving-weight placeholder.
         assert all((c.input_size or 0) == 0 for c in cells)
 
-        readouts = [m for m in model.modules() if isinstance(m, CGReadoutLayer)]
+        readouts = [m for m in model.modules() if isinstance(m, ReadoutLayer)]
+        assert readouts
         assert all(r.in_features == 52 for r in readouts)
 
 

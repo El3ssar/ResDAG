@@ -7,11 +7,21 @@ architectures (``classic_esn``, ``ott_esn``, ``power_augmented``,
 
 - which augmentation node (if any) is applied to the reservoir output,
 - whether the raw input is concatenated back in before the readout,
-- whether a readout layer is attached at all.
+- whether a readout layer is attached at all,
+- which readout solver the readout uses (a direct Cholesky ridge solve by
+  default, the legacy Conjugate Gradient solver on request).
 
 Rather than repeat the ``reservoir_input -> ESNLayer -> Concatenate ->
-CGReadoutLayer -> ESNModel`` chain in five places, those choices are expressed
-as arguments to :func:`_esn_builder`.
+RidgeReadoutLayer -> ESNModel`` chain in five places, those choices are
+expressed as arguments to :func:`_esn_builder`.
+
+The default readout is :class:`~resdag.layers.RidgeReadoutLayer` with
+``solver='cholesky'``: it solves the ridge normal equations exactly (to
+floating-point) and is faster than :class:`~resdag.layers.CGReadoutLayer`,
+whose iterative solve under-converges at the realistic data scales and
+concatenated-input ill-conditioning these premade architectures produce.  The
+old CG behaviour is still selectable via ``readout="cg"`` (or by passing a
+readout class explicitly).
 
 This module is intentionally private; the public surface is the factory
 functions exported from :mod:`resdag.models`.
@@ -25,9 +35,60 @@ from pytorch_symbolic.symbolic_data import SymbolicTensor
 
 from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, RidgeReadoutLayer
+from resdag.layers.readouts import ReadoutLayer
 
 AugmentFactory = Callable[[], nn.Module]
+
+# A readout spec is either a short string key naming a built-in solver, or a
+# :class:`~resdag.layers.readouts.ReadoutLayer` subclass to instantiate.
+ReadoutSpec = str | type[ReadoutLayer]
+
+# Built-in string keys -> readout classes. ``"ridge"`` (the default) is the
+# direct Cholesky ridge solver; ``"cg"`` is the legacy Conjugate Gradient one.
+_READOUT_REGISTRY: dict[str, type[ReadoutLayer]] = {
+    "ridge": RidgeReadoutLayer,
+    "cg": CGReadoutLayer,
+}
+
+
+def _resolve_readout_cls(readout: ReadoutSpec) -> type[ReadoutLayer]:
+    """Resolve a readout spec to a concrete :class:`ReadoutLayer` subclass.
+
+    Parameters
+    ----------
+    readout : str or type[ReadoutLayer]
+        Either a built-in key (``"ridge"`` or ``"cg"``) or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass to use directly.
+
+    Returns
+    -------
+    type[ReadoutLayer]
+        The readout class to instantiate.
+
+    Raises
+    ------
+    ValueError
+        If ``readout`` is an unknown string key.
+    TypeError
+        If ``readout`` is neither a known string nor a ``ReadoutLayer``
+        subclass.
+    """
+    if isinstance(readout, str):
+        try:
+            return _READOUT_REGISTRY[readout]
+        except KeyError:
+            valid = ", ".join(repr(k) for k in _READOUT_REGISTRY)
+            raise ValueError(
+                f"Unknown readout {readout!r}; expected one of {valid}, or a "
+                f"ReadoutLayer subclass."
+            ) from None
+    if isinstance(readout, type) and issubclass(readout, ReadoutLayer):
+        return readout
+    raise TypeError(
+        f"readout must be a string key ({', '.join(repr(k) for k in _READOUT_REGISTRY)}) "
+        f"or a ReadoutLayer subclass, got {readout!r}."
+    )
 
 
 def _esn_builder(
@@ -48,6 +109,7 @@ def _esn_builder(
     bias: bool = True,
     trainable: bool = False,
     # Readout params
+    readout: ReadoutSpec = "ridge",
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
@@ -60,6 +122,15 @@ def _esn_builder(
     :mod:`resdag.models`.  It always builds a reservoir, then optionally applies
     an augmentation node, optionally concatenates the raw input back in, and
     optionally attaches a ridge-regression readout.
+
+    The readout defaults to :class:`~resdag.layers.RidgeReadoutLayer` with
+    ``solver='cholesky'`` — a direct, exact (to floating point) ridge solve that
+    is both faster and more accurate than the iterative
+    :class:`~resdag.layers.CGReadoutLayer`, which under-converges at realistic
+    data scales and on the ill-conditioned concatenated-input readouts these
+    architectures produce.  Pass ``readout="cg"`` to restore the legacy CG
+    behaviour, or a :class:`~resdag.layers.readouts.ReadoutLayer` subclass to
+    use a custom readout.
 
     Architecture (each optional stage is skipped when not requested)::
 
@@ -112,6 +183,16 @@ def _esn_builder(
         Whether to use bias in the reservoir.
     trainable : bool, default=False
         Whether reservoir weights are trainable.
+    readout : str or type[ReadoutLayer], default="ridge"
+        Which readout to attach.  Accepts the built-in keys ``"ridge"`` (the
+        default — :class:`~resdag.layers.RidgeReadoutLayer` with the exact
+        ``solver='cholesky'`` direct solve) and ``"cg"`` (the legacy iterative
+        :class:`~resdag.layers.CGReadoutLayer`), or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass to instantiate
+        directly.  Any subclass passed must accept the same
+        ``in_features``/``out_features``/``bias``/``alpha``/``name`` constructor
+        arguments the builder forwards.  Only used when ``output_size`` is not
+        ``None``.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.
     readout_bias : bool, default=True
@@ -132,7 +213,11 @@ def _esn_builder(
     ------
     ValueError
         If a readout is requested (``output_size`` is not ``None``) but
-        ``output_size`` is not a positive integer.
+        ``output_size`` is not a positive integer, or if ``readout`` is an
+        unknown string key.
+    TypeError
+        If ``readout`` is neither a known string key nor a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
 
     See Also
     --------
@@ -185,12 +270,21 @@ def _esn_builder(
     else:
         readout_in_features = reservoir_size
 
-    readout = CGReadoutLayer(
+    # Resolve the readout spec up front so an invalid one fails before any
+    # partial construction. Default is the exact Cholesky ridge solve; ``"cg"``
+    # restores the legacy CGReadoutLayer.
+    readout_cls = _resolve_readout_cls(readout)
+
+    # ``alpha`` is not declared on the ``ReadoutLayer`` base, but every readout
+    # this builder is meant to wire (RidgeReadoutLayer, CGReadoutLayer, and the
+    # other ridge solvers) accepts it. The docstring makes this the contract for
+    # a custom ``readout`` class, so the base-class call-arg check is expected.
+    readout_layer = readout_cls(
         in_features=readout_in_features,
         out_features=output_size,
         bias=readout_bias,
-        alpha=readout_alpha,
+        alpha=readout_alpha,  # type: ignore[call-arg]
         name=readout_name,
     )(output)
 
-    return ESNModel(model_inputs, readout)
+    return ESNModel(model_inputs, readout_layer)

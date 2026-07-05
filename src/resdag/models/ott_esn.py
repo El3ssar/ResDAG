@@ -25,7 +25,7 @@ from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import SelectiveExponentiation
 
-from ._builder import _esn_builder
+from ._builder import ReadoutSpec, _esn_builder
 
 
 def ott_esn(
@@ -43,6 +43,7 @@ def ott_esn(
     bias: bool = True,
     trainable: bool = False,
     # Readout params
+    readout: ReadoutSpec = "ridge",
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
@@ -97,6 +98,13 @@ def ott_esn(
         Whether to include bias in reservoir.
     trainable : bool, default=False
         If True, reservoir weights are trainable via backpropagation.
+    readout : str or type, default="ridge"
+        Which readout solver to attach.  ``"ridge"`` (default) is the exact
+        direct Cholesky ridge solve (:class:`~resdag.layers.RidgeReadoutLayer`);
+        ``"cg"`` selects the legacy iterative
+        :class:`~resdag.layers.CGReadoutLayer`.  A
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass may also be passed
+        to use a custom readout.
     readout_alpha : float, default=1e-6
         L2 regularization strength for ridge regression in readout.
     readout_bias : bool, default=True
@@ -167,6 +175,7 @@ def ott_esn(
         activation=activation,
         bias=bias,
         trainable=trainable,
+        readout=readout,
         readout_alpha=readout_alpha,
         readout_bias=readout_bias,
         readout_name=readout_name,

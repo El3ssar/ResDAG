@@ -29,7 +29,7 @@ import sys
 
 import torch
 
-from ._solve_utils import resolve_gram_dtype, resolve_solve_dtype
+from ._solve_utils import resolve_gram_dtype, resolve_solve_dtype, solve_ridge
 from .base import ReadoutLayer
 
 # ``pytorch_symbolic`` frames that invoke a layer's ``forward`` to trace output
@@ -196,6 +196,13 @@ class IncrementalRidgeReadout(ReadoutLayer):
         self.register_buffer("sum_y", torch.zeros(out_features, dtype=acc_dtype))
         self.register_buffer("_n", torch.zeros((), dtype=torch.long))
 
+        # Dtype the per-chunk Gram matmuls actually ran in (resolved from the
+        # first chunk in ``partial_fit``). Recorded so ``finalize``'s accuracy
+        # guard weights its condition estimate by the right machine epsilon —
+        # the precision loss happens at the float32 matmul, before the float64
+        # accumulation, so the accumulator dtype would understate it.
+        self._chunk_gram_dtype: torch.dtype | None = None
+
     @property
     def n_seen(self) -> int:
         """int : Number of samples accumulated across all ``partial_fit`` calls."""
@@ -215,6 +222,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
         self.sum_x.zero_()
         self.sum_y.zero_()
         self._n.zero_()
+        self._chunk_gram_dtype = None
         self._is_fitted.fill_(False)
 
     @torch.no_grad()
@@ -302,6 +310,7 @@ class IncrementalRidgeReadout(ReadoutLayer):
         # CPU, input dtype on CUDA) and accumulate into the float64 buffers.
         solve_dtype = resolve_solve_dtype(states.dtype, self.use_float64)
         gram_dtype = resolve_gram_dtype(states.dtype, states.device, solve_dtype, self.gram_dtype)
+        self._chunk_gram_dtype = gram_dtype
         x = states.to(gram_dtype)
         y = targets.to(gram_dtype)
 
@@ -347,7 +356,6 @@ class IncrementalRidgeReadout(ReadoutLayer):
             )
 
         fit_intercept = self.bias is not None
-        solve_dtype = self.XtX.dtype
         original_dtype = self.weight.dtype
         nf = float(n)
 
@@ -363,10 +371,18 @@ class IncrementalRidgeReadout(ReadoutLayer):
             gram = self.XtX
             rhs = self.Xty
 
-        eye = torch.eye(self.in_features, dtype=solve_dtype, device=gram.device)
-        a = gram + self.alpha * eye
-        factor = torch.linalg.cholesky(a)
-        coefs = torch.cholesky_solve(rhs, factor)  # (F, T)
+        layer_name = (
+            f"{type(self).__name__}('{self._name}')"
+            if self._name is not None
+            else type(self).__name__
+        )
+        coefs = solve_ridge(  # (F, T)
+            gram,
+            rhs,
+            self.alpha,
+            layer_name=layer_name,
+            gram_dtype=self._chunk_gram_dtype,
+        )
 
         self.weight.copy_(coefs.T.to(original_dtype))
         if fit_intercept and self.bias is not None:

@@ -24,7 +24,7 @@ resdag.layers.readouts.IncrementalRidgeReadout : Streaming partial_fit readout.
 
 import torch
 
-from ._solve_utils import build_ridge_problem, finalize_fit
+from ._solve_utils import build_ridge_problem, finalize_fit, solve_ridge
 from .base import ReadoutLayer
 
 
@@ -158,14 +158,18 @@ class CholeskyReadoutLayer(ReadoutLayer):
             gram_dtype=self.gram_dtype,
         )
 
-        eye = torch.eye(
-            problem.n_features,
-            dtype=problem.solve_dtype,
-            device=problem.gram.device,
+        layer_name = (
+            f"{type(self).__name__}('{self._name}')"
+            if self._name is not None
+            else type(self).__name__
         )
-        a = problem.gram + self.alpha * eye
-        factor = torch.linalg.cholesky(a)
-        coefs = torch.cholesky_solve(problem.rhs, factor)
+        coefs = solve_ridge(
+            problem.gram,
+            problem.rhs,
+            self.alpha,
+            layer_name=layer_name,
+            gram_dtype=problem.X.dtype,
+        )
 
         return finalize_fit(problem, coefs)
 

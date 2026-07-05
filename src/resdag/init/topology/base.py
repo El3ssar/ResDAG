@@ -24,22 +24,36 @@ resdag.init.matrices : Direct matrix-construction functions.
 resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
+import inspect
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable, cast
+from typing import Any, Callable, Literal, cast, overload
 
 import networkx as nx
 import numpy as np
 import torch
 
-# Below this size the dense ``eigvals`` path is already cheap and exact, so it
-# is used directly rather than the (approximate) power iteration.
-_DENSE_EIGVALS_MAX_N = 64
+from resdag.utils.general import create_torch_generator
 
-# A matrix is treated as "sparse" (routed through scipy's Lanczos/Arnoldi
-# ``eigs``) when at most this fraction of its entries are non-zero.  Most
-# reservoir topologies (Erdős–Rényi, small-world, ...) sit far below this.
+# Below this size the dense ``eigvals`` path is already cheap and exact, so it
+# is used directly rather than any iterative (approximate) method.  The dense
+# ``O(n^3)`` eigendecomposition only becomes worth avoiding well past ~1000.
+_DENSE_EIGVALS_MAX_N = 1000
+
+# A matrix at or below this non-zero fraction takes the sparse CSR ``eigs``
+# path; denser matrices go through the (exact or convergence-verified) dense
+# path. Every path is exact or verified, so the estimate does NOT depend on
+# which side of this threshold a matrix falls — the threshold only trades a CSR
+# Arnoldi iteration against a dense matmul-based one.
 _SPARSE_DENSITY_THRESHOLD = 0.1
+
+# Number of eigenvalues ARPACK converges in the sparse ``eigs`` path.  With
+# ``k=1``, ``which='LM'`` ARPACK can lock onto a sub-dominant Ritz value and
+# miss the true largest by up to ~0.2% when the top eigenvalues are (near-)
+# degenerate — a common case for reservoir adjacency spectra.  Converging a
+# small cluster and taking ``max|lambda|`` over it reliably captures the
+# dominant one (accurate to ~1e-4) at negligible extra cost.
+_EIGS_K = 6
 
 # Number of Arnoldi/Lanczos basis vectors scipy's ``eigs`` builds per restart.
 # The default (``max(2*k+1, 20)``) is too small to converge the dominant
@@ -47,28 +61,42 @@ _SPARSE_DENSITY_THRESHOLD = 0.1
 # makes the iteration both faster and accurate to ~1e-8.
 _EIGS_NCV = 48
 
-# Power-iteration controls (dense GPU-resident fallback).  Reservoir matrices
-# from the circular law have a tight spectral gap, so a generous fixed budget
-# with an early-exit tolerance trades a few cheap matmuls for accuracy.
+# Power-iteration controls (scipy-less dense GPU-resident fallback).  Reservoir
+# matrices from the circular law have a tight spectral gap, so a generous fixed
+# budget with an early-exit tolerance trades a few cheap matmuls for accuracy.
 _POWER_ITER_MAX_ITERS = 1000
 _POWER_ITER_TOL = 1e-7
+# Budget for the dense-path *probe*: a matrix with a well-separated real dominant
+# eigenvalue converges in a handful of steps and wins over an O(n^3) eigvals,
+# but the circular-law reservoir norm never converges — so the probe bails after
+# this many cheap O(n^2) matmuls and hands off to the exact eigendecomposition,
+# instead of burning the full 1000-iteration budget only to fall back anyway.
+_POWER_ITER_DENSE_PROBE = 64
 
 
 def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     """Estimate the spectral radius (largest ``|eigenvalue|``) of a matrix.
 
-    Routes to the cheapest accurate method for the matrix at hand:
+    Every path is exact or convergence-verified, so — unlike the previous
+    ``||A v||`` power iteration — the estimate is never silently biased by a
+    complex-conjugate dominant eigenvalue pair (which real non-symmetric
+    reservoir matrices almost always have), and it never depends on which side
+    of the density threshold a matrix falls on:
 
-    - **Tiny matrices** (``n <= 64``) use the exact dense
-      :func:`torch.linalg.eigvals` — it is already negligible there and avoids
-      any approximation error.
-    - **Sparse matrices** (density ``<= 0.1``) use
+    - **Small matrices** (``n <= 1000``) use the exact dense
+      :func:`torch.linalg.eigvals` — already fast there and free of any
+      approximation error.
+    - **Large sparse matrices** (density ``<= 0.1``) use
       :func:`scipy.sparse.linalg.eigs` with ``k=1, which='LM'`` on a CSR copy,
-      i.e. an Arnoldi iteration that never densifies the operator.
-    - **Dense matrices** use power iteration on ``A`` (largest ``|lambda|`` of a
-      possibly non-symmetric operator), which is GPU-resident — every matmul
-      stays on ``matrix.device`` — and avoids the ``O(n^3)`` dense
-      eigendecomposition.
+      an Arnoldi iteration that never densifies the operator and returns the
+      dominant *complex* eigenvalue directly.
+    - **Large dense matrices** try a complex-pair-robust power iteration (the
+      two-step geometric ratio ``sqrt(||A^2 v||/||v||)``); if it does not
+      converge within tolerance — a tight spectral gap defeats it — the exact
+      dense :func:`torch.linalg.eigvals` is used, so a biased estimate is never
+      returned. scipy ``eigs`` is not used for the dense case: its dense matvec
+      is a full ``O(n^2)`` matmul per Arnoldi step and, at reservoir sizes, is
+      slower than the LAPACK dense eigendecomposition.
 
     Parameters
     ----------
@@ -94,7 +122,17 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
         if radius is not None:
             return radius
 
-    return _power_iteration_radius(matrix)
+    # Dense (or scipy unavailable): a short complex-pair-robust power-iteration
+    # probe, with the exact dense eigendecomposition as the guaranteed-correct
+    # fallback. The probe converges cheaply only when the dominant eigenvalue is
+    # well separated; the circular-law reservoir norm does not converge, so the
+    # small budget bails quickly to eigvals instead of wasting the full budget.
+    estimate, converged = _power_iteration_radius(
+        matrix, max_iters=_POWER_ITER_DENSE_PROBE, return_converged=True
+    )
+    if converged:
+        return estimate
+    return _dense_eigvals_radius(matrix)
 
 
 def _dense_eigvals_radius(matrix: torch.Tensor) -> float:
@@ -104,7 +142,13 @@ def _dense_eigvals_radius(matrix: torch.Tensor) -> float:
 
 
 def _is_sparse(matrix: torch.Tensor) -> bool:
-    """Return ``True`` when the matrix is sparse enough for the ``eigs`` path."""
+    """Return ``True`` when the matrix is sparse enough for the CSR ``eigs`` path.
+
+    This chooses only the *representation* fed to :func:`scipy.sparse.linalg.eigs`
+    (a CSR copy for sparse matrices, a dense-matvec ``LinearOperator`` otherwise);
+    both feed the same Arnoldi iteration, so the resulting spectral-radius
+    estimate is independent of which side of the threshold a matrix falls on.
+    """
     n = matrix.shape[0]
     nnz = int(torch.count_nonzero(matrix).item())
     return nnz <= _SPARSE_DENSITY_THRESHOLD * n * n
@@ -113,10 +157,15 @@ def _is_sparse(matrix: torch.Tensor) -> bool:
 def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
     """Spectral radius of a sparse matrix via ``scipy.sparse.linalg.eigs``.
 
-    Builds a CSR copy on the CPU and runs an Arnoldi iteration for the single
-    largest-magnitude eigenvalue (``k=1, which='LM'``).  Returns ``None`` when
-    scipy is unavailable or the iteration fails to converge, so the caller can
-    fall back to power iteration.
+    Builds a CSR copy on the CPU and runs an Arnoldi iteration for the largest-
+    magnitude eigenvalues (``which='LM'``), returning ``max|lambda|`` over the
+    converged cluster. ``eigs`` returns *complex* eigenvalues directly, so
+    complex-conjugate dominant pairs (the norm of real non-symmetric reservoir
+    matrices) are handled exactly, unlike ``||A v||`` power iteration. A small
+    cluster (``k > 1``) is requested rather than ``k=1`` because ARPACK can lock
+    onto a sub-dominant Ritz value and miss the true largest when the top
+    eigenvalues are near-degenerate. Returns ``None`` when scipy is unavailable
+    or the iteration fails, so the caller can fall back.
 
     Parameters
     ----------
@@ -136,19 +185,19 @@ def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
 
     n = matrix.shape[0]
     # ``eigs`` requires ``k < n - 1`` and a Krylov subspace ``ncv`` with
-    # ``k < ncv <= n``; for the small matrices that slip past the tiny-N guard
-    # this can fail, so fall back to power iteration in that case.
+    # ``k < ncv <= n``; for tiny matrices this can fail, so signal a fall back.
     if n <= 2:
         return None
 
     dense = matrix.detach().to(device="cpu", dtype=torch.float64).numpy()
     sparse = sp.csr_matrix(dense)
-    ncv = min(n, max(2 * 1 + 1, _EIGS_NCV))
+    k = min(_EIGS_K, n - 2)
+    ncv = min(n, max(2 * k + 1, _EIGS_NCV))
 
     try:
         eigenvalues = eigs(
             sparse,
-            k=1,
+            k=k,
             which="LM",
             ncv=ncv,
             maxiter=n * 10,
@@ -161,19 +210,43 @@ def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
     return float(np.max(np.abs(eigenvalues)))
 
 
+@overload
+def _power_iteration_radius(
+    matrix: torch.Tensor,
+    max_iters: int = ...,
+    tol: float = ...,
+    return_converged: Literal[False] = ...,
+) -> float: ...
+
+
+@overload
+def _power_iteration_radius(
+    matrix: torch.Tensor,
+    max_iters: int = ...,
+    tol: float = ...,
+    *,
+    return_converged: Literal[True],
+) -> tuple[float, bool]: ...
+
+
 def _power_iteration_radius(
     matrix: torch.Tensor,
     max_iters: int = _POWER_ITER_MAX_ITERS,
     tol: float = _POWER_ITER_TOL,
-) -> float:
+    return_converged: bool = False,
+) -> float | tuple[float, bool]:
     """Estimate ``max|lambda|`` of a dense matrix by power iteration.
 
-    Iterates ``v <- A v / ||A v||`` and tracks the dominant eigenvalue
-    magnitude via the Rayleigh-style quotient ``||A v||`` (the operator's
-    largest singular response converges to the dominant eigenvalue magnitude
-    for a power-iterated vector).  All work stays on ``matrix.device`` and in
-    ``matrix.dtype`` (promoted to at least ``float32``), so the estimate is
-    GPU-resident.
+    Iterates ``v <- A v / ||A v||`` but tracks the dominant eigenvalue
+    magnitude via the **two-step geometric ratio** ``sqrt(||A^2 v|| / ||v||)``
+    rather than the single-step ``||A v||``. For a real non-symmetric operator
+    the dominant eigenvalue is usually a complex-conjugate pair ``r e^{±i θ}``:
+    the single-step norm ratio then *oscillates* and never settles, but the
+    two-step ratio converges to ``r^2`` regardless of ``θ``, so its square root
+    recovers ``r``. This removes the systematic bias (measured up to ~5% of the
+    realized radius) of the old ``||A v||`` estimator. All work stays on
+    ``matrix.device`` and in ``matrix.dtype`` (promoted to at least
+    ``float32``), so the estimate is GPU-resident.
 
     Parameters
     ----------
@@ -183,11 +256,18 @@ def _power_iteration_radius(
         Maximum number of iterations (fixed budget).
     tol : float, optional
         Relative-change early-exit tolerance on the eigenvalue estimate.
+    return_converged : bool, optional
+        If ``True``, return ``(estimate, converged)`` where ``converged`` is
+        ``True`` only when the early-exit tolerance was met before the budget
+        ran out. A non-converged estimate lets the caller fall back to the exact
+        dense eigendecomposition instead of trusting a biased value. Defaults to
+        ``False`` (returns the estimate alone, for backward compatibility).
 
     Returns
     -------
-    float
-        Estimated largest absolute eigenvalue.
+    float or tuple[float, bool]
+        Estimated largest absolute eigenvalue, or ``(estimate, converged)`` when
+        ``return_converged`` is ``True``.
     """
     n = matrix.shape[0]
     device = matrix.device
@@ -201,32 +281,44 @@ def _power_iteration_radius(
     v = torch.randn(n, generator=generator, device=device, dtype=work_dtype)
     v_norm = torch.linalg.vector_norm(v)
     if v_norm == 0:
-        return 0.0
+        return (0.0, True) if return_converged else 0.0
     v = v / v_norm
 
     prev = torch.zeros((), device=device, dtype=work_dtype)
     estimate = prev
+    converged = False
     for _ in range(max_iters):
         av = a @ v
-        estimate = torch.linalg.vector_norm(av)
-        if estimate <= 0:
-            return 0.0
-        v = av / estimate
-        if torch.abs(estimate - prev) <= tol * estimate:
+        av_norm = torch.linalg.vector_norm(av)
+        if av_norm <= 0:
+            return (0.0, True) if return_converged else 0.0
+        a2v = a @ av
+        a2v_norm = torch.linalg.vector_norm(a2v)
+        # ||A^2 v|| / ||v|| -> r^2 for a dominant complex pair of modulus r
+        # (||v|| == 1 here); the sqrt recovers r without the single-step
+        # oscillation of ||A v||.
+        estimate = torch.sqrt(a2v_norm)
+        # Renormalize on the *second* iterate so the two-step ratio stays a
+        # clean geometric mean and the vector cannot overflow/underflow.
+        v = a2v / a2v_norm
+        if torch.abs(estimate - prev) <= tol * torch.clamp(estimate, min=1e-30):
+            converged = True
             break
         prev = estimate
 
-    return float(estimate.item())
+    result = float(estimate.item())
+    return (result, converged) if return_converged else result
 
 
 def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torch.Tensor:
     """Rescale a square matrix so its spectral radius equals ``target_radius``.
 
     The current spectral radius is obtained from
-    :func:`estimate_spectral_radius`, which picks power iteration, scipy sparse
-    ``eigs``, or a tiny-N dense ``eigvals`` fallback automatically.  Returns the
-    matrix unchanged when its current spectral radius is (numerically) zero —
-    e.g. the ``zero`` topology or a nilpotent matrix.
+    :func:`estimate_spectral_radius`, which picks the exact dense ``eigvals``
+    (small N), scipy ``eigs`` (large N, sparse or dense), or a power-iteration
+    fallback automatically.  Returns the matrix unchanged when its current
+    spectral radius is (numerically) zero — e.g. the ``zero`` topology or a
+    nilpotent matrix.
 
     This is the single shared rescale implementation used by both
     :class:`GraphTopology`/:class:`MatrixTopology` and
@@ -580,6 +672,14 @@ class MatrixTopology(TopologyInitializer):
         outer :func:`scale_to_spectral_radius` rescale is then skipped in
         :meth:`initialize`, and a warning is emitted if a ``spectral_radius`` is
         nonetheless requested.
+    seed : int, optional
+        Reproducibility seed for in-place builders that take a ``generator=``
+        keyword (e.g. :func:`torch.nn.init.orthogonal_`). At :meth:`initialize`
+        time a :class:`torch.Generator` seeded from ``seed`` on the weight's
+        device is passed to the builder, so two topologies built with the same
+        seed produce bit-identical recurrent matrices. Builders that take a
+        ``seed`` argument directly receive it through ``matrix_kwargs`` instead
+        and ignore this. Defaults to ``None`` (draws from torch's global RNG).
 
     Examples
     --------
@@ -618,10 +718,12 @@ class MatrixTopology(TopologyInitializer):
         matrix_func: Callable,
         matrix_kwargs: dict[str, Any] | None = None,
         prescaled: bool = False,
+        seed: int | None = None,
     ):
         self.matrix_func = matrix_func
         self.matrix_kwargs = matrix_kwargs or {}
         self.prescaled = prescaled
+        self.seed = seed
 
     def initialize(
         self,
@@ -661,7 +763,9 @@ class MatrixTopology(TopologyInitializer):
 
         n = weight.shape[0]
 
-        result = _call_matrix_builder(self.matrix_func, weight, (n,), self.matrix_kwargs)
+        result = _call_matrix_builder(
+            self.matrix_func, weight, (n,), self.matrix_kwargs, seed=self.seed
+        )
         matrix = _coerce_to_matrix(result, (n, n), weight.device, weight.dtype)
 
         # Pre-scaled builders fix their own spectral structure (unit singular
@@ -690,11 +794,28 @@ class MatrixTopology(TopologyInitializer):
         )
 
 
+def _accepts_generator(fn: Callable) -> bool:
+    """Return ``True`` when ``fn``'s signature names a ``generator`` parameter.
+
+    In-place initializers like :func:`torch.nn.init.orthogonal_` take a
+    ``generator=`` keyword rather than a ``seed=`` one, so seeding them
+    reproducibly means passing a :class:`torch.Generator`, not an int. When
+    introspection fails (e.g. a C builtin without a signature) this returns
+    ``False`` and the callable draws from torch's global RNG as before.
+    """
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "generator" in params
+
+
 def _call_matrix_builder(
     fn: Callable,
     weight: torch.Tensor,
     build_args: tuple[Any, ...],
     kwargs: dict[str, Any],
+    seed: int | None = None,
 ) -> Any:
     """Call ``fn`` in build style, falling back to in-place style.
 
@@ -703,14 +824,37 @@ def _call_matrix_builder(
     whatever the function leaves in it (``torch.nn.init.*_`` convention).
     Functions that take dimensions raise ``TypeError``/``AttributeError``
     when handed a tensor and vice versa, which is what the fallback keys on.
+
+    Parameters
+    ----------
+    fn : callable
+        The matrix builder (build style or in-place style).
+    weight : torch.Tensor
+        Destination tensor; its shape/device/dtype seed the scratch tensor.
+    build_args : tuple
+        Positional dimension arguments for the build-style call.
+    kwargs : dict
+        Keyword arguments bound to the call.
+    seed : int, optional
+        Reproducibility seed. When ``fn`` takes a ``generator=`` keyword (e.g.
+        :func:`torch.nn.init.orthogonal_`), ``kwargs`` does not already bind one,
+        and a ``seed`` is given, a :class:`torch.Generator` seeded from ``seed``
+        on the scratch tensor's device is injected so two calls with the same
+        seed produce bit-identical weights instead of drawing from torch's
+        global RNG. Ignored for builders that take ``seed`` directly (which
+        already thread it through ``kwargs``) or accept neither.
     """
     try:
         return fn(*build_args, **kwargs)
     except (TypeError, AttributeError) as build_err:
         scratch = torch.empty_like(weight, memory_format=torch.contiguous_format)
+        inplace_kwargs = kwargs
+        if seed is not None and "generator" not in kwargs and _accepts_generator(fn):
+            generator = create_torch_generator(seed, device=scratch.device)
+            inplace_kwargs = {**kwargs, "generator": generator}
         try:
             with torch.no_grad():
-                out = fn(scratch, **kwargs)
+                out = fn(scratch, **inplace_kwargs)
         except Exception as inplace_err:
             fn_name = getattr(fn, "__name__", repr(fn))
             raise ValueError(

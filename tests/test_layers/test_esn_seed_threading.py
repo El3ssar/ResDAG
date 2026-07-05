@@ -78,6 +78,105 @@ class TestSeedFixesEntireReservoir:
         assert not torch.equal(a.bias_h, b.bias_h)
 
 
+class TestFeedbackInputSeedSaltNoCollision:
+    """Regression: identical named init on both roles must not collide.
+
+    ``ESNCell`` threaded the *same* ``_seed_int`` into both the feedback and the
+    input initializer.  When a user gave the same seed-sensitive named
+    initializer for both roles with matching shapes (the recommended
+    reproducible workflow), ``weight_feedback`` and ``weight_input`` came out
+    byte-identical — the reservoir then saw feedback and driving input through
+    one shared projection (only their sum mattered), silently degenerating
+    input-driven models.  The input initializer is now seeded from a salted
+    copy of the layer seed, so the two matrices differ while each stays a
+    deterministic function of the seed.
+
+    Only the *seed-sensitive* (genuinely random) initializers are covered:
+    deterministic ones like ``binary_balanced`` build a shape-only matrix and
+    are *expected* to match across roles of equal shape — that is a property of
+    the initializer, not a seed collision, and no salt can (or should) change
+    it.
+    """
+
+    # Named initializers whose output actually depends on ``seed``.
+    _SEED_SENSITIVE = ("random", "random_binary", "bernoulli", "normal", "uniform")
+
+    @pytest.mark.parametrize("name", _SEED_SENSITIVE)
+    def test_same_named_init_differs_between_roles(self, name: str) -> None:
+        """Same seed-sensitive init on feedback and input yields distinct matrices."""
+        layer = ESNLayer(
+            reservoir_size=100,
+            feedback_size=3,
+            input_size=3,  # equal shape — the collision-prone case
+            feedback_initializer=name,
+            input_initializer=name,
+            seed=42,
+        )
+
+        assert layer.weight_feedback.shape == layer.weight_input.shape
+        assert not torch.equal(layer.weight_feedback, layer.weight_input)
+
+    @pytest.mark.parametrize("name", _SEED_SENSITIVE)
+    def test_both_roles_still_reproducible_under_one_seed(self, name: str) -> None:
+        """The salt is deterministic: two builds agree on *both* matrices."""
+        kw = dict(
+            reservoir_size=100,
+            feedback_size=3,
+            input_size=3,
+            feedback_initializer=name,
+            input_initializer=name,
+            seed=42,
+        )
+        a = ESNLayer(**kw)
+        b = ESNLayer(**kw)
+
+        assert torch.equal(a.weight_feedback, b.weight_feedback)
+        assert torch.equal(a.weight_input, b.weight_input)
+
+    def test_feedback_only_reproducibility_unchanged(self) -> None:
+        """Salting the *input* seed leaves feedback-only reproducibility intact.
+
+        The feedback weight keeps using the raw ``_seed_int``, so a feedback-only
+        reservoir built twice under one seed is byte-identical (guards against
+        accidentally salting the feedback role too).
+        """
+        kw = dict(
+            reservoir_size=100,
+            feedback_size=3,
+            feedback_initializer="random",
+            seed=42,
+        )
+        a = ESNLayer(**kw)
+        b = ESNLayer(**kw)
+
+        assert a.weight_input is None and b.weight_input is None
+        assert torch.equal(a.weight_feedback, b.weight_feedback)
+
+    def test_embedded_input_spec_seed_still_wins(self) -> None:
+        """An explicit seed pinned inside the input spec beats the layer salt.
+
+        ``input_initializer=('random', {'seed': 7})`` must reproduce regardless
+        of the layer-level ``seed`` (the salt only touches the forwarded fallback
+        seed, never a seed already embedded in the spec).
+        """
+        a = ESNLayer(
+            reservoir_size=100,
+            feedback_size=3,
+            input_size=3,
+            input_initializer=("random", {"seed": 7}),
+            seed=42,
+        )
+        b = ESNLayer(
+            reservoir_size=100,
+            feedback_size=3,
+            input_size=3,
+            input_initializer=("random", {"seed": 7}),
+            seed=999,  # different layer seed must not change the pinned draw
+        )
+
+        assert torch.equal(a.weight_input, b.weight_input)
+
+
 class TestGeneratorSeed:
     """AC#1: ``seed`` accepts a ``torch.Generator``, not just an ``int``."""
 

@@ -114,6 +114,12 @@ class NormalInputInitializer(InputFeedbackInitializer):
         weight : torch.Tensor
             Weight tensor of shape ``(out_features, in_features)``. Modified
             in-place.
+        **kwargs
+            Per-call keyword overrides. Recognized ``input_scaling`` and
+            ``connectivity`` keys override the bound attributes for this call
+            only (the shared per-call contract — see
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored.
 
         Returns
         -------
@@ -133,8 +139,10 @@ class NormalInputInitializer(InputFeedbackInitializer):
         # Apply the shared connectivity then scaling contract, in that order
         # (zeroing then scaling is identical either way; this matches the base
         # class's documented composition ``_apply_scaling(_apply_connectivity)``).
-        values = self._apply_connectivity(values)
-        values = self._apply_scaling(values)
+        # Forward ``**kwargs`` so per-call ``connectivity`` / ``input_scaling``
+        # overrides win over the bound values.
+        values = self._apply_connectivity(values, **kwargs)
+        values = self._apply_scaling(values, **kwargs)
 
         with torch.no_grad():
             weight.copy_(values)

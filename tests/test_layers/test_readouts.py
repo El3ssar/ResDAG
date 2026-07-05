@@ -15,6 +15,8 @@ Pins down:
   ``DataLoader`` of windowed chunks via ``ESNTrainer.fit_stream``.
 """
 
+import warnings
+
 import pytest
 import pytorch_symbolic as ps
 import torch
@@ -1793,3 +1795,122 @@ class TestFitStreamOverDataLoader:
 
         with pytest.raises(ValueError, match="timesteps"):
             ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunks())
+
+
+# ===========================================================================
+# Robust Cholesky solve: rank-deficient GPU footgun + ill-conditioned warnings
+# for CholeskyReadoutLayer and IncrementalRidgeReadout (shared solve_ridge).
+# ===========================================================================
+
+
+def _ill_conditioned_design(
+    n_features: int,
+    cond: float,
+    n_samples: int | None = None,
+    seed: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """A design matrix ``X`` with a prescribed ``cond(X)`` and its targets.
+
+    Singular values are logarithmically spaced from ``1`` to ``1/cond`` so that
+    ``cond(XᵀX) = cond²`` — the regime where a float32 Gram loses accuracy the
+    float64 solve cannot recover.
+    """
+    n = n_samples if n_samples is not None else 4 * n_features
+    gen = torch.Generator().manual_seed(seed)
+    a = torch.randn(n, n_features, dtype=torch.float64, generator=gen)
+    u, _, vh = torch.linalg.svd(a, full_matrices=False)
+    s = torch.logspace(0, -torch.log10(torch.tensor(cond)), n_features, dtype=torch.float64)
+    x = (u * s) @ vh
+    true_w = torch.randn(n_features, 3, dtype=torch.float64, generator=gen)
+    y = x @ true_w + 1e-3 * torch.randn(n, 3, dtype=torch.float64, generator=gen)
+    return x, y
+
+
+class TestCholeskyRobustSolve:
+    """CholeskyReadoutLayer no longer crashes on rank deficiency; warns on precision loss."""
+
+    def test_well_conditioned_fit_matches_closed_form_no_warning(self) -> None:
+        """A healthy float32-Gram fit stays accurate and silent (unchanged path)."""
+        torch.manual_seed(0)
+        X = torch.randn(300, 30, dtype=torch.float64)
+        y = torch.randn(300, 4, dtype=torch.float64)
+        alpha = 1e-4
+
+        readout = CholeskyReadoutLayer(30, 4, alpha=alpha, gram_dtype=torch.float32)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning fails the test
+            coefs, _ = readout._fit_impl(X.float(), y.float())
+
+        coefs_cf, _ = solve_ridge_closed_form(X, y, alpha)
+        assert torch.allclose(coefs.double(), coefs_cf, atol=1e-4, rtol=1e-3)
+
+    def test_illconditioned_float32_gram_warns(self) -> None:
+        """A cond(X)=1e6 fit with a float32 Gram announces the accuracy loss."""
+        X, y = _ill_conditioned_design(n_features=400, cond=1e6)
+        readout = CholeskyReadoutLayer(400, 3, alpha=1e-6, gram_dtype=torch.float32)
+        with pytest.warns(RuntimeWarning, match="losing accuracy|precision"):
+            readout.fit(X.float(), y.float())
+
+    def test_illconditioned_float64_gram_is_clean(self) -> None:
+        """The same fit with a float64 Gram (which keeps precision) is silent."""
+        X, y = _ill_conditioned_design(n_features=400, cond=1e6)
+        readout = CholeskyReadoutLayer(400, 3, alpha=1e-6, gram_dtype=torch.float64)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            readout.fit(X, y)
+
+    @pytest.mark.gpu
+    def test_rank_deficient_cuda_fit_no_longer_raises(self) -> None:
+        """Regression: library-default CUDA fit on a rank-deficient Gram succeeds.
+
+        F=256 features from N=200 samples on CUDA makes the auto float32 Gram
+        rank-deficient; a bare Cholesky used to raise a raw ``LinAlgError``.
+        """
+        if not torch.cuda.is_available():  # pragma: no cover - guarded by marker
+            pytest.skip("CUDA not available")
+        torch.manual_seed(0)
+        X = torch.randn(1, 200, 256, device="cuda")
+        y = torch.randn(1, 200, 3, device="cuda")
+        readout = CholeskyReadoutLayer(256, 3, alpha=1e-6).to("cuda")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            readout.fit(X, y)  # previously raised torch.linalg.LinAlgError
+        assert readout.is_fitted
+        assert torch.isfinite(readout.weight).all()
+
+
+class TestIncrementalRobustSolve:
+    """IncrementalRidgeReadout.finalize shares the robust solve path."""
+
+    def test_illconditioned_float32_gram_warns(self) -> None:
+        """A cond(X)=1e6 streaming fit with float32 chunk matmuls warns."""
+        X, y = _ill_conditioned_design(n_features=400, cond=1e6)
+        readout = IncrementalRidgeReadout(400, 3, alpha=1e-6, gram_dtype=torch.float32)
+        readout.partial_fit(X.float(), y.float())
+        with pytest.warns(RuntimeWarning, match="losing accuracy|precision"):
+            readout.finalize()
+
+    def test_well_conditioned_streaming_fit_is_clean(self) -> None:
+        """A healthy streaming fit raises no accuracy warning."""
+        X, y = _ill_conditioned_design(n_features=100, cond=1e2)
+        readout = IncrementalRidgeReadout(100, 3, alpha=1e-6, gram_dtype=torch.float32)
+        readout.partial_fit(X.float(), y.float())
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            readout.finalize()
+
+    @pytest.mark.gpu
+    def test_rank_deficient_cuda_finalize_no_longer_raises(self) -> None:
+        """Regression: a rank-deficient CUDA streaming finalize succeeds."""
+        if not torch.cuda.is_available():  # pragma: no cover - guarded by marker
+            pytest.skip("CUDA not available")
+        torch.manual_seed(0)
+        X = torch.randn(200, 256, device="cuda")
+        y = torch.randn(200, 3, device="cuda")
+        readout = IncrementalRidgeReadout(256, 3, alpha=1e-6).to("cuda")
+        readout.partial_fit(X, y)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            readout.finalize()  # previously raised torch.linalg.LinAlgError
+        assert readout.is_fitted
+        assert torch.isfinite(readout.weight).all()

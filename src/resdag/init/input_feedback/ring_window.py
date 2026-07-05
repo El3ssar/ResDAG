@@ -152,6 +152,13 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             Weight tensor of shape (out_features, in_features)
             out_features = reservoir_size (n)
             in_features = num_inputs (m)
+        **kwargs
+            Per-call keyword overrides. A recognized ``input_scaling`` key
+            overrides the bound ``self.input_scaling`` (the per-channel L2-norm
+            target) for this call only (the shared per-call contract — see
+            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored. The override must be a positive finite float
+            (``None`` is not accepted for this structured initializer).
 
         Returns
         -------
@@ -169,10 +176,17 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
         C = max(1, int(round(self.c * n)))  # core size
         W = self._window_size(C)
 
-        # ``input_scaling`` is the per-channel L2 norm target (never None here:
-        # the constructor resolves the alias and defaults it to 1.0).
-        assert self.input_scaling is not None
-        scaling = float(self.input_scaling)
+        # ``input_scaling`` is the per-channel L2 norm target. Resolve the
+        # effective value from the per-call ``**kwargs`` (a recognized
+        # ``input_scaling`` key wins) with the bound value as fallback, so a
+        # per-call override is honored. The bound value is never None (the
+        # constructor resolves the alias and defaults it to 1.0); a per-call
+        # override must likewise be a positive finite float for this structured
+        # initializer.
+        scaling_resolved = self._resolve_input_scaling(kwargs)
+        if scaling_resolved is None or not (np.isfinite(scaling_resolved) and scaling_resolved > 0):
+            raise ValueError("input_scaling must be a positive finite float.")
+        scaling = float(scaling_resolved)
 
         # Build at the target precision so the float64 taper/norm computation is
         # not truncated to float32 before reaching a float64 weight.

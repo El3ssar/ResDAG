@@ -44,13 +44,14 @@ _ChunkScanFn = Callable[
 
 # Cell configuration attributes that are safe to mutate *live* after
 # construction: they are read fresh on every step by the cell (leak_rate, noise,
-# and the orthogonal-skip weights beta/alpha of ES2N/ResESN) or apply their
-# effect through a property setter (trainable), so a write on the layer is
-# forwarded straight through to the cell and takes effect immediately.  ``beta``
-# / ``alpha`` are only present on the skip cells; forwarding them is a no-op for
-# plain ESN/NG-RC cells (the ``hasattr(cell, name)`` guard in ``__setattr__``
-# skips names the cell does not carry).
-_FORWARDABLE_CELL_ATTRS = frozenset({"trainable", "leak_rate", "noise", "beta", "alpha"})
+# the orthogonal-skip weights beta/alpha of ES2N/ResESN, the continuous-cell
+# diffusion gamma of EuSN) or apply their effect through a property setter
+# (trainable), so a write on the layer is forwarded straight through to the cell
+# and takes effect immediately.  ``beta`` / ``alpha`` / ``gamma`` are only
+# present on their respective cells; forwarding them is a no-op for plain
+# ESN/NG-RC cells (the ``hasattr(cell, name)`` guard in ``__setattr__`` skips
+# names the cell does not carry).
+_FORWARDABLE_CELL_ATTRS = frozenset({"trainable", "leak_rate", "noise", "beta", "alpha", "gamma"})
 
 # Cell configuration attributes that are *structurally baked* into the weights at
 # construction time (the spectral radius is scaled into ``weight_hh``; the sizes

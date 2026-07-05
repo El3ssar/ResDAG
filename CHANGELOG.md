@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.9.0 (2026-07-05)
+
+### Features
+
+- **training**: Online learning — RLS readout + FORCE (phase 13)
+  ([#450](https://github.com/El3ssar/ResDAG/pull/450),
+  [`d24f773`](https://github.com/El3ssar/ResDAG/commit/d24f773bbbb98e07572479975f049c7524e2e01a))
+
+
 ## v0.8.0 (2026-07-05)
 
 ### Chores

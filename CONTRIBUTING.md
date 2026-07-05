@@ -100,13 +100,10 @@ can never disagree.
 
 ## Commit messages and releases
 
-> **⚠️ Releases are frozen until 1.0.** We are deliberately accumulating
-> breaking changes toward a single major release. The `release` job is gated by
-> the `RELEASE_FROZEN` repository variable, so merging to `main` runs CI but
-> **publishes nothing** (no tag, no GitHub release, no PyPI upload). To cut 1.0:
-> `gh variable delete RELEASE_FROZEN` (or set it `false`), then merge a release
-> commit. **Never rename `release.yml`** — PyPI trusted publishing is bound to
-> that filename. The mechanics below describe what resumes once the freeze lifts.
+> **Releases are live.** Every push to `main` whose commits since the last tag
+> warrant a release publishes automatically (version bump, tag, GitHub release,
+> PyPI via trusted publishing). **Never rename `release.yml`** — PyPI trusted
+> publishing is bound to that filename. The mechanics below describe what runs.
 
 Releases are fully automated from **conventional commits** — there are no
 manual tags or version edits. On every push to `main`,

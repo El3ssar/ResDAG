@@ -5,6 +5,7 @@ from functools import wraps
 from typing import Any, Callable
 
 import networkx as nx
+import numpy as np
 
 from resdag.utils.general import create_rng
 
@@ -126,3 +127,117 @@ def _strip_positional_seed(graph_func: Callable, args: tuple[Any, ...]) -> tuple
     if index is not None and index < len(args):
         return args[:index] + args[index + 1 :]
     return args
+
+
+def _is_weakly_connected_adjacency(adjacency: np.ndarray, *, directed: bool) -> bool:
+    """Return whether a dense adjacency is (weakly) connected.
+
+    Uses :func:`scipy.sparse.csgraph.connected_components` on a CSR view of the
+    adjacency's nonzero pattern — no NetworkX object is built. For a directed
+    graph this checks *weak* connectivity (``connection='weak'``), matching the
+    ``nx.is_weakly_connected`` check the NetworkX ``@connected_graph`` wrapper
+    performs; for an undirected graph weak and strong connectivity coincide.
+
+    Parameters
+    ----------
+    adjacency : numpy.ndarray
+        The ``(n, n)`` weighted adjacency to test.
+    directed : bool
+        Whether the graph is directed (weak connectivity is checked either way).
+
+    Returns
+    -------
+    bool
+        ``True`` when the graph has a single (weakly) connected component.
+    """
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    n = adjacency.shape[0]
+    if n <= 1:
+        return True
+    # Only the sparsity pattern matters for connectivity; a boolean CSR keeps the
+    # component count independent of edge weights (including negative ones).
+    sparse = csr_matrix(adjacency != 0.0)
+    n_components, _ = connected_components(sparse, directed=directed, connection="weak")
+    return bool(n_components == 1)
+
+
+def connected_adjacency(
+    adjacency_builder: Callable[..., np.ndarray],
+    *,
+    directed: bool,
+    max_tries: int = 100,
+    precondition: Callable[..., None] | None = None,
+) -> Callable[..., np.ndarray]:
+    """Wrap a dense-adjacency builder to guarantee a (weakly) connected result.
+
+    The adjacency-level analogue of :func:`connected_graph`: instead of building
+    a NetworkX object per attempt and calling ``nx.is_(weakly_)connected``, it
+    calls the vectorized ``adjacency_builder`` directly and checks connectivity
+    on a CSR view via :func:`scipy.sparse.csgraph.connected_components`. This is
+    the fast path used by :class:`~resdag.init.topology.GraphTopology` for the
+    ``connected_*`` topologies, which otherwise fell back to the NetworkX
+    round-trip (build a graph edge-by-edge, check, then densify back) — pure
+    overhead when the inner builder already produces the dense matrix.
+
+    Determinism matches :func:`connected_graph`: a single shared
+    :class:`numpy.random.Generator` (resolved from ``seed``) is advanced across
+    attempts, so successive retries draw fresh randomness and a fixed integer
+    ``seed`` does not produce identical attempts. Exhausting ``max_tries``
+    raises :class:`ValueError` rather than returning a disconnected matrix,
+    honouring the same contract.
+
+    Parameters
+    ----------
+    adjacency_builder : callable
+        A ``(n, **kwargs) -> numpy.ndarray`` dense-adjacency builder. It must
+        accept a ``seed`` keyword compatible with
+        :func:`resdag.utils.create_rng`.
+    directed : bool
+        Whether the produced adjacency is directed (weak connectivity is checked
+        either way, matching the NetworkX wrapper).
+    max_tries : int, optional
+        Maximum number of attempts. Default: 100.
+    precondition : callable, optional
+        An optional ``(n, **kwargs) -> None`` check run once before any attempt
+        (e.g. the ``p > ln(n)/n`` guard for connected Erdős–Rényi). It should
+        raise :class:`ValueError` when a connected graph cannot be expected.
+
+    Returns
+    -------
+    callable
+        A ``(n, **kwargs) -> numpy.ndarray`` builder returning a connected
+        adjacency, suitable for :func:`register_dense_adjacency`.
+
+    Raises
+    ------
+    ValueError
+        If ``tries`` is less than 1, or if a connected adjacency cannot be built
+        within ``tries`` attempts.
+    """
+
+    def builder(n: int, *, tries: int = max_tries, **kwargs: Any) -> np.ndarray:
+        if tries < 1:
+            raise ValueError(f"tries must be a positive integer, got {tries}.")
+
+        if precondition is not None:
+            precondition(n, **kwargs)
+
+        # Resolve the requested seed into a single shared Generator and advance
+        # it across attempts (mirroring ``connected_graph``): a fixed int seed
+        # then yields *different* attempts, not identical ones.
+        seed = kwargs.pop("seed", None)
+        rng = create_rng(seed)
+
+        for _ in range(tries):
+            adjacency = adjacency_builder(n, seed=rng, **kwargs)
+            if _is_weakly_connected_adjacency(adjacency, directed=directed):
+                return adjacency
+
+        raise ValueError(
+            f"Failed to generate a connected graph after {tries} attempts. "
+            f"Consider adjusting parameters (e.g., increase edge probability)."
+        )
+
+    return builder

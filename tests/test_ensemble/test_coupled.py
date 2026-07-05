@@ -770,8 +770,15 @@ class TestDrivenForecast:
         )
         assert out.shape == (1, horizon, 2)
 
-    def test_driven_step_consumes_forecast_inputs_t(self):
-        """Step ``t`` consumes ``forecast_inputs[:, t]`` for every sub-model."""
+    def test_driven_step_consumes_forecast_inputs_t(self, monkeypatch):
+        """Step ``t`` consumes ``forecast_inputs[:, t]`` for every sub-model.
+
+        The coupled forecast drives each sub-model through its flattened
+        single-step engine, which calls the reservoir cell's ``project_inputs``
+        (via ``step_stateless``) rather than the layer's ``__call__``, so the
+        driver alignment is probed on ``project_inputs``: one 3-D call for the
+        whole teacher-forced warmup, then one 2-D call per autoregressive step.
+        """
         ens = self._build_driven_ensemble(n_models=2)
         x = _toy_data()
         f_warm = x[:, 40:60]
@@ -787,34 +794,43 @@ class TestDrivenForecast:
             .expand(1, horizon, 2)
         )
 
-        # Probe the first sub-model's reservoir layer.
+        # Probe the first sub-model's reservoir cell.
         reservoir_layer = _reservoir_layer_of(ens.models[0])
         seen: list[torch.Tensor] = []
-        handle = reservoir_layer.register_forward_pre_hook(
-            lambda module, args: seen.append(args[1].detach().clone())
-        )
-        try:
-            ens.forecast(
-                (f_warm, warm_driver.contiguous()),
-                forecast_inputs=(forecast_driver.contiguous(),),
-                horizon=horizon,
-            )
-        finally:
-            handle.remove()
+        original = reservoir_layer.cell.project_inputs
 
-        # First captured call is the teacher-forced warmup pass.
+        def probe(inputs):
+            # inputs = [feedback_slice, driver_slice]
+            seen.append(inputs[1].detach().clone())
+            return original(inputs)
+
+        monkeypatch.setattr(reservoir_layer.cell, "project_inputs", probe)
+        ens.forecast(
+            (f_warm, warm_driver.contiguous()),
+            forecast_inputs=(forecast_driver.contiguous(),),
+            horizon=horizon,
+        )
+
+        # First captured call is the (3-D, whole-sequence) teacher-forced warmup.
         assert seen[0].shape[1] == f_warm.shape[1]
+        # The horizon autoregressive steps consume the forecast drivers in order,
+        # as 2-D per-step slices (the flat step squeezes the singleton time axis).
         autoregressive = seen[1:]
         assert len(autoregressive) == horizon
         for t, captured in enumerate(autoregressive):
-            expected = forecast_driver[:, t : t + 1, :]
+            expected = forecast_driver[:, t, :]
             assert torch.equal(captured, expected), (
                 f"step {t} consumed driver {captured.flatten()[0].item()}, "
                 f"expected {expected.flatten()[0].item()}"
             )
 
-    def test_driven_accepts_extra_driver_steps(self):
-        """A longer driver tensor is accepted; only the first ``horizon`` used."""
+    def test_driven_accepts_extra_driver_steps(self, monkeypatch):
+        """A longer driver tensor is accepted; only the first ``horizon`` used.
+
+        Probes the reservoir cell's ``project_inputs`` (driven through the flat
+        single-step engine, not the layer ``__call__``); per-step driver slices
+        are 2-D since ``step_stateless`` squeezes the singleton time axis.
+        """
         ens = self._build_driven_ensemble(n_models=2)
         x = _toy_data()
         f_warm = x[:, 40:60]
@@ -824,22 +840,23 @@ class TestDrivenForecast:
 
         reservoir_layer = _reservoir_layer_of(ens.models[0])
         seen: list[torch.Tensor] = []
-        handle = reservoir_layer.register_forward_pre_hook(
-            lambda module, args: seen.append(args[1].detach().clone())
+        original = reservoir_layer.cell.project_inputs
+
+        def probe(inputs):
+            seen.append(inputs[1].detach().clone())
+            return original(inputs)
+
+        monkeypatch.setattr(reservoir_layer.cell, "project_inputs", probe)
+        ens.forecast(
+            (f_warm, warm_driver),
+            forecast_inputs=(forecast_driver,),
+            horizon=horizon,
         )
-        try:
-            ens.forecast(
-                (f_warm, warm_driver),
-                forecast_inputs=(forecast_driver,),
-                horizon=horizon,
-            )
-        finally:
-            handle.remove()
 
         autoregressive = seen[1:]
         assert len(autoregressive) == horizon
         for t, captured in enumerate(autoregressive):
-            assert torch.equal(captured, forecast_driver[:, t : t + 1, :])
+            assert torch.equal(captured, forecast_driver[:, t, :])
 
     def test_driven_rejects_too_few_driver_steps(self):
         ens = self._build_driven_ensemble(n_models=2)

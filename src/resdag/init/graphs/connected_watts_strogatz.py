@@ -2,9 +2,18 @@ import numpy as np
 from networkx import DiGraph, Graph
 
 from resdag.init.topology.registry import register_graph_topology
-from resdag.init.utils.graph_tools import connected_graph
+from resdag.init.utils.graph_tools import connected_adjacency, connected_graph
 
-from .watts_strogatz import watts_strogatz_graph
+from ._dense import register_dense_adjacency
+from .watts_strogatz import watts_strogatz_adjacency
+
+# Adjacency-level fast path for the topology hot path: retry the vectorized dense
+# builder and check weak connectivity via scipy, skipping the NetworkX
+# round-trip. ``connected_watts_strogatz_graph`` defaults to ``directed=True``.
+_connected_watts_strogatz_adjacency = connected_adjacency(
+    watts_strogatz_adjacency,
+    directed=True,
+)
 
 
 @register_graph_topology(
@@ -15,6 +24,7 @@ from .watts_strogatz import watts_strogatz_graph
     self_loops=True,
     seed=None,
 )
+@register_dense_adjacency(_connected_watts_strogatz_adjacency)
 @connected_graph
 def connected_watts_strogatz_graph(
     n: int,
@@ -29,6 +39,12 @@ def connected_watts_strogatz_graph(
 
     This function wraps :func:`watts_strogatz` with a decorator that attempts multiple
     generations until a connected graph is obtained (up to a certain number of tries).
+
+    The direct-call path returns a NetworkX graph (via the ``@connected_graph``
+    retry wrapper). When used as a topology, the adjacency-level fast path
+    (:func:`~resdag.init.utils.graph_tools.connected_adjacency`) retries the
+    vectorized dense builder and checks weak connectivity with scipy, skipping
+    the NetworkX round-trip entirely.
 
     Parameters
     ----------
@@ -56,4 +72,6 @@ def connected_watts_strogatz_graph(
     networkx.Graph or networkx.DiGraph
         A connected Watts-Strogatz graph.
     """
+    from .watts_strogatz import watts_strogatz_graph
+
     return watts_strogatz_graph(n, k, p, directed, self_loops, seed)

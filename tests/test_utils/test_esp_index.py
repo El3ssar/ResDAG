@@ -19,6 +19,8 @@ They also cover the core convergence semantics tracked by issue #252:
 * every behaviour exercised on the shared ``device`` fixture.
 """
 
+import sys
+
 import pytest
 import pytorch_symbolic as ps
 import torch
@@ -27,6 +29,12 @@ from resdag import ESNModel
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, NGReservoir
 from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 from resdag.utils.states import esp_index
+
+# The ``esp_index`` name re-exported from ``resdag.utils.states`` shadows the
+# submodule of the same name as a package attribute, so ``import ... as`` binds
+# to the function.  Reach the module object (needed to monkeypatch its private
+# helpers) through ``sys.modules`` instead.
+_esp_index_module = sys.modules["resdag.utils.states.esp_index"]
 
 # ---------------------------------------------------------------------------
 # Model factories
@@ -63,6 +71,92 @@ def _mixed_model(seq_len: int = 20, feedback_dim: int = 3) -> ESNModel:
     feat = Concatenate()(esn, ng)
     out = CGReadoutLayer(feat.shape[-1], feedback_dim, name="output")(feat)
     return ESNModel(inp, out)
+
+
+def _driven_model(
+    seq_len: int = 20,
+    feedback_dim: int = 3,
+    driver_dim: int = 2,
+    size: int = 40,
+    spectral_radius: float = 0.9,
+    device: torch.device | str = "cpu",
+) -> ESNModel:
+    """Input-driven ESN model: (feedback, driver) -> ESNLayer -> CGReadout."""
+    feedback = ps.Input((seq_len, feedback_dim))
+    driver = ps.Input((seq_len, driver_dim))
+    res = ESNLayer(
+        size,
+        feedback_size=feedback_dim,
+        input_size=driver_dim,
+        spectral_radius=spectral_radius,
+    )(feedback, driver)
+    out = CGReadoutLayer(size, feedback_dim, name="output")(res)
+    return ESNModel([feedback, driver], out).to(device)
+
+
+def _sequential_esp_reference(
+    model: ESNModel,
+    inputs: tuple[torch.Tensor, ...],
+    *,
+    iterations: int,
+    transient: int = 0,
+    window: int | None = None,
+    relative: bool = False,
+) -> dict[str, torch.Tensor]:
+    """Compute the ESP index the old way: one forward pass per restart.
+
+    This is the pre-batching reference implementation, kept in the test suite so
+    the batched :func:`esp_index` can be pinned against it.  Restarts are run one
+    at a time at the caller's batch size, so the matmul tiling matches a
+    ``chunk_size=1`` batched run exactly.
+    """
+    reservoirs = [
+        (name, module)
+        for name, module in model.named_modules()
+        if isinstance(module, BaseReservoirLayer)
+    ]
+
+    def run_collect() -> dict[str, torch.Tensor]:
+        collected: dict[str, torch.Tensor] = {}
+
+        def make_hook(nm: str):  # type: ignore[no-untyped-def]
+            def hook(mod: object, i: object, o: torch.Tensor) -> None:
+                collected[nm] = o
+
+            return hook
+
+        handles = [r.register_forward_hook(make_hook(n)) for n, r in reservoirs]
+        try:
+            with torch.no_grad():
+                model(*inputs)
+        finally:
+            for h in handles:
+                h.remove()
+        return collected
+
+    batch_size = inputs[0].shape[0]
+    for _, r in reservoirs:
+        r.reset_state(batch_size=batch_size)
+    base = run_collect()
+    if transient > 0:
+        base = {k: v[:, transient:, :] for k, v in base.items()}
+
+    sums = {
+        n: torch.zeros((), device=inputs[0].device, dtype=inputs[0].dtype) for n, _ in reservoirs
+    }
+    for _ in range(iterations):
+        for _, r in reservoirs:
+            r.set_random_state(batch_size=batch_size)
+        rand = run_collect()
+        if transient > 0:
+            rand = {k: v[:, transient:, :] for k, v in rand.items()}
+        for name, b in base.items():
+            dist = torch.norm(b - rand[name], dim=-1)
+            if relative:
+                dist = dist / (torch.norm(b, dim=-1) + 1e-12)
+            dist_for_index = dist[:, -window:] if window is not None else dist
+            sums[name] += dist_for_index.mean()
+    return {n: v / iterations for n, v in sums.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +573,7 @@ def test_history_true_returns_index_and_history(device: torch.device) -> None:
 
 
 def test_verbose_prints_progress(device: torch.device, capsys: pytest.CaptureFixture[str]) -> None:
-    """The ``verbose=True`` branch prints per-iteration progress."""
+    """The ``verbose=True`` branch prints restart-batch progress."""
     torch.manual_seed(0)
     model = _esn_model(seq_len=20, device=device)
     fb = torch.randn(2, 20, 3, device=device)
@@ -487,5 +581,287 @@ def test_verbose_prints_progress(device: torch.device, capsys: pytest.CaptureFix
     esp_index(model, fb, iterations=2, verbose=True)
 
     captured = capsys.readouterr()
-    assert "Iteration 1/2" in captured.out
-    assert "Iteration 2/2" in captured.out
+    # Restarts are batched into one forward pass, so progress is reported per
+    # chunk of restarts rather than per iteration.
+    assert "Restarts 2/2" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# Batched restarts: equivalence to the sequential computation (perf refactor)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "transient, window, relative",
+    [
+        (0, None, False),
+        (5, 20, False),
+        (0, None, True),
+        (0, 10, True),
+        (3, 15, False),
+    ],
+)
+def test_chunk_size_one_matches_sequential_bit_for_bit(
+    device: torch.device, transient: int, window: int | None, relative: bool
+) -> None:
+    """``chunk_size=1`` reproduces the pre-batching sequential index bit-for-bit.
+
+    Running each restart at the caller's batch size (chunk of one) uses the same
+    matmul tiling as the old one-forward-per-restart loop, so — with the random
+    restarts drawn in the same order — the result is exactly equal, not merely
+    close.
+    """
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=40, size=60, spectral_radius=10.0, device=device)
+    fb = (torch.randn(2, 40, 3, device=device) * 0.5).to(device)
+
+    torch.manual_seed(555)
+    reference = _sequential_esp_reference(
+        model, (fb,), iterations=8, transient=transient, window=window, relative=relative
+    )
+    torch.manual_seed(555)
+    batched = esp_index(
+        model,
+        fb,
+        iterations=8,
+        transient=transient,
+        window=window,
+        relative=relative,
+        chunk_size=1,
+        verbose=False,
+    )
+
+    assert set(batched) == set(reference)
+    for name, ref in reference.items():
+        assert torch.equal(batched[name][0], ref)
+
+
+def test_full_batch_matches_sequential_to_fp_tolerance(device: torch.device) -> None:
+    """The fully-batched default matches the sequential index to FP rounding.
+
+    Folding every restart into one wide forward pass reassociates the matmul, so
+    the value differs from the sequential one only by floating-point rounding
+    (well within ``atol=1e-5``), never by a change in which random states are
+    used.
+    """
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=40, size=60, spectral_radius=0.9, device=device)
+    fb = (torch.randn(2, 40, 3, device=device) * 0.5).to(device)
+
+    torch.manual_seed(555)
+    reference = _sequential_esp_reference(model, (fb,), iterations=10)
+    torch.manual_seed(555)
+    batched = esp_index(model, fb, iterations=10, verbose=False)
+
+    for name, ref in reference.items():
+        assert torch.allclose(batched[name][0], ref, atol=1e-5, rtol=1e-5)
+
+
+def test_chunk_size_does_not_change_drawn_states(device: torch.device) -> None:
+    """The states are pre-drawn, so ``chunk_size`` never changes which are used.
+
+    A run split into chunks of three must equal the single-pass run bit-for-bit,
+    because chunking only groups the *forward passes*, not the RNG draws (both
+    tile the same number of restarts per matmul).
+    """
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=30, size=50, spectral_radius=0.9, device=device)
+    fb = torch.randn(2, 30, 3, device=device)
+
+    torch.manual_seed(555)
+    full = esp_index(model, fb, iterations=9, chunk_size=9, verbose=False)
+    torch.manual_seed(555)
+    chunked = esp_index(model, fb, iterations=9, chunk_size=3, verbose=False)
+
+    for name, value in full.items():
+        assert torch.equal(chunked[name][0], value[0])
+
+
+def test_seeded_result_is_deterministic(device: torch.device) -> None:
+    """The same seed yields the same index across independent batched runs."""
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=40, size=60, spectral_radius=10.0, device=device)
+    fb = torch.randn(2, 40, 3, device=device)
+
+    torch.manual_seed(555)
+    first = esp_index(model, fb, iterations=10, relative=True, verbose=False)
+    torch.manual_seed(555)
+    second = esp_index(model, fb, iterations=10, relative=True, verbose=False)
+
+    for name, value in first.items():
+        assert torch.equal(second[name][0], value[0])
+
+
+def test_chunk_size_matches_sequential_for_driven_model(device: torch.device) -> None:
+    """Batching also tiles driving inputs, so a driven model matches sequential."""
+    torch.manual_seed(7)
+    model = _driven_model(seq_len=30, size=50, spectral_radius=0.9, device=device)
+    fb = torch.randn(2, 30, 3, device=device)
+    driver = torch.randn(2, 30, 2, device=device)
+
+    torch.manual_seed(555)
+    reference = _sequential_esp_reference(model, (fb, driver), iterations=6)
+    torch.manual_seed(555)
+    batched = esp_index(model, fb, driver, iterations=6, chunk_size=1, verbose=False)
+
+    for name, ref in reference.items():
+        assert torch.equal(batched[name][0], ref)
+
+
+def test_multi_reservoir_chunk_one_matches_sequential() -> None:
+    """A mixed ESN + NG-RC model matches the sequential reference per reservoir."""
+    torch.manual_seed(7)
+    model = _mixed_model(seq_len=25)
+    fb = torch.randn(2, 25, 3)
+
+    torch.manual_seed(555)
+    reference = _sequential_esp_reference(model, (fb,), iterations=5)
+    torch.manual_seed(555)
+    batched = esp_index(model, fb, iterations=5, chunk_size=1, verbose=False)
+
+    assert set(batched) == set(reference)
+    for name, ref in reference.items():
+        assert torch.equal(batched[name][0], ref)
+
+
+# ---------------------------------------------------------------------------
+# Caller reservoir state is saved and restored
+# ---------------------------------------------------------------------------
+
+
+def test_warmed_states_are_restored(device: torch.device) -> None:
+    """A warmed-up reservoir state is unchanged after ``esp_index`` returns."""
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=30, size=50, device=device)
+    fb = torch.randn(2, 30, 3, device=device)
+
+    model(fb)  # warm up -> non-None state
+    before = model.get_reservoir_states()
+    assert before  # sanity: at least one warmed reservoir
+
+    esp_index(model, fb, iterations=5, verbose=False)
+
+    after = model.get_reservoir_states()
+    assert set(after) == set(before)
+    for name, state in before.items():
+        assert torch.equal(after[name], state)
+
+
+def test_none_states_are_restored_to_none(device: torch.device) -> None:
+    """A reservoir left at ``None`` (never warmed) is reset back to ``None``."""
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=30, size=50, device=device)
+    fb = torch.randn(2, 30, 3, device=device)
+
+    model.reset_reservoirs()  # all states None
+    assert model.get_reservoir_states() == {}
+
+    esp_index(model, fb, iterations=4, verbose=False)
+
+    # Still None: the diagnostic must not leave an internal batched state behind.
+    assert model.get_reservoir_states() == {}
+    for module in model.modules():
+        if isinstance(module, BaseReservoirLayer):
+            assert module.state is None
+
+
+def test_states_restored_even_on_error(device: torch.device) -> None:
+    """The saved states are restored even when the computation raises."""
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=30, size=50, device=device)
+    fb = torch.randn(2, 30, 3, device=device)
+
+    model(fb)
+    before = model.get_reservoir_states()
+
+    with pytest.raises(ValueError, match="transient"):
+        esp_index(model, fb, iterations=5, transient=100, verbose=False)
+
+    after = model.get_reservoir_states()
+    assert set(after) == set(before)
+    for name, state in before.items():
+        assert torch.equal(after[name], state)
+
+
+# ---------------------------------------------------------------------------
+# chunk_size validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_chunk", [0, -1, -5])
+def test_non_positive_chunk_size_raises(bad_chunk: int) -> None:
+    """A non-positive ``chunk_size`` is rejected."""
+    model = _esn_model(seq_len=20)
+    fb = torch.randn(2, 20, 3)
+    with pytest.raises(ValueError, match="chunk_size"):
+        esp_index(model, fb, iterations=3, chunk_size=bad_chunk, verbose=False)
+
+
+def test_chunk_size_larger_than_iterations_is_clamped(device: torch.device) -> None:
+    """A ``chunk_size`` exceeding ``iterations`` behaves like the single-pass run."""
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=25, size=50, device=device)
+    fb = torch.randn(2, 25, 3, device=device)
+
+    torch.manual_seed(555)
+    big = esp_index(model, fb, iterations=4, chunk_size=100, verbose=False)
+    torch.manual_seed(555)
+    default = esp_index(model, fb, iterations=4, verbose=False)
+
+    for name, value in default.items():
+        assert torch.equal(big[name][0], value[0])
+
+
+# ---------------------------------------------------------------------------
+# Out-of-memory fallback (chunk_size=None auto-shrinks on CUDA OOM)
+# ---------------------------------------------------------------------------
+
+
+def test_oom_fallback_halves_chunk_and_completes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With ``chunk_size=None`` a CUDA OOM shrinks the chunk until it fits.
+
+    The forward batching is simulated to OOM whenever more than two restarts
+    share a pass, forcing the fallback to halve the chunk (8 -> 4 -> 2).  Because
+    the restart states are pre-drawn, the final result must still match the
+    single-pass reference.
+    """
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=25, size=40, spectral_radius=0.9)
+    fb = torch.randn(2, 25, 3)
+
+    torch.manual_seed(555)
+    reference = _sequential_esp_reference(model, (fb,), iterations=8)
+
+    original_run_chunk = _esp_index_module._run_chunk
+
+    def fault_on_large_chunk(*args: object, **kwargs: object) -> object:
+        chunk_states = args[3]  # positional: (model, reservoirs, inputs, chunk_states, ...)
+        assert isinstance(chunk_states, list)
+        if len(chunk_states) > 2:
+            raise torch.cuda.OutOfMemoryError("simulated OOM")
+        return original_run_chunk(*args, **kwargs)
+
+    monkeypatch.setattr(_esp_index_module, "_run_chunk", fault_on_large_chunk)
+
+    torch.manual_seed(555)
+    result = esp_index(model, fb, iterations=8, verbose=False)
+
+    # The pre-drawn states make the result robust to how the passes are chunked,
+    # so the OOM-shrunk run still matches the sequential reference to FP rounding.
+    for name, ref in reference.items():
+        assert torch.allclose(result[name][0], ref, atol=1e-5, rtol=1e-5)
+
+
+def test_explicit_chunk_size_oom_is_not_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit ``chunk_size`` is honoured: its OOM propagates, not auto-shrunk."""
+    torch.manual_seed(7)
+    model = _esn_model(seq_len=25, size=40)
+    fb = torch.randn(2, 25, 3)
+
+    def always_oom(*args: object, **kwargs: object) -> object:
+        raise torch.cuda.OutOfMemoryError("simulated OOM")
+
+    monkeypatch.setattr(_esp_index_module, "_run_chunk", always_oom)
+
+    with pytest.raises(torch.cuda.OutOfMemoryError):
+        esp_index(model, fb, iterations=8, chunk_size=4, verbose=False)

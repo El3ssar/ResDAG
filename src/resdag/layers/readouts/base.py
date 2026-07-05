@@ -15,6 +15,20 @@ import torch
 import torch.nn as nn
 
 
+def _sync_fitted_flag_post_hook(module: "ReadoutLayer", incompatible_keys: object) -> None:
+    """Re-derive the Python ``_fitted_flag`` mirror from the loaded buffer.
+
+    Registered via ``register_load_state_dict_post_hook`` in
+    :class:`ReadoutLayer`. ``load_state_dict`` copies into the ``_is_fitted``
+    buffer in-place but never touches the plain Python mirror, so without this
+    hook a readout loaded from a fitted ``state_dict`` would carry the correct
+    buffer yet a stale ``_fitted_flag`` (and hot paths reading the mirror would
+    see the wrong fittedness). The single ``.item()`` here runs once per load,
+    never per forward.
+    """
+    module._fitted_flag = bool(module._is_fitted.item())
+
+
 class ReadoutLayer(nn.Linear):
     """
     Per-timestep linear layer with custom fitting for ESN training.
@@ -105,6 +119,18 @@ class ReadoutLayer(nn.Linear):
         # Python attribute would silently reset to ``False`` on reload, leaving
         # a model with fitted weights but ``is_fitted == False``.
         self.register_buffer("_is_fitted", torch.zeros((), dtype=torch.bool))
+        # Plain Python mirror of the ``_is_fitted`` buffer. Reading the buffer
+        # via ``.item()`` is a device->host sync on CUDA — cheap once, but
+        # ruinous inside a per-step autoregressive forecast loop (and it also
+        # graph-breaks ``torch.compile``). The mirror lets hot paths (e.g.
+        # ``IncrementalRidgeReadout.forward``) check fittedness with a plain
+        # attribute read and no sync. It is kept coherent with the buffer via
+        # :meth:`_set_fitted` and re-derived from the buffer after every
+        # ``load_state_dict`` (see :meth:`_load_from_state_dict`).
+        self._fitted_flag: bool = False
+        # Register a post-load hook so subclasses/instances loaded via
+        # ``load_state_dict`` re-sync the Python mirror from the restored buffer.
+        self.register_load_state_dict_post_hook(_sync_fitted_flag_post_hook)
 
         # ``trainable`` is a live property whose setter flips ``requires_grad_``
         # on every parameter (``weight``, ``bias``).  ``nn.Linear.__init__`` has
@@ -145,10 +171,25 @@ class ReadoutLayer(nn.Linear):
         """
         bool : True if ``fit()`` has been called successfully.
 
-        Backed by a registered buffer, so the flag is preserved across
-        ``state_dict`` / ``load_state_dict`` round-trips.
+        Backed by a registered buffer (so the flag is preserved across
+        ``state_dict`` / ``load_state_dict`` round-trips) but read from a plain
+        Python mirror kept coherent with it. Reading the mirror avoids the
+        buffer ``.item()`` device->host sync — negligible once, but ruinous
+        inside a per-step autoregressive forecast loop and a ``torch.compile``
+        graph-break.
         """
-        return bool(self._is_fitted.item())
+        return self._fitted_flag
+
+    def _set_fitted(self, value: bool) -> None:
+        """Set the fitted state, keeping the buffer and Python mirror coherent.
+
+        Every place that flips fittedness (base :meth:`fit`, and the
+        streaming :class:`IncrementalRidgeReadout` lifecycle) must go through
+        here so the persistent ``_is_fitted`` buffer and the sync-free
+        ``_fitted_flag`` mirror never disagree.
+        """
+        self._fitted_flag = bool(value)
+        self._is_fitted.fill_(value)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """
@@ -290,7 +331,7 @@ class ReadoutLayer(nn.Linear):
         if self.bias is not None and intercept is not None:
             self.bias.copy_(intercept.to(self.bias.dtype))
 
-        self._is_fitted.fill_(True)
+        self._set_fitted(True)
 
     def _fit_impl(
         self,

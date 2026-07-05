@@ -43,11 +43,15 @@ Predictive *skill*, not speed: after an identical warmup, how many steps the clo
 
 | Reservoir size | reservoirpy (CPU) | resdag (CPU) | resdag (GPU) | ReservoirComputing.jl (CPU) |
 |---|---|---|---|---|
-| 500 | 52 steps (0.9 Λt) | 146 steps (2.6 Λt) | 148 steps (2.7 Λt) | 89 steps (1.6 Λt) |
-| 1000 | 143 steps (2.6 Λt) | 146 steps (2.6 Λt) | 144 steps (2.6 Λt) | 27 steps (0.5 Λt) |
-| 2000 | 342 steps (6.2 Λt) | 147 steps (2.7 Λt) | 149 steps (2.7 Λt) | — |
+| 500 | 52 steps (0.9 Λt) | 548 steps (9.9 Λt) | re-run¹ | 89 steps (1.6 Λt) |
+| 1000 | 143 steps (2.6 Λt) | 559 steps (10.1 Λt) | re-run¹ | 27 steps (0.5 Λt) |
+| 2000 | 342 steps (6.2 Λt) | 554 steps (10.0 Λt) | re-run¹ | — |
 
 *Valid prediction time: steps until the normalized forecast error first exceeds 0.5, also in Lyapunov times (Λt). Higher = the model stays on the true trajectory longer.*
+
+> **resdag readout correction (2026-07-04).** The resdag (CPU) VPT column was refreshed after the benchmark adapter switched its readout from `CGReadoutLayer` to `RidgeReadoutLayer` (direct Cholesky solve — the class actually comparable to reservoirpy's `Ridge`/RC.jl's direct solve, and resdag's own premade default). The previous 146–147-step figures were a solver artifact: the iterative CG readout silently under-converged at its default `max_iter=100` on the near-unregularized (`alpha=1e-6`) Gram, flatlining precision at ~146 steps regardless of reservoir size. With the direct solve, resdag's VPT tracks ~550 steps (~10 Λt) across N=500–2000. These resdag (CPU) numbers are **measured** on the machine noted below under "resdag CPU re-run".
+>
+> ¹ **resdag (GPU) VPT needs a re-run on the CUDA benchmark machine** — the prior GPU figures (148/144/149) were also CG-solver artifacts, but GPU (float32) cannot be re-measured on the CPU-only machine used for this correction. Re-run `python -m rc_bench.run --only resdag-gpu --contexts precision --report` on the benchmark box to refresh this column.
 
 
 ### Setup
@@ -56,3 +60,22 @@ Predictive *skill*, not speed: after an identical warmup, how many steps the clo
 - **Hardware:** Linux-7.0.12-zen1-1-zen-x86_64-with-glibc2.43, NVIDIA GeForce RTX 3060 Laptop GPU, 16 CPU threads.
 - **Versions:** python 3.14.2, resdag 0.6.0, reservoirpy 0.4.2, torch 2.10.0+cu128.
 - **Method:** median of 2 repeats (1 warmup discarded), generated 2026-06-14T17:38:11.734662+00:00.
+
+### Which rows are current after the readout correction (2026-07-04)
+
+- **Forecast precision — resdag (CPU):** ✅ measured with the `RidgeReadoutLayer`
+  adapter. resdag CPU re-run box: Linux-7.0.14-zen1-1-zen, 16 CPU threads,
+  resdag 0.4.0 (audit branch), torch 2.10.0, float64, seed 1234 — same
+  Lorenz-63 series and VPT metric as the harness (verified by running
+  `python -m rc_bench.run --only resdag-cpu --contexts precision`).
+- **Forecast precision — resdag (GPU):** ⚠️ marked "re-run¹" — needs the CUDA
+  benchmark box (see footnote).
+- **Timing tables (train × size, train × data, forecast) — all libraries:**
+  ⚠️ **stale after the readout switch and must be re-run in full** on the
+  original benchmark machine with `python -m rc_bench.run --report`. The
+  cross-library speedup ratios there are hardware- and library-specific and
+  were computed against reservoirpy/RC.jl on the RTX 3060 box; they cannot be
+  faithfully recomputed on the CPU-only correction box, and the direct-solve
+  readout also changes resdag's own train timing (a direct Cholesky solve on
+  the `(F, F)` Gram vs iterative CG). The reservoirpy/RC.jl columns are
+  unchanged by this correction and carry over as recorded.

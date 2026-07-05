@@ -28,7 +28,12 @@ transform layers. All are importable directly from `resdag.layers`.
     options:
       members:
         - ReadoutLayer
+        - RidgeReadoutLayer
+        - CholeskyReadoutLayer
         - CGReadoutLayer
+        - SVDReadoutLayer
+        - PinvReadoutLayer
+        - IncrementalRidgeReadout
 
 ::: resdag.layers.transforms
     options:
@@ -38,3 +43,4 @@ transform layers. All are importable directly from `resdag.layers`.
         - Power
         - SelectiveDropout
         - SelectiveExponentiation
+        - Standardize

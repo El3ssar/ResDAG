@@ -1,0 +1,84 @@
+# GPU test + benchmark lane (self-hosted runner required).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  ⚠  THIS WORKFLOW DOES NOTHING UNTIL A SELF-HOSTED GPU RUNNER IS REGISTERED.
+# ─────────────────────────────────────────────────────────────────────────────
+# GPU acceleration is resdag's headline differentiator, yet every `@gpu`-marked
+# test and benchmark auto-skips on GitHub-hosted runners (they are CPU-only —
+# see tests/conftest.py's `device` fixture and the `cuda_required` skip in
+# tests/test_performance). This lane closes that gap by running the GPU suite on
+# a machine that actually has CUDA.
+#
+# It targets `runs-on: [self-hosted, gpu]`. GitHub only dispatches a job to a
+# self-hosted runner whose labels are a superset of that set, so until you
+# register a runner carrying BOTH the default `self-hosted` label and a custom
+# `gpu` label, every triggered run simply queues (and eventually cancels) with
+# no runner to pick it up — it will NEVER land on a GitHub-hosted runner and
+# never bill Actions minutes for compute. It is inert by design.
+#
+# To activate it, on the CUDA box (e.g. the RTX 3060 workstation):
+#   1. Settings → Actions → Runners → "New self-hosted runner"; follow the
+#      registration steps for your OS.
+#   2. When prompted for labels (or afterwards via the runner's `--labels`
+#      flag / the repo UI), add the `gpu` label. The `self-hosted` label is
+#      applied automatically.
+#   3. Ensure an NVIDIA driver + CUDA-enabled PyTorch import works in the
+#      runner's environment (`python -c "import torch; assert torch.cuda.is_available()"`).
+#
+# Once a matching runner is online, this lane runs on the schedule below and on
+# manual dispatch. It never runs on pull requests, so a missing runner can never
+# block a merge.
+
+name: GPU
+
+on:
+  # Weekly cadence (Mondays 05:23 UTC). GPU runs are on dedicated hardware and
+  # don't need to gate every PR — a weekly regression sweep plus on-demand
+  # dispatch is the right granularity for the headline accelerated paths.
+  schedule:
+    - cron: "23 5 * * 1"
+  # Manual trigger — run the GPU suite on demand (e.g. before a release, or
+  # after touching a fast path) without waiting for the weekly cron.
+  workflow_dispatch:
+
+concurrency:
+  # Never run two GPU sweeps at once on the (single) self-hosted box.
+  group: gpu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gpu:
+    # Requires a registered self-hosted runner labelled `gpu`. Does nothing —
+    # the job queues without executing — until one exists. See the header.
+    runs-on: [self-hosted, gpu]
+    # Don't let a hung GPU job pin the single runner indefinitely.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The self-hosted runner already has an NVIDIA driver and a CUDA-enabled
+      # PyTorch in its environment, so — unlike the CPU lanes — we do NOT install
+      # the CPU-only torch wheel here (that would clobber the CUDA build). We
+      # install the package with its dev + hpo extras against the pre-installed
+      # torch; pip leaves the satisfied torch requirement in place.
+      - name: Install package with dev + hpo extras
+        run: pip install -e ".[dev,hpo]"
+
+      # Fail loud and early if the runner's environment lost CUDA — otherwise
+      # every `@gpu` test would silently skip and the lane would go green while
+      # testing nothing (defeating the entire point of this workflow).
+      - name: Verify CUDA is visible
+        run: |
+          python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on the GPU runner — the @gpu suite would silently skip.'; print('CUDA device:', torch.cuda.get_device_name(0))"
+
+      # The `@gpu`-marked correctness tests across the whole suite. These are
+      # deselected/skipped everywhere else; here they actually exercise CUDA.
+      - name: GPU correctness tests (-m gpu)
+        run: pytest --no-cov -q -m gpu
+
+      # GPU performance assertions. `-m "benchmark and gpu"` selects the
+      # benchmark-marked GPU cases in tests/test_performance (the `benchmark`
+      # marker is deselected by default via addopts, so it must be requested
+      # explicitly). The CPU benchmark cases in that dir stay out of this lane.
+      - name: GPU benchmarks (-m "benchmark and gpu")
+        run: pytest --no-cov -q -m "benchmark and gpu" tests/test_performance

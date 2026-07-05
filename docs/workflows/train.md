@@ -228,6 +228,49 @@ configured.
     there with a small learning rate. The algebraic solution is a better
     initialization than random weights.
 
+## Path 4 — differentiable forecast (BPTT through the rollout)
+
+Paths 1–3 train on a *teacher-forced* pass — every step sees ground truth.
+But the quantity you usually care about is *free-running* forecast quality,
+where each prediction is fed back as the next input and errors compound. To
+optimize that directly, roll the forecast out **differentiably** and
+backpropagate the multi-step loss through the autoregressive loop.
+
+`forecast(no_grad=False)` does exactly this: instead of running under
+`torch.no_grad()` (the default), it builds an autograd graph through the warmup
+*and* every autoregressive step, so `loss.backward()` reaches the trainable
+reservoir and readout parameters:
+
+```python
+inp = reservoir_input(3)
+states = ESNLayer(200, feedback_size=3, spectral_radius=0.9, trainable=True)(inp)
+model = ESNModel(inp, nn.Linear(200, 3)(states))     # any differentiable head
+opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+for step in range(50):
+    preds = model.forecast(f_warmup, horizon=60, no_grad=False)  # differentiable rollout
+    loss = nn.functional.mse_loss(preds, val[:, :60])            # multi-step forecast loss
+    opt.zero_grad()
+    loss.backward()                                              # BPTT through the loop
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    opt.step()
+```
+
+The returned tensor carries `requires_grad=True`, and gradients flow back
+through every fed-back step — this is BPTT through the *closed-loop* forecast,
+not just a teacher-forced window. Keep the horizon short (backprop through a
+long autoregressive chain is memory-heavy and prone to exploding gradients —
+clip), and use this only when free-running skill genuinely matters more than
+the one-step fit the algebraic solve optimizes.
+
+Two constraints:
+
+- `no_grad=False` is **mutually exclusive with `compile=True`** — the compiled
+  flat engine is inference-only, so requesting both raises `ValueError`.
+- Something in the loop must be trainable (`trainable=True` on the reservoir,
+  and/or a gradient head); with everything frozen the backward pass has nothing
+  to update.
+
 ## Next
 
 - [**Forecast**](forecast.md) — autoregressive prediction with the trained model

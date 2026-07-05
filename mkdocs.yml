@@ -204,6 +204,7 @@ nav:
   - Reference:
       - reference/index.md
       - Top level: reference/top-level.md
+      - Facade: reference/facade.md
       - Core: reference/core.md
       - Layers: reference/layers.md
       - Initialization: reference/init.md

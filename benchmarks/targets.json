@@ -27,7 +27,7 @@
     }
   },
   "external_floors": {
-    "note": "INFORMATIONAL ONLY — transcribed from benchmarks/results/REPORT.md (2026-06-14, RTX 3060 Laptop / 16-thread CPU, python 3.14.2, resdag 0.6.0, reservoirpy 0.4.2, torch 2.10.0+cu128). Speedups are relative to reservoirpy (=1.00x). NOT asserted by the test suite: these depend on external libraries and specific hardware. They document the headline claims and let `python -m rc_bench.run --report` flag drift on the benchmark machine.",
+    "note": "INFORMATIONAL ONLY — transcribed from benchmarks/results/REPORT.md (2026-06-14, RTX 3060 Laptop / 16-thread CPU, python 3.14.2, resdag 0.6.0, reservoirpy 0.4.2, torch 2.10.0+cu128). Speedups are relative to reservoirpy (=1.00x). NOT asserted by the test suite: these depend on external libraries and specific hardware. They document the headline claims and let `python -m rc_bench.run --report` flag drift on the benchmark machine. STALENESS (2026-07-04): the timing blocks below (train_size, train_data, forecast) predate the CGReadoutLayer -> RidgeReadoutLayer adapter switch and must be re-run in full on the benchmark box — the direct Cholesky solve changes resdag's own train timing and the cross-library ratios cannot be recomputed on the CPU-only correction box. Only precision_vpt_steps.resdag_cpu was refreshed for this correction.",
     "baseline_library": "reservoirpy",
     "train_size": {
       "axis": "reservoir_size",
@@ -57,11 +57,11 @@
     },
     "precision_vpt_steps": {
       "axis": "reservoir_size",
-      "note": "Valid prediction time in steps (higher is better): closed-loop steps tracked before normalized error exceeds 0.5. Predictive skill, not speed.",
+      "note": "Valid prediction time in steps (higher is better): closed-loop steps tracked before normalized error exceeds 0.5. Predictive skill, not speed. INFORMATIONAL ONLY (not asserted by any test). resdag_cpu refreshed 2026-07-04 after the benchmark adapter switched CGReadoutLayer -> RidgeReadoutLayer (direct Cholesky solve); the prior ~146-step figures were a CG under-convergence artifact on the near-unregularized alpha=1e-6 Gram at default max_iter=100. resdag_cpu here is MEASURED (Linux-7.0.14-zen1-1-zen, 16 threads, float64, seed 1234) via `python -m rc_bench.run --only resdag-cpu --contexts precision`. resdag_gpu is null pending a re-run on the CUDA benchmark box (its old values were also CG artifacts and cannot be re-measured on the CPU-only correction box).",
       "cells": {
-        "500": {"reservoirpy": 52, "resdag_cpu": 146, "resdag_gpu": 148, "rcjl": 89},
-        "1000": {"reservoirpy": 143, "resdag_cpu": 146, "resdag_gpu": 144, "rcjl": 27},
-        "2000": {"reservoirpy": 342, "resdag_cpu": 147, "resdag_gpu": 149, "rcjl": null}
+        "500": {"reservoirpy": 52, "resdag_cpu": 548, "resdag_gpu": null, "rcjl": 89},
+        "1000": {"reservoirpy": 143, "resdag_cpu": 559, "resdag_gpu": null, "rcjl": 27},
+        "2000": {"reservoirpy": 342, "resdag_cpu": 554, "resdag_gpu": null, "rcjl": null}
       }
     }
   }

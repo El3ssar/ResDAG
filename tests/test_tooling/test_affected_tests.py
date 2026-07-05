@@ -159,3 +159,90 @@ def test_package_init_change_expands_to_subtree() -> None:
     # consumers' tests are selected.
     sel = AT.select_tests(["src/resdag/layers/__init__.py"])
     assert any(t.startswith("tests/test_layers/") for t in sel.tests)
+
+
+# --------------------------------------------------------------------------- #
+# Regression guards: files the import graph can't see must still select the
+# tests whose whole purpose is guarding them (previously all selected nothing).
+# --------------------------------------------------------------------------- #
+
+
+def test_golden_spec_helper_selects_model_tests() -> None:
+    # tests/test_models/golden_forecast.py is a *helper* module (not a test_*.py),
+    # invisible to the source import graph. Editing it (e.g. loosening
+    # PREFIX_ATOL) must still run the golden regression test beside it.
+    sel = AT.select_tests(["tests/test_models/golden_forecast.py"])
+    assert sel.mode != "none"
+    assert "tests/test_models/test_golden_forecast.py" in sel.tests
+
+
+def test_golden_fixtures_select_golden_test() -> None:
+    # Regenerated golden fixtures are data files under tests/ with no import
+    # edge; the documented "regen + new .npz, no src change" workflow must
+    # re-run the golden regression test.
+    for fixture in (
+        "tests/fixtures/golden_forecast/classic_esn.npz",
+        "tests/fixtures/golden_forecast/ott_esn.npz",
+    ):
+        sel = AT.select_tests([fixture])
+        assert sel.mode != "none", fixture
+        assert "tests/test_models/test_golden_forecast.py" in sel.tests, fixture
+
+
+def test_perf_targets_json_selects_benchmark_tests() -> None:
+    # benchmarks/targets.json holds the perf-gate floors read at runtime by the
+    # perf-regression test (incl. its well-formed check). A malformed/edited
+    # targets.json must run those tests on the PR, not only on main/nightly.
+    sel = AT.select_tests(["benchmarks/targets.json"])
+    assert sel.mode != "none"
+    assert "tests/test_benchmarks/test_perf_regression.py" in sel.tests
+
+
+def test_reusable_test_workflow_is_broad_impact() -> None:
+    # .github/workflows/_test.yml is the reusable workflow that actually invokes
+    # pytest; a change to it can affect how *any* test runs.
+    sel = AT.select_tests([".github/workflows/_test.yml"])
+    assert sel.mode == "full"
+    assert sel.tests == [AT.FULL_SUITE_TARGET]
+
+
+def test_regen_golden_script_selects_golden_test() -> None:
+    # tools/regen_golden_forecasts.py defines/writes the golden specs the
+    # regression test asserts against; changing it must re-run that test.
+    sel = AT.select_tests(["tools/regen_golden_forecasts.py"])
+    assert sel.mode != "none"
+    assert "tests/test_models/test_golden_forecast.py" in sel.tests
+
+
+# --------------------------------------------------------------------------- #
+# Invariant: the new data-dependency edges never *reduce* or over-fan-out the
+# common path (ordinary src/test edits keep their prior, tight selection).
+# --------------------------------------------------------------------------- #
+
+
+def test_tests_helper_edit_does_not_run_full_suite() -> None:
+    # A non-test helper under a test dir scopes to that dir's tests, never the
+    # whole suite (only conftest/broad-impact do that).
+    sel = AT.select_tests(["tests/test_models/golden_forecast.py"])
+    assert sel.mode == "selected"
+    assert all(t.startswith("tests/test_models/") for t in sel.tests)
+
+
+def test_real_test_file_beside_helper_selects_only_itself() -> None:
+    # A genuine test_*.py edit is still selected as just itself (the helper
+    # sibling logic must skip real test files).
+    sel = AT.select_tests(["tests/test_models/test_esn_builder.py"])
+    assert sel.tests == ["tests/test_models/test_esn_builder.py"]
+
+
+def test_normal_source_edit_does_not_pull_in_data_dep_tests() -> None:
+    # An ordinary reservoir edit selects its mirror tests but is NOT dragged in
+    # by the new data-dependency mapping. The golden regression test imports
+    # only its ``.golden_forecast`` helper (no resdag source edge), so a source
+    # change must never select it via the new mapping — it only fires on
+    # targets.json / golden fixtures / the regen script. (The perf-regression
+    # test *does* import resdag source, so its import-graph selection here is
+    # correct and unrelated to the new mapping.)
+    sel = AT.select_tests(["src/resdag/layers/reservoirs/esn.py"])
+    assert "tests/test_layers/test_esn_layer.py" in sel.tests
+    assert "tests/test_models/test_golden_forecast.py" not in sel.tests

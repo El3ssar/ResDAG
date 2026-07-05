@@ -18,7 +18,7 @@ Compose reservoir models as DAGs, train readouts with a single algebraic solve, 
 
 ---
 
-ResDAG treats reservoir models — echo state networks and beyond — as ordinary PyTorch layers. Reservoirs, readouts, and transforms are `nn.Module`s wired together with a functional API; training a readout is one teacher-forced pass and one conjugate-gradient ridge solve, with no epochs. Models move with `.to(device)`, serialize with `state_dict()`, and embed in larger PyTorch pipelines, optimizers included.
+ResDAG treats reservoir models — echo state networks and beyond — as ordinary PyTorch layers. Reservoirs, readouts, and transforms are `nn.Module`s wired together with a functional API; training a readout is one teacher-forced pass and one algebraic ridge solve, with no epochs. Models move with `.to(device)`, serialize with `state_dict()`, and embed in larger PyTorch pipelines, optimizers included.
 
 **[Documentation →](https://el3ssar.github.io/ResDAG/)**
 
@@ -30,6 +30,11 @@ pip install "resdag[hpo]"     # + Optuna hyperparameter optimization
 ```
 
 Python ≥ 3.11, PyTorch ≥ 2.10.
+
+> **Docs track the dev branch.** Releases are frozen until 1.0, so PyPI serves
+> **0.6.2** — which predates parts of the [documented](https://el3ssar.github.io/ResDAG/)
+> API (the `ESN` facade, `resdag.data` streaming, the newer readout solvers). For
+> the documented API today: `pip install "git+https://github.com/El3ssar/ResDAG"`.
 
 ## Try it
 

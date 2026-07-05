@@ -26,6 +26,8 @@ training
     Training utilities (ESNTrainer).
 models
     Premade ESN architectures.
+metrics
+    Forecast-accuracy and Lyapunov-time metrics.
 hpo
     Hyperparameter optimization with Optuna.
 utils
@@ -83,7 +85,7 @@ ESNTrainer : Trainer for fitting readout layers.
 import importlib
 from typing import Any
 
-from . import core, data, datasets, ensemble, init, layers, models, training, utils
+from . import core, data, datasets, ensemble, init, layers, metrics, models, training, utils
 
 # Convenience imports for common use cases
 from .core import ESNModel, Input, ReservoirFeatureExtractor, reservoir_input
@@ -145,6 +147,7 @@ __all__ = [
     "hpo",  # resolved lazily via __getattr__ (see below)
     "init",
     "layers",
+    "metrics",
     "models",
     "training",
     "utils",

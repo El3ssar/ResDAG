@@ -20,6 +20,7 @@ trust your installed version.
 | Reservoir layers, cells, readout solvers, transforms | [Layers](layers.md) |
 | Topologies, input/feedback initializers, spec resolvers | [Initialization](init.md) |
 | `ESNTrainer` | [Training](training.md) |
+| Valid prediction time, forecast quality in Lyapunov times | [Metrics](metrics.md) |
 | Premade architectures, coupled ensembles, aggregators | [Models & ensembles](models.md) |
 | `run_hpo`, loss functions, study utilities | [HPO](hpo.md) |
 | `TimeSeriesWindowDataset`, `make_dataloader`, streaming training | [Work · Streaming](../workflows/streaming.md) |

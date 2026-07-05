@@ -61,7 +61,75 @@ __all__ = [
     "rossler",
     "henon",
     "sine",
+    "DATASET_DT",
+    "dataset_lambda_max",
 ]
+
+#: Default integration step ``dt`` of each built-in generator, keyed by name.
+#: These mirror the ``dt=`` defaults in the generator signatures below (the
+#: continuous systems integrate with RK4; the discrete map / delay system /
+#: NARMA / sine advance one sample per step, so ``dt = 1.0``).  Reservoir
+#: forecast horizons are converted to Lyapunov times with ``steps * dt *
+#: lambda_max`` (see :mod:`resdag.metrics`), so the ``dt`` a series was sampled
+#: at has to travel with it.
+#:
+#: Single source of truth: :mod:`resdag.metrics.forecast` keeps a byte-identical
+#: private copy (``_DATASET_DT``) so the metrics module never imports the
+#: dataset generators (avoiding a circular import — this module imports the
+#: Lyapunov tables from :mod:`resdag.metrics`).  Keep the two in sync.
+DATASET_DT: dict[str, float] = {
+    "lorenz": 0.02,
+    "rossler": 0.05,
+    "henon": 1.0,
+    "mackey_glass": 1.0,
+    "narma": 1.0,
+    "sine": 1.0,
+}
+
+
+def dataset_lambda_max(name: str, **params: float) -> float | None:
+    """Return the canonical largest Lyapunov exponent for a built-in generator.
+
+    Reads the literature tables in :mod:`resdag.metrics` — imported lazily here
+    so the dataset module and the metrics module never form an import cycle
+    (metrics owns the constant tables; this module is imported *by* metrics'
+    dt/lambda helpers only through the duplicated :data:`DATASET_DT`).
+
+    Parameters
+    ----------
+    name : str
+        Generator name (case-insensitive): ``"lorenz"``, ``"rossler"``, or
+        ``"mackey_glass"``.  Non-chaotic generators (``"sine"``, ``"narma"``)
+        have no Lyapunov exponent and return ``None``.
+    **params
+        Generator parameters; ``tau=`` selects the Mackey-Glass value (default
+        ``17``).
+
+    Returns
+    -------
+    float or None
+        The canonical :math:`\\lambda_\\mathrm{max}`, or ``None`` for a
+        non-chaotic generator or an unknown / non-canonical ``tau``.
+
+    Examples
+    --------
+    >>> from resdag.utils.data import dataset_lambda_max
+    >>> dataset_lambda_max("lorenz")
+    0.9056
+    >>> dataset_lambda_max("mackey_glass", tau=17)
+    0.0086
+    >>> dataset_lambda_max("sine") is None
+    True
+    """
+    from resdag.metrics.lyapunov import CANONICAL_LAMBDA_MAX, MACKEY_GLASS_LAMBDA
+
+    key = name.lower()
+    if key in CANONICAL_LAMBDA_MAX:
+        return CANONICAL_LAMBDA_MAX[key]
+    if key in ("mackey_glass", "mackeyglass", "mackey-glass"):
+        tau = int(params.get("tau", 17))
+        return MACKEY_GLASS_LAMBDA.get(tau)
+    return None
 
 
 def _normalize(series: np.ndarray, method: Normalize | None) -> np.ndarray:

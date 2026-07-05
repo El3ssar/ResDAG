@@ -31,6 +31,13 @@ order.
     autoregression, coupled ensembles, and Lyapunov-time limits on
     forecast horizons.
 
+- **[Lyapunov time](lyapunov.md)**
+
+    ---
+
+    Report forecast horizons in Lyapunov times, measure valid prediction
+    time, and read a reservoir's own edge-of-chaos exponent.
+
 - **[Tune](tune.md)**
 
     ---

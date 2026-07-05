@@ -33,6 +33,8 @@ import numpy as np
 import pytest
 import torch
 
+from resdag.metrics import valid_prediction_time as metrics_vpt
+
 from .golden_forecast import (
     FIXTURE_VERSION,
     FIXTURES_DIR,
@@ -116,6 +118,23 @@ class TestGoldenForecast:
         assert measured >= floor, (
             f"{spec.name}: VPT collapsed to {measured} (floor {floor}). "
             "Forecast quality regressed, or regenerate the golden if intended."
+        )
+
+    def test_vpt_matches_resdag_metrics(self, spec: GoldenSpec, forecast_for, splits) -> None:
+        """The golden VPT wrapper is bit-identical to :mod:`resdag.metrics`.
+
+        The golden ``valid_prediction_time`` delegates to
+        :func:`resdag.metrics.valid_prediction_time`; forecast horizon and
+        validation length are equal here, so the two must return the same whole
+        number of steps.  This pins the delegation so the golden numbers can
+        never silently diverge from the library metric.
+        """
+        _, _, _, _, val = splits
+        golden, meta = load_fixture(spec.name)
+        live = forecast_for(spec.name)
+        thr = float(meta["vpt_threshold"])
+        assert valid_prediction_time(live, val, threshold=thr) == int(
+            metrics_vpt(live, val, threshold=thr)
         )
 
     def test_golden_matches_truth_within_its_own_vpt(self, spec: GoldenSpec, splits) -> None:

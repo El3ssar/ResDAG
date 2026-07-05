@@ -1,0 +1,1183 @@
+{
+  "meta": {
+    "kind": "internal_cells",
+    "description": "resdag-internal per-family init/train/forecast cost profile (not a cross-library comparison)",
+    "families": [
+      "classic_esn",
+      "ott_esn",
+      "es2n",
+      "resesn",
+      "gated_esn",
+      "eusn",
+      "lsm",
+      "deep_esn"
+    ],
+    "sizes": [
+      500,
+      1000,
+      2000
+    ],
+    "devices": [
+      "cpu",
+      "cuda"
+    ],
+    "repeats": 2,
+    "warmups": 1,
+    "hparams": {
+      "dim": 3,
+      "spectral_radius": 0.9,
+      "leak_rate": 0.3,
+      "connectivity": 0.1,
+      "input_scaling": 1.0,
+      "ridge": 1e-06,
+      "activation": "tanh",
+      "seed": 1234,
+      "vpt_threshold": 0.5
+    },
+    "point": {
+      "reservoir_size": 1000,
+      "train_len": 3000,
+      "warmup": 200,
+      "horizon": 500
+    },
+    "env": {
+      "timestamp": "2026-07-05T13:26:42Z",
+      "versions": {
+        "python": "3.14.2",
+        "resdag": "0.7.0",
+        "torch": "2.10.0+cu128",
+        "numpy": "2.4.0",
+        "scipy": "1.17.0",
+        "reservoirpy": "0.4.2",
+        "julia": "1.12.5"
+      },
+      "cuda": {
+        "available": true,
+        "toolkit": "12.8",
+        "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU",
+        "vram_gb": 6.09
+      },
+      "cpu": {
+        "model": "Intel(R) Core(TM) i7-10870H CPU @ 2.20GHz",
+        "logical_cores": 16
+      },
+      "platform": "Linux-7.0.14-zen1-1-zen-x86_64-with-glibc2.43",
+      "git": {
+        "commit": "7ddcd8cb8a066192e746b66ec75dd3d64ce720dc",
+        "dirty": true
+      }
+    }
+  },
+  "cells": [
+    {
+      "family": "classic_esn",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.2285272974986583,
+      "train_s": 0.6735025930101983,
+      "forecast_s": 0.07887756897252984,
+      "init_times": [
+        0.2951302410219796,
+        0.161924353975337
+      ],
+      "train_times": [
+        1.0962819249834865,
+        0.2507232610369101
+      ],
+      "forecast_times": [
+        0.0882962909527123,
+        0.06945884699234739
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.1489914123100442
+    },
+    {
+      "family": "ott_esn",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.212518699496286,
+      "train_s": 1.2722087584843393,
+      "forecast_s": 0.7023797004949301,
+      "init_times": [
+        0.19201805896591395,
+        0.23301934002665803
+      ],
+      "train_times": [
+        1.4669772349880077,
+        1.077440281980671
+      ],
+      "forecast_times": [
+        0.2727576239849441,
+        1.1320017770049162
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.13930748407323398
+    },
+    {
+      "family": "es2n",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.3318544925423339,
+      "train_s": 0.7692077569954563,
+      "forecast_s": 0.3115256169985514,
+      "init_times": [
+        0.30160827504005283,
+        0.36210071004461497
+      ],
+      "train_times": [
+        0.738135544990655,
+        0.8002799690002576
+      ],
+      "forecast_times": [
+        0.3754561020177789,
+        0.24759513197932392
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.14203292717818067
+    },
+    {
+      "family": "resesn",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.6670951069681905,
+      "train_s": 0.694261329510482,
+      "forecast_s": 0.24540904801688157,
+      "init_times": [
+        1.0391063109855168,
+        0.2950839029508643
+      ],
+      "train_times": [
+        0.6226457090233453,
+        0.7658769499976188
+      ],
+      "forecast_times": [
+        0.36322122503770515,
+        0.127596870996058
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.7364999983787605
+    },
+    {
+      "family": "gated_esn",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.08895909649436362,
+      "train_s": 0.5710349990113173,
+      "forecast_s": 0.37407227701623924,
+      "init_times": [
+        0.08938060398213565,
+        0.08853758900659159
+      ],
+      "train_times": [
+        0.4240979580208659,
+        0.7179720400017686
+      ],
+      "forecast_times": [
+        0.2664503700216301,
+        0.4816941840108484
+      ],
+      "peak_mem_mb": null,
+      "rmse": 103669.93693487407
+    },
+    {
+      "family": "eusn",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.10681360997841693,
+      "train_s": 0.5414621455129236,
+      "forecast_s": 0.2462172615050804,
+      "init_times": [
+        0.10872497700620443,
+        0.10490224295062944
+      ],
+      "train_times": [
+        0.5291843480081297,
+        0.5537399430177175
+      ],
+      "forecast_times": [
+        0.21970526198856533,
+        0.27272926102159545
+      ],
+      "peak_mem_mb": null,
+      "rmse": 19.092263654805528
+    },
+    {
+      "family": "lsm",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.11216622297069989,
+      "train_s": 0.8281504744954873,
+      "forecast_s": 0.16634645697195083,
+      "init_times": [
+        0.1140175269683823,
+        0.11031491897301748
+      ],
+      "train_times": [
+        0.7903124890290201,
+        0.8659884599619545
+      ],
+      "forecast_times": [
+        0.2110970969661139,
+        0.12159581697778776
+      ],
+      "peak_mem_mb": null,
+      "rmse": null,
+      "notes": "LSM is an input-driven regressor, not a closed-loop chaos forecaster; forecast timing is a mechanical rollout cost, not predictive skill."
+    },
+    {
+      "family": "deep_esn",
+      "reservoir_size": 500,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.04202625202015042,
+      "train_s": 0.19949013250879943,
+      "forecast_s": 0.08365368100930937,
+      "init_times": [
+        0.04183966701384634,
+        0.04221283702645451
+      ],
+      "train_times": [
+        0.20378479099599645,
+        0.19519547402160242
+      ],
+      "forecast_times": [
+        0.08571089699398726,
+        0.08159646502463147
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.1519191479698467
+    },
+    {
+      "family": "classic_esn",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.2888223340269178,
+      "train_s": 0.4163466455065645,
+      "forecast_s": 0.14744726548087783,
+      "init_times": [
+        0.29460229503456503,
+        0.2830423730192706
+      ],
+      "train_times": [
+        0.36229304800508544,
+        0.4704002430080436
+      ],
+      "forecast_times": [
+        0.16708652599481866,
+        0.127808004966937
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.14448388178401686
+    },
+    {
+      "family": "ott_esn",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.36430900398408994,
+      "train_s": 0.372848247498041,
+      "forecast_s": 0.11288528950535692,
+      "init_times": [
+        0.37841616600053385,
+        0.35020184196764603
+      ],
+      "train_times": [
+        0.3633550149970688,
+        0.38234147999901325
+      ],
+      "forecast_times": [
+        0.11297867802204564,
+        0.1127919009886682
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.1406221592510482
+    },
+    {
+      "family": "es2n",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.33449046697933227,
+      "train_s": 2.431737779028481,
+      "forecast_s": 0.5829174609971233,
+      "init_times": [
+        0.33840575598878786,
+        0.3305751779698767
+      ],
+      "train_times": [
+        2.5393151600146666,
+        2.324160398042295
+      ],
+      "forecast_times": [
+        0.5892113349982537,
+        0.5766235869959928
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.14086801876535648
+    },
+    {
+      "family": "resesn",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.34394777900888585,
+      "train_s": 2.5366980815306306,
+      "forecast_s": 0.6403615764866117,
+      "init_times": [
+        0.3487524600350298,
+        0.3391430979827419
+      ],
+      "train_times": [
+        2.460421062016394,
+        2.612975101044867
+      ],
+      "forecast_times": [
+        0.639066785981413,
+        0.6416563669918105
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.11648792442618228
+    },
+    {
+      "family": "gated_esn",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.29068481450667605,
+      "train_s": 2.598631317494437,
+      "forecast_s": 0.639847478014417,
+      "init_times": [
+        0.2931145569891669,
+        0.2882550720241852
+      ],
+      "train_times": [
+        2.5734913039486855,
+        2.6237713310401887
+      ],
+      "forecast_times": [
+        0.6190813009743579,
+        0.6606136550544761
+      ],
+      "peak_mem_mb": null,
+      "rmse": 7.260587719505082
+    },
+    {
+      "family": "eusn",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.39996339098433964,
+      "train_s": 0.7562911560235079,
+      "forecast_s": 0.22690357448300347,
+      "init_times": [
+        0.40119832899654284,
+        0.39872845297213644
+      ],
+      "train_times": [
+        0.7558997480082326,
+        0.7566825640387833
+      ],
+      "forecast_times": [
+        0.23141237098025158,
+        0.22239477798575535
+      ],
+      "peak_mem_mb": null,
+      "rmse": 456.98177760666505
+    },
+    {
+      "family": "lsm",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.2821122505120002,
+      "train_s": 0.7483196825196501,
+      "forecast_s": 0.20576660701772198,
+      "init_times": [
+        0.2821949240169488,
+        0.28202957700705156
+      ],
+      "train_times": [
+        0.7621319700265303,
+        0.7345073950127698
+      ],
+      "forecast_times": [
+        0.20849548000842333,
+        0.20303773402702063
+      ],
+      "peak_mem_mb": null,
+      "rmse": null,
+      "notes": "LSM is an input-driven regressor, not a closed-loop chaos forecaster; forecast timing is a mechanical rollout cost, not predictive skill."
+    },
+    {
+      "family": "deep_esn",
+      "reservoir_size": 1000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.12542582998867147,
+      "train_s": 0.3369832034804858,
+      "forecast_s": 0.12430870599928312,
+      "init_times": [
+        0.12317722599254921,
+        0.12767443398479372
+      ],
+      "train_times": [
+        0.33744549396215007,
+        0.3365209129988216
+      ],
+      "forecast_times": [
+        0.12586622196249664,
+        0.1227511900360696
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.13717378573252073
+    },
+    {
+      "family": "classic_esn",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.8277790950087365,
+      "train_s": 6.357885573001113,
+      "forecast_s": 1.4332180359924678,
+      "init_times": [
+        0.8703485350124538,
+        0.7852096550050192
+      ],
+      "train_times": [
+        6.286661585967522,
+        6.4291095600347035
+      ],
+      "forecast_times": [
+        1.417057154001668,
+        1.4493789179832675
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.14453396970729887
+    },
+    {
+      "family": "ott_esn",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.6293226870184299,
+      "train_s": 6.711226819461444,
+      "forecast_s": 1.6636025570333004,
+      "init_times": [
+        0.662772516021505,
+        0.5958728580153547
+      ],
+      "train_times": [
+        6.829122750961687,
+        6.593330887961201
+      ],
+      "forecast_times": [
+        1.6175012060557492,
+        1.7097039080108516
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.1449022931826978
+    },
+    {
+      "family": "es2n",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 1.388787318021059,
+      "train_s": 12.249118045991054,
+      "forecast_s": 2.759574840514688,
+      "init_times": [
+        1.205752358015161,
+        1.571822278026957
+      ],
+      "train_times": [
+        12.645506678964011,
+        11.852729413018096
+      ],
+      "forecast_times": [
+        2.7443716460256837,
+        2.774778035003692
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.14269518097648867
+    },
+    {
+      "family": "resesn",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.9479623649967834,
+      "train_s": 12.158859286486404,
+      "forecast_s": 2.7577616370108444,
+      "init_times": [
+        0.9764841930009425,
+        0.9194405369926244
+      ],
+      "train_times": [
+        12.416634081979282,
+        11.901084490993526
+      ],
+      "forecast_times": [
+        2.7634472000063397,
+        2.752076074015349
+      ],
+      "peak_mem_mb": null,
+      "rmse": 1.6848499421001784
+    },
+    {
+      "family": "gated_esn",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.8594809520000126,
+      "train_s": 12.196675594488624,
+      "forecast_s": 3.4581374960253015,
+      "init_times": [
+        0.6627080609905533,
+        1.056253843009472
+      ],
+      "train_times": [
+        12.205587930977345,
+        12.187763257999904
+      ],
+      "forecast_times": [
+        3.448112783022225,
+        3.468162209028378
+      ],
+      "peak_mem_mb": null,
+      "rmse": 1.0301048100206172
+    },
+    {
+      "family": "eusn",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 1.4921511049906258,
+      "train_s": 12.573798219003947,
+      "forecast_s": 2.9216645115229767,
+      "init_times": [
+        1.5156992569682188,
+        1.4686029530130327
+      ],
+      "train_times": [
+        12.422048097010702,
+        12.725548340997193
+      ],
+      "forecast_times": [
+        2.925410855037626,
+        2.9179181680083275
+      ],
+      "peak_mem_mb": null,
+      "rmse": 3.795343834792094
+    },
+    {
+      "family": "lsm",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.7501170680043288,
+      "train_s": 6.613493042503251,
+      "forecast_s": 1.4875883214990608,
+      "init_times": [
+        0.6073640860267915,
+        0.892870049981866
+      ],
+      "train_times": [
+        6.6431410440127365,
+        6.583845040993765
+      ],
+      "forecast_times": [
+        1.4385126829729415,
+        1.5366639600251801
+      ],
+      "peak_mem_mb": null,
+      "rmse": null,
+      "notes": "LSM is an input-driven regressor, not a closed-loop chaos forecaster; forecast timing is a mechanical rollout cost, not predictive skill."
+    },
+    {
+      "family": "deep_esn",
+      "reservoir_size": 2000,
+      "device": "cpu",
+      "dtype": "float64",
+      "init_s": 0.5375900435028598,
+      "train_s": 0.9465817445016,
+      "forecast_s": 0.7767240175162442,
+      "init_times": [
+        0.5361945219920017,
+        0.5389855650137179
+      ],
+      "train_times": [
+        0.885650641983375,
+        1.0075128470198251
+      ],
+      "forecast_times": [
+        0.7876328999991529,
+        0.7658151350333355
+      ],
+      "peak_mem_mb": null,
+      "rmse": 0.14606551951840885
+    },
+    {
+      "family": "classic_esn",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.06202388199744746,
+      "train_s": 0.20953985999221914,
+      "forecast_s": 0.11702181299915537,
+      "init_times": [
+        0.06199175899382681,
+        0.062056005001068115
+      ],
+      "train_times": [
+        0.2082615569815971,
+        0.21081816300284117
+      ],
+      "forecast_times": [
+        0.1180313240038231,
+        0.11601230199448764
+      ],
+      "peak_mem_mb": 45.41,
+      "rmse": 0.14907191740449616
+    },
+    {
+      "family": "ott_esn",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.060646387515589595,
+      "train_s": 0.18074614900979213,
+      "forecast_s": 0.12085610447684303,
+      "init_times": [
+        0.06026121601462364,
+        0.06103155901655555
+      ],
+      "train_times": [
+        0.18642597703728825,
+        0.17506632098229602
+      ],
+      "forecast_times": [
+        0.12224782397970557,
+        0.11946438497398049
+      ],
+      "peak_mem_mb": 54.11,
+      "rmse": 0.13930033083033624
+    },
+    {
+      "family": "es2n",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.08428655151510611,
+      "train_s": 0.3404064344940707,
+      "forecast_s": 0.14036047502304427,
+      "init_times": [
+        0.08360349998110905,
+        0.08496960304910317
+      ],
+      "train_times": [
+        0.3413210320286453,
+        0.33949183695949614
+      ],
+      "forecast_times": [
+        0.1385057900333777,
+        0.14221516001271084
+      ],
+      "peak_mem_mb": 54.51,
+      "rmse": 0.14240620387577152
+    },
+    {
+      "family": "resesn",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.07601282050018199,
+      "train_s": 0.3459956879960373,
+      "forecast_s": 0.1423320504836738,
+      "init_times": [
+        0.08412788703572005,
+        0.06789775396464393
+      ],
+      "train_times": [
+        0.34722510498249903,
+        0.3447662710095756
+      ],
+      "forecast_times": [
+        0.14221270597772673,
+        0.1424513949896209
+      ],
+      "peak_mem_mb": 60.56,
+      "rmse": 1.037038893349884
+    },
+    {
+      "family": "gated_esn",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.06781172050978057,
+      "train_s": 0.4778909964952618,
+      "forecast_s": 0.1670529449766036,
+      "init_times": [
+        0.07002814701991156,
+        0.06559529399964958
+      ],
+      "train_times": [
+        0.47591114102397114,
+        0.47987085196655244
+      ],
+      "forecast_times": [
+        0.16660082596354187,
+        0.16750506398966536
+      ],
+      "peak_mem_mb": 66.64,
+      "rmse": 103683.95706948439
+    },
+    {
+      "family": "eusn",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.06919050248689018,
+      "train_s": 0.3757811129617039,
+      "forecast_s": 0.14859697650535963,
+      "init_times": [
+        0.07289499597391114,
+        0.06548600899986923
+      ],
+      "train_times": [
+        0.37434731697430834,
+        0.3772149089490995
+      ],
+      "forecast_times": [
+        0.14944530802313238,
+        0.14774864498758689
+      ],
+      "peak_mem_mb": 69.67,
+      "rmse": 18.39451951672002
+    },
+    {
+      "family": "lsm",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.06200034901848994,
+      "train_s": 0.7201507760037202,
+      "forecast_s": 0.22950047350605018,
+      "init_times": [
+        0.061252557032275945,
+        0.06274814100470394
+      ],
+      "train_times": [
+        0.7190875349915586,
+        0.7212140170158818
+      ],
+      "forecast_times": [
+        0.22746184602146968,
+        0.2315391009906307
+      ],
+      "peak_mem_mb": 72.72,
+      "rmse": null,
+      "notes": "LSM is an input-driven regressor, not a closed-loop chaos forecaster; forecast timing is a mechanical rollout cost, not predictive skill."
+    },
+    {
+      "family": "deep_esn",
+      "reservoir_size": 500,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.034500013978686184,
+      "train_s": 0.3920003054954577,
+      "forecast_s": 0.1731054550036788,
+      "init_times": [
+        0.0360016489867121,
+        0.03299837897066027
+      ],
+      "train_times": [
+        0.3922178469947539,
+        0.3917827639961615
+      ],
+      "forecast_times": [
+        0.17309719999320805,
+        0.17311371001414955
+      ],
+      "peak_mem_mb": 87.83,
+      "rmse": 0.1534245428994358
+    },
+    {
+      "family": "classic_esn",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.340944291499909,
+      "train_s": 0.22540097348974086,
+      "forecast_s": 0.11348410250502639,
+      "init_times": [
+        0.3395403510075994,
+        0.34234823199221864
+      ],
+      "train_times": [
+        0.22545311599969864,
+        0.2253488309797831
+      ],
+      "forecast_times": [
+        0.11332233500434086,
+        0.11364587000571191
+      ],
+      "peak_mem_mb": 140.71,
+      "rmse": 0.14444549755026168
+    },
+    {
+      "family": "ott_esn",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.28543898099451326,
+      "train_s": 0.21002331149065867,
+      "forecast_s": 0.13231445796554908,
+      "init_times": [
+        0.2840387509786524,
+        0.28683921101037413
+      ],
+      "train_times": [
+        0.20748127397382632,
+        0.21256534900749102
+      ],
+      "forecast_times": [
+        0.13297762797446921,
+        0.13165128795662895
+      ],
+      "peak_mem_mb": 164.92,
+      "rmse": 0.14091407976751472
+    },
+    {
+      "family": "es2n",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.34261169750243425,
+      "train_s": 0.36024177249055356,
+      "forecast_s": 0.16032531001837924,
+      "init_times": [
+        0.33565081004053354,
+        0.34957258496433496
+      ],
+      "train_times": [
+        0.3637817169656046,
+        0.35670182801550254
+      ],
+      "forecast_times": [
+        0.16799421899486333,
+        0.15265640104189515
+      ],
+      "peak_mem_mb": 177.87,
+      "rmse": 0.14107272419554995
+    },
+    {
+      "family": "resesn",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.3404929770040326,
+      "train_s": 0.3814815559890121,
+      "forecast_s": 0.16797876099008135,
+      "init_times": [
+        0.34618877700995654,
+        0.3347971769981086
+      ],
+      "train_times": [
+        0.39280716597568244,
+        0.3701559460023418
+      ],
+      "forecast_times": [
+        0.1740620139753446,
+        0.1618955080048181
+      ],
+      "peak_mem_mb": 203.9,
+      "rmse": 0.11686188726335897
+    },
+    {
+      "family": "gated_esn",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.309218073496595,
+      "train_s": 0.5269142800243571,
+      "forecast_s": 0.17713028349680826,
+      "init_times": [
+        0.29677024600096047,
+        0.3216659009922296
+      ],
+      "train_times": [
+        0.5356561990338378,
+        0.5181723610148765
+      ],
+      "forecast_times": [
+        0.1760351230041124,
+        0.17822544398950413
+      ],
+      "peak_mem_mb": 229.85,
+      "rmse": 8.409783773577304
+    },
+    {
+      "family": "eusn",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.25716416150680743,
+      "train_s": 0.4040088274923619,
+      "forecast_s": 0.1544380484847352,
+      "init_times": [
+        0.2534189849975519,
+        0.260909338016063
+      ],
+      "train_times": [
+        0.4064088609884493,
+        0.40160879399627447
+      ],
+      "forecast_times": [
+        0.15509112598374486,
+        0.15378497098572552
+      ],
+      "peak_mem_mb": 241.07,
+      "rmse": 460.38157131638536
+    },
+    {
+      "family": "lsm",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.27792844650684856,
+      "train_s": 0.7542001965048257,
+      "forecast_s": 0.23694634303683415,
+      "init_times": [
+        0.2757329900050536,
+        0.28012390300864354
+      ],
+      "train_times": [
+        0.7623800860019401,
+        0.7460203070077114
+      ],
+      "forecast_times": [
+        0.2384506570524536,
+        0.2354420290212147
+      ],
+      "peak_mem_mb": 254.14,
+      "rmse": null,
+      "notes": "LSM is an input-driven regressor, not a closed-loop chaos forecaster; forecast timing is a mechanical rollout cost, not predictive skill."
+    },
+    {
+      "family": "deep_esn",
+      "reservoir_size": 1000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.11747033649589866,
+      "train_s": 0.42489349099923857,
+      "forecast_s": 0.17547386398655362,
+      "init_times": [
+        0.11883583600865677,
+        0.11610483698314056
+      ],
+      "train_times": [
+        0.43049297999823466,
+        0.41929400200024247
+      ],
+      "forecast_times": [
+        0.17509941098978743,
+        0.17584831698331982
+      ],
+      "peak_mem_mb": 267.96,
+      "rmse": 0.13672865217958735
+    },
+    {
+      "family": "classic_esn",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.6656209974898957,
+      "train_s": 0.3421567924960982,
+      "forecast_s": 0.11487844251678325,
+      "init_times": [
+        0.5525536049972288,
+        0.7786883899825625
+      ],
+      "train_times": [
+        0.3462570940027945,
+        0.33805649098940194
+      ],
+      "forecast_times": [
+        0.11410975700709969,
+        0.11564712802646682
+      ],
+      "peak_mem_mb": 479.53,
+      "rmse": 0.14445188009247675
+    },
+    {
+      "family": "ott_esn",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.5549752069637179,
+      "train_s": 0.33211229849257506,
+      "forecast_s": 0.1261190670193173,
+      "init_times": [
+        0.5671600179630332,
+        0.5427903959644027
+      ],
+      "train_times": [
+        0.33218588202726096,
+        0.33203871495788917
+      ],
+      "forecast_times": [
+        0.1262613200233318,
+        0.1259768140153028
+      ],
+      "peak_mem_mb": 351.73,
+      "rmse": 0.14493192964981413
+    },
+    {
+      "family": "es2n",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 1.0167596094834153,
+      "train_s": 0.5089170890278183,
+      "forecast_s": 0.1442969910276588,
+      "init_times": [
+        0.9314484259812161,
+        1.1020707929856144
+      ],
+      "train_times": [
+        0.5111677730455995,
+        0.5066664050100371
+      ],
+      "forecast_times": [
+        0.1408142590080388,
+        0.14777972304727882
+      ],
+      "peak_mem_mb": 328.61,
+      "rmse": 0.1422472547975588
+    },
+    {
+      "family": "resesn",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 1.1423144919972401,
+      "train_s": 0.5093753670225851,
+      "forecast_s": 0.15536040448932908,
+      "init_times": [
+        1.2275169899803586,
+        1.0571119940141216
+      ],
+      "train_times": [
+        0.5088776880293153,
+        0.5098730460158549
+      ],
+      "forecast_times": [
+        0.15636220900341868,
+        0.15435859997523949
+      ],
+      "peak_mem_mb": 362.23,
+      "rmse": 1.6843432323295349
+    },
+    {
+      "family": "gated_esn",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.7327530249895062,
+      "train_s": 0.6346667900215834,
+      "forecast_s": 0.18128616650938056,
+      "init_times": [
+        0.7526545510045253,
+        0.7128514989744872
+      ],
+      "train_times": [
+        0.6239105919958092,
+        0.6454229880473576
+      ],
+      "forecast_times": [
+        0.18056861101649702,
+        0.1820037220022641
+      ],
+      "peak_mem_mb": 395.86,
+      "rmse": 1.0295682294482846
+    },
+    {
+      "family": "eusn",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 1.460968634026358,
+      "train_s": 0.5339074190123938,
+      "forecast_s": 0.1551846225047484,
+      "init_times": [
+        1.323809779016301,
+        1.5981274890364148
+      ],
+      "train_times": [
+        0.5408761670114473,
+        0.5269386710133404
+      ],
+      "forecast_times": [
+        0.1586914390209131,
+        0.1516778059885837
+      ],
+      "peak_mem_mb": 412.7,
+      "rmse": 3.8299323656815485
+    },
+    {
+      "family": "lsm",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.8747491005342454,
+      "train_s": 0.9026969480328262,
+      "forecast_s": 0.2528272534837015,
+      "init_times": [
+        0.8187582620303147,
+        0.9307399390381761
+      ],
+      "train_times": [
+        0.9277132940478623,
+        0.8776806020177901
+      ],
+      "forecast_times": [
+        0.2436200919910334,
+        0.2620344149763696
+      ],
+      "peak_mem_mb": 429.56,
+      "rmse": null,
+      "notes": "LSM is an input-driven regressor, not a closed-loop chaos forecaster; forecast timing is a mechanical rollout cost, not predictive skill."
+    },
+    {
+      "family": "deep_esn",
+      "reservoir_size": 2000,
+      "device": "cuda",
+      "dtype": "float32",
+      "init_s": 0.6514098730112892,
+      "train_s": 0.563819393486483,
+      "forecast_s": 0.18558010848937556,
+      "init_times": [
+        0.6662237429991364,
+        0.6365960030234419
+      ],
+      "train_times": [
+        0.552842395962216,
+        0.5747963910107501
+      ],
+      "forecast_times": [
+        0.1849232210079208,
+        0.18623699597083032
+      ],
+      "peak_mem_mb": 465.91,
+      "rmse": 0.14600003341351847
+    }
+  ]
+}

@@ -25,12 +25,12 @@ import json
 import platform
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from .adapters import all_adapters
 from .config import CONTEXTS, QUICK_CONTEXTS, HParams
 from .data import lorenz
+from .env import collect_env
 from .metrics import LORENZ_DT, LORENZ_LAMBDA_MAX, lyapunov_times, valid_prediction_time
 
 _DEFAULT_OUT = Path(__file__).resolve().parents[1] / "results" / "latest.json"
@@ -116,9 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     series = lorenz(need, seed=hp.seed)
     _p(f"done ({time.perf_counter() - t0:.1f}s)")
 
+    env = collect_env()
     results: dict = {
         "meta": {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            # Timestamp read from the shell (never datetime.now()) — see env.py.
+            "timestamp": env["timestamp"],
             "hardware": _hardware(),
             "versions": _collect_versions(),
             "hparams": hp.__dict__,
@@ -126,6 +128,11 @@ def main(argv: list[str] | None = None) -> int:
             "warmups": args.warmups,
             "series_len": len(series),
             "lyapunov": {"lambda_max": LORENZ_LAMBDA_MAX, "dt": LORENZ_DT},
+            # Full reproducibility metadata (shared schema with
+            # results/internal_cells.json). The legacy ``versions``/``hardware``
+            # blocks above are kept for report.py; ``env`` is the richer,
+            # single-source-of-truth block (adds scipy, Julia version, git SHA).
+            "env": env,
         },
         "contexts": {},
     }

@@ -13,11 +13,26 @@ resdag.layers.reservoir : Concrete implementations.
 
 from abc import ABC
 from itertools import chain
+from typing import Any
 
 import torch
 import torch.nn as nn
 
 from resdag.layers.cells import ReservoirCell
+
+# Cell configuration attributes that are safe to mutate *live* after
+# construction: they are read fresh on every step by the cell (leak_rate, noise)
+# or apply their effect through a property setter (trainable), so a write on the
+# layer is forwarded straight through to the cell and takes effect immediately.
+_FORWARDABLE_CELL_ATTRS = frozenset({"trainable", "leak_rate", "noise"})
+
+# Cell configuration attributes that are *structurally baked* into the weights at
+# construction time (the spectral radius is scaled into ``weight_hh``; the sizes
+# fix every matrix shape).  Mutating them post-init cannot retroactively rebuild
+# the weights, so a naive forward would silently mislead.  Writing them on the
+# layer raises rather than silently shadowing (the old ``nn.Module.__setattr__``
+# behaviour) or forwarding to no effect.
+_BAKED_CELL_ATTRS = frozenset({"spectral_radius", "reservoir_size", "feedback_size", "input_size"})
 
 
 class BaseReservoirLayer(nn.Module, ABC):
@@ -82,6 +97,79 @@ class BaseReservoirLayer(nn.Module, ABC):
         # zero-init.  Only the former is protected against a silent batch-size
         # re-init in ``_maybe_init_state`` — the latter is free to auto-resize.
         self._state_user_set: bool = False
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Forward live hyperparameter writes to the inner cell; otherwise register normally.
+
+        The layer delegates attribute *reads* to the inner cell (via
+        ``__getattr__``), but plain :class:`~torch.nn.Module` semantics send
+        *writes* to the layer's own ``__dict__``, creating a shadow attribute:
+        ``layer.leak_rate = 0.5`` would read back ``0.5`` while the cell keeps
+        computing with the constructor value.  Worse, ``layer.trainable = True``
+        — the documented BPTT-enable recipe — would never flip
+        ``requires_grad`` on any parameter.
+
+        This override closes that gap **without disturbing nn.Module's
+        registration machinery**.  The write is forwarded to the cell only for a
+        small, explicit allow-list of live config attributes
+        (:data:`_FORWARDABLE_CELL_ATTRS`: ``trainable``, ``leak_rate``,
+        ``noise``) — names the cell reads fresh every step or applies through a
+        property setter.  Everything else falls through to
+        ``nn.Module.__setattr__`` unchanged, so Parameters, buffers, submodules,
+        and ``_``-prefixed internals register exactly as before.
+
+        Structurally-baked config (:data:`_BAKED_CELL_ATTRS`:
+        ``spectral_radius``, ``reservoir_size``, ``feedback_size``,
+        ``input_size``) is scaled/shaped into the weights at construction and
+        cannot be changed live; assigning to it raises :class:`AttributeError`
+        rather than silently shadowing or forwarding to no effect.
+
+        Parameters
+        ----------
+        name : str
+            Attribute name being assigned.
+        value : Any
+            Value to assign.
+
+        Raises
+        ------
+        AttributeError
+            If ``name`` is a structurally-baked cell config attribute that
+            cannot be changed after construction.
+        """
+        # Resolve the inner cell without triggering __getattr__ recursion; it is
+        # None during __init__ before the submodule is registered.
+        cell = self.__dict__.get("_modules", {}).get("cell")
+
+        # Route cell-owned config names by policy *before* the generic
+        # Module-internal guard, so even a Tensor-valued config write (e.g. a
+        # per-neuron leak_rate vector) reaches the cell instead of silently
+        # shadowing on the layer.  Parameters and Modules are never config — they
+        # always register normally — and ``_``-prefixed names are internal
+        # bookkeeping, so both are excluded here.
+        if (
+            cell is not None
+            and not name.startswith("_")
+            and not isinstance(value, (nn.Parameter, nn.Module))
+            and hasattr(cell, name)
+        ):
+            if name in _BAKED_CELL_ATTRS:
+                raise AttributeError(
+                    f"{type(self).__name__}.{name} is baked into the reservoir weights at "
+                    f"construction and cannot be changed after the layer is built "
+                    f"(the spectral radius is scaled into weight_hh; the sizes fix every "
+                    f"weight-matrix shape). Rebuild the layer with the new {name} instead."
+                )
+            if name in _FORWARDABLE_CELL_ATTRS:
+                setattr(cell, name, value)
+                return
+
+        # Everything else — Parameters, Modules, Tensors not matched above,
+        # ``_``-prefixed internals (including ``_modules`` itself, set by
+        # nn.Module.__init__ before ``cell`` exists), and arbitrary layer
+        # attributes — registers through nn.Module.__setattr__ unchanged.
+        super().__setattr__(name, value)
 
     def forward_stateless(
         self,

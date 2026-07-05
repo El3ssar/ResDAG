@@ -23,7 +23,8 @@ resdag.layers.readouts.IncrementalRidgeReadout : Streaming partial_fit readout.
 """
 
 import warnings
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 
 import torch
 
@@ -195,8 +196,11 @@ class ESNTrainer:
                     f"but train_inputs has {train_steps} timesteps. Must match."
                 )
 
-        # Single warmup to sync reservoir states (warmup resets by default)
-        self.model.warmup(*warmup_inputs)
+        # Single warmup to sync reservoir states (warmup resets by default).
+        # Readouts are unfitted during warmup, so let any guarded readout (e.g.
+        # IncrementalRidgeReadout) flow a value while the reservoir synchronises.
+        with self._allow_unfitted_warmup(readouts):
+            self.model.warmup(*warmup_inputs)
 
         # Register pre-hooks that fit each readout when its forward fires.
         # We don't need explicit topological order: ``self.model(*train_inputs)``
@@ -321,17 +325,12 @@ class ESNTrainer:
 
         # Reset accumulators so a re-fit starts clean, then warm up once. The
         # readouts are unfitted during warmup too, so let their forward flow a
-        # value while the reservoir synchronises.
+        # value while the reservoir synchronises (shared with ``fit``).
         for _, readout in readouts:
             assert isinstance(readout, IncrementalRidgeReadout)
             readout.reset_accumulators()
-            readout._allow_unfitted_forward = True
-        try:
+        with self._allow_unfitted_warmup(readouts):
             self.model.warmup(*warmup_inputs)
-        finally:
-            for _, readout in readouts:
-                assert isinstance(readout, IncrementalRidgeReadout)
-                readout._allow_unfitted_forward = False
 
         # Per-chunk: register pre-hooks that accumulate sufficient statistics
         # for each readout, then run a forward pass that carries the reservoir
@@ -392,6 +391,43 @@ class ESNTrainer:
         for _, readout in readouts:
             assert isinstance(readout, IncrementalRidgeReadout)
             readout.finalize()
+
+    @staticmethod
+    @contextmanager
+    def _allow_unfitted_warmup(
+        readouts: list[tuple[str, ReadoutLayer]],
+    ) -> Iterator[None]:
+        """Bypass the unfitted-forward guard for the duration of a warmup pass.
+
+        The warmup pass in :meth:`fit` and :meth:`fit_stream` runs *before* any
+        readout is fitted, so an :class:`IncrementalRidgeReadout`'s forward guard
+        would otherwise raise ``RuntimeError('... is not fitted ...')`` while the
+        reservoir merely synchronises. Inside this context, every
+        :class:`IncrementalRidgeReadout` (the only readout carrying the
+        ``_allow_unfitted_forward`` flag) has it set to
+        ``True`` so its forward flows a value downstream; the flag is reset to
+        ``False`` on exit (including on exception, via ``try/finally``), so the
+        guard is only bypassed during warmup — never during the actual fit or
+        during normal inference. Readouts without the flag (e.g.
+        :class:`CGReadoutLayer`) are left untouched.
+
+        Parameters
+        ----------
+        readouts : list of (str, ReadoutLayer)
+            The ``(name, readout)`` pairs from :meth:`_discover_readouts`.
+
+        Yields
+        ------
+        None
+        """
+        guarded = [ro for _, ro in readouts if isinstance(ro, IncrementalRidgeReadout)]
+        for readout in guarded:
+            readout._allow_unfitted_forward = True
+        try:
+            yield
+        finally:
+            for readout in guarded:
+                readout._allow_unfitted_forward = False
 
     def _discover_readouts(self) -> list[tuple[str, ReadoutLayer]]:
         """Return ``(resolved_name, readout)`` pairs for every readout in the model.

@@ -2,17 +2,24 @@
 
 This module provides single-process and multi-process execution strategies for
 running Optuna trials.  The multi-process backend is **start-method agnostic**:
-it prefers ``fork`` (cheapest — no pickling) when the platform supports it, and
-transparently falls back to ``spawn`` elsewhere (Windows, hardened macOS /
-CPython 3.14).  Spawn works because the objective is a top-level *picklable*
+it prefers ``fork`` (cheapest — no pickling) for CPU-only studies when the
+platform supports it, switches to ``spawn`` when the study touches CUDA (``fork``
+is silently broken with CUDA — see below), and transparently falls back to
+``spawn`` on fork-less platforms (Windows, hardened macOS / CPython 3.14).  Spawn
+works because the objective is a top-level *picklable*
 :class:`resdag.hpo.runner.TrialRunner`, not a closure, so it can be shipped to
 freshly-interpreted workers along with the other (already picklable) arguments.
 
 Three correctness properties the multi-process backend guarantees:
 
-- **Portability.** A usable start method is selected automatically via
-  :func:`select_start_method`; if none is available an actionable
-  :class:`RuntimeError` is raised early.
+- **Portability and device-safety.** A usable start method is selected
+  automatically via :func:`preferred_start_method` (``spawn`` for CUDA, else
+  ``fork``) validated by :func:`select_start_method`; if none is available an
+  actionable :class:`RuntimeError` is raised early.  ``fork`` is *unusable* with
+  CUDA — a forked worker raises ``Cannot re-initialize CUDA in forked
+  subprocess`` on every CUDA op — so CUDA studies must use ``spawn``, which
+  :func:`preferred_start_method` selects whenever a CUDA device is requested or
+  CUDA is already initialised in the parent.
 - **Bounded budget.** Each worker is given a small *local* trial budget
   (:func:`worker_budget`, ``ceil(remaining / n_workers) + slack``) rather than
   the global target, with a global stop callback as a safety net.  The
@@ -45,7 +52,13 @@ from tqdm.auto import tqdm
 
 from .storage import resolve_storage
 
-__all__ = ["run_single", "run_multiprocess", "select_start_method", "worker_budget"]
+__all__ = [
+    "run_single",
+    "run_multiprocess",
+    "select_start_method",
+    "preferred_start_method",
+    "worker_budget",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +109,45 @@ def select_start_method(preferred: str = "fork") -> str:
         f"'spawn'; available: {available}). Run with n_workers=1 for "
         "single-process optimization."
     )
+
+
+def preferred_start_method(device: "torch.device | None") -> str:
+    """Decide which start method a study should *prefer*, given its device.
+
+    ``fork`` is the cheapest start method (children inherit the parent's memory
+    without pickling), but it is **fundamentally incompatible with CUDA**: once
+    the parent process has initialised a CUDA context, any CUDA op in a forked
+    child raises ``RuntimeError: Cannot re-initialize CUDA in forked
+    subprocess``.  Because :class:`resdag.hpo.runner.TrialRunner` catches all
+    exceptions and returns ``penalty_value`` by default, that failure is
+    *silent* — the study runs its full budget marking every trial COMPLETE at
+    the penalty and returns nonsense ``best_params``.
+
+    To avoid that trap we prefer ``spawn`` (which re-interprets a fresh process
+    and initialises its own CUDA context cleanly) whenever the study will touch
+    the GPU — either because the caller asked for a CUDA *device* or because
+    CUDA is *already initialised* in the parent (a prior trial, or the user
+    having loaded data/model to the GPU before calling ``run_hpo``).  CPU-only
+    studies keep ``fork`` for its faster startup.
+
+    Parameters
+    ----------
+    device : torch.device or None
+        The device the study will place models/data on, as resolved by
+        ``run_hpo``.  ``None`` means "framework default" (treated as CPU unless
+        CUDA is already initialised in the parent).
+
+    Returns
+    -------
+    str
+        ``"spawn"`` when the study will use CUDA, otherwise ``"fork"``.  This is
+        only a *preference*; :func:`select_start_method` still validates it
+        against the platform and falls back if unavailable.
+    """
+    device_is_cuda = device is not None and device.type == "cuda"
+    if device_is_cuda or torch.cuda.is_initialized():
+        return "spawn"
+    return "fork"
 
 
 def worker_budget(remaining: int, n_workers: int, slack: int = _BUDGET_SLACK) -> int:
@@ -329,14 +381,28 @@ def run_multiprocess(
     seed: int | None,
     pruner: "optuna.pruners.BasePruner | None" = None,
     verbosity: int = 1,
+    device: "torch.device | None" = None,
 ) -> None:
     """Run optimization with multiple OS processes sharing storage.
 
-    Selects a portable start method (``fork`` when available, else ``spawn``),
+    Selects a start method that is **device-safe** — ``spawn`` when the study
+    will touch CUDA (a CUDA *device* was requested, or CUDA is already
+    initialised in the parent), otherwise the cheaper ``fork`` — validated for
+    portability (falling back to ``spawn`` on fork-less platforms). It then
     gives each worker a **bounded** local budget so the study cannot overshoot
     *n_trials* by a full budget per worker, and stops workers **cooperatively**
     via a shared :class:`multiprocessing.Event` so an interruption never
     ``terminate()``-s a worker mid-write.
+
+    .. warning::
+        ``fork`` is silently unusable with CUDA: a forked worker raises
+        ``Cannot re-initialize CUDA in forked subprocess`` on every CUDA op, and
+        :class:`resdag.hpo.runner.TrialRunner` would penalise that (returning
+        ``penalty_value``) rather than crash — producing an all-penalty study
+        with nonsense ``best_params``.  This function therefore prefers ``spawn``
+        for CUDA studies (see :func:`preferred_start_method`), and the runner
+        re-raises the fork/CUDA error rather than penalising it as a last-line
+        guard.
 
     Parameters
     ----------
@@ -365,6 +431,11 @@ def run_multiprocess(
         picklable for the ``spawn`` start method; Optuna's built-in pruners are.
     verbosity : int, default=1
         Logging verbosity: ``0`` = silent, ``>= 1`` = show progress bar.
+    device : torch.device or None, optional
+        The device the study places models/data on.  Drives the start-method
+        choice: a CUDA device forces ``spawn`` (``fork`` is unusable with CUDA);
+        ``None`` / CPU keeps ``fork`` unless CUDA is already initialised in the
+        parent.  See :func:`preferred_start_method`.
 
     Raises
     ------
@@ -385,11 +456,14 @@ def run_multiprocess(
     holds must likewise be picklable (top-level functions, not lambdas or local
     closures) for fork-less platforms.
     """
-    # Portable start method: fork if available (no pickling), else spawn. Raises
-    # an actionable RuntimeError when neither is supported. The concrete
-    # ForkContext/SpawnContext both expose ``Process`` / ``Event``; the typeshed
-    # ``BaseContext`` does not, so narrow to the union for the type checker.
-    start_method = select_start_method("fork")
+    # Device-safe start method: ``spawn`` when the study touches CUDA (fork is
+    # silently broken with CUDA — see preferred_start_method), else the cheaper
+    # ``fork``. select_start_method then validates it against the platform and
+    # falls back if unavailable, raising an actionable RuntimeError when neither
+    # is supported. The concrete ForkContext/SpawnContext both expose
+    # ``Process`` / ``Event``; the typeshed ``BaseContext`` does not, so narrow
+    # to the union for the type checker.
+    start_method = select_start_method(preferred_start_method(device))
     ctx: ForkContext | SpawnContext = cast(
         "ForkContext | SpawnContext", mp.get_context(start_method)
     )

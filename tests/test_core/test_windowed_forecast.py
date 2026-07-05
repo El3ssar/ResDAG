@@ -6,7 +6,12 @@ The contract under test (see :meth:`resdag.core.ESNModel.windowed_forecast`):
   ``reset=True``) and its state is carried across the whole pass;
 - observed (teacher-forced) segments are copied verbatim from ``series``;
 - gap segments are genuine autoregressive forecasts continuing from the
-  re-synchronized state — identical to chaining :meth:`forecast` by hand;
+  re-synchronized state — equal to chaining :meth:`forecast` by hand once the
+  seam convention is honoured: a gap ``[teacher_end, teacher_end + gap)`` is the
+  prediction of ``series[teacher_end .. teacher_end + gap - 1]``, so it is filled
+  from the warmup-included forecast as ``full[:, window_len - 1 : ...]`` (the
+  last warmup output followed by all but the final AR slot), not from the raw AR
+  block, which is shifted one step ahead;
 - the returned mask marks observed steps True and forecast steps False.
 """
 
@@ -14,7 +19,7 @@ import pytest
 import torch
 
 from resdag.core import ESNModel, Input
-from resdag.layers import CGReadoutLayer, ESNLayer
+from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer
 
 
 def _build_driven_model(feedback_size: int = 1, driver_size: int = 2) -> ESNModel:
@@ -91,7 +96,17 @@ class TestObservedSegmentsAreExact:
 
 
 class TestMatchesManualChaining:
-    """A windowed pass equals chaining forecast() by hand with carried state."""
+    """A windowed pass equals chaining forecast() by hand with carried state.
+
+    The seam convention (proven in :class:`TestGapAlignmentIsExact`): a forecast
+    of horizon ``gap`` seeded on ``series[pos:teacher_end]`` predicts indices
+    ``teacher_end + 1 .. teacher_end + gap`` in its autoregressive slots, while
+    its *last warmup output* predicts ``series[teacher_end]``.  So the gap
+    ``[teacher_end, teacher_end + gap)`` — the prediction of
+    ``series[teacher_end .. teacher_end + gap - 1]`` — is filled from the
+    warmup-included output as ``full[:, window_len - 1 : window_len + gap - 1]``,
+    dropping the trailing AR slot (which predicts one step past the gap).
+    """
 
     def test_matches_hand_rolled_chain(self, make_tiny_model) -> None:
         model = make_tiny_model(feedback_size=3)
@@ -102,7 +117,8 @@ class TestMatchesManualChaining:
             series, warmup_len=warmup_len, teacher_len=teacher_len, predict_len=predict_len
         )
 
-        # Hand-rolled: reset once, then forecast cycle by cycle with reset=False.
+        # Hand-rolled: reset once, then forecast cycle by cycle with reset=False,
+        # placing each gap with the same one-step-back shift the method uses.
         manual = series.clone()
         pos, window_len, first = 0, warmup_len, True
         T = series.shape[1]
@@ -113,16 +129,27 @@ class TestMatchesManualChaining:
             gap = min(predict_len, T - teacher_end)
             if gap < 1:
                 break
-            preds = model.forecast(series[:, pos:teacher_end, :], horizon=gap, reset=first)
-            manual[:, teacher_end : teacher_end + gap, :] = preds
+            full = model.forecast(
+                series[:, pos:teacher_end, :], horizon=gap, return_warmup=True, reset=first
+            )
+            manual[:, teacher_end : teacher_end + gap, :] = full[
+                :, window_len - 1 : window_len + gap - 1, :
+            ]
             first = False
             pos = teacher_end + gap
             window_len = teacher_len
 
         assert torch.allclose(recon, manual, atol=1e-6)
 
-    def test_single_cycle_reduces_to_forecast(self, make_tiny_model) -> None:
-        """With one gap that runs to the end, it equals a plain forecast."""
+    def test_single_cycle_reduces_to_shifted_forecast(self, make_tiny_model) -> None:
+        """With one gap running to the end, it equals a one-step-back forecast slice.
+
+        The gap ``[warmup_len, T)`` holds the prediction of
+        ``series[warmup_len .. T - 1]``, which is the last warmup output followed
+        by all but the final autoregressive slot of a plain forecast — i.e.
+        ``full[:, warmup_len - 1 : warmup_len + gap - 1]`` where ``full`` is the
+        warmup-included forecast of horizon ``gap = T - warmup_len``.
+        """
         model = make_tiny_model(feedback_size=3)
         T, warmup_len = 100, 20
         series = torch.randn(1, T, 3)
@@ -132,12 +159,132 @@ class TestMatchesManualChaining:
             series, warmup_len=warmup_len, teacher_len=15, predict_len=predict_len, return_mask=True
         )
 
+        gap = T - warmup_len
         model.reset_reservoirs()
-        plain = model.forecast(series[:, :warmup_len, :], horizon=T - warmup_len)
+        full = model.forecast(series[:, :warmup_len, :], horizon=gap, return_warmup=True)
+        expected_gap = full[:, warmup_len - 1 : warmup_len + gap - 1, :]
 
-        assert torch.allclose(recon[:, warmup_len:, :], plain, atol=1e-6)
+        assert torch.allclose(recon[:, warmup_len:, :], expected_gap, atol=1e-6)
         assert mask[:warmup_len].all()
         assert not mask[warmup_len:].any()
+
+
+def _exact_linear_model(A: torch.Tensor, reservoir_size: int = 16) -> ESNModel:
+    """A model whose output is exactly ``A @ feedback_t``, reservoir-independent.
+
+    The readout reads ``[feedback, reservoir_states]`` but its reservoir block is
+    zeroed and its feedback block is set to ``A``, so ``model(x_t) == x_t @ A.T``
+    for every ``t`` regardless of the (still genuinely evolving) reservoir state.
+    This turns the seam convention into an exact, closed-form check: for a series
+    with ``series[t + 1] == series[t] @ A.T`` the correct gap reconstruction is
+    bit-exact, so any one-step misalignment shows up as a hard failure rather
+    than a soft chaotic-drift tolerance.
+    """
+    F = A.shape[0]
+    inp = Input(shape=(20, F))
+    states = ESNLayer(reservoir_size=reservoir_size, feedback_size=F, spectral_radius=0.9)(inp)
+    cat = Concatenate()(inp, states)
+    readout = CGReadoutLayer(F + reservoir_size, F, name="output", bias=False)(cat)
+    model = ESNModel(inp, readout)
+    ro = next(m for m in model.modules() if isinstance(m, CGReadoutLayer))
+    with torch.no_grad():
+        weight = torch.zeros(F, F + reservoir_size)
+        weight[:, :F] = A
+        ro.weight.copy_(weight)
+        ro._is_fitted.fill_(True)
+    return model
+
+
+def _linear_series(A: torch.Tensor, total_steps: int, seed: int = 0) -> torch.Tensor:
+    """Series obeying ``series[t + 1] = series[t] @ A.T`` exactly."""
+    torch.manual_seed(seed)
+    F = A.shape[0]
+    steps = [torch.randn(1, 1, F)]
+    for _ in range(total_steps - 1):
+        steps.append(steps[-1] @ A.T)
+    return torch.cat(steps, dim=1)
+
+
+class TestGapAlignmentIsExact:
+    """Gap reconstruction lands on the right timestep (regression for the
+    one-dt phase shift): with an exact linear map the filled gaps equal
+    ``series`` at their *own* index, not one step ahead."""
+
+    # A rotation-plus-decay map: deterministic, invertible-ish, non-trivial.
+    A = torch.tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.5]])
+
+    def test_forecast_seam_convention(self) -> None:
+        """Baseline: forecast slot ``t`` predicts ``series[warmup + 1 + t]``."""
+        torch.manual_seed(0)
+        model = _exact_linear_model(self.A)
+        series = _linear_series(self.A, total_steps=60)
+        warmup_len, horizon = 20, 15
+
+        model.reset_reservoirs()
+        preds = model.forecast(series[:, :warmup_len, :], horizon=horizon)
+
+        shifted = series[:, warmup_len + 1 : warmup_len + 1 + horizon, :]
+        same = series[:, warmup_len : warmup_len + horizon, :]
+        assert torch.allclose(preds, shifted, atol=1e-5)  # the true convention
+        assert not torch.allclose(preds, same, atol=1e-2)  # NOT one step early
+
+    def test_windowed_gap_matches_own_index(self) -> None:
+        """Every filled gap value equals ``series`` at its own index (no shift)."""
+        torch.manual_seed(0)
+        model = _exact_linear_model(self.A)
+        series = _linear_series(self.A, total_steps=120)
+
+        recon, mask = model.windowed_forecast(
+            series, warmup_len=20, teacher_len=10, predict_len=15, return_mask=True
+        )
+        gap = ~mask
+        # Exact match at the SAME index — the corrected placement.
+        assert torch.allclose(recon[:, gap, :], series[:, gap, :], atol=1e-5)
+
+        # And it is NOT the one-step-early alignment the bug produced
+        # (recon[i] == series[i + 1]); check the interior gap indices.
+        gap_idx = torch.nonzero(gap).squeeze(-1)
+        interior = gap_idx[gap_idx < series.shape[1] - 1]
+        assert not torch.allclose(recon[:, interior, :], series[:, interior + 1, :], atol=1e-2)
+
+    def test_driven_windowed_gap_matches_own_index(self) -> None:
+        """Driver alignment is preserved: driven exact map still fills gaps exactly."""
+        torch.manual_seed(0)
+        F, driver_dim, reservoir_size = 2, 2, 16
+        A = torch.tensor([[0.0, -1.0], [1.0, 0.0]])
+        B = torch.tensor([[0.3, 0.0], [0.0, 0.2]])
+
+        fb = Input(shape=(20, F))
+        drv = Input(shape=(20, driver_dim))
+        states = ESNLayer(
+            reservoir_size=reservoir_size,
+            feedback_size=F,
+            input_size=driver_dim,
+            spectral_radius=0.9,
+        )(fb, drv)
+        cat = Concatenate()(fb, drv, states)  # order: feedback, driver, states
+        readout = CGReadoutLayer(F + driver_dim + reservoir_size, F, name="output", bias=False)(cat)
+        model = ESNModel([fb, drv], readout)
+        ro = next(m for m in model.modules() if isinstance(m, CGReadoutLayer))
+        with torch.no_grad():
+            weight = torch.zeros(F, F + driver_dim + reservoir_size)
+            weight[:, :F] = A
+            weight[:, F : F + driver_dim] = B
+            ro.weight.copy_(weight)
+            ro._is_fitted.fill_(True)
+
+        total_steps = 100
+        driver = torch.randn(1, total_steps, driver_dim)
+        steps = [torch.randn(1, 1, F)]
+        for t in range(total_steps - 1):
+            steps.append(steps[-1] @ A.T + driver[:, t : t + 1, :] @ B.T)
+        series = torch.cat(steps, dim=1)  # series[t + 1] = A series[t] + B driver[t]
+
+        recon, mask = model.windowed_forecast(
+            series, driver, warmup_len=20, teacher_len=10, predict_len=12, return_mask=True
+        )
+        gap = ~mask
+        assert torch.allclose(recon[:, gap, :], series[:, gap, :], atol=1e-5)
 
 
 class TestResetSemantics:

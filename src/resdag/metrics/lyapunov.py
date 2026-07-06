@@ -64,6 +64,13 @@ if TYPE_CHECKING:
 CANONICAL_LAMBDA_MAX: dict[str, float] = {
     "lorenz": 0.9056,
     "rossler": 0.0714,
+    # Kuramoto-Sivashinsky on the canonical L=22 periodic domain — the standard
+    # parallel-reservoir benchmark (Pathak et al. 2018, "Model-Free Prediction
+    # of Large Spatiotemporally Chaotic Systems from Data").  Its largest
+    # Lyapunov exponent is domain-size dependent; ``0.043`` is the literature
+    # value for L=22 (Pathak et al.; Edson et al. 2019), so a Lyapunov time is
+    # ~23 natural-time units.  Only valid for the default L=22 generator.
+    "kuramoto_sivashinsky": 0.043,
 }
 
 #: Largest Lyapunov exponent of the Mackey-Glass delay system, keyed by the

@@ -96,7 +96,15 @@ from .data import TimeSeriesWindowDataset, make_dataloader
 # ``from resdag.datasets import lorenz`` both work as a discoverable,
 # library-style entry point, alongside attribute access
 # (``resdag.datasets.lorenz``).
-from .datasets import henon, lorenz, mackey_glass, narma, rossler, sine
+from .datasets import (
+    henon,
+    kuramoto_sivashinsky,
+    lorenz,
+    mackey_glass,
+    narma,
+    rossler,
+    sine,
+)
 from .ensemble import CoupledEnsembleESNModel
 from .ensemble.aggregators import OutliersFilteredMean
 from .facade import ESN
@@ -150,6 +158,7 @@ from .layers import (
 )
 from .models import (
     KnowledgeModel,
+    ParallelESNModel,
     classic_esn,
     coupled_ensemble_esn,
     deep_esn,
@@ -161,6 +170,7 @@ from .models import (
     linear_esn,
     lsm,
     ott_esn,
+    parallel_esn,
     power_augmented,
     resesn,
 )
@@ -264,6 +274,8 @@ __all__ = [
     "gated_esn",
     "eusn",
     "lsm",
+    "parallel_esn",
+    "ParallelESNModel",
     # Canonical dataset generators
     "datasets",
     "lorenz",
@@ -272,6 +284,7 @@ __all__ = [
     "mackey_glass",
     "narma",
     "sine",
+    "kuramoto_sivashinsky",
     # Diagnostics
     "esp_index",
 ]

@@ -61,6 +61,7 @@ __all__ = [
     "rossler",
     "henon",
     "sine",
+    "kuramoto_sivashinsky",
     "DATASET_DT",
     "dataset_lambda_max",
 ]
@@ -84,6 +85,7 @@ DATASET_DT: dict[str, float] = {
     "mackey_glass": 1.0,
     "narma": 1.0,
     "sine": 1.0,
+    "kuramoto_sivashinsky": 0.25,
 }
 
 
@@ -668,4 +670,160 @@ def sine(
         y = y + noise * rng.standard_normal(total)
 
     series = _normalize(y[discard:].reshape(-1, 1), normalize)
+    return _to_tensor(series, dtype, device)
+
+
+def kuramoto_sivashinsky(
+    n_timesteps: int,
+    *,
+    n_grid: int = 64,
+    length: float = 22.0,
+    dt: float = 0.25,
+    x0: np.ndarray | None = None,
+    perturb: float = 1.0,
+    discard: int = 1000,
+    normalize: Normalize | None = None,
+    seed: int | np.random.Generator | None = 0,
+    dtype: torch.dtype = torch.float32,
+    device: torch.device | str | None = None,
+) -> torch.Tensor:
+    r"""Generate a Kuramoto-Sivashinsky (KS) 1-D PDE trajectory.
+
+    The KS equation is the canonical *spatiotemporally chaotic* benchmark for
+    reservoir computing — a 1-D field :math:`u(x, t)` on a periodic domain of
+    length ``L`` obeying
+
+    .. math::
+
+        u_t = -u\,u_x - u_{xx} - u_{xxxx},
+
+    which develops a chaotic attractor whose number of positive Lyapunov
+    exponents grows with ``L``.  On the standard ``L = 22`` domain (Pathak et
+    al. 2018) it is high-dimensionally chaotic — too large for a single global
+    reservoir to forecast well, which is exactly what the parallel / local-state
+    architecture (:func:`resdag.models.parallel_esn`) targets.
+
+    Integration uses the fourth-order exponential time-differencing Runge-Kutta
+    scheme **ETDRK4** (Kassam & Trefethen 2005) in Fourier space — the standard,
+    stiffly-accurate integrator for KS — so the linear :math:`-u_{xx} - u_{xxxx}`
+    term is handled exactly and only the nonlinear advection is stepped.
+
+    The returned trajectory is the field sampled on the ``n_grid`` spatial
+    points, so the output has ``n_grid`` feature channels: shape
+    ``(1, n_timesteps, n_grid)``.
+
+    Parameters
+    ----------
+    n_timesteps : int
+        Number of timesteps to return (after the discarded transient).
+    n_grid : int, optional
+        Number of spatial grid points (the feature dimension ``D``).  Should be
+        even for the real FFT grid.  Default ``64``.
+    length : float, optional
+        Domain length ``L`` (periodic).  Default ``22.0`` — the canonical
+        parallel-RC benchmark size.  The Lyapunov exponent in
+        :data:`resdag.metrics.CANONICAL_LAMBDA_MAX` is only valid for this value.
+    dt : float, optional
+        Integration / sampling step.  Default ``0.25``.
+    x0 : numpy.ndarray, optional
+        Initial field of shape ``(n_grid,)``.  ``None`` (default) uses the
+        classic ``cos(2*pi*x/L) * (1 + sin(2*pi*x/L))`` seed.
+    perturb : float, optional
+        Std of a Gaussian perturbation added to the initial field (drawn from the
+        seeded RNG), breaking symmetry so seeds give distinct trajectories on the
+        same attractor.  Set to ``0`` for a fully deterministic start.  Default
+        ``1.0``.
+    discard : int, optional
+        Leading transient steps to drop so the trajectory sits on the attractor.
+        Default ``1000``.
+    normalize : {"standard", "minmax"} or None, optional
+        Per-channel normalization of the returned window.  Default ``None`` (KS
+        is conventionally used on its native scale, and the channels are already
+        comparable across the homogeneous spatial grid).
+    seed : int, numpy.random.Generator, or None, optional
+        Seed for the initial-field perturbation (via
+        :func:`resdag.utils.create_rng`).  Default ``0``.
+    dtype : torch.dtype, optional
+        Dtype of the returned tensor.  Default ``torch.float32``.
+    device : torch.device, str, or None, optional
+        Device of the returned tensor.  Default ``None`` (CPU).
+
+    Returns
+    -------
+    torch.Tensor
+        Trajectory of shape ``(1, n_timesteps, n_grid)`` — the KS field sampled
+        on the spatial grid at each timestep.
+
+    References
+    ----------
+    A.-K. Kassam and L. N. Trefethen, "Fourth-order time-stepping for stiff
+    PDEs," SIAM J. Sci. Comput. 26(4), 1214-1233 (2005).
+
+    J. Pathak, B. Hunt, M. Girvan, Z. Lu, and E. Ott, "Model-Free Prediction of
+    Large Spatiotemporally Chaotic Systems from Data: A Reservoir Computing
+    Approach," Phys. Rev. Lett. 120, 024102 (2018).
+
+    See Also
+    --------
+    resdag.models.parallel_esn : Parallel local-state reservoir for KS / large
+        spatiotemporal systems.
+    """
+    rng = create_rng(seed)
+
+    # Spatial grid and initial field on the periodic domain [0, L).
+    x = length * np.arange(n_grid, dtype=np.float64) / n_grid
+    if x0 is None:
+        u = np.cos(2.0 * np.pi * x / length) * (1.0 + np.sin(2.0 * np.pi * x / length))
+    else:
+        u = np.asarray(x0, dtype=np.float64).reshape(-1)
+        if u.shape[0] != n_grid:
+            raise ValueError(
+                f"kuramoto_sivashinsky: x0 must have shape ({n_grid},) to match n_grid, "
+                f"got shape {u.shape}."
+            )
+    if perturb:
+        u = u + perturb * rng.standard_normal(n_grid)
+
+    v = np.fft.rfft(u)
+
+    # Fourier wavenumbers k for the rfft layout (0 .. n_grid/2).
+    k = 2.0 * np.pi * np.fft.rfftfreq(n_grid, d=length / n_grid)
+    # Linear operator L(k) = k^2 - k^4 (the -u_xx - u_xxxx term in Fourier space).
+    lin = k**2 - k**4
+
+    # ETDRK4 precomputed coefficients (Kassam & Trefethen 2005).  The phi-function
+    # integrals are evaluated by averaging over a circle of ``m`` points in the
+    # complex plane to avoid cancellation error when lin*dt is small.
+    e = np.exp(dt * lin)
+    e2 = np.exp(dt * lin / 2.0)
+    m = 32
+    roots = np.exp(1j * np.pi * (np.arange(1, m + 1) - 0.5) / m)
+    lr = dt * lin[:, None] + roots[None, :]
+    q = dt * ((np.exp(lr / 2.0) - 1.0) / lr).mean(axis=1).real
+    f1 = dt * ((-4.0 - lr + np.exp(lr) * (4.0 - 3.0 * lr + lr**2)) / lr**3).mean(axis=1).real
+    f2 = dt * ((2.0 + lr + np.exp(lr) * (-2.0 + lr)) / lr**3).mean(axis=1).real
+    f3 = dt * ((-4.0 - 3.0 * lr - lr**2 + np.exp(lr) * (4.0 - lr)) / lr**3).mean(axis=1).real
+
+    # Nonlinear term N(v) = -0.5 * i * k * FFT(IFFT(v)^2).
+    g = -0.5j * k
+
+    def nonlinear(vh: np.ndarray) -> np.ndarray:
+        real = np.fft.irfft(vh, n=n_grid)
+        return g * np.fft.rfft(real**2)
+
+    total = n_timesteps + discard
+    out = np.empty((total, n_grid), dtype=np.float64)
+    for i in range(total):
+        out[i] = np.fft.irfft(v, n=n_grid)
+        # One ETDRK4 step.
+        nv = nonlinear(v)
+        a = e2 * v + q * nv
+        na = nonlinear(a)
+        b = e2 * v + q * na
+        nb = nonlinear(b)
+        c = e2 * a + q * (2.0 * nb - nv)
+        nc = nonlinear(c)
+        v = e * v + nv * f1 + 2.0 * (na + nb) * f2 + nc * f3
+
+    series = _normalize(out[discard:], normalize)
     return _to_tensor(series, dtype, device)

@@ -26,6 +26,9 @@ narma
     Nonlinear system-identification benchmark (input/output series).
 sine
     Simple periodic signal for sanity checks.
+kuramoto_sivashinsky
+    1-D spatiotemporally chaotic PDE (ETDRK4) — the canonical parallel-RC
+    benchmark; ``D = n_grid`` feature channels.
 
 Each generator returns a ``(1, T, D)`` tensor, is seedable, supports a
 transient/discard period, and supports optional normalization.
@@ -40,7 +43,15 @@ See Also
 resdag.data : Canonical home for data preparation, file I/O, and streaming windows.
 """
 
-from ..utils.data.datasets import henon, lorenz, mackey_glass, narma, rossler, sine
+from ..utils.data.datasets import (
+    henon,
+    kuramoto_sivashinsky,
+    lorenz,
+    mackey_glass,
+    narma,
+    rossler,
+    sine,
+)
 
 __all__ = [
     "lorenz",
@@ -49,6 +60,7 @@ __all__ = [
     "mackey_glass",
     "narma",
     "sine",
+    "kuramoto_sivashinsky",
 ]
 
 

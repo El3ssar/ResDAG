@@ -21,6 +21,7 @@ from torch import Tensor
 
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers.cells import ESNCell
+from resdag.layers.cells.esn_cell import SparseSpec
 from resdag.utils.general import SeedLike
 
 from .base_reservoir import BaseReservoirLayer
@@ -74,6 +75,24 @@ class ESNLayer(BaseReservoirLayer):
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
+    sparse : bool or {'auto'}, default=False
+        Store a CSR copy of the frozen recurrent matrix and use a sparse
+        matrix-vector product for the recurrent term (instead of the dense
+        ``addmm``).  For RC-typical sparse reservoirs (density ~1-10%) this
+        accelerates the recurrent matmul at large sizes and shrinks the
+        matmul-operand / serialized-checkpoint footprint.  It does **not** reduce
+        live memory: the dense ``weight_hh`` parameter stays resident as the
+        canonical form, so a sparse cell's live footprint is ``dense(n²) +
+        CSR(nnz)`` — slightly larger than dense-only, not smaller (no
+        memory-ceiling lift).  ``False`` (default) keeps the dense path
+        byte-for-byte unchanged; ``True`` forces the CSR path; ``"auto"`` enables
+        it only for large, sparse reservoirs, with a **device-dependent** size
+        gate (``reservoir_size >= 1000`` on CPU, ``>= 5000`` on CUDA, where the
+        dense/sparse crossover is higher) and density ``<= 0.2``.  Requires
+        ``trainable=False``; the dense math is preserved exactly (forecasts match
+        the dense path to floating-point tolerance).  See
+        :class:`~resdag.layers.cells.esn_cell.ESNCell` for the full contract,
+        including the memory caveat.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
         name, ``(name, params)``, any matrix-building callable
@@ -210,6 +229,7 @@ class ESNLayer(BaseReservoirLayer):
         leak_rate: float | Tensor | Sequence[float] = 1.0,
         noise: float = 0.0,
         trainable: bool = False,
+        sparse: SparseSpec = False,
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
@@ -226,6 +246,7 @@ class ESNLayer(BaseReservoirLayer):
             leak_rate=leak_rate,
             noise=noise,
             trainable=trainable,
+            sparse=sparse,
             feedback_initializer=feedback_initializer,
             input_initializer=input_initializer,
             topology=topology,

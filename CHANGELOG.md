@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.10.0 (2026-07-06)
+
+### Features
+
+- **scale**: Parallel local-state reservoirs + sparse CSR reservoir (phase 14)
+  ([#451](https://github.com/El3ssar/ResDAG/pull/451),
+  [`9717358`](https://github.com/El3ssar/ResDAG/commit/971735826ac204de485a200a8237b38163fee7ab))
+
+
 ## v0.9.0 (2026-07-05)
 
 ### Features

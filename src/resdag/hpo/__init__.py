@@ -95,6 +95,7 @@ from typing import TYPE_CHECKING, Any
 from .losses import (
     LOSSES,
     LossProtocol,
+    attractor_dimension_error,
     expected_forecast_horizon,
     forecast_horizon,
     get_loss,
@@ -192,6 +193,7 @@ __all__ = [
     "lyapunov_weighted",
     "soft_valid_horizon",
     "standard_loss",
+    "attractor_dimension_error",
     # Utilities (require optuna)
     "get_best_params",
     "get_study_summary",

@@ -12,6 +12,8 @@ Available Losses
 - ``"lyapunov"`` : Lyapunov-weighted Loss (exponential decay for chaotic systems)
 - ``"standard"`` : Standard Loss (mean geometric mean error)
 - ``"soft_horizon"`` : Soft valid horizon (cumulative survival probability)
+- ``"attractor_dimension"`` : Attractor-fidelity — correlation-dimension mismatch
+  of the forecast vs the truth (climate reconstruction, not short-horizon error)
 
 Scale conventions
 -----------------
@@ -65,6 +67,7 @@ __all__ = [
     "lyapunov_weighted",
     "soft_valid_horizon",
     "standard_loss",
+    "attractor_dimension_error",
 ]
 
 MetricType = Literal["rmse", "mse", "mae", "nrmse"]
@@ -475,6 +478,102 @@ def soft_valid_horizon(
     return -float(horizon)
 
 
+def attractor_dimension_error(
+    y_true: NDArray[np.floating],
+    y_pred: NDArray[np.floating],
+    /,
+    max_points: int = 2000,
+    n_bins: int = 20,
+    fit_window: tuple[float, float] = (0.1, 0.5),
+    seed: int = 0,
+) -> float:
+    r"""Attractor-fidelity loss: correlation-dimension mismatch of the forecast.
+
+    Scores how well a *free-running* forecast reproduces the true system's
+    **climate** — the long-run geometry of its attractor — rather than its
+    short-horizon pointwise accuracy.  It is the absolute difference of the
+    Grassberger-Procaccia correlation dimension (:func:`resdag.metrics.
+    correlation_dimension`) of the forecast and of the truth:
+
+    .. math::
+
+        \mathcal{L} = \big|\, D_2(\hat y) - D_2(y) \,\big|.
+
+    A forecast that has rebuilt the right attractor matches the truth's fractal
+    dimension even after the pointwise trajectory has decorrelated, so this loss
+    keeps rewarding a model long past the valid-prediction horizon — exactly the
+    regime the threshold-based horizon losses (:func:`expected_forecast_horizon`,
+    :func:`forecast_horizon`) go blind in.  Optimise it (or **monitor** it
+    alongside a horizon loss) to select for climate / attractor fidelity, not
+    just a few Lyapunov times of tracking.
+
+    Because it depends only on the *geometry* of each trajectory, the two inputs
+    need not be time-aligned; each ``(T, D)`` trajectory is embedded and its
+    dimension estimated independently.  A long enough forecast window is required
+    for the correlation-sum scaling region to exist (a few thousand steps for a
+    3-D chaotic system).
+
+    Parameters
+    ----------
+    y_true : ndarray
+        Ground-truth trajectory of shape ``(B, T, D)``.  Its per-batch-element
+        trajectories are concatenated along time into one ``(B*T, D)`` point
+        cloud before the dimension estimate (a single attractor sampled by all
+        batch elements).
+    y_pred : ndarray
+        Forecast trajectory of shape ``(B, T, D)`` (same convention).
+    max_points : int, default=2000
+        Cap on the points used per dimension estimate (the pair count is
+        :math:`O(M^2)`); longer trajectories are subsampled.
+    n_bins : int, default=20
+        Number of log-spaced radii in the correlation sum.
+    fit_window : tuple of float, default=(0.1, 0.5)
+        Scaling region (as fractions of the log-radius span) over which the
+        :math:`\log C` vs :math:`\log r` slope is fit.
+    seed : int, default=0
+        Seed for the subsampling draw, so the loss is deterministic.
+
+    Returns
+    -------
+    float
+        :math:`|D_2(\hat y) - D_2(y)|\ge 0`.  Lower is better; ``0`` means the
+        forecast's attractor has the true correlation dimension.
+
+    Notes
+    -----
+    This is a *monitor-friendly* fidelity score, not a smooth differentiable
+    proxy: the correlation dimension is a slope estimate and can be noisy on a
+    short window, so it pairs best as a ``monitor_losses`` entry in
+    :func:`resdag.hpo.run_hpo` (logged but not optimised), or as the optimised
+    objective when the study explicitly targets climate reconstruction.
+
+    See Also
+    --------
+    resdag.metrics.correlation_dimension : The underlying dimension estimator.
+    lyapunov_weighted : A complementary time-weighted pointwise loss.
+    """
+    # Imported lazily so importing the (optional-HPO) losses module never pulls
+    # in the metrics observables at module load.
+    from resdag.metrics import correlation_dimension
+
+    if y_true.shape != y_pred.shape:
+        raise ValueError(f"Shape mismatch: {y_true.shape} vs {y_pred.shape}")
+
+    def _flatten(arr: NDArray[np.floating]) -> NDArray[np.floating]:
+        a = np.asarray(arr, dtype=np.float64)
+        if a.ndim == 3:
+            a = a.reshape(-1, a.shape[-1])  # (B*T, D)
+        return a
+
+    d2_true = correlation_dimension(
+        _flatten(y_true), n_bins=n_bins, fit_window=fit_window, max_points=max_points, seed=seed
+    )
+    d2_pred = correlation_dimension(
+        _flatten(y_pred), n_bins=n_bins, fit_window=fit_window, max_points=max_points, seed=seed
+    )
+    return abs(float(d2_pred) - float(d2_true))
+
+
 # Registry mapping loss names to loss functions.  The concrete losses have
 # named-kwarg signatures that don't structurally match ``LossProtocol.__call__``
 # (which uses ``**kwargs``), so the registry is typed with a permissive callable
@@ -485,6 +584,7 @@ LOSSES: dict[str, Callable[..., float]] = {
     "lyapunov": lyapunov_weighted,
     "standard": standard_loss,
     "soft_horizon": soft_valid_horizon,
+    "attractor_dimension": attractor_dimension_error,
 }
 
 

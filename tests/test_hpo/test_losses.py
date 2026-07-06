@@ -215,7 +215,14 @@ class TestLossesRegistry:
 
     def test_registry_has_all_losses(self):
         """Registry contains all expected losses."""
-        expected = {"efh", "forecast_horizon", "lyapunov", "standard", "soft_horizon"}
+        expected = {
+            "efh",
+            "forecast_horizon",
+            "lyapunov",
+            "standard",
+            "soft_horizon",
+            "attractor_dimension",
+        }
         assert set(LOSSES.keys()) == expected
 
     def test_registry_values_are_callable(self):

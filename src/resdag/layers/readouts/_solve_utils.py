@@ -34,12 +34,55 @@ resolve_gram_dtype
 build_ridge_problem
     Center (when fitting an intercept), cast to ``gram_dtype``, and return a
     :class:`RidgeProblem` carrying the data and centering means.
+lmnt_gram_add
+    The closed-form LMNT (Linearized Multi-Noise Training) noise-covariance
+    term added to the Gram diagonal — the exact analytic expectation of fitting
+    the readout on state-noise-perturbed reservoir states (Wikner et al. 2024).
+apply_lmnt_regularizer
+    Add the LMNT diagonal term to a prepared :class:`RidgeProblem`'s Gram in
+    place, so the closed-form solve costs one solve, not many noisy copies.
 solve_ridge
     Robustly solve the regularised normal equations ``(gram + αI) W = rhs``:
     Cholesky first, escalated scale-aware jitter on failure, then an
     ``eigh``-clamped fallback, plus a cheap post-solve accuracy guard.
 recover_intercept
     Recover the unpenalised intercept from a coefficient matrix.
+
+Noise-injection / LMNT regularization
+-------------------------------------
+Training the readout on **noise-perturbed** reservoir states is a standard,
+tunable regulariser aimed at *closed-loop* (autonomous-rollout) robustness, a
+different target than plain L2 ridge: the injected noise mimics the feedback
+error the model sees when it free-runs on its own output, trading a little
+one-step accuracy for closed-loop stability (Jaeger's classic state-noise idea;
+Wikner et al. 2024, *Stabilizing machine learning prediction of dynamics*, Chaos
+34, 043105).  Whether it nets out positive is problem- and :math:`\\sigma`-
+dependent — it can help or hurt, and :math:`\\sigma` must be tuned per problem;
+it is not a free forecast-quality win.  What *is* robustly guaranteed is the
+mechanism below: LMNT computes the **exact expected noise-regularised readout**
+in one solve.
+
+Explicit noise training perturbs each state row :math:`r_i \\to r_i + \\xi_i`
+with :math:`\\xi_i \\sim \\mathcal{N}(0, \\sigma^2 I_F)` (targets unchanged) and
+refits.  Averaging over many noise draws, the *expected* noisy normal-equations
+Gram is
+
+.. math::
+
+    \\mathbb{E}\\big[(R+\\Xi)^\\top (R+\\Xi)\\big]
+        = R^\\top R + \\mathbb{E}[\\Xi^\\top\\Xi]
+        = R^\\top R + N \\sigma^2 I_F ,
+
+while the right-hand side :math:`\\mathbb{E}[(R+\\Xi)^\\top y] = R^\\top y` is
+unchanged (the noise is zero-mean and independent of both :math:`R` and
+:math:`y`).  **LMNT** replaces the Monte-Carlo average of :math:`M` noisy fits
+with this analytic expectation: add the closed-form term to the Gram diagonal
+and solve *once*.  With an intercept the states are centered first, which
+removes one degree of freedom, so the centered pure-noise Gram expectation is
+:math:`(N-1)\\sigma^2 I_F` (verified analytically and by Monte-Carlo); the raw
+``bias=False`` term is :math:`N\\sigma^2 I_F`.  Either way the cost is a single
+diagonal update, so LMNT :math:`\\approx` many-noise-copy training at the price
+of one solve.
 
 See Also
 --------
@@ -163,6 +206,9 @@ class RidgeProblem:
         else ``None``.
     n_features : int
         Feature dimension ``F``.
+    n_samples : int
+        Sample count ``N`` (rows of ``X`` after flattening).  Needed by the
+        LMNT noise-covariance term, whose scale is :math:`N\\sigma^2`.
     solve_dtype : torch.dtype
         Dtype the small inversion runs in.
     original_dtype : torch.dtype
@@ -178,6 +224,7 @@ class RidgeProblem:
     x_mean: torch.Tensor | None
     y_mean: torch.Tensor | None
     n_features: int
+    n_samples: int
     solve_dtype: torch.dtype
     original_dtype: torch.dtype
     fit_intercept: bool
@@ -251,6 +298,217 @@ def build_ridge_problem(
         x_mean=x_mean,
         y_mean=y_mean,
         n_features=X.shape[1],
+        n_samples=X.shape[0],
+        solve_dtype=solve_dtype,
+        original_dtype=original_dtype,
+        fit_intercept=fit_intercept,
+    )
+
+
+def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) -> float:
+    r"""Closed-form LMNT noise-covariance term added to the Gram diagonal.
+
+    Training a ridge readout on state-noise-perturbed reservoir states —
+    :math:`r_i \to r_i + \xi_i`, :math:`\xi_i \sim \mathcal{N}(0, \sigma^2 I)`,
+    targets fixed — is a standard, tunable regulariser targeting **closed-loop
+    robustness**: the injected noise mimics the feedback error the model sees
+    when it free-runs on its own output (whether it improves a given rollout is
+    problem- and :math:`\sigma`-dependent — tune :math:`\sigma` per problem).
+    Averaged over many noise draws the noisy Gram's expectation is
+    :math:`R^\top R` plus a scalar on the diagonal, and this function returns that
+    scalar so **a single solve reproduces the many-noise-copy fit exactly** — its
+    analytic expectation, not an approximation (**LMNT** — Linearized Multi-Noise
+    Training; Wikner et al. 2024, *Stabilizing machine learning prediction of
+    dynamics*, Chaos 34, 043105).
+
+    The coefficient depends on whether an intercept is fitted (which centers the
+    states, removing one degree of freedom):
+
+    - ``fit_intercept=False`` (raw Gram): :math:`N \sigma^2` — the expectation
+      of :math:`\Xi^\top\Xi`.
+    - ``fit_intercept=True`` (centered Gram): :math:`(N-1) \sigma^2` — the
+      expectation of the centered pure-noise Gram
+      :math:`\Xi^\top\Xi - N\,\bar\xi^\top\bar\xi`.
+
+    Both are the *exact* analytic expectation of the corresponding explicit-noise
+    procedure (verified against Monte-Carlo), so LMNT is not an approximation of
+    noise training but its closed form.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of state rows ``N`` the Gram was formed from.
+    state_noise : float
+        Per-feature noise standard deviation :math:`\sigma \ge 0`.  ``0`` returns
+        ``0.0`` (no regularisation — byte-identical to a plain ridge fit).
+    fit_intercept : bool
+        Whether the Gram is centered (an intercept is being recovered).
+
+    Returns
+    -------
+    float
+        The scalar to add to every Gram diagonal entry
+        (:math:`N\sigma^2` raw, :math:`(N-1)\sigma^2` centered).
+
+    Raises
+    ------
+    ValueError
+        If ``state_noise`` is negative.
+    """
+    if state_noise < 0:
+        raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
+    if state_noise == 0.0:
+        return 0.0
+    # Centering an N-row block removes one dof from the pure-noise Gram, so its
+    # expected diagonal is (N-1)sigma^2 rather than N sigma^2.
+    effective_n = (n_samples - 1) if fit_intercept else n_samples
+    # Guard the degenerate N<=1 case: a single (centered) sample carries no
+    # noise-covariance signal, so the term is zero rather than negative.
+    effective_n = max(effective_n, 0)
+    return float(effective_n) * float(state_noise) * float(state_noise)
+
+
+def apply_lmnt_regularizer(problem: RidgeProblem, state_noise: float) -> None:
+    r"""Add the closed-form LMNT term to a prepared problem's Gram, in place.
+
+    Mutates ``problem.gram`` by adding :func:`lmnt_gram_add` to its diagonal —
+    the analytic expectation of the noise-perturbed Gram — so the subsequent
+    :func:`solve_ridge` call yields the LMNT (many-noise-copy-equivalent)
+    readout at the cost of one solve.  A no-op when ``state_noise == 0`` (the
+    default everywhere), which keeps every noiseless fit byte-identical.
+
+    The right-hand side is intentionally **not** touched: the expected noisy RHS
+    equals the noiseless :math:`R^\top y` (the noise is zero-mean and independent
+    of the targets), so only the Gram gains the noise covariance.
+
+    Parameters
+    ----------
+    problem : RidgeProblem
+        A problem prepared by :func:`build_ridge_problem`.  Its ``gram`` is
+        updated in place.
+    state_noise : float
+        Per-feature noise standard deviation :math:`\sigma \ge 0`.
+
+    Raises
+    ------
+    ValueError
+        If ``state_noise`` is negative.
+    """
+    add = lmnt_gram_add(problem.n_samples, state_noise, fit_intercept=problem.fit_intercept)
+    if add == 0.0:
+        return
+    eye = torch.eye(problem.n_features, dtype=problem.gram.dtype, device=problem.gram.device)
+    problem.gram.add_(add * eye)
+
+
+def build_noisy_ridge_problem(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    *,
+    fit_intercept: bool,
+    use_float64: bool,
+    gram_dtype: torch.dtype | None,
+    state_noise: float,
+    n_draws: int,
+    generator: torch.Generator | None = None,
+) -> RidgeProblem:
+    r"""Prepare a ridge problem from **explicitly** noise-perturbed states.
+
+    The Monte-Carlo counterpart of the closed-form
+    :func:`apply_lmnt_regularizer`: instead of adding the analytic
+    :math:`N\sigma^2` term to the Gram, it draws ``n_draws`` i.i.d. Gaussian
+    perturbations :math:`R \to R + \Xi`, :math:`\Xi \sim \mathcal{N}(0,
+    \sigma^2 I)`, forms the (centered, when fitting an intercept) Gram and
+    right-hand side for each draw, and averages them.  This is the
+    definitely-correct baseline — Jaeger's state-noise training — and LMNT
+    converges to it as ``n_draws`` grows (the two agree to Monte-Carlo error).
+
+    Both the Gram *and* the right-hand side are averaged over draws for an
+    honest Monte-Carlo estimate, even though the RHS expectation is the
+    noiseless :math:`R^\top y`; averaging it keeps the finite-``n_draws`` result
+    faithful to literally refitting on noisy states rather than silently folding
+    in the analytic simplification.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        Flattened state matrix of shape ``(N, F)``.
+    y : torch.Tensor
+        Flattened target matrix of shape ``(N, T)``.
+    fit_intercept : bool
+        Whether to center each noisy draw and recover an unpenalised intercept.
+    use_float64 : bool
+        Whether the small ``(F, F)`` inversion should run in ``float64``.
+    gram_dtype : torch.dtype or None
+        Explicit override for the Gram-formation dtype, or ``None`` for the
+        device-aware default (see :func:`resolve_gram_dtype`).
+    state_noise : float
+        Per-feature noise standard deviation :math:`\sigma > 0`.
+    n_draws : int
+        Number of Monte-Carlo noise draws to average (``>= 1``).
+    generator : torch.Generator, optional
+        RNG for the noise draws.  ``None`` uses the process-global RNG.
+
+    Returns
+    -------
+    RidgeProblem
+        The prepared problem whose ``gram`` / ``rhs`` are the noise-averaged
+        normal equations.  The stored means (used to recover the intercept) are
+        the *noiseless* column means, whose expectation matches the averaged
+        noisy means (the added noise is zero-mean).
+
+    Raises
+    ------
+    ValueError
+        If ``state_noise`` is negative or ``n_draws < 1``.
+    """
+    if state_noise < 0:
+        raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
+    if n_draws < 1:
+        raise ValueError(f"n_draws must be >= 1, got {n_draws}.")
+
+    original_dtype = X.dtype
+    solve_dtype = resolve_solve_dtype(original_dtype, use_float64)
+    resolved_gram_dtype = resolve_gram_dtype(original_dtype, X.device, solve_dtype, gram_dtype)
+
+    Xg = X.to(resolved_gram_dtype)
+    yg = y.to(resolved_gram_dtype)
+
+    n = float(Xg.shape[0])
+    gram_acc = torch.zeros(Xg.shape[1], Xg.shape[1], dtype=Xg.dtype, device=Xg.device)
+    rhs_acc = torch.zeros(Xg.shape[1], yg.shape[1], dtype=Xg.dtype, device=Xg.device)
+    for _ in range(n_draws):
+        noise = torch.randn(Xg.shape, dtype=Xg.dtype, device=Xg.device, generator=generator)
+        Xn = Xg + state_noise * noise
+        if fit_intercept:
+            xbar = Xn.mean(dim=0, keepdim=True)
+            ybar = yg.mean(dim=0, keepdim=True)
+            gram_acc += Xn.T @ Xn - n * (xbar.T @ xbar)
+            rhs_acc += Xn.T @ yg - n * (xbar.T @ ybar)
+        else:
+            gram_acc += Xn.T @ Xn
+            rhs_acc += Xn.T @ yg
+    gram_acc /= float(n_draws)
+    rhs_acc /= float(n_draws)
+
+    # Intercept recovery uses the noiseless means: E[noisy mean] = noiseless
+    # mean (zero-mean noise), and using the exact noiseless means avoids adding
+    # a second, unnecessary source of Monte-Carlo variance to the intercept.
+    x_mean: torch.Tensor | None = None
+    y_mean: torch.Tensor | None = None
+    if fit_intercept:
+        x_mean = Xg.mean(dim=0, keepdim=True)
+        y_mean = yg.mean(dim=0, keepdim=True)
+
+    return RidgeProblem(
+        X=Xg,
+        y=yg,
+        gram=gram_acc.to(solve_dtype),
+        rhs=rhs_acc.to(solve_dtype),
+        x_mean=x_mean,
+        y_mean=y_mean,
+        n_features=Xg.shape[1],
+        n_samples=Xg.shape[0],
         solve_dtype=solve_dtype,
         original_dtype=original_dtype,
         fit_intercept=fit_intercept,

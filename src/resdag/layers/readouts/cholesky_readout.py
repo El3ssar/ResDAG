@@ -24,7 +24,13 @@ resdag.layers.readouts.IncrementalRidgeReadoutLayer : Streaming partial_fit read
 
 import torch
 
-from ._solve_utils import build_ridge_problem, finalize_fit, solve_ridge
+from ._solve_utils import (
+    apply_lmnt_regularizer,
+    build_noisy_ridge_problem,
+    build_ridge_problem,
+    finalize_fit,
+    solve_ridge,
+)
 from .base import ReadoutLayer
 
 
@@ -53,6 +59,23 @@ class CholeskyReadoutLayer(ReadoutLayer):
 
         \\lVert X W - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 .
 
+    Noise-injection / LMNT regularization
+    -------------------------------------
+    Pass ``state_noise > 0`` to apply **state-noise regularization** — a
+    standard, tunable tool for **closed-loop (autonomous-rollout) robustness** —
+    by training on state-noise-perturbed reservoir states (Jaeger's state noise;
+    Wikner et al. 2024, Chaos 34, 043105). It trades a little one-step accuracy
+    for closed-loop stability; it is **not an automatic forecast-quality win**
+    (whether it helps or hurts is problem- and :math:`\\sigma`-dependent, so
+    :math:`\\sigma` must be tuned per problem — the default is off). The robust
+    guarantee is the mechanism: the default ``noise_draws=None`` uses the
+    closed-form **LMNT** term — the *exact analytic expectation* of the noisy
+    Gram, a single diagonal add that costs one solve yet **equals averaging over
+    infinitely many explicit noisy training copies** (to sampling tolerance); set
+    ``noise_draws=M`` (seeded by ``noise_seed``) for an explicit Monte-Carlo
+    average of ``M`` noisy fits instead. See :class:`RidgeReadoutLayer` for the
+    full discussion. ``0.0`` (default) is byte-identical to a plain fit.
+
     Parameters
     ----------
     in_features : int
@@ -73,6 +96,17 @@ class CholeskyReadoutLayer(ReadoutLayer):
         guarantees the Gram is positive definite; with ``alpha == 0`` the
         factorisation succeeds only on a full-rank Gram (reach for
         :class:`SVDReadoutLayer` if the Gram may be rank deficient).
+    state_noise : float, default=0.0
+        Standard deviation :math:`\\sigma` of the closed-loop state-noise
+        regulariser (see the class docstring). ``0.0`` (default) is byte-identical
+        to a plain fit. Must be non-negative. Adds ``alpha > 0`` positive
+        definiteness insurance too — the LMNT term is a positive diagonal add.
+    noise_draws : int, optional
+        ``None`` (default) uses the closed-form LMNT term; an integer ``M >= 1``
+        averages ``M`` explicit noisy-state fits. Ignored when ``state_noise == 0``.
+    noise_seed : int, optional
+        Seed for the explicit-noise (``noise_draws``) draws. Ignored for the
+        deterministic LMNT path.
     use_float64 : bool, default=True
         If ``True`` the small ``(F, F)`` factorisation runs in ``float64`` and
         the result is cast back to the parameter dtype.
@@ -118,13 +152,23 @@ class CholeskyReadoutLayer(ReadoutLayer):
         name: str | None = None,
         trainable: bool = False,
         alpha: float = 1e-6,
+        state_noise: float = 0.0,
+        noise_draws: int | None = None,
+        noise_seed: int | None = None,
         use_float64: bool = True,
         gram_dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__(in_features, out_features, bias, name, trainable)
         if alpha < 0:
             raise ValueError(f"alpha must be non-negative, got {alpha}.")
+        if state_noise < 0:
+            raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
+        if noise_draws is not None and noise_draws < 1:
+            raise ValueError(f"noise_draws must be >= 1 when given, got {noise_draws}.")
         self.alpha = alpha
+        self.state_noise = state_noise
+        self.noise_draws = noise_draws
+        self.noise_seed = noise_seed
         self.use_float64 = use_float64
         self.gram_dtype = gram_dtype
 
@@ -150,13 +194,30 @@ class CholeskyReadoutLayer(ReadoutLayer):
             Intercept vector of shape ``(out_features,)``, or ``None`` when the
             layer was built with ``bias=False``.
         """
-        problem = build_ridge_problem(
-            states,
-            targets,
-            fit_intercept=self.bias is not None,
-            use_float64=self.use_float64,
-            gram_dtype=self.gram_dtype,
-        )
+        if self.state_noise > 0 and self.noise_draws is not None:
+            generator: torch.Generator | None = None
+            if self.noise_seed is not None:
+                generator = torch.Generator(device=states.device)
+                generator.manual_seed(int(self.noise_seed))
+            problem = build_noisy_ridge_problem(
+                states,
+                targets,
+                fit_intercept=self.bias is not None,
+                use_float64=self.use_float64,
+                gram_dtype=self.gram_dtype,
+                state_noise=self.state_noise,
+                n_draws=self.noise_draws,
+                generator=generator,
+            )
+        else:
+            problem = build_ridge_problem(
+                states,
+                targets,
+                fit_intercept=self.bias is not None,
+                use_float64=self.use_float64,
+                gram_dtype=self.gram_dtype,
+            )
+            apply_lmnt_regularizer(problem, self.state_noise)
 
         layer_name = (
             f"{type(self).__name__}('{self._name}')"
@@ -176,6 +237,10 @@ class CholeskyReadoutLayer(ReadoutLayer):
     def __repr__(self) -> str:
         """Return string representation."""
         name_str = f", name='{self._name}'" if self._name is not None else ""
+        noise_str = ""
+        if self.state_noise > 0:
+            mode = "lmnt" if self.noise_draws is None else f"draws={self.noise_draws}"
+            noise_str = f", state_noise={self.state_noise} ({mode})"
         return (
             f"{self.__class__.__name__}("
             f"in_features={self.in_features}, "
@@ -183,5 +248,6 @@ class CholeskyReadoutLayer(ReadoutLayer):
             f"bias={self.bias is not None}"
             f"{name_str}, "
             f"alpha={self.alpha}"
+            f"{noise_str}"
             f")"
         )

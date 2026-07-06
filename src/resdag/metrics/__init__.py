@@ -25,6 +25,23 @@ Forecast accuracy
 valid_prediction_time
     Contiguous valid forecast horizon (NRMSE below a threshold), reportable in
     steps or Lyapunov times.
+rmse, nrmse, r2
+    Pointwise forecast-error helpers.  ``nrmse`` normalises by the per-dimension
+    truth standard deviation (default) or range, matching the NRMSE inside
+    ``valid_prediction_time``.
+
+Reservoir and attractor observables
+-----------------------------------
+memory_capacity
+    Linear short-term memory capacity (Jaeger 2001): ``MC = sum_k R^2_k`` of
+    reconstructing a delayed i.i.d. input, bounded above by the reservoir size.
+effective_spectral_radius
+    Mean spectral radius of the state-dependent recurrent Jacobian over an
+    attractor trajectory — the *realized* contraction rate (``tanh`` saturation
+    pushes it below the nominal weight spectral radius).
+correlation_dimension
+    Grassberger-Procaccia correlation dimension of a trajectory (attractor
+    fidelity): Lorenz-63 ~2.05, a limit cycle ~1.0, ``d``-dim noise ~``d``.
 
 Optional dependency
 -------------------
@@ -52,6 +69,14 @@ from .lyapunov import (
     steps_per_lyapunov_time,
     steps_to_lyapunov,
 )
+from .observables import (
+    correlation_dimension,
+    effective_spectral_radius,
+    memory_capacity,
+    nrmse,
+    r2,
+    rmse,
+)
 
 __all__ = [
     # Lyapunov constants
@@ -67,6 +92,13 @@ __all__ = [
     "reservoir_lyapunov",
     # Forecast accuracy
     "valid_prediction_time",
+    "rmse",
+    "nrmse",
+    "r2",
+    # Reservoir / attractor observables
+    "memory_capacity",
+    "effective_spectral_radius",
+    "correlation_dimension",
 ]
 
 

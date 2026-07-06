@@ -19,6 +19,8 @@ import torch
 
 from ._solve_utils import (
     _warn_on_precision_loss,
+    apply_lmnt_regularizer,
+    build_noisy_ridge_problem,
     build_ridge_problem,
     finalize_fit,
     solve_ridge,
@@ -65,6 +67,34 @@ class RidgeReadoutLayer(ReadoutLayer):
       reach for :class:`SVDReadoutLayer` (filter factors) or
       :class:`PinvReadoutLayer` (lstsq / pinv) instead.
 
+    Noise-injection / LMNT regularization
+    -------------------------------------
+    Pass ``state_noise > 0`` to apply **state-noise regularization**, a standard,
+    tunable tool for **closed-loop (autonomous-rollout) robustness** rather than
+    only weight magnitude.  Fitting on state-noise-perturbed reservoir states
+    mimics the feedback error the model sees when it free-runs on its own output
+    — the injected noise trades a little one-step accuracy for closed-loop
+    stability (Jaeger's state-noise idea; Wikner et al. 2024, *Stabilizing
+    machine learning prediction of dynamics*, Chaos 34, 043105).  **It is not a
+    free or automatic forecast-quality win:** whether the trade nets out positive
+    is problem- and :math:`\\sigma`-dependent — it can help *or* hurt, and
+    :math:`\\sigma` must be tuned per problem.  The shipped default is ``0.0``
+    (off); opt in and tune.
+
+    The robust guarantee is the **mechanism**, not a VPT number: by default
+    (``noise_draws=None``) the closed-form **LMNT** (Linearized Multi-Noise
+    Training) path computes the *exact analytic expectation* of the
+    noise-perturbed Gram — a single scalar on the diagonal (:math:`N\\sigma^2`
+    raw, :math:`(N-1)\\sigma^2` centered) — so **one LMNT solve equals averaging
+    over infinitely many explicit noisy training copies, at a fraction of the
+    Monte-Carlo cost** (verified equal to explicit-noise training to sampling
+    tolerance).  Set ``noise_draws=M`` to instead average ``M`` *explicit*
+    Gaussian-perturbed fits (the definitely-correct Monte-Carlo baseline, seeded
+    by ``noise_seed``); LMNT converges to it as ``M`` grows.  ``state_noise`` is
+    **independent** of ``alpha``: they add on the diagonal
+    (:math:`\\alpha + N\\sigma^2`) but noise training targets rollout robustness
+    while ``alpha`` targets weight norm.
+
     Parameters
     ----------
     in_features : int
@@ -85,6 +115,20 @@ class RidgeReadoutLayer(ReadoutLayer):
         only safe with ``solver='solve'`` on a full-rank Gram.
     solver : {'cholesky', 'solve'}, default='cholesky'
         Direct solver to use for the normal equations.
+    state_noise : float, default=0.0
+        Standard deviation :math:`\\sigma` of the Gaussian state noise the readout
+        is regularised against for closed-loop stability (see the class
+        docstring). ``0.0`` (default) disables it — the fit is then byte-identical
+        to a plain ridge solve. Must be non-negative.
+    noise_draws : int, optional
+        When ``state_noise > 0``: ``None`` (default) uses the closed-form LMNT
+        term (one solve, exact expectation); an integer ``M >= 1`` instead
+        averages ``M`` *explicit* noisy-state fits (Monte-Carlo). Ignored when
+        ``state_noise == 0``.
+    noise_seed : int, optional
+        Seed for the explicit-noise (``noise_draws``) Gaussian draws, for
+        reproducibility. ``None`` uses the process-global RNG. Ignored for the
+        closed-form LMNT path (which is deterministic).
     use_float64 : bool, default=True
         If ``True`` the small ``(F, F)`` factorisation runs in ``float64`` and
         the result is cast back to the parameter dtype.
@@ -105,6 +149,8 @@ class RidgeReadoutLayer(ReadoutLayer):
         L2 regularization strength.
     solver : str
         The selected direct solver.
+    state_noise : float
+        Standard deviation of the closed-loop state-noise regulariser.
 
     Examples
     --------
@@ -115,6 +161,12 @@ class RidgeReadoutLayer(ReadoutLayer):
     >>> output = readout(states)
     >>> output.shape
     torch.Size([8, 50, 3])
+
+    Closed-form LMNT noise regularisation for closed-loop robustness (the
+    ``state_noise`` value below is *illustrative* — tune it per problem, and
+    expect it to help or hurt depending on the system and :math:`\\sigma`):
+
+    >>> readout = RidgeReadoutLayer(200, 3, alpha=1e-8, state_noise=1e-3)
 
     See Also
     --------
@@ -135,6 +187,9 @@ class RidgeReadoutLayer(ReadoutLayer):
         trainable: bool = False,
         alpha: float = 1e-6,
         solver: str = "cholesky",
+        state_noise: float = 0.0,
+        noise_draws: int | None = None,
+        noise_seed: int | None = None,
         use_float64: bool = True,
         gram_dtype: torch.dtype | None = None,
     ) -> None:
@@ -143,8 +198,15 @@ class RidgeReadoutLayer(ReadoutLayer):
             raise ValueError(f"alpha must be non-negative, got {alpha}.")
         if solver not in self._VALID_SOLVERS:
             raise ValueError(f"solver must be one of {self._VALID_SOLVERS}, got {solver!r}.")
+        if state_noise < 0:
+            raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
+        if noise_draws is not None and noise_draws < 1:
+            raise ValueError(f"noise_draws must be >= 1 when given, got {noise_draws}.")
         self.alpha = alpha
         self.solver = solver
+        self.state_noise = state_noise
+        self.noise_draws = noise_draws
+        self.noise_seed = noise_seed
         self.use_float64 = use_float64
         self.gram_dtype = gram_dtype
 
@@ -170,13 +232,33 @@ class RidgeReadoutLayer(ReadoutLayer):
             Intercept vector of shape ``(out_features,)``, or ``None`` when the
             layer was built with ``bias=False``.
         """
-        problem = build_ridge_problem(
-            states,
-            targets,
-            fit_intercept=self.bias is not None,
-            use_float64=self.use_float64,
-            gram_dtype=self.gram_dtype,
-        )
+        if self.state_noise > 0 and self.noise_draws is not None:
+            # Explicit Monte-Carlo noise training: average M noisy-state fits.
+            generator: torch.Generator | None = None
+            if self.noise_seed is not None:
+                generator = torch.Generator(device=states.device)
+                generator.manual_seed(int(self.noise_seed))
+            problem = build_noisy_ridge_problem(
+                states,
+                targets,
+                fit_intercept=self.bias is not None,
+                use_float64=self.use_float64,
+                gram_dtype=self.gram_dtype,
+                state_noise=self.state_noise,
+                n_draws=self.noise_draws,
+                generator=generator,
+            )
+        else:
+            problem = build_ridge_problem(
+                states,
+                targets,
+                fit_intercept=self.bias is not None,
+                use_float64=self.use_float64,
+                gram_dtype=self.gram_dtype,
+            )
+            # Closed-form LMNT: fold the analytic noise-covariance term into the
+            # Gram diagonal (no-op when state_noise == 0, keeping the fit exact).
+            apply_lmnt_regularizer(problem, self.state_noise)
 
         layer_name = (
             f"{type(self).__name__}('{self._name}')"
@@ -216,6 +298,10 @@ class RidgeReadoutLayer(ReadoutLayer):
     def __repr__(self) -> str:
         """Return string representation."""
         name_str = f", name='{self._name}'" if self._name is not None else ""
+        noise_str = ""
+        if self.state_noise > 0:
+            mode = "lmnt" if self.noise_draws is None else f"draws={self.noise_draws}"
+            noise_str = f", state_noise={self.state_noise} ({mode})"
         return (
             f"{self.__class__.__name__}("
             f"in_features={self.in_features}, "
@@ -224,5 +310,6 @@ class RidgeReadoutLayer(ReadoutLayer):
             f"{name_str}, "
             f"alpha={self.alpha}, "
             f"solver='{self.solver}'"
+            f"{noise_str}"
             f")"
         )

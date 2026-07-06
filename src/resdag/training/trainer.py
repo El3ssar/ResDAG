@@ -121,8 +121,12 @@ class ESNTrainer:
         warmup_inputs: tuple[torch.Tensor, ...],
         train_inputs: tuple[torch.Tensor, ...],
         targets: dict[str, torch.Tensor],
+        *,
+        state_noise: float = 0.0,
+        noise_draws: int | None = None,
+        noise_seed: int | None = None,
     ) -> None:
-        """
+        r"""
         Fit all readout layers in a single forward pass.
 
         Uses pre-hooks to fit each readout layer just before its forward
@@ -145,6 +149,29 @@ class ESNTrainer:
             Each target shape: ``(batch, train_steps, out_features)``.
             Names are either user-defined (via ``name="output"`` in readout
             constructor) or auto-generated module names (e.g., ``"CGReadoutLayer_1"``).
+        state_noise : float, keyword-only, default=0.0
+            Standard deviation :math:`\sigma` of the Gaussian **state noise** the
+            readouts are regularised with — a standard, tunable tool for
+            **closed-loop (autonomous-rollout) robustness**.  Fitting on
+            noise-perturbed reservoir states mimics the feedback error the model
+            sees when it free-runs on its own output, trading a little one-step
+            accuracy for closed-loop stability (Jaeger's state noise; Wikner et
+            al. 2024, *Stabilizing machine learning prediction of dynamics*, Chaos
+            34, 043105).  It is **not an automatic forecast-quality win**: whether
+            it helps or hurts is problem- and :math:`\sigma`-dependent, so
+            :math:`\sigma` must be tuned per problem (the default is off).  ``0.0``
+            (default) leaves every fit byte-identical to a plain ridge solve.
+            Applied for the duration of this ``fit`` call by temporarily setting
+            each ridge-family readout's ``state_noise`` (restored afterwards), so
+            the model's configured readouts are not permanently mutated.
+        noise_draws : int, keyword-only, optional
+            When ``state_noise > 0``: ``None`` (default) uses the closed-form
+            **LMNT** term (one solve, exact expectation of many noisy copies); an
+            integer ``M >= 1`` averages ``M`` *explicit* noisy-state fits
+            (Monte-Carlo).  Ignored when ``state_noise == 0``.
+        noise_seed : int, keyword-only, optional
+            Seed for the explicit-noise (``noise_draws``) draws, for
+            reproducibility.  Ignored for the deterministic LMNT path.
 
         Raises
         ------
@@ -153,6 +180,12 @@ class ESNTrainer:
             If number of warmup and training inputs don't match.
             If any readout is missing from targets.
             If target sequence length doesn't match training inputs.
+            If ``state_noise`` is negative or ``noise_draws < 1``.
+        TypeError
+            If ``state_noise > 0`` but a readout in the model does not support
+            state-noise regularisation (only the ridge-family direct solvers —
+            :class:`RidgeReadoutLayer`, :class:`CholeskyReadoutLayer` — carry a
+            ``state_noise`` knob).
 
         Notes
         -----
@@ -170,6 +203,15 @@ class ESNTrainer:
         ... )
         >>> print(model.CGReadoutLayer_1.is_fitted)
         True
+
+        Regularise for a stable chaotic rollout with closed-form LMNT noise:
+
+        >>> trainer.fit(  # doctest: +SKIP
+        ...     warmup_inputs=(warmup_data,),
+        ...     train_inputs=(train_data,),
+        ...     targets={"output": targets},
+        ...     state_noise=1e-3,
+        ... )
         """
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input is required")
@@ -180,6 +222,10 @@ class ESNTrainer:
                 f"warmup_inputs has {len(warmup_inputs)} tensors, "
                 f"but train_inputs has {len(train_inputs)} tensors. Must match."
             )
+        if state_noise < 0:
+            raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
+        if noise_draws is not None and noise_draws < 1:
+            raise ValueError(f"noise_draws must be >= 1 when given, got {noise_draws}.")
 
         # Resolve readouts once; reuse for target validation and hook setup.
         readouts = self._discover_readouts()
@@ -223,8 +269,14 @@ class ESNTrainer:
             hooks.append(handle)
 
         try:
-            # Single forward pass - hooks fit each readout as it executes
-            with torch.no_grad():
+            # Single forward pass - hooks fit each readout as it executes. The
+            # state-noise override (a no-op when state_noise == 0) is applied
+            # around the pass so the readouts fit with the closed-loop-stability
+            # regulariser and are restored to their configured values afterwards.
+            with (
+                self._state_noise_override(readouts, state_noise, noise_draws, noise_seed),
+                torch.no_grad(),
+            ):
                 self.model(*train_inputs)
         finally:
             # Always remove hooks
@@ -695,6 +747,88 @@ class ESNTrainer:
             handle.remove()
 
         return outputs
+
+    @staticmethod
+    @contextmanager
+    def _state_noise_override(
+        readouts: list[tuple[str, ReadoutLayer]],
+        state_noise: float,
+        noise_draws: int | None,
+        noise_seed: int | None,
+    ) -> Iterator[None]:
+        """Temporarily set state-noise regularisation on ridge-family readouts.
+
+        For the duration of a :meth:`fit` forward pass, each readout that carries
+        a ``state_noise`` knob (the direct ridge solvers
+        :class:`RidgeReadoutLayer` / :class:`CholeskyReadoutLayer`) has its
+        ``state_noise`` / ``noise_draws`` / ``noise_seed`` overridden with the
+        values passed to ``fit``, then restored on exit (including on exception).
+        This regularises the readout for closed-loop stability *without*
+        permanently mutating the model's configured readouts.
+
+        A ``state_noise == 0`` request is a complete no-op — the readouts are
+        never touched, so the fit stays byte-identical to the plain path.  A
+        ``state_noise > 0`` request against a readout with no ``state_noise``
+        attribute raises :class:`TypeError`, since silently ignoring it would
+        train an unregularised readout while the caller believes noise is applied.
+
+        Parameters
+        ----------
+        readouts : list of (str, ReadoutLayer)
+            The ``(name, readout)`` pairs from :meth:`_discover_readouts`.
+        state_noise : float
+            Noise standard deviation to apply (``0`` disables the override).
+        noise_draws : int or None
+            Explicit-noise draw count, or ``None`` for closed-form LMNT.
+        noise_seed : int or None
+            Seed for the explicit-noise draws.
+
+        Yields
+        ------
+        None
+
+        Raises
+        ------
+        TypeError
+            If ``state_noise > 0`` but a readout does not support state noise.
+        """
+        if state_noise == 0.0:
+            yield
+            return
+
+        # Snapshot and override every supporting readout; reject unsupported ones
+        # up front so no readout is fitted before the error surfaces. The knobs
+        # are accessed via getattr/setattr because only the ridge-family readouts
+        # declare them — a generic ReadoutLayer does not, and the nn.Module
+        # attribute proxy widens plain attributes for the type checker.
+        saved: list[tuple[ReadoutLayer, object, object, object]] = []
+        unsupported = [name for name, ro in readouts if not hasattr(ro, "state_noise")]
+        if unsupported:
+            raise TypeError(
+                f"fit(state_noise={state_noise}) requested state-noise regularisation, but "
+                f"these readouts do not support it: {unsupported}. Only the direct ridge "
+                f"solvers (RidgeReadoutLayer, CholeskyReadoutLayer) carry a 'state_noise' knob; "
+                f"rebuild those readouts, or omit state_noise."
+            )
+        for _, readout in readouts:
+            saved.append(
+                (
+                    readout,
+                    readout.state_noise,
+                    readout.noise_draws,
+                    readout.noise_seed,
+                )
+            )
+            setattr(readout, "state_noise", state_noise)
+            setattr(readout, "noise_draws", noise_draws)
+            setattr(readout, "noise_seed", noise_seed)
+        try:
+            yield
+        finally:
+            for readout, s, d, seed in saved:
+                setattr(readout, "state_noise", s)
+                setattr(readout, "noise_draws", d)
+                setattr(readout, "noise_seed", seed)
 
     @staticmethod
     @contextmanager

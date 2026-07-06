@@ -100,6 +100,7 @@ from .datasets import (
     DATASET_DT,
     dataset_lambda_max,
     henon,
+    kuramoto_sivashinsky,
     lorenz,
     mackey_glass,
     narma,
@@ -131,6 +132,7 @@ __all__ = [
     "mackey_glass",
     "narma",
     "sine",
+    "kuramoto_sivashinsky",
     # Dataset metadata
     "DATASET_DT",
     "dataset_lambda_max",

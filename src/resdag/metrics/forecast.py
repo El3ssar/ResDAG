@@ -36,6 +36,7 @@ _DATASET_DT: dict[str, float] = {
     "mackey_glass": 1.0,
     "narma": 1.0,
     "sine": 1.0,
+    "kuramoto_sivashinsky": 0.25,
 }
 
 

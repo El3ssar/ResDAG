@@ -26,6 +26,10 @@ linear_esn
 lsm
     Spiking Liquid State Machine — leaky integrate-and-fire reservoir with a
     filtered-spike-trace readout (input-driven; not a chaos forecaster).
+parallel_esn
+    Parallel local-state reservoir (Pathak et al. 2018) — one shared reservoir
+    advanced batched over overlapping spatial patches, for forecasting large
+    spatiotemporally chaotic systems (PDEs / weather / lattices).
 coupled_ensemble_esn
     Build a :class:`~resdag.ensemble.CoupledEnsembleESNModel` of N coupled
     ESN sub-models sharing an averaged feedback signal.
@@ -35,6 +39,10 @@ Classes
 KnowledgeModel
     :class:`~torch.nn.Module` adapter wrapping a knowledge-based expert
     ``f(u) -> u_next`` for use inside :func:`hybrid_esn`.
+ParallelESNModel
+    The model class :func:`parallel_esn` builds — a shared reservoir plus a
+    weight-tied readout with patch windowing / stitching and a spatial-
+    autoregressive :meth:`~resdag.models.ParallelESNModel.forecast`.
 
 Each architecture accepts individual parameters for full customization
 while providing sensible defaults for quick experimentation.
@@ -78,6 +86,7 @@ from .hybrid_esn import KnowledgeModel, hybrid_esn
 from .linear_esn import linear_esn
 from .lsm import lsm
 from .ott_esn import ott_esn
+from .parallel_esn import ParallelESNModel, parallel_esn
 from .power_augmented import power_augmented
 from .resesn import resesn
 
@@ -96,6 +105,8 @@ __all__ = [
     "gated_esn",
     "eusn",
     "lsm",
+    "parallel_esn",
+    "ParallelESNModel",
 ]
 
 

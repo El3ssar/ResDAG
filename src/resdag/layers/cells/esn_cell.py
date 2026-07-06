@@ -14,7 +14,9 @@ resdag.init.topology : Topology initialization for recurrent weights.
 resdag.init.input_feedback : Input/feedback weight initialization.
 """
 
+import warnings
 from collections.abc import Callable, Sequence
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -25,6 +27,45 @@ from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
 from .base_cell import ReservoirCell
+
+# Sparse-CSR recurrent-matmul policy.
+#
+# ``sparse="auto"`` opts a *frozen* reservoir into a CSR ``weight_hh`` spmv only
+# when both gates are met: the reservoir is large enough that the dense
+# ``addmm`` actually dominates the per-step cost, *and* the recurrent matrix is
+# sparse enough that a CSR spmv beats it.  Below either threshold the dense
+# ``addmm`` is faster (its BLAS kernel has no per-nonzero overhead), so ``auto``
+# stays dense there.  Explicit ``sparse=True`` bypasses these gates (the caller
+# has asserted their topology is sparse); ``sparse=False`` (the default) is
+# always dense and byte-for-byte unchanged.
+#
+# The size gate is **device-dependent**, because the dense-``addmm``/CSR-spmv
+# crossover is: a GPU's dense BLAS is far faster per FLOP than a CPU's, so the
+# reservoir must be much larger before the structural-zero savings of a CSR spmv
+# pay off there.  Measured on this repo's hardware (recurrent matmul, batch=1):
+#
+#   * CPU float64 — sparse wins from N~1000 at RC densities (N=2000/1%: ~14x,
+#     N=5000/1%: ~24x); dense wins for N<1000.  ``auto`` fires at N>=1000.
+#   * CUDA float32 — dense wins through N=2000 (N=1000/1%: 0.53x, N=2000/1%:
+#     0.91x — sparse *slower*); the crossover is ~N=3000, and sparse wins
+#     decisively from N=5000 (6.9x at 1%).  ``auto`` therefore fires only at
+#     N>=5000 on CUDA, so it never selects the slower sparse path in the
+#     1000<=N<5000 GPU regime.
+#
+# Both thresholds are deliberately conservative so ``auto`` never regresses the
+# default path on either device.  The density gate is shared (sparse only helps
+# a genuinely sparse matrix on any device).
+_SPARSE_AUTO_MIN_SIZE_CPU = 1000
+_SPARSE_AUTO_MIN_SIZE_CUDA = 5000
+_SPARSE_AUTO_MAX_DENSITY = 0.2
+
+# Back-compat alias: the CPU size gate was the sole threshold before the
+# device-aware split.  Kept so existing imports (and tests) that reference
+# ``_SPARSE_AUTO_MIN_SIZE`` continue to resolve to the CPU floor.
+_SPARSE_AUTO_MIN_SIZE = _SPARSE_AUTO_MIN_SIZE_CPU
+
+# Type of the ``sparse`` construction flag.
+SparseSpec = bool | Literal["auto"]
 
 # Golden-ratio offsets used to derive independent, deterministic sub-seeds from
 # the single layer-level ``seed``.  ``0x9E3779B9`` (2**32 / phi) is the classic
@@ -164,6 +205,63 @@ class ESNCell(ReservoirCell):
     trainable : bool, default=False
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
+    sparse : bool or {'auto'}, default=False
+        Store a CSR copy of the (frozen) recurrent matrix and use a sparse
+        matrix-vector product for the recurrent term, instead of the dense
+        ``addmm``.  For an RC-typical sparse reservoir (density ~1-10%) the CSR
+        spmv skips the structural zeros a dense BLAS kernel still multiplies, so
+        it **accelerates the per-step recurrent matmul** at large sizes (the hot
+        inner-loop kernel of warmup / teacher-forcing / forecasting) and
+        **shrinks the serialized-on-disk / matmul-operand footprint** (a 20k-unit
+        float32 recurrent matrix is ~1.6 GB dense; its CSR form at 1% density is
+        ~48 MB — the size the spmv actually touches, and the size a CSR-serialized
+        checkpoint would be).
+
+        .. warning::
+
+           This is **not** a live-memory reduction, and does **not** lift the
+           dense ``(reservoir_size, reservoir_size)`` memory ceiling.  The dense
+           ``weight_hh`` :class:`~torch.nn.Parameter` is *always* materialised —
+           it is the canonical, serialized form used for introspection
+           (spectral-radius, Lyapunov), ``state_dict`` save/load, and
+           ``torch.equal`` comparisons — and the CSR operator is an
+           **additional** non-persistent buffer built from it.  A sparse cell's
+           resident memory is therefore ``dense(n²) + CSR(nnz)``, i.e. slightly
+           *larger* than a dense-only cell, not smaller.  ``sparse=True`` buys
+           recurrent-matmul speed (at low density and large ``n``) and a smaller
+           matmul operand / potential checkpoint, not a smaller live model.  To
+           actually build a reservoir that does not fit dense, a future change
+           would need to make the CSR the canonical resident form and free the
+           dense ``weight_hh`` (reconstructing dense only for introspection /
+           save) — that is deliberately out of scope here.
+
+        Three settings:
+
+        * ``False`` (default) — always dense; byte-for-byte identical to the
+          historical cell.
+        * ``True`` — force the CSR spmv path (the caller asserts their topology
+          is sparse enough to benefit).
+        * ``"auto"`` — enable the CSR path only when the reservoir is large *and*
+          the initialized recurrent matrix is sparse (density ``<= 0.2``);
+          otherwise fall back to dense, where the dense ``addmm`` is faster.  The
+          size gate is **device-dependent** — the dense/sparse crossover is much
+          higher on a GPU (its dense BLAS is fast), so ``auto`` fires only at
+          ``reservoir_size >= 5000`` on CUDA but at ``reservoir_size >= 1000`` on
+          CPU (both measured on this repo's hardware).  This keeps ``auto`` from
+          selecting the *slower* sparse path in the ``1000 <= n < 5000`` GPU
+          regime, where dense still wins.  The decision consults the recurrent
+          weight's device, so a cell moved to GPU before the decision is re-taken
+          (e.g. on ``load_state_dict``) sees the right gate.
+
+        The sparse path requires a **frozen** reservoir: it is only valid with
+        ``trainable=False`` (sparse-CSR autograd for this update is fragile).
+        Requesting ``sparse`` together with ``trainable=True`` raises
+        ``ValueError``.  Flipping ``trainable=True`` on a live sparse cell
+        transparently drops the CSR buffer and reverts to the dense path (with a
+        ``RuntimeWarning``).  Because the dense ``weight_hh`` parameter is the
+        canonical, serialized form, save/load, spectral-radius introspection, and
+        Lyapunov analysis are unchanged, and the forecast ``compile=True`` path
+        falls back to eager (``torch.compile`` does not trace sparse tensors).
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
         name, ``(name, params)``, any matrix-building callable, a
@@ -223,12 +321,23 @@ class ESNCell(ReservoirCell):
         leak_rate: float | torch.Tensor | Sequence[float] = 1.0,
         noise: float = 0.0,
         trainable: bool = False,
+        sparse: SparseSpec = False,
         feedback_initializer: InitializerSpec = None,
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
     ) -> None:
         super().__init__()
+
+        # A sparse-CSR recurrent matmul is only valid for a frozen reservoir;
+        # sparse-CSR autograd for this update is fragile, so reject the
+        # trainable+sparse combination up front rather than silently degrading.
+        if sparse and trainable:
+            raise ValueError(
+                "sparse=True requires a frozen reservoir (trainable=False): "
+                "sparse-CSR autograd for the recurrent update is unsupported. "
+                "Use a dense reservoir (sparse=False) for a trainable ESN."
+            )
 
         # leak_rate / noise are validated by their property setters (below), so
         # both the constructor path (``self.leak_rate = ...``) and live writes
@@ -269,6 +378,18 @@ class ESNCell(ReservoirCell):
         # backing field directly; the actual ``requires_grad`` freeze is applied
         # after ``_initialize_weights`` (see the block at the end of __init__).
         self._trainable = trainable
+        # Sparse-CSR recurrent-matmul config.  ``_sparse_requested`` records the
+        # user's intent (``True`` / ``False`` / ``"auto"``); ``_sparse_active``
+        # is the resolved decision (set once the recurrent matrix exists and its
+        # density is known — see ``_maybe_build_sparse_weight``).  The derived
+        # CSR operator lives in the *non-persistent* buffer ``_weight_hh_csr``
+        # (rebuilt from the dense ``weight_hh`` on load / device move), keeping
+        # the dense ``weight_hh`` parameter as the single canonical, serialized
+        # form so introspection and save/load are unchanged.
+        self._sparse_requested: SparseSpec = sparse
+        self._sparse_active: bool = False
+        self.register_buffer("_weight_hh_csr", None, persistent=False)
+        self._weight_hh_csr: torch.Tensor | None
         self.seed = seed
         # Integer form threaded into the NumPy-backed topology builders and the
         # named feedback/input initializers (they take an int/None seed).  A
@@ -299,6 +420,11 @@ class ESNCell(ReservoirCell):
         # keeps construction and post-init ``cell.trainable = ...`` writes on a
         # single code path: both flip ``requires_grad_`` on *all* parameters.
         self.trainable = trainable
+
+        # Resolve the sparse-CSR decision now that ``weight_hh`` exists and its
+        # density is known, and materialise the derived CSR operator if enabled.
+        # Done after the ``trainable`` freeze so the guard sees the final state.
+        self._maybe_build_sparse_weight()
 
     # ------------------------------------------------------------------
     # ReservoirCell interface
@@ -331,9 +457,28 @@ class ESNCell(ReservoirCell):
 
     @trainable.setter
     def trainable(self, value: bool) -> None:
+        was_trainable = self._trainable
         self._trainable = bool(value)
         for p in self.parameters():
             p.requires_grad_(self._trainable)
+        # The sparse-CSR recurrent path is frozen-only.  A live flip to trainable
+        # must drop it (sparse-CSR autograd for this update is fragile); a flip
+        # back to frozen may re-materialise it.  Guarded by ``hasattr`` because
+        # the setter also runs during ``__init__`` before the sparse machinery
+        # is wired.
+        if self._trainable and not was_trainable and getattr(self, "_sparse_active", False):
+            warnings.warn(
+                "trainable=True on a sparse reservoir: densifying weight_hh and "
+                "reverting to the dense recurrent path (sparse-CSR autograd for "
+                "the recurrent update is unsupported).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self._sparse_active = False
+            self._weight_hh_csr = None
+        elif not self._trainable and was_trainable and hasattr(self, "_sparse_requested"):
+            # Re-freezing: honour the original sparse request again.
+            self._maybe_build_sparse_weight()
 
     @property
     def leak_rate(self) -> float | torch.Tensor:
@@ -418,26 +563,19 @@ class ESNCell(ReservoirCell):
         self._leak_rate_vec = vec.contiguous()
         self._is_vector_leak = True
 
-    def _load_from_state_dict(  # type: ignore[override]
-        self,
-        state_dict: dict,
-        prefix: str,
-        local_metadata: dict,
-        strict: bool,
-        missing_keys: list,
-        unexpected_keys: list,
-        error_msgs: list,
-    ) -> None:
-        """Reconcile the optional per-neuron leak buffer with the checkpoint.
+    def _reconcile_leak_buffer(self, state_dict: dict, prefix: str) -> None:
+        """Align the optional per-neuron leak buffer with the checkpoint.
 
         The vector-leak buffer ``_leak_rate_vec`` is present in a checkpoint only
         when the saved cell had a *vector* leak (a scalar-leak cell registers it
-        as ``None``, so it is absent from ``state_dict``).  Without this override,
-        loading a vector-leak checkpoint into a scalar-rebuilt cell (or vice
-        versa) would raise on the mismatched key or silently drop the leak
-        configuration.  We align our buffer's presence — and the
+        as ``None``, so it is absent from ``state_dict``).  Without this
+        reconciliation, loading a vector-leak checkpoint into a scalar-rebuilt
+        cell (or vice versa) would raise on the mismatched key or silently drop
+        the leak configuration.  We align our buffer's presence — and the
         :attr:`_is_vector_leak` flag — to the incoming checkpoint before the
         normal load, so the loaded leak configuration always wins.
+
+        Called from :meth:`_load_from_state_dict` before the parent copy.
         """
         vec_key = prefix + "_leak_rate_vec"
         if vec_key in state_dict:
@@ -450,9 +588,6 @@ class ESNCell(ReservoirCell):
             # strict load neither reports a missing key nor keeps a stale vector.
             self._leak_rate_vec = None
             self._is_vector_leak = False
-        super()._load_from_state_dict(
-            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
-        )
 
     @property
     def noise(self) -> float:
@@ -526,8 +661,7 @@ class ESNCell(ReservoirCell):
         the :meth:`step` fast path, so the two paths stay consistent.
         """
         projected = self.project_inputs(inputs)
-        recurrent_contrib = F.linear(state, self.weight_hh)
-        new_state = self.activation_fn(projected + recurrent_contrib)
+        new_state = self.activation_fn(projected + self._recurrent(state))
         new_state = self._apply_noise(new_state)
         new_state = self._apply_leak(state, new_state)
         return new_state, new_state
@@ -613,7 +747,13 @@ class ESNCell(ReservoirCell):
         new_state : torch.Tensor
             Same tensor as output.
         """
-        pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
+        if self._sparse_active:
+            # Sparse CSR path: the fused ``addmm`` has no CSR analogue, so add
+            # the precomputed projection to the sparse spmv result.  Identical
+            # math to the dense branch (``projected_t + state @ weight_hh.T``).
+            pre_activation = projected_t + self._recurrent(state)
+        else:
+            pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
         new_state = self.activation_fn(pre_activation)
         new_state = self._apply_noise(new_state)
         new_state = self._apply_leak(state, new_state)
@@ -657,6 +797,173 @@ class ESNCell(ReservoirCell):
         if self._leak_rate != 1.0:
             return torch.lerp(state, new_state, self._leak_rate)
         return new_state
+
+    # ------------------------------------------------------------------
+    # Recurrent term (dense addmm / sparse-CSR spmv)
+    # ------------------------------------------------------------------
+
+    def _recurrent(self, state: torch.Tensor) -> torch.Tensor:
+        r"""Compute the recurrent contribution ``state @ weight_hh.T``.
+
+        The single place the recurrent matmul is expressed, so the dense and
+        sparse paths never drift.  Two branches, chosen by
+        :attr:`_sparse_active`:
+
+        * **Dense** — ``F.linear(state, weight_hh)`` = ``state @ weight_hh.T``,
+          the historical path, byte-for-byte unchanged.
+        * **Sparse CSR** — a compressed-row spmv on the derived
+          :attr:`_weight_hh_csr` operator.  ``torch.sparse.mm`` computes
+          ``W @ state.T``; transposing both sides gives
+          ``state @ W.T``, matching the dense result to floating-point
+          round-off (the same nonzeros, just skipping the structural zeros).
+
+        Parameters
+        ----------
+        state : torch.Tensor
+            Current hidden state, shape ``(batch, reservoir_size)``.
+
+        Returns
+        -------
+        torch.Tensor
+            The recurrent contribution, shape ``(batch, reservoir_size)``.
+        """
+        if self._sparse_active:
+            csr = self._weight_hh_csr
+            assert csr is not None  # invariant when the sparse flag is set
+            # ``state @ W.T == (W @ state.T).T``; ``.contiguous()`` on the
+            # feedback so the spmv gets a well-formed dense RHS.
+            recurrent: torch.Tensor = torch.sparse.mm(csr, state.t().contiguous())
+            return recurrent.t()
+        return F.linear(state, self.weight_hh)
+
+    # ------------------------------------------------------------------
+    # Sparse-CSR recurrent operator (frozen-reservoir opt-in)
+    # ------------------------------------------------------------------
+
+    @property
+    def sparse(self) -> bool:
+        """bool : Whether the CSR sparse recurrent-matmul path is active.
+
+        Reflects the *resolved* decision (after the ``"auto"`` density gate and
+        the frozen-reservoir requirement), not the raw construction request.
+        ``False`` for a dense cell or when ``sparse="auto"`` fell back to dense.
+        """
+        return self._sparse_active
+
+    def _recurrent_density(self) -> float:
+        """Fraction of nonzero entries in the dense recurrent matrix."""
+        w = self.weight_hh.data
+        total = w.numel()
+        if total == 0:
+            return 0.0
+        return float((w != 0).sum().item()) / total
+
+    def _auto_min_size(self) -> int:
+        """Device-dependent size gate for the ``"auto"`` sparse decision.
+
+        The dense-``addmm``/CSR-spmv crossover moves with the device: a GPU's
+        dense BLAS is fast enough that the reservoir must be far larger before a
+        CSR spmv pays for its per-nonzero overhead.  Returns the higher CUDA
+        floor (:data:`_SPARSE_AUTO_MIN_SIZE_CUDA`) when the recurrent weights live
+        on a CUDA device, and the CPU floor (:data:`_SPARSE_AUTO_MIN_SIZE_CPU`)
+        otherwise.  Consulting the *weight's* device (not a construction-time
+        argument) means a cell moved to GPU via ``.cuda()`` before the ``"auto"``
+        decision is re-taken — e.g. on ``load_state_dict`` — sees the right gate.
+        """
+        if self.weight_hh.device.type == "cuda":
+            return _SPARSE_AUTO_MIN_SIZE_CUDA
+        return _SPARSE_AUTO_MIN_SIZE_CPU
+
+    def _should_use_sparse(self) -> bool:
+        """Resolve the ``sparse`` request against the size/density ``auto`` gates.
+
+        ``True`` / ``False`` are honoured verbatim (explicit opt-in / opt-out);
+        ``"auto"`` enables the CSR path only when the reservoir is large enough
+        (``reservoir_size >= self._auto_min_size()`` — a **device-dependent**
+        floor, higher on CUDA where the dense BLAS is faster) *and* the recurrent
+        matrix is sparse enough (density ``<= _SPARSE_AUTO_MAX_DENSITY``) for a
+        CSR spmv to beat the dense ``addmm`` on that device.  A ``trainable``
+        reservoir is always dense (the constructor rejects ``sparse=True`` +
+        ``trainable``; ``"auto"`` and a live re-freeze route here).
+        """
+        if self._trainable:
+            return False
+        if self._sparse_requested is True:
+            return True
+        if self._sparse_requested == "auto":
+            return (
+                self.reservoir_size >= self._auto_min_size()
+                and self._recurrent_density() <= _SPARSE_AUTO_MAX_DENSITY
+            )
+        return False
+
+    def _maybe_build_sparse_weight(self) -> None:
+        """(Re)materialise the derived CSR operator from the dense ``weight_hh``.
+
+        Resolves :meth:`_should_use_sparse` and, when sparse is active, builds
+        the non-persistent :attr:`_weight_hh_csr` buffer from the current dense
+        ``weight_hh`` (matching its dtype/device).  When sparse is inactive the
+        buffer is cleared.  Idempotent and safe to call after any event that
+        changes the dense weights or moves them across devices/dtypes
+        (construction, ``load_state_dict``, ``.to()`` — see :meth:`_apply`).
+        """
+        self._sparse_active = self._should_use_sparse()
+        if self._sparse_active:
+            self._weight_hh_csr = self.weight_hh.data.to_sparse_csr()
+        else:
+            self._weight_hh_csr = None
+
+    def _apply(self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True) -> "ESNCell":
+        """Rebuild the derived CSR operator after a device/dtype move.
+
+        ``nn.Module._apply`` (driven by ``.to()`` / ``.cuda()`` / ``.double()``)
+        moves the dense ``weight_hh`` parameter, but the derived
+        :attr:`_weight_hh_csr` buffer is a *separate* CSR tensor that must be
+        rebuilt from the moved dense weights so the sparse spmv runs on the right
+        device/dtype.
+
+        A device move can also *change the ``"auto"`` decision*: the size gate is
+        device-dependent (higher on CUDA), so a cell that ``auto`` sparsified on
+        CPU may need to revert to dense once moved to GPU in the
+        ``1000 <= n < 5000`` regime (and vice versa).  We therefore re-resolve the
+        whole decision via :meth:`_maybe_build_sparse_weight` for an ``"auto"``
+        request, and merely rebuild the CSR (an unconditional, device-independent
+        decision) for an explicit ``sparse=True``.
+        """
+        super()._apply(fn, recurse=recurse)
+        if getattr(self, "_sparse_requested", False) == "auto":
+            # Re-decide against the *new* device's gate, rebuilding/dropping CSR.
+            self._maybe_build_sparse_weight()
+        elif getattr(self, "_sparse_active", False):
+            self._weight_hh_csr = self.weight_hh.data.to_sparse_csr()
+        return self
+
+    def _load_from_state_dict(  # type: ignore[override]
+        self,
+        state_dict: dict,
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list,
+        unexpected_keys: list,
+        error_msgs: list,
+    ) -> None:
+        """Rebuild the derived CSR operator after loading dense ``weight_hh``.
+
+        Extends the base leak-buffer reconciliation (see the docstring on the
+        override just below the leak setters) so that, after the dense
+        ``weight_hh`` parameter has been copied in from the checkpoint, the
+        derived :attr:`_weight_hh_csr` operator is re-materialised to match.  The
+        CSR buffer is non-persistent (never in the checkpoint), so this is the
+        only place a load refreshes it.
+        """
+        self._reconcile_leak_buffer(state_dict, prefix)
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+        )
+        # The dense ``weight_hh`` is now the checkpoint's; refresh the CSR view.
+        if hasattr(self, "_sparse_requested"):
+            self._maybe_build_sparse_weight()
 
     # ------------------------------------------------------------------
     # State noise (train-mode regularizer)
@@ -882,6 +1189,7 @@ class ESNCell(ReservoirCell):
         """Return string representation."""
         input_str = f", input_size={self.input_size}" if self.input_size is not None else ""
         noise_str = f", noise={self.noise}" if self.noise != 0.0 else ""
+        sparse_str = ", sparse=True" if self._sparse_active else ""
         return (
             f"ESNCell("
             f"reservoir_size={self.reservoir_size}, "
@@ -889,5 +1197,6 @@ class ESNCell(ReservoirCell):
             f"{input_str}, "
             f"spectral_radius={self.spectral_radius}"
             f"{noise_str}"
+            f"{sparse_str}"
             f")"
         )

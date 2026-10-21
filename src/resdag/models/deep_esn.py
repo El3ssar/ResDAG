@@ -322,7 +322,9 @@ def deep_esn(
     # Resolve the readout spec up front so an invalid one fails before any
     # partial construction.
 
-    inp = reservoir_input(feedback_size)
+    inp = reservoir_input(
+        feedback_size, dtype=reservoir_kwargs.get("dtype"), device=reservoir_kwargs.get("device")
+    )
 
     # Build the stack: layer i takes the previous layer's state as its feedback,
     # so its feedback dimension is the previous reservoir_size (feedback_size for
@@ -374,6 +376,6 @@ def deep_esn(
         alpha=readout_alpha,
         name=readout_name,
         readout_kwargs=readout_kwargs,
-    )(features)
+    ).to(device=reservoir_kwargs.get("device"), dtype=reservoir_kwargs.get("dtype"))(features)
 
     return ESNModel(inp, readout_layer)

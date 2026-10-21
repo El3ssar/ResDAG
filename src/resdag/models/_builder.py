@@ -281,13 +281,21 @@ def _esn_builder(
     """
     # Build the symbolic feedback input.  The time dimension is a placeholder —
     # actual sequence lengths are inferred from the input at call time.
-    inp = reservoir_input(feedback_size)
+    inp = reservoir_input(
+        feedback_size, dtype=reservoir_kwargs.get("dtype"), device=reservoir_kwargs.get("device")
+    )
 
     # An optional driving (exogenous) input.  When present the reservoir is
     # called with ``(feedback, driver)`` and both inputs are wired into the
     # model; the driver is kept out of the input concatenation below so the
     # readout ``in_features`` stays ``feedback_size + reservoir_size``.
-    driver = reservoir_input(input_size) if input_size else None
+    driver = (
+        reservoir_input(
+            input_size, dtype=reservoir_kwargs.get("dtype"), device=reservoir_kwargs.get("device")
+        )
+        if input_size
+        else None
+    )
 
     # Shared reservoir arguments understood by every ``BaseReservoirLayer``
     # subclass this builder wires (ESNLayer and the orthogonal-skip ES2NLayer /
@@ -334,6 +342,7 @@ def _esn_builder(
     else:
         readout_in_features = reservoir_size
 
+    reference = next(reservoir.parameters())
     readout_layer = _make_readout(
         readout,
         in_features=readout_in_features,
@@ -342,6 +351,6 @@ def _esn_builder(
         alpha=readout_alpha,
         name=readout_name,
         readout_kwargs=readout_kwargs,
-    )(output)
+    ).to(device=reference.device, dtype=reference.dtype)(output)
 
     return ESNModel(model_inputs, readout_layer)

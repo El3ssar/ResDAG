@@ -87,15 +87,18 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 
 from .cells import (
     ContinuousReservoirCell,
+    CoRNNCell,
     ES2NCell,
     ESNCell,
     EuSNCell,
     GatedReservoirCell,
+    LegendreDelayCell,
     LIFCell,
     NGCell,
     ReservoirCell,
     ResESNCell,
     SpikingReservoirCell,
+    TorchRecurrentCell,
 )
 from .readouts import (
     CGReadoutLayer,
@@ -112,16 +115,19 @@ from .readouts import (
 )
 from .reservoirs import (
     BaseReservoirLayer,
+    CoRNNLayer,
     ES2NLayer,
     ESNLayer,
     EuSNLayer,
     GatedReservoir,
     GatedReservoirLayer,
+    LegendreDelayLayer,
     LIFReservoir,
     LIFReservoirLayer,
     NGReservoir,
     NGReservoirLayer,
     ResESNLayer,
+    TorchRecurrentLayer,
 )
 from .transforms import (
     NLAT2,
@@ -140,6 +146,12 @@ from .transforms import (
 __all__ = [
     # Reservoir base classes
     "BaseReservoirLayer",
+    "CoRNNCell",
+    "CoRNNLayer",
+    "LegendreDelayCell",
+    "LegendreDelayLayer",
+    "TorchRecurrentCell",
+    "TorchRecurrentLayer",
     "ReservoirCell",
     # Reservoir layers / cells
     "ESNCell",

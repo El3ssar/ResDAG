@@ -784,7 +784,7 @@ def parallel_esn(
         alpha=readout_alpha,
         name=readout_name,
         readout_kwargs=readout_kwargs,
-    )
+    ).to(device=reservoir.weight_hh.device, dtype=reservoir.weight_hh.dtype)
 
     return ParallelESNModel(
         reservoir=reservoir,

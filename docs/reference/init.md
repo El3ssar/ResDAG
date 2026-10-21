@@ -11,6 +11,13 @@ recurrent matrix, input/feedback initializers for the rectangular ones, the
 registries behind both, and the resolvers that accept names, tuples,
 callables, or configured objects interchangeably.
 
+::: resdag.init.recurrent
+    options:
+      members:
+        - get_recurrent_initializer
+        - register_recurrent_initializer
+        - show_recurrent_initializers
+
 ::: resdag.init.topology
     options:
       members:
@@ -54,6 +61,10 @@ callables, or configured objects interchangeably.
     options:
       members:
         - orthogonal_matrix
+        - singular_spectrum
+        - eigen_spectrum
+        - signed_permutation
+        - householder_orthogonal
 
 ::: resdag.init.utils
     options:

@@ -23,6 +23,9 @@ transform layers. All are importable directly from `resdag.layers`.
         - EuSNCell
         - SpikingReservoirCell
         - LIFCell
+        - CoRNNCell
+        - LegendreDelayCell
+        - TorchRecurrentCell
 
 ::: resdag.layers.reservoirs
     options:
@@ -38,6 +41,9 @@ transform layers. All are importable directly from `resdag.layers`.
         - EuSNLayer
         - LIFReservoirLayer
         - LIFReservoir
+        - CoRNNLayer
+        - LegendreDelayLayer
+        - TorchRecurrentLayer
 
 ::: resdag.layers.readouts
     options:

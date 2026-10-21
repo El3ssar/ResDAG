@@ -1,11 +1,14 @@
 from .base_reservoir import BaseReservoirLayer
+from .cornn import CoRNNLayer
 from .es2n import ES2NLayer
 from .esn import ESNLayer
 from .eusn import EuSNLayer
 from .gated import GatedReservoir, GatedReservoirLayer
+from .legendre_delay import LegendreDelayLayer
 from .lif import LIFReservoir, LIFReservoirLayer
 from .ngrc import NGReservoir, NGReservoirLayer
 from .resesn import ResESNLayer
+from .torch_recurrent import TorchRecurrentLayer
 
 __all__ = [
     "ESNLayer",
@@ -19,6 +22,9 @@ __all__ = [
     "EuSNLayer",
     "LIFReservoirLayer",
     "LIFReservoir",
+    "CoRNNLayer",
+    "LegendreDelayLayer",
+    "TorchRecurrentLayer",
 ]
 
 

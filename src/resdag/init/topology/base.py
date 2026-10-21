@@ -112,6 +112,11 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     --------
     scale_to_spectral_radius : Uses this to rescale a matrix to a target radius.
     """
+    # MPS has no complex eigvals or complex power-iteration support. Radius
+    # measurement is an initialization/diagnostic operation, so use the CPU
+    # implementation while keeping recurrent weights and CUDA work in place.
+    if matrix.device.type == "mps":
+        return estimate_spectral_radius(matrix.detach().cpu())
     n = matrix.shape[0]
 
     if n <= _DENSE_EIGVALS_MAX_N:
@@ -137,6 +142,8 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
 
 def _dense_eigvals_radius(matrix: torch.Tensor) -> float:
     """Exact spectral radius via the dense (non-symmetric) eigendecomposition."""
+    if matrix.dtype in (torch.float16, torch.bfloat16):
+        matrix = matrix.float()
     eigenvalues = torch.linalg.eigvals(matrix)
     return float(torch.max(torch.abs(eigenvalues)).item())
 
@@ -393,10 +400,9 @@ class TopologyInitializer(ABC):
     """
     Abstract base class for topology-based weight initialization.
 
-    Topology initializers convert graph structures into PyTorch weight tensors
-    for reservoir layers. They extract the required size from the tensor shape,
-    generate a graph, convert it to an adjacency matrix, and optionally apply
-    spectral radius scaling.
+    Initializers build recurrent weights from graph structures or direct
+    matrix builders. They take the required size, dtype and device from a
+    destination tensor and optionally apply spectral radius scaling.
 
     Subclasses must implement the :meth:`initialize` method.
 
@@ -409,6 +415,10 @@ class TopologyInitializer(ABC):
         outer :func:`scale_to_spectral_radius` rescale so that structure is
         preserved, and warns if a layer-level ``spectral_radius`` is also passed
         (the two collide). Defaults to ``False``.
+    rescale : bool or None
+        Explicit outer scaling policy. None keeps the registration's
+        ``prescaled`` policy; False skips spectral estimation/scaling without
+        a warning; True applies a requested layer radius even when prescaled.
 
     See Also
     --------
@@ -420,6 +430,9 @@ class TopologyInitializer(ABC):
     #: base classes skip the outer rescale.  Overridden per-instance in
     #: ``__init__`` of the concrete subclasses.
     prescaled: bool = False
+    # None preserves the historical registration policy. A configured policy
+    # can explicitly skip estimation, or opt into scaling a prescaled builder.
+    rescale: bool | None = None
 
     @abstractmethod
     def initialize(
@@ -468,6 +481,10 @@ class GraphTopology(TopologyInitializer):
         skipped in :meth:`initialize`, and a warning is emitted if a
         ``spectral_radius`` is nonetheless requested, since the two meanings of
         ``spectral_radius`` collide.
+    rescale : bool or None, default=None
+        Explicit outer scaling policy. False skips scaling silently; True
+        applies a requested radius even for prescaled graphs. None retains
+        the legacy prescaled policy and warning.
 
     Attributes
     ----------
@@ -506,10 +523,14 @@ class GraphTopology(TopologyInitializer):
         graph_func: Callable,
         graph_kwargs: dict[str, Any] | None = None,
         prescaled: bool = False,
+        rescale: bool | None = None,
     ):
         self.graph_func = graph_func
         self.graph_kwargs = graph_kwargs or {}
         self.prescaled = prescaled
+        if rescale is not None and not isinstance(rescale, bool):
+            raise TypeError("rescale must be True, False, or None")
+        self.rescale = rescale
 
     def initialize(
         self,
@@ -524,7 +545,8 @@ class GraphTopology(TopologyInitializer):
 
         When this topology is :attr:`prescaled`, the outer spectral-radius
         rescale is skipped (the builder's own spectral structure is kept) and a
-        warning is emitted if ``spectral_radius`` is not ``None``.
+        warning is emitted if ``spectral_radius`` is not ``None``. An explicit
+        :attr:`rescale` policy overrides this: False skips silently, True scales.
 
         Parameters
         ----------
@@ -565,8 +587,8 @@ class GraphTopology(TopologyInitializer):
         # Apply spectral radius scaling if requested.  Pre-scaled topologies bake
         # their own spectral structure into the adjacency matrix, so the outer
         # rescale is suppressed (and the collision is surfaced as a warning).
-        if spectral_radius is not None:
-            if self.prescaled:
+        if spectral_radius is not None and self.rescale is not False:
+            if self.prescaled and self.rescale is None:
                 _warn_prescaled_override(
                     getattr(self.graph_func, "__name__", repr(self.graph_func)),
                     spectral_radius,
@@ -652,9 +674,10 @@ class GraphTopology(TopologyInitializer):
     def __repr__(self) -> str:
         """Return string representation."""
         prescaled = ", prescaled=True" if self.prescaled else ""
+        rescale = f", rescale={self.rescale}" if self.rescale is not None else ""
         return (
             f"{self.__class__.__name__}(graph_func={self.graph_func.__name__}, "
-            f"kwargs={self.graph_kwargs}{prescaled})"
+            f"kwargs={self.graph_kwargs}{prescaled}{rescale})"
         )
 
 
@@ -683,8 +706,8 @@ class MatrixTopology(TopologyInitializer):
         Keyword arguments bound to the function.
     prescaled : bool, default=False
         If ``True``, the builder already fixes the matrix's spectral structure
-        (e.g. ``orthogonal``'s unit singular values, or
-        ``fast_spectral_initialization``'s analytically targeted radius). The
+        (e.g. ``orthogonal``'s unit singular values or an explicitly prescribed
+        eigenvalue spectrum). The
         outer :func:`scale_to_spectral_radius` rescale is then skipped in
         :meth:`initialize`, and a warning is emitted if a ``spectral_radius`` is
         nonetheless requested.
@@ -696,6 +719,19 @@ class MatrixTopology(TopologyInitializer):
         seed produce bit-identical recurrent matrices. Builders that take a
         ``seed`` argument directly receive it through ``matrix_kwargs`` instead
         and ignore this. Defaults to ``None`` (draws from torch's global RNG).
+    rescale : bool or None, default=None
+        Explicit outer scaling policy. False skips spectral estimation and
+        scaling silently; True applies a requested layer radius even for a
+        prescaled builder. None retains the legacy policy and warning.
+
+    Notes
+    -----
+    Build-style callbacks with explicit ``dtype`` or ``device`` parameters
+    receive the destination's values unless ``matrix_kwargs`` already binds
+    them. This lets built-in builders compute directly in float64 or on CUDA
+    instead of casting a prebuilt float32 CPU matrix. Generic ``**kwargs``
+    callbacks receive no additional placement keywords. MPS spectral-radius
+    measurements use CPU because MPS does not implement complex eigvals.
 
     Examples
     --------
@@ -735,11 +771,15 @@ class MatrixTopology(TopologyInitializer):
         matrix_kwargs: dict[str, Any] | None = None,
         prescaled: bool = False,
         seed: int | None = None,
+        rescale: bool | None = None,
     ):
         self.matrix_func = matrix_func
         self.matrix_kwargs = matrix_kwargs or {}
         self.prescaled = prescaled
         self.seed = seed
+        if rescale is not None and not isinstance(rescale, bool):
+            raise TypeError("rescale must be True, False, or None")
+        self.rescale = rescale
 
     def initialize(
         self,
@@ -751,7 +791,8 @@ class MatrixTopology(TopologyInitializer):
 
         When this topology is :attr:`prescaled`, the outer spectral-radius
         rescale is skipped (the builder's own spectral structure is kept) and a
-        warning is emitted if ``spectral_radius`` is not ``None``.
+        warning is emitted if ``spectral_radius`` is not ``None``. An explicit
+        :attr:`rescale` policy overrides this: False skips silently, True scales.
 
         Parameters
         ----------
@@ -787,8 +828,8 @@ class MatrixTopology(TopologyInitializer):
         # Pre-scaled builders fix their own spectral structure (unit singular
         # values, analytic radius, ...), so the outer rescale is suppressed and
         # the collision is surfaced as a warning rather than silently applied.
-        if spectral_radius is not None:
-            if self.prescaled:
+        if spectral_radius is not None and self.rescale is not False:
+            if self.prescaled and self.rescale is None:
                 _warn_prescaled_override(
                     getattr(self.matrix_func, "__name__", repr(self.matrix_func)),
                     spectral_radius,
@@ -805,8 +846,10 @@ class MatrixTopology(TopologyInitializer):
         """Return string representation."""
         name = getattr(self.matrix_func, "__name__", repr(self.matrix_func))
         prescaled = ", prescaled=True" if self.prescaled else ""
+        rescale = f", rescale={self.rescale}" if self.rescale is not None else ""
         return (
-            f"{self.__class__.__name__}(matrix_func={name}, kwargs={self.matrix_kwargs}{prescaled})"
+            f"{self.__class__.__name__}(matrix_func={name}, "
+            f"kwargs={self.matrix_kwargs}{prescaled}{rescale})"
         )
 
 
@@ -820,7 +863,7 @@ def _accepts_generator(fn: Callable) -> bool:
     ``False`` and the callable draws from torch's global RNG as before.
     """
     try:
-        params = inspect.signature(fn).parameters
+        params = dict(inspect.signature(fn).parameters)
     except (TypeError, ValueError):
         return False
     return "generator" in params
@@ -860,8 +903,23 @@ def _call_matrix_builder(
         global RNG. Ignored for builders that take ``seed`` directly (which
         already thread it through ``kwargs``) or accept neither.
     """
+    # Only named placement parameters opt in. Do not pass them to arbitrary
+    # **kwargs callbacks, which may forward unknown keywords elsewhere.
+    build_kwargs = kwargs.copy()
     try:
-        return fn(*build_args, **kwargs)
+        params = dict(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):
+        params = {}
+    for key, value in (("device", weight.device), ("dtype", weight.dtype)):
+        parameter = params.get(key)
+        if (
+            parameter is not None
+            and parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
+            and key not in build_kwargs
+        ):
+            build_kwargs[key] = value
+    try:
+        return fn(*build_args, **build_kwargs)
     except (TypeError, AttributeError) as build_err:
         scratch = torch.empty_like(weight, memory_format=torch.contiguous_format)
         inplace_kwargs = kwargs

@@ -361,13 +361,16 @@ def hybrid_esn(
             model_out_size=model_out_size if model_out_size is not None else feedback_size,
         )
     model_out = expert.model_out_size
+    expert.to(device=reservoir_kwargs.get("device"), dtype=reservoir_kwargs.get("dtype"))
 
     # Resolve the readout spec up front so an invalid one fails before any
     # partial construction.
 
     # The model input u has dimension feedback_size; K(u) is computed in-graph, so
     # it is re-evaluated on the model's own output each autoregressive step.
-    inp = reservoir_input(feedback_size)
+    inp = reservoir_input(
+        feedback_size, dtype=reservoir_kwargs.get("dtype"), device=reservoir_kwargs.get("device")
+    )
     k = expert(inp)  # (batch, time, model_out)
 
     # Pre-reservoir: drive the reservoir with [u, K(u)].
@@ -407,6 +410,6 @@ def hybrid_esn(
         alpha=readout_alpha,
         name=readout_name,
         readout_kwargs=readout_kwargs,
-    )(readout_in)
+    ).to(device=reservoir_kwargs.get("device"), dtype=reservoir_kwargs.get("dtype"))(readout_in)
 
     return ESNModel(inp, readout_layer)

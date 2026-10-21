@@ -26,9 +26,15 @@ resdag.layers.readouts.CGReadoutLayer : Readout with CG solver.
 resdag.core.ESNModel : ESN model class.
 """
 
+from .calibration import CalibrationReport, calibrate_flow_control, calibrate_intrinsic_plasticity
 from .trainer import ESNTrainer
 
-__all__ = ["ESNTrainer"]
+__all__ = [
+    "ESNTrainer",
+    "CalibrationReport",
+    "calibrate_flow_control",
+    "calibrate_intrinsic_plasticity",
+]
 
 
 def __dir__() -> list[str]:

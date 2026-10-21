@@ -1,4 +1,5 @@
 ---
+title: "Initializer catalog"
 description: Every registered input/feedback initializer with a portrait of the matrix it draws.
 ---
 

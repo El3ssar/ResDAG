@@ -368,6 +368,8 @@ class ESN:
             readout_alpha=self.alpha,
             readout_bias=self.readout_bias,
             readout_name=self.readout_name,
+            device=self.device,
+            dtype=self.dtype,
             **self.reservoir_kwargs,
         )
         # ``nn.Module.to`` is annotated to return ``Any`` in the torch stubs;

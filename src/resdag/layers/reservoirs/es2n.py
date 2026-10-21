@@ -21,6 +21,8 @@ resdag.layers.reservoirs.resesn : Residual ESN — the decoupled-weight sibling.
 
 from typing import Any
 
+import torch
+
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers.cells.es2n_cell import ES2NCell
 from resdag.utils.general import SeedLike
@@ -82,6 +84,21 @@ class ES2NLayer(BaseReservoirLayer):
         orthogonal-skip draws (the skip is drawn on an independent, deterministic
         sub-stream).
 
+    recurrent_initializer : spec, optional
+        First-class alias for ``topology``. Supply one spelling only. Names,
+        tuples, callables and registered initializer objects are accepted.
+    bias_initializer : spec, optional
+        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
+        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+    initial_state_initializer : spec, optional
+        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Each batch example receives an independent copy at reset. Zero by default.
+    device : torch.device or str, optional
+        Initial parameter location. Metal construction initializes on CPU before
+        transferring to support initialization operations across backends.
+    dtype : torch.dtype, optional
+        Floating precision used during initialization, not only after conversion.
+
     Attributes
     ----------
     state : torch.Tensor or None
@@ -120,6 +137,12 @@ class ES2NLayer(BaseReservoirLayer):
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         cell = ES2NCell(
             reservoir_size=reservoir_size,
@@ -136,6 +159,11 @@ class ES2NLayer(BaseReservoirLayer):
             input_initializer=input_initializer,
             topology=topology,
             seed=seed,
+            recurrent_initializer=recurrent_initializer,
+            bias_initializer=bias_initializer,
+            initial_state_initializer=initial_state_initializer,
+            device=device,
+            dtype=dtype,
         )
         super().__init__(cell)
 

@@ -1,4 +1,5 @@
 ---
+title: "Layers"
 description: Stateful reservoirs split into a cell and a layer, readouts trained algebraically or by gradient, and parameterless transforms that connect them into a DAG.
 ---
 
@@ -16,10 +17,10 @@ to predictions, fitted algebraically in one solve or by gradient descent
 when unfrozen. **Transforms** are parameterless feature operations that
 connect everything else into a DAG.
 
-None of these categories is closed. The echo-state and next-generation
-families are the current reservoir implementations; further families,
-continuous-time reservoirs among them, fit the same cell/layer contract
-without changes anywhere downstream. A readout is independent of the
+Choose among leaky ESNs, gated reservoirs, continuous and spiking dynamics,
+oscillators, Legendre memory, native PyTorch GRU/LSTM adapters, and
+next-generation delay features. All use the same cell/layer contract.
+New families fit that contract without changes downstream. A readout is independent of the
 dynamics that produced the features it reads, and a transform operates
 only on the feature axis, so new implementations in any category compose
 with the existing ones.

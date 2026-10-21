@@ -1,4 +1,5 @@
 ---
+title: "Start here"
 description: Install ResDAG, train a first forecaster, and learn the four concepts the library is built on.
 ---
 

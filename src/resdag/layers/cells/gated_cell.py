@@ -28,24 +28,12 @@ recurrent weights (:math:`W_{hz} \\ne W_{hh}`), so the gating is not degenerate.
 :math:`\\sigma` is the update-gate nonlinearity (sigmoid), :math:`\\phi` the
 candidate nonlinearity (ReLU by default), and :math:`\\odot` elementwise product.
 
-Attribution
------------
-The gate structure and the ``h_t = z⊙h_{t-1} + (1-z)⊙h̃`` update follow the
+References
+----------
+The gate structure and retention update follow the
 Light Gated Recurrent Unit of Ravanelli, Brakel, Omologo & Bengio,
 "Light Gated Recurrent Units for Speech Recognition", IEEE TETCI 2018
-(`arXiv:1803.10225 <https://arxiv.org/abs/1803.10225>`_).  The exact gate
-layout (packed ``[update | candidate]`` pre-activations, sigmoid update gate,
-ReLU candidate, ``(1-z)⊙h̃ + z⊙h`` retention convention) matches the
-``LiGRUCell`` of the MIT-licensed **torchrecurrent**
-(`github.com/MartinuzziFrancesco/torchrecurrent
-<https://github.com/MartinuzziFrancesco/torchrecurrent>`_, © 2025 Francesco
-Martinuzzi), used here as the reference for parity.  This module is an
-**independent re-implementation** of that textbook update (no source code was
-copied), adapted to resdag's reservoir conventions — frozen weights, the
-feedback/driving-input split of :class:`ESNCell`, spectral-radius scaling of the
-recurrent candidate weight, and the packed multi-tensor-state convention below.
-A docstring citation therefore suffices; no bundled third-party license is
-required.
+(`arXiv:1803.10225 <https://arxiv.org/abs/1803.10225>`_).
 
 The packed multi-tensor-state convention
 -----------------------------------------
@@ -80,15 +68,24 @@ resdag.init.input_feedback : Input/feedback weight initialization.
 """
 
 from collections.abc import Callable
+from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from resdag.init.recurrent import select_recurrent_spec
 from resdag.init.topology import estimate_spectral_radius, scale_to_spectral_radius
 from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer, resolve_topology
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
+from ._initialization import (
+    device_matches_seed,
+    initialize_vector,
+    initialized_state,
+    install_initial_state,
+    restore_initial_state_support,
+)
 from .base_cell import ReservoirCell
 from .esn_cell import _INPUT_SEED_OFFSET, _identity, _salt_seed
 
@@ -177,9 +174,8 @@ class GatedReservoirCell(ReservoirCell):
     fitted.  Sequence iteration is delegated to the enclosing
     :class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`.
 
-    The update is the Light Gated Recurrent Unit (Ravanelli et al. 2018;
-    :func:`torchrecurrent`'s ``LiGRUCell`` for parity — see the module
-    attribution):
+    The update is a reservoir adaptation of the Light Gated Recurrent Unit
+    (Ravanelli et al. 2018):
 
     .. math::
 
@@ -265,6 +261,32 @@ class GatedReservoirCell(ReservoirCell):
         Reproducibility seed fixing every weight and bias, exactly as in
         :class:`ESNCell`.
 
+    recurrent_initializer : spec, optional
+        First-class alias for ``topology``. Supply one spelling only. Names,
+        tuples, callables and registered initializer objects are accepted.
+    bias_initializer : spec, optional
+        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
+        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+    initial_state_initializer : spec, optional
+        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Each batch example receives an independent copy at reset. Zero by default.
+    device : torch.device or str, optional
+        Initial parameter location. Metal construction initializes on CPU before
+        transferring to support initialization operations across backends.
+    dtype : torch.dtype, optional
+        Floating precision used during initialization, not only after conversion.
+
+    gate_recurrent_initializer : spec, optional
+        Separate recurrent gate matrix. Defaults to small dense random weights.
+    gate_spectral_radius : float, optional
+        Outer radius target for the gate recurrence, respecting its scaling policy.
+    gate_feedback_initializer, gate_input_initializer : spec, optional
+        Separate gate projections. Omitted projections share candidate weights.
+        A driver gate initializer requires ``input_size``.
+    gate_bias_initializer : spec, optional
+        Gate-bias initializer on ``(1, reservoir_size)``; overrides
+        ``update_gate_bias``. Requires ``bias=True``.
+
     Attributes
     ----------
     weight_feedback : torch.nn.Parameter
@@ -296,6 +318,8 @@ class GatedReservoirCell(ReservoirCell):
     # attribute so Phase 10/11 multi-state cells set it to 2 and reuse the same
     # ``state_size = n_state_tensors * hidden_size`` machinery.
     n_state_tensors: int = 1
+    weight_gate_feedback: nn.Parameter | None
+    weight_gate_input: nn.Parameter | None
 
     def __init__(
         self,
@@ -313,6 +337,17 @@ class GatedReservoirCell(ReservoirCell):
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+        gate_recurrent_initializer: TopologySpec = None,
+        gate_feedback_initializer: InitializerSpec = None,
+        gate_input_initializer: InitializerSpec = None,
+        gate_bias_initializer: InitializerSpec = None,
+        gate_spectral_radius: float | None = None,
     ) -> None:
         super().__init__()
 
@@ -321,7 +356,37 @@ class GatedReservoirCell(ReservoirCell):
         # Treat input_size == 0 the same as None (no driving-input weights),
         # matching ESNCell and the ott_esn/power_augmented factories.
         self.input_size = input_size if input_size else None
-        self.topology = topology
+        self.topology = select_recurrent_spec(
+            topology=topology, recurrent_initializer=recurrent_initializer
+        )
+        if dtype is not None and not dtype.is_floating_point:
+            raise ValueError("Reservoir dtype must be floating point")
+        if not bias and bias_initializer is not None:
+            raise ValueError("bias_initializer requires bias=True")
+        self.bias_initializer = bias_initializer
+        self.initial_state_initializer = initial_state_initializer
+        target_device = torch.device(device) if device is not None else torch.empty(0).device
+        if target_device.type == "mps" and (dtype or torch.get_default_dtype()) == torch.float64:
+            raise TypeError("MPS does not support float64; use float32 or CPU")
+        # Initialize on CPU before a Metal transfer for portable RNG/linalg support.
+        init_device = "cpu" if target_device is not None and target_device.type == "mps" else device
+        self._factory_kwargs: dict[str, Any] = {"device": init_device, "dtype": dtype}
+        if not bias and gate_bias_initializer is not None:
+            raise ValueError("gate_bias_initializer requires bias=True")
+        if not self.input_size and gate_input_initializer is not None:
+            raise ValueError("gate_input_initializer requires input_size")
+        if gate_spectral_radius is not None and (
+            not torch.isfinite(torch.tensor(gate_spectral_radius)) or gate_spectral_radius < 0
+        ):
+            raise ValueError("gate_spectral_radius must be finite and non-negative")
+        self.gate_recurrent_initializer = gate_recurrent_initializer
+        self.gate_feedback_initializer = gate_feedback_initializer
+        self.gate_input_initializer = gate_input_initializer
+        self.gate_bias_initializer = gate_bias_initializer
+        self.gate_spectral_radius = gate_spectral_radius
+        self._separate_gate_drive = (
+            gate_feedback_initializer is not None or gate_input_initializer is not None
+        )
         self.spectral_radius = spectral_radius
         self.feedback_initializer = feedback_initializer
         self.input_initializer = input_initializer
@@ -340,10 +405,26 @@ class GatedReservoirCell(ReservoirCell):
         self.bias_scaling = bias_scaling
 
         self._initialize_weights()
+        install_initial_state(
+            self,
+            self.initial_state_initializer,
+            seed=_salt_seed(self._seed_int, 0x9E3779B9 * 7),
+            state_size=self.state_size,
+            reference=self.weight_feedback,
+        )
 
         # Apply the requested freeze through the base property so construction
         # and post-init ``cell.trainable = ...`` share one code path.
         self.trainable = trainable
+        if target_device is not None and target_device.type == "mps":
+            self.to(target_device)
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore optional initialization defaults in historical full-model pickles."""
+        super().__setstate__(state)
+        self.__dict__.setdefault("_separate_gate_drive", False)
+        self.__dict__.setdefault("initial_state_initializer", None)
+        restore_initial_state_support(self)
 
     # ------------------------------------------------------------------
     # ReservoirCell interface
@@ -404,7 +485,13 @@ class GatedReservoirCell(ReservoirCell):
         dtype: torch.dtype,
     ) -> torch.Tensor:
         """Return a zero packed state of shape ``(batch_size, state_size)``."""
-        return torch.zeros(batch_size, self.state_size, device=device, dtype=dtype)
+        return initialized_state(
+            self,
+            batch_size,
+            self.state_size,
+            device,
+            dtype,
+        )
 
     def forward(
         self,
@@ -480,6 +567,22 @@ class GatedReservoirCell(ReservoirCell):
                 )
             drive = drive + F.linear(x, self.weight_input)
 
+        if self._separate_gate_drive:
+            gate_feedback = (
+                self.weight_gate_feedback
+                if self.weight_gate_feedback is not None
+                else self.weight_feedback
+            )
+            gate_drive = F.linear(fb, gate_feedback)
+            if len(inputs) > 1:
+                gate_input = (
+                    self.weight_gate_input
+                    if self.weight_gate_input is not None
+                    else self.weight_input
+                )
+                assert gate_input is not None
+                gate_drive = gate_drive + F.linear(inputs[1], gate_input)
+            return torch.cat((drive, gate_drive), dim=-1)
         return drive
 
     def step(
@@ -509,15 +612,19 @@ class GatedReservoirCell(ReservoirCell):
             Next packed state (identical to ``output`` here).
         """
         (h,) = _split_state(state, self.reservoir_size)
+        if self._separate_gate_drive:
+            candidate_drive, gate_drive = projected_t.split(self.reservoir_size, dim=-1)
+        else:
+            candidate_drive = gate_drive = projected_t
 
         # Update-gate pre-activation: drive + recurrent gate term + retention bias.
-        z_pre = projected_t + F.linear(h, self.weight_hz)
+        z_pre = gate_drive + F.linear(h, self.weight_hz)
         if self.bias_z is not None:
             z_pre = z_pre + self.bias_z
         z = self.gate_activation_fn(z_pre)
 
         # Candidate pre-activation: drive + recurrent candidate term + bias.
-        h_pre = projected_t + F.linear(h, self.weight_hh)
+        h_pre = candidate_drive + F.linear(h, self.weight_hh)
         if self.bias_h is not None:
             h_pre = h_pre + self.bias_h
         h_tilde = self.activation_fn(h_pre)
@@ -553,10 +660,19 @@ class GatedReservoirCell(ReservoirCell):
         ``W_hh``, recurrent gate ``W_hz``, then biases — so a given ``seed``
         deterministically reproduces the whole cell.
         """
-        generator = create_torch_generator(self.seed)
+        generator = create_torch_generator(
+            (
+                self.seed
+                if device_matches_seed(self.seed, self._factory_kwargs["device"])
+                else self._seed_int
+            ),
+            device=self._factory_kwargs["device"],
+        )
 
         # Feedback drive weight.
-        self.weight_feedback = nn.Parameter(torch.empty(self.reservoir_size, self.feedback_size))
+        self.weight_feedback = nn.Parameter(
+            torch.empty(self.reservoir_size, self.feedback_size, **self._factory_kwargs)
+        )
         resolved_fb = resolve_initializer(self.feedback_initializer, seed=self._seed_int)
         if resolved_fb is not None:
             resolved_fb.initialize(self.weight_feedback)
@@ -566,7 +682,9 @@ class GatedReservoirCell(ReservoirCell):
         # Driving-input drive weight (salted seed so it never coincides with the
         # feedback stream — same rationale as ESNCell).
         if self.input_size is not None:
-            self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
+            self.weight_input = nn.Parameter(
+                torch.empty(self.reservoir_size, self.input_size, **self._factory_kwargs)
+            )
             input_seed = _salt_seed(self._seed_int, _INPUT_SEED_OFFSET)
             resolved_in = resolve_initializer(self.input_initializer, seed=input_seed)
             if resolved_in is not None:
@@ -576,8 +694,28 @@ class GatedReservoirCell(ReservoirCell):
         else:
             self.register_parameter("weight_input", None)
 
+        for role, spec, width, offset in (
+            ("feedback", self.gate_feedback_initializer, self.feedback_size, 8),
+            ("input", self.gate_input_initializer, self.input_size, 9),
+        ):
+            if spec is None:
+                self.register_parameter(f"weight_gate_{role}", None)
+                continue
+            assert width is not None
+            weight = nn.Parameter(torch.empty(self.reservoir_size, width, **self._factory_kwargs))
+            initializer = resolve_initializer(
+                spec, seed=_salt_seed(self._seed_int, 0x9E3779B9 * offset)
+            )
+            assert initializer is not None
+            initializer.initialize(weight)
+            if not torch.isfinite(weight).all():
+                raise ValueError(f"gate_{role}_initializer must produce finite values")
+            self.register_parameter(f"weight_gate_{role}", weight)
+
         # Recurrent candidate weight W_hh: topology-structured + spectral scaled.
-        self.weight_hh = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
+        self.weight_hh = nn.Parameter(
+            torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
+        )
         resolved_topo = resolve_topology(self.topology, seed=self._seed_int)
         if resolved_topo is not None:
             resolved_topo.initialize(self.weight_hh, spectral_radius=self.spectral_radius)
@@ -590,13 +728,27 @@ class GatedReservoirCell(ReservoirCell):
         # topology here would make the *gate* structurally sparse (wrong intent);
         # the gate is scaled small so a frozen gate does not immediately
         # saturate.  1/sqrt(N) keeps the recurrent gate pre-activation O(1).
-        self.weight_hz = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
+        self.weight_hz = nn.Parameter(
+            torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
+        )
         gate_scale = self.reservoir_size**-0.5
         nn.init.uniform_(self.weight_hz, -gate_scale, gate_scale, generator=generator)
+        gate_initializer = resolve_topology(
+            self.gate_recurrent_initializer, seed=_salt_seed(self._seed_int, 0x9E3779B9 * 4)
+        )
+        if gate_initializer is not None:
+            gate_initializer.initialize(self.weight_hz, spectral_radius=self.gate_spectral_radius)
+        elif self.gate_spectral_radius is not None:
+            with torch.no_grad():
+                self.weight_hz.copy_(
+                    scale_to_spectral_radius(self.weight_hz, self.gate_spectral_radius)
+                )
+        if not torch.isfinite(self.weight_hz).all():
+            raise ValueError("gate_recurrent_initializer must produce finite values")
 
         # Biases.
         if self._bias:
-            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size))
+            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size, **self._factory_kwargs))
             if self.bias_scaling != 0.0:
                 nn.init.uniform_(
                     self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
@@ -604,7 +756,19 @@ class GatedReservoirCell(ReservoirCell):
             else:
                 nn.init.zeros_(self.bias_h)
             # Update-gate bias is the constant retention bias, not randomised.
-            self.bias_z = nn.Parameter(torch.full((self.reservoir_size,), self.update_gate_bias))
+            self.bias_z = nn.Parameter(
+                torch.full((self.reservoir_size,), self.update_gate_bias, **self._factory_kwargs)
+            )
+            initialize_vector(
+                self.bias_z,
+                self.gate_bias_initializer,
+                seed=_salt_seed(self._seed_int, 0x9E3779B9 * 6),
+            )
+            initialize_vector(
+                self.bias_h,
+                self.bias_initializer,
+                seed=_salt_seed(self._seed_int, 0x9E3779B9 * 5),
+            )
         else:
             self.register_parameter("bias_h", None)
             self.register_parameter("bias_z", None)

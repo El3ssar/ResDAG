@@ -126,8 +126,8 @@ def register_matrix_topology(
         Unique name for the topology.
     prescaled : bool, default=False
         Mark the topology as already fixing its own spectral structure (e.g.
-        ``orthogonal``'s unit singular values, or
-        ``fast_spectral_initialization``'s analytically targeted radius). When
+        ``orthogonal``'s unit singular values, or a prescribed full eigenvalue
+        spectrum). When
         ``True`` the wrapper :class:`~resdag.init.topology.MatrixTopology` skips
         the outer :func:`~resdag.init.topology.scale_to_spectral_radius` rescale
         and warns if a layer-level ``spectral_radius`` is also requested.

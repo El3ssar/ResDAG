@@ -1,4 +1,5 @@
 ---
+title: "Architectures"
 description: Premade architectures in resdag.models — each is a factory function that returns a ready-to-train model, documented with its wiring diagram.
 ---
 

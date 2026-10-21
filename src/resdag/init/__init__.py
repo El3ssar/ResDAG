@@ -35,14 +35,27 @@ See Also
 resdag.layers.ESNLayer : Uses these initializers for weight matrices.
 """
 
-from . import graphs, input_feedback, matrices, topology, utils
+from . import graphs, input_feedback, matrices, recurrent, topology, utils
+from .recurrent import (
+    get_recurrent_initializer,
+    register_recurrent_initializer,
+    show_recurrent_initializers,
+)
+from .utils import RecurrentInitializerSpec, resolve_recurrent_initializer, select_recurrent_spec
 
 __all__ = [
     "graphs",
     "input_feedback",
     "matrices",
+    "recurrent",
     "topology",
     "utils",
+    "get_recurrent_initializer",
+    "register_recurrent_initializer",
+    "show_recurrent_initializers",
+    "RecurrentInitializerSpec",
+    "resolve_recurrent_initializer",
+    "select_recurrent_spec",
 ]
 
 

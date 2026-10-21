@@ -126,6 +126,8 @@ from .layers import (
     CholeskyReadoutLayer,
     Concatenate,
     ContinuousReservoirCell,
+    CoRNNCell,
+    CoRNNLayer,
     ES2NCell,
     ES2NLayer,
     ESNCell,
@@ -141,6 +143,8 @@ from .layers import (
     GatedReservoirLayer,
     IncrementalRidgeReadout,
     IncrementalRidgeReadoutLayer,
+    LegendreDelayCell,
+    LegendreDelayLayer,
     LIFCell,
     LIFReservoir,
     LIFReservoirLayer,
@@ -162,6 +166,8 @@ from .layers import (
     SpikingReservoirCell,
     Standardize,
     SVDReadoutLayer,
+    TorchRecurrentCell,
+    TorchRecurrentLayer,
 )
 from .models import (
     KnowledgeModel,
@@ -181,7 +187,12 @@ from .models import (
     power_augmented,
     resesn,
 )
-from .training import ESNTrainer
+from .training import (
+    CalibrationReport,
+    ESNTrainer,
+    calibrate_flow_control,
+    calibrate_intrinsic_plasticity,
+)
 
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
@@ -216,6 +227,12 @@ __all__ = [
     "reservoir_input",
     # Core reservoir layers / cells
     "BaseReservoirLayer",
+    "CoRNNCell",
+    "CoRNNLayer",
+    "LegendreDelayCell",
+    "LegendreDelayLayer",
+    "TorchRecurrentCell",
+    "TorchRecurrentLayer",
     "ESNCell",
     "ES2NCell",
     "ResESNCell",
@@ -265,6 +282,9 @@ __all__ = [
     "CoupledEnsembleESNModel",
     # Training
     "ESNTrainer",
+    "CalibrationReport",
+    "calibrate_flow_control",
+    "calibrate_intrinsic_plasticity",
     # Streaming / SGD data pipeline
     "TimeSeriesWindowDataset",
     "make_dataloader",

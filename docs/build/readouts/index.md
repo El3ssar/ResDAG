@@ -1,4 +1,5 @@
 ---
+title: "Readouts"
 description: Trainable maps from reservoir states to outputs — fitted algebraically in one pass or by gradient descent.
 ---
 

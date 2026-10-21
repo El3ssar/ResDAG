@@ -151,7 +151,7 @@ def build_flat_step(model: ESNModel) -> FlatStep:
             state = f"r{op.reservoir_index}"
             reservoir = plan.reservoirs[op.reservoir_index]
             callables.append(reservoir.step_stateless)
-            squeezed = ", ".join(f"{parent}[:, 0, :]" for parent in parents)
+            squeezed = ", ".join(f"{parent}.select(1, 0)" for parent in parents)
             lines.append(f"    u, {state} = _C[{index}]([{squeezed}], {state})")
             lines.append(f"    {outputs[0]} = u.unsqueeze(1)")
         else:
@@ -471,6 +471,12 @@ def rollout(
 
     # Eager single-step loop: the whole horizon when not compiling, or the
     # trailing remainder the chunked path could not cover.
+    # One view per output exposes (time, batch, 1, features). Selecting a frame
+    # then copying avoids repeated three-axis indexing and squeeze operations.
+    # Copy immediately: custom inference layers may reuse their output buffers.
+    output_views = (
+        [buffer.permute(1, 0, 2).unsqueeze(2) for buffer in forecast_buffers] if no_grad else []
+    )
     for t in range(done, horizon):
         if has_drivers:
             step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
@@ -479,7 +485,7 @@ def rollout(
         step_outputs, states = flat.step(step_inputs, states)
         if no_grad:
             for i in range(n_out):
-                forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
+                output_views[i][t].copy_(step_outputs[i])
         else:
             for i in range(n_out):
                 step_accumulators[i].append(step_outputs[i])

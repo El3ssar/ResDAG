@@ -114,7 +114,8 @@ first, state = restored.forward_stateless(train[:, :400])
 second, state = restored.forward_stateless(train[:, 400:], states=state)
 ```
 
-No stored model state changes in these calls. Detach the returned state between
+These calls leave stored reservoir states unchanged. Other layers keep their
+usual PyTorch `train()`/`eval()` behavior. Detach the returned state between
 chunks if you want to stop gradients at a chunk boundary. Use
 `as_module(stateful=True)` only when you deliberately want calls to share the
 model's stored state; reset it between independent sequences.

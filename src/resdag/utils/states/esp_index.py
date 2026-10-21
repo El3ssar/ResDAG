@@ -157,7 +157,7 @@ def esp_index(
     training mode, ``noise > 0``, the batched noise draws differ from the
     sequential ones; the index remains a valid, seed-deterministic stochastic
     diagnostic but is no longer numerically identical.  Run the model in eval
-    mode, the default for a diagnostic, to disable noise entirely.)
+    mode to disable noise entirely.)
 
     Examples
     --------
@@ -170,7 +170,15 @@ def esp_index(
     resdag.core.ESNModel.set_random_reservoir_states :
         Source of the standard-normal restart convention used here.
     """
+    from resdag.data.prepare import _validate_step_count
     from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
+
+    iterations = _validate_step_count("iterations", iterations)
+    transient = _validate_step_count("transient", transient, allow_zero=True)
+    if window is not None:
+        window = _validate_step_count("window", window)
+    if chunk_size is not None:
+        chunk_size = _validate_step_count("chunk_size", chunk_size)
 
     device = feedback_seq.device
     dtype = feedback_seq.dtype

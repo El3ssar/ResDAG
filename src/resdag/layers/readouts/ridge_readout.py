@@ -85,12 +85,12 @@ class RidgeReadoutLayer(ReadoutLayer):
     (``noise_draws=None``) the closed-form **LMNT** (Linearized Multi-Noise
     Training) path computes the *exact analytic expectation* of the
     noise-perturbed Gram — a single scalar on the diagonal (:math:`N\\sigma^2`
-    raw, :math:`(N-1)\\sigma^2` centered) — so **one LMNT solve equals averaging
-    over infinitely many explicit noisy training copies, at a fraction of the
-    Monte-Carlo cost** (verified equal to explicit-noise training to sampling
-    tolerance).  Set ``noise_draws=M`` to instead average ``M`` *explicit*
-    Gaussian-perturbed fits (the definitely-correct Monte-Carlo baseline, seeded
-    by ``noise_seed``); LMNT converges to it as ``M`` grows.  ``state_noise`` is
+    raw, :math:`(N-1)\\sigma^2` centered). One solve of the expected normal
+    equations is the infinite-draw limit of the explicit-noise path. This is
+    not the expectation of separately fitted coefficients or chaotic forecasts.
+    Set ``noise_draws=M`` to average the normal equations of ``M`` explicit
+    Gaussian-perturbed copies before solving once (seeded by ``noise_seed``).
+    This Monte-Carlo path converges to the analytic path as ``M`` grows. ``state_noise`` is
     **independent** of ``alpha``: they add on the diagonal
     (:math:`\\alpha + N\\sigma^2`) but noise training targets rollout robustness
     while ``alpha`` targets weight norm.
@@ -123,7 +123,7 @@ class RidgeReadoutLayer(ReadoutLayer):
     noise_draws : int, optional
         When ``state_noise > 0``: ``None`` (default) uses the closed-form LMNT
         term (one solve, exact expectation); an integer ``M >= 1`` instead
-        averages ``M`` *explicit* noisy-state fits (Monte-Carlo). Ignored when
+        averages ``M`` noisy-state normal equations, then solves once (Monte-Carlo). Ignored when
         ``state_noise == 0``.
     noise_seed : int, optional
         Seed for the explicit-noise (``noise_draws``) Gaussian draws, for
@@ -134,10 +134,10 @@ class RidgeReadoutLayer(ReadoutLayer):
         the result is cast back to the parameter dtype.
     gram_dtype : torch.dtype, optional
         Dtype for forming the Gram matrix and right-hand side (the heavy
-        ``(N, F)`` matmuls). Default ``None`` is automatic: ``float64`` on CPU
-        (cheap there), the input dtype on CUDA (``float64`` matmuls are
-        crippled on consumer GPUs). Pass ``torch.float64`` to force
-        full-precision Gram formation on any device.
+        ``(N, F)`` matmuls). Default ``None`` uses the solve dtype (``float64``
+        with ``use_float64=True``) on every device. An explicit
+        ``gram_dtype=torch.float32`` can speed up well-conditioned fits on
+        CUDA, at the cost of precision when forming the normal equations.
 
     Attributes
     ----------
@@ -233,7 +233,7 @@ class RidgeReadoutLayer(ReadoutLayer):
             layer was built with ``bias=False``.
         """
         if self.state_noise > 0 and self.noise_draws is not None:
-            # Explicit Monte-Carlo noise training: average M noisy-state fits.
+            # Explicit Monte-Carlo noise training: average M noisy normal equations.
             generator: torch.Generator | None = None
             if self.noise_seed is not None:
                 generator = torch.Generator(device=states.device)

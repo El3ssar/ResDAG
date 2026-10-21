@@ -279,6 +279,7 @@ class ReadoutLayer(nn.Linear):
         --------
         CGReadoutLayer : Concrete implementation using Conjugate Gradient.
         """
+        self._validate_fit_shapes(states, targets)
         if states.dim() == 3:
             b, t, f = states.shape
             states = states.reshape(b * t, f)
@@ -327,11 +328,48 @@ class ReadoutLayer(nn.Linear):
 
         coefs, intercept = self._fit_impl(states, targets)
 
-        self.weight.copy_(coefs.T.to(self.weight.dtype))
-        if self.bias is not None and intercept is not None:
-            self.bias.copy_(intercept.to(self.bias.dtype))
-
+        self._copy_coefficients(coefs, intercept)
         self._set_fitted(True)
+
+    @torch.no_grad()
+    def _copy_coefficients(self, coefs: torch.Tensor, intercept: torch.Tensor | None) -> None:
+        """Validate in parameter precision before publishing a fitted solution."""
+        weight = coefs.T.to(self.weight)
+        bias = intercept.to(self.bias) if self.bias is not None and intercept is not None else None
+        if not torch.isfinite(weight).all() or (
+            bias is not None and not torch.isfinite(bias).all()
+        ):
+            raise RuntimeError(
+                f"{type(self).__name__}: non-finite coefficients in the parameter dtype "
+                f"({self.weight.dtype}). Scale targets, increase regularization, or "
+                "use a higher parameter dtype."
+            )
+        self.weight.copy_(weight)
+        if self.bias is not None and bias is not None:
+            self.bias.copy_(bias)
+
+    def _validate_fit_shapes(self, states: torch.Tensor, targets: torch.Tensor) -> None:
+        """Validate sample axes before flattening batch and time for a solve."""
+        for label, tensor in (("states", states), ("targets", targets)):
+            if tensor.dim() not in (2, 3):
+                raise ValueError(
+                    f"{type(self).__name__}: {label} must be 2D (samples, features) "
+                    f"or 3D (batch, time, features), got shape {tuple(tensor.shape)}."
+                )
+            if tensor.numel() == 0:
+                raise ValueError(
+                    f"{type(self).__name__}: {label} must contain at least one sample."
+                )
+        if states.dim() == targets.dim() == 3 and states.shape[:2] != targets.shape[:2]:
+            raise ValueError(
+                f"{type(self).__name__}: states and targets must share batch and time axes; "
+                f"got {tuple(states.shape[:2])} and {tuple(targets.shape[:2])}."
+            )
+        if states.device != targets.device:
+            raise ValueError(
+                f"{type(self).__name__}: states and targets must be on the same device; "
+                f"got {states.device} and {targets.device}."
+            )
 
     def _fit_impl(
         self,

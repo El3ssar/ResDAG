@@ -49,6 +49,7 @@ def resesn(
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
+    readout_kwargs: dict[str, Any] | None = None,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ESNModel:
@@ -106,17 +107,20 @@ def resesn(
     trainable : bool, default=False
         Whether the reservoir weights are trainable.  The orthogonal skip stays
         frozen regardless.
-    readout : str or type, default="ridge"
-        Readout solver.  ``"ridge"`` (default) is the exact Cholesky ridge
-        solve; ``"cg"`` selects the legacy iterative solver.  A
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass may also be
-        passed.
+    readout : str or type[ReadoutLayer], default="ridge"
+        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in ``readout_kwargs``.
     readout_alpha : float, default=1e-6
         Ridge regularization for the readout.
     readout_bias : bool, default=True
         Whether to use a bias in the readout.
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
+    readout_kwargs : dict, optional
+        Extra readout options, such as ``trainable=True``, ``solver``,
+        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
         :class:`~resdag.layers.reservoirs.resesn.ResESNLayer` (e.g.
@@ -157,6 +161,7 @@ def resesn(
         readout_alpha=readout_alpha,
         readout_bias=readout_bias,
         readout_name=readout_name,
+        readout_kwargs=readout_kwargs,
         alpha=alpha,
         beta=beta,
         orthogonal_scaling=orthogonal_scaling,

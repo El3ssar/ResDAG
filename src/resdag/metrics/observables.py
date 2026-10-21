@@ -18,10 +18,8 @@ Reservoir capacity / dynamics
     squared correlations :math:`MC = \\sum_k R^2_k`.  Bounded above by the
     reservoir size ``N`` and rising with the spectral radius toward that bound.
     :func:`effective_spectral_radius` — the mean spectral radius of the
-    *state-dependent* recurrent Jacobian over an attractor trajectory: the
-    **realized** contraction rate the driven reservoir actually experiences,
-    which ``tanh`` saturation pushes strictly below the nominal *weight*
-    spectral radius.
+    state-dependent recurrent Jacobian over a trajectory, accounting for
+    activation saturation and leakage.
 
 Attractor geometry
     :func:`correlation_dimension` — the Grassberger-Procaccia correlation
@@ -396,7 +394,7 @@ def memory_capacity(
     reservoir.reset_state(batch_size=1)
     with torch.no_grad():
         states = reservoir(u_native)  # (1, T, N)
-    states64 = states.squeeze(0).to(torch.float64)  # (T, N)
+    states64 = states.squeeze(0).to(device="cpu", dtype=torch.float64)  # (T, N)
     u_flat = u.squeeze(-1)  # (T,) on CPU float64
     states_cpu = states64.cpu()
 
@@ -453,48 +451,25 @@ def effective_spectral_radius(
     max_states: int = 256,
     seed: int = 0,
 ) -> float:
-    r"""Mean spectral radius of the state-dependent recurrent Jacobian.
+    r"""Mean spectral radius of the state-dependent leaky-ESN Jacobian.
 
-    The **weight** spectral radius (``ESNLayer(spectral_radius=...)`` /
-    :attr:`ESNCell.spectral_radius_achieved`) is a property of the recurrent
-    matrix :math:`W_{hh}` *alone* — the largest :math:`|\lambda|` of
-    :math:`W_{hh}`.  It ignores the activation, so it over-states the contraction
-    the reservoir actually experiences: at every step the leaky-``tanh`` update
-    contracts by the **state-dependent** Jacobian
+    For leak rate :math:`\alpha` and recurrent matrix :math:`W`, the update is
+    :math:`h_t = (1-\alpha)h_{t-1} + \alpha\tanh(\mathrm{pre}_t)`, with Jacobian
 
     .. math::
 
-        J_t = (1-\alpha) I + \alpha \operatorname{diag}\!\big(1 - \tanh^2(\mathrm{pre}_t)\big)\, W_{hh},
+        J_t = (1-\alpha)I + \alpha\operatorname{diag}
+              (1-\tanh^2(\mathrm{pre}_t))W.
 
-    whose diagonal gate :math:`1 - \tanh^2 \le 1` is strictly below 1 wherever
-    the units are driven away from the origin.  This function returns the mean
-    over an attractor trajectory of :math:`\rho(J_t)` — the **realized**
-    (effective) spectral radius — which ``tanh`` saturation makes **smaller than
-    the nominal weight spectral radius**, and smaller still under a stronger
-    drive.  It is the honest per-step contraction rate; do not confuse it with
-    the weight spectral radius (see the two references in the return value).
+    The activation derivative depends on ``tanh(pre)``, which differs from the
+    stored hidden state when the leak rate is below 1. Consecutive states recover
+    that activation without re-running the reservoir. Bias and drive affect the
+    result through the trajectory's activation saturation.
 
-    **Regime dependence — it is the state that saturates, not the input.**
-    The gate is set by the *state* magnitude, not directly by the input, so the
-    ESR equals the nominal weight radius only in the **zero-state / tiny-state
-    (linear) regime**:
-
-    - **Zero state** (:math:`h_t = 0`): the gate is exactly 1, so the ESR is
-      *exactly* the nominal weight spectral radius.
-    - **Tiny state near the origin**: the gate is :math:`\approx 1`, so the ESR
-      is :math:`\approx` nominal.
-
-    A *tiny input* only yields a tiny state — and hence ESR :math:`\approx`
-    nominal — when nothing else pushes the state off the origin.  On a default
-    ``bias=True`` reservoir the constant ``bias_h`` term drives the state away
-    from the origin even under a vanishingly small input, so the state
-    self-saturates: an on-attractor (or even a ``1e-4``-scaled) drive reads ESR
-    materially *below* nominal (e.g. ``~0.73x`` on a nominal-``0.9`` reservoir),
-    not ``~1x``.  With ``bias=False`` a tiny input keeps the state near the
-    origin and the ESR sits at :math:`\approx` nominal, dropping below it only as
-    the drive grows.  So "tiny drive ⇒ ESR ≈ nominal" holds for the *state*, and
-    for the *input* only on an unbiased reservoir; a biased reservoir on its
-    attractor always reads ESR < nominal.
+    This returns a mean local eigenvalue radius. Leakage and non-normal weights
+    mean it need not be below the weight spectral radius, and it does not bound
+    transient amplification. Eigensolves use CPU float64 after one transfer, so
+    trajectories from CUDA and MPS reservoirs are both supported.
 
     Parameters
     ----------
@@ -505,10 +480,11 @@ def effective_spectral_radius(
     states : torch.Tensor
         Reservoir states sampled along an attractor trajectory, of shape
         ``(batch, time, N)`` or ``(time, N)`` (with ``N`` the reservoir size).
-        These are the post-activation states :math:`h_t = \tanh(\mathrm{pre}_t)`,
-        so the Jacobian gate is evaluated as :math:`1 - h_t^2` directly — no
-        need to recover the pre-activation.  Generate them by running the
-        reservoir on representative input (e.g. the training feedback).
+        Supply consecutive states from each trajectory, as returned by the
+        reservoir on representative input. For leak rate 1 the activation is
+        the state itself. For a leaky reservoir it is recovered from adjacent
+        states as ``(h_t - (1-alpha)*h_{t-1}) / alpha``; the first state of each
+        trajectory is excluded because its predecessor is unavailable.
     max_states : int, default=256
         Cap on the number of trajectory states the mean is taken over; the
         states are subsampled evenly (with a fixed seed for the tie-breaking
@@ -521,8 +497,8 @@ def effective_spectral_radius(
     -------
     float
         The mean realized spectral radius :math:`\langle \rho(J_t) \rangle` over
-        the sampled states, in per-step units.  Strictly below the reservoir's
-        weight spectral radius for a saturating ``tanh`` reservoir.
+        the sampled states, in per-step units. Leakage and non-normal recurrent
+        weights mean this need not be below the weight spectral radius.
 
     Raises
     ------
@@ -564,14 +540,18 @@ def effective_spectral_radius(
             f"(Jacobian gate 1 - tanh^2); got {activation!r}."
         )
 
+    if max_states < 1:
+        raise ValueError(f"max_states must be >= 1, got {max_states}.")
     weight_hh: torch.Tensor = cell.weight_hh
-    W = weight_hh.detach().to(torch.float64)
+    # Eigensolves are offline diagnostics. One CPU transfer avoids a device
+    # synchronization per sampled state and supports MPS, which has no float64.
+    W = weight_hh.detach().to(device="cpu", dtype=torch.float64)
+    if W.layout != torch.strided:
+        W = W.to_dense()
     n_reservoir = int(W.shape[0])
 
-    h = states.detach().to(torch.float64)
-    if h.dim() == 3:
-        h = h.reshape(-1, h.shape[-1])
-    elif h.dim() != 2:
+    h = states.detach().to(device="cpu", dtype=torch.float64)
+    if h.dim() not in (2, 3):
         raise ValueError(
             f"states must be 2-D (time, N) or 3-D (batch, time, N); got {tuple(states.shape)}."
         )
@@ -580,7 +560,19 @@ def effective_spectral_radius(
             f"states trailing dimension ({h.shape[-1]}) must equal the reservoir size "
             f"({n_reservoir})."
         )
-    h = h.to(W.device)
+    alpha = float(getattr(cell, "leak_rate", 1.0))
+    if alpha not in (0.0, 1.0):
+        # A leaky state is a mixture of the previous state and tanh(pre), not
+        # tanh(pre) itself. Preserve each trajectory's time axis for inversion;
+        # never make a pair across a batch boundary.
+        if h.shape[-2] < 2:
+            raise ValueError(
+                "Leaky reservoirs need at least two consecutive states per trajectory."
+            )
+        h = (h[..., 1:, :] - (1.0 - alpha) * h[..., :-1, :]) / alpha
+    h = h.reshape(-1, n_reservoir)
+    if h.shape[0] == 0:
+        raise ValueError("states must contain at least one trajectory state.")
 
     n_total = h.shape[0]
     if n_total > max_states:
@@ -592,7 +584,6 @@ def effective_spectral_radius(
         _ = seed
         h = h[idx]
 
-    alpha = float(getattr(cell, "leak_rate", 1.0))
     identity = torch.eye(n_reservoir, dtype=torch.float64, device=W.device)
 
     radii = torch.empty(h.shape[0], dtype=torch.float64)

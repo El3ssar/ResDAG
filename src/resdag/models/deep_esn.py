@@ -38,7 +38,7 @@ from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import Concatenate, ESNLayer
 
-from ._builder import ReadoutSpec, _resolve_readout_cls
+from ._builder import ReadoutSpec, _make_readout
 
 
 def _resolve_reservoir_sizes(
@@ -152,6 +152,7 @@ def deep_esn(
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
+    readout_kwargs: dict[str, Any] | None = None,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ESNModel:
@@ -226,17 +227,19 @@ def deep_esn(
     trainable : bool, default=False
         Whether the reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        Which readout solver to attach.  ``"ridge"`` (default) is the exact
-        direct Cholesky ridge solve (:class:`~resdag.layers.RidgeReadoutLayer`);
-        ``"cg"`` selects the legacy iterative
-        :class:`~resdag.layers.CGReadoutLayer`.  A
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass may also be passed.
+        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in ``readout_kwargs``.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.
     readout_bias : bool, default=True
         Whether the readout uses a bias term.
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
+    readout_kwargs : dict, optional
+        Extra readout options, such as ``trainable=True``, ``solver``,
+        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to **every**
         :class:`~resdag.layers.ESNLayer`.
@@ -318,7 +321,6 @@ def deep_esn(
 
     # Resolve the readout spec up front so an invalid one fails before any
     # partial construction.
-    readout_cls = _resolve_readout_cls(readout)
 
     inp = reservoir_input(feedback_size)
 
@@ -364,12 +366,14 @@ def deep_esn(
         features = layer_states[-1]
         readout_in_features = sizes[-1]
 
-    readout_layer = readout_cls(
+    readout_layer = _make_readout(
+        readout,
         in_features=readout_in_features,
         out_features=output_size,
         bias=readout_bias,
-        alpha=readout_alpha,  # type: ignore[call-arg]
+        alpha=readout_alpha,
         name=readout_name,
+        readout_kwargs=readout_kwargs,
     )(features)
 
     return ESNModel(inp, readout_layer)

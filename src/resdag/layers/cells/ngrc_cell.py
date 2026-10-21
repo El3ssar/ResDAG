@@ -167,6 +167,9 @@ class NGCell(ReservoirCell):
         include_linear: bool = True,
     ) -> None:
         super().__init__()
+        # NG-RC has no floating-point weights. An empty buffer records .to()
+        # device/dtype choices for reset_state(batch_size=...) and state restore.
+        self.register_buffer("_device_dtype_anchor", torch.empty(0), persistent=False)
 
         if k < 1:
             raise ValueError(f"k must be >= 1, got {k}")

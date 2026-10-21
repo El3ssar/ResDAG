@@ -16,12 +16,11 @@ What *is* robust — and what this module verifies — is the **mechanism**:
 
 1. **The math is exact.**  The closed-form **LMNT** term (a single
    :math:`N\sigma^2` / :math:`(N-1)\sigma^2` diagonal add) reproduces the
-   *expectation* of fitting on explicitly noise-perturbed states.  So a single
-   LMNT solve equals averaging over infinitely many noisy training copies, at a
-   fraction of the Monte-Carlo cost.  This holds for **any** seed and is verified
-   here against (a) a hand-built ``(RᵀR + coeff·I)⁻¹RᵀY`` reference, (b) a
-   Monte-Carlo average of explicit noisy-Gram solves, and (c) the diagonal
-   structure of the Gram add itself.
+   expected normal equations for explicitly noise-perturbed states. A single
+   LMNT solve is the limit of averaging infinitely many noisy Gram matrices and
+   right-hand sides before solving; it is not the mean of separately fitted
+   weights. Verified against (a) a hand-built ``(RᵀR + coeff·I)⁻¹RᵀY`` reference,
+   (b) Monte-Carlo noisy normal equations, and (c) the Gram diagonal structure.
 
 2. **``state_noise == 0`` is a byte-identical no-op** — the golden-forecast
    contract: the default path must not perturb any existing fit by even a ULP.
@@ -29,10 +28,11 @@ What *is* robust — and what this module verifies — is the **mechanism**:
 3. **Larger σ ⇒ more shrinkage** — a monotone regularization effect, again
    seed-agnostic.
 
-The one VPT-flavoured test asserts only the *robust* property — that closed-form
-LMNT lands on essentially the same forecaster (and hence the same VPT) as an
-explicit-noise fit — never that either beats plain ridge.  It is checked on
-randomly-chosen fresh seeds, not a hand-picked batch.
+The end-to-end tests train a known periodic signal with both closed-form and
+explicit-noise regularization, then check the aligned autonomous continuation.
+Finite Monte-Carlo fits need not have the same chaotic forecast horizon as their
+expectation: a small coefficient difference can move a threshold crossing by
+many steps. Such a seed-dependent VPT comparison is not a correctness invariant.
 
 See Also
 --------
@@ -40,8 +40,6 @@ resdag.layers.readouts.RidgeReadoutLayer : Readout carrying the ``state_noise`` 
 resdag.layers.readouts._solve_utils.lmnt_gram_add : The closed-form LMNT term.
 resdag.training.ESNTrainer.fit : Trainer plumbing for ``state_noise``.
 """
-
-import random
 
 import pytest
 import torch
@@ -54,7 +52,6 @@ from resdag.layers.readouts._solve_utils import (
     build_ridge_problem,
     lmnt_gram_add,
 )
-from resdag.metrics import valid_prediction_time
 from resdag.models import ott_esn
 from resdag.training import ESNTrainer
 
@@ -223,9 +220,9 @@ def test_state_noise_zero_is_byte_identical() -> None:
 def test_lmnt_readout_matches_explicit_noise_average(bias: bool) -> None:
     """A closed-form LMNT fit ≈ an explicit many-draw noisy fit (same weights).
 
-    LMNT is not an approximation of noise training but its analytic expectation,
-    so a single LMNT solve lands on the many-draw Monte-Carlo average (to within
-    sampling error) at a fraction of the cost.
+    LMNT solves the expected noisy normal equations. The explicit path averages
+    many noisy Gram matrices and right-hand sides before its single solve, so
+    its fitted weights approach the LMNT solution as sampling error vanishes.
     """
     torch.manual_seed(2)
     states = torch.randn(4, 250, 40, dtype=torch.float64)
@@ -369,89 +366,39 @@ def test_trainer_state_noise_on_unsupported_readout_raises() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# The one VPT-flavoured test: LMNT ≈ explicit-noise on a real rollout — a robust
-# *mechanism-equivalence* property (NOT "LMNT beats plain ridge", which is not
-# robust across seeds). Verified on randomly-chosen fresh seeds.
+# Public trainer -> autonomous continuation on a known periodic signal.
+# The analytic/Monte-Carlo identities above verify the regularization mechanism.
 # --------------------------------------------------------------------------- #
 
-# Fixed experiment config for a capable Lorenz-63 forecaster. ``_SIGMA`` here is
-# purely illustrative for the equivalence check — it is NOT a recommended default
-# (state noise must be tuned per problem, and the shipped default is 0 / off).
-_N = 500
-_SR = 1.0
-_ALPHA = 1e-8
-_SIGMA = 4e-3  # illustrative only; not a recommended value — tune per problem
-_WARMUP = 800
-_TRAIN = 6000
-_VAL = 2500
-_HORIZON = 2500
 
-
-def _make_lorenz_split(seed: int) -> tuple[torch.Tensor, ...]:
-    """Deterministic warmup / train / forecast-warmup / truth split for a seed."""
-    series = lorenz(16000, seed=seed, dtype=torch.float64, normalize="standard")
-    warmup = series[:, :_WARMUP]
-    train_in = series[:, _WARMUP : _WARMUP + _TRAIN]
-    train_tgt = series[:, _WARMUP + 1 : _WARMUP + _TRAIN + 1]
-    f_start = _WARMUP + _TRAIN + 1
-    f_warmup = series[:, f_start : f_start + _WARMUP]
-    truth = series[:, f_start + _WARMUP : f_start + _WARMUP + _VAL]
-    return warmup, train_in, train_tgt, f_warmup, truth
-
-
-def _vpt_for_seed(seed: int, state_noise: float, noise_draws: int | None = None) -> float:
-    """Train an Ott-ESN (optionally with state noise) and return its rollout VPT."""
-    warmup, train_in, train_tgt, f_warmup, truth = _make_lorenz_split(seed)
+@pytest.mark.parametrize("seed", [0, 109, 726])
+@pytest.mark.parametrize("noise_draws", [None, 20])
+def test_noise_regularized_training_preserves_periodic_continuation(
+    seed: int, noise_draws: int | None
+) -> None:
+    """Both regularizers learn an aligned continuation without assuming equal VPT."""
+    t = torch.arange(900, dtype=torch.float64) * 0.07
+    series = torch.stack((torch.sin(t), torch.cos(t)), dim=-1).unsqueeze(0)
     model = ott_esn(
-        reservoir_size=_N,
-        feedback_size=3,
-        output_size=3,
-        spectral_radius=_SR,
+        80,
+        feedback_size=2,
+        output_size=2,
+        spectral_radius=0.9,
         readout="ridge",
-        readout_alpha=_ALPHA,
+        readout_alpha=1e-6,
         seed=seed,
     ).double()
     ESNTrainer(model).fit(
-        warmup_inputs=(warmup,),
-        train_inputs=(train_in,),
-        targets={"output": train_tgt},
-        state_noise=state_noise,
+        (series[:, :100],),
+        (series[:, 100:699],),
+        {"output": series[:, 101:700]},
+        state_noise=1e-3,
         noise_draws=noise_draws,
         noise_seed=seed,
     )
-    pred = model.forecast(f_warmup, horizon=_HORIZON)
-    return valid_prediction_time(pred, truth[:, :_HORIZON], threshold=0.3)
-
-
-@pytest.mark.slow
-def test_lmnt_matches_explicit_noise_vpt_on_random_seeds() -> None:
-    """Closed-form LMNT ≈ explicit-noise training on the same rollout (per seed).
-
-    This is the *robust* claim, and the only VPT-level one worth asserting: LMNT
-    is the analytic expectation of explicit state-noise training, so at the same
-    ``sigma`` it lands on essentially the same forecaster — and hence the same
-    VPT — that an explicit multi-draw noisy fit produces, but with a single
-    solve.  It deliberately does **not** assert "LMNT beats plain ridge": whether
-    state noise nets out positive on VPT is problem- and ``sigma``-dependent (it
-    can help or hurt), so that would only encode an overfit result.
-
-    Verified on **randomly chosen** seeds (seeded per test session) rather than a
-    hand-picked batch — the equivalence is a property of the mechanism, so it
-    must hold for any seed, not a lucky one.
-    """
-    rng = random.Random()  # nondeterministic seed batch: proves seed-agnosticism
-    seeds = rng.sample(range(1000), 3)
-
-    lmnt = [_vpt_for_seed(s, _SIGMA) for s in seeds]
-    explicit = [_vpt_for_seed(s, _SIGMA, noise_draws=20) for s in seeds]
-    report = "\n".join(
-        f"  seed {s}: lmnt={lm:6.0f}  explicit(20 draws)={e:6.0f}"
-        for s, lm, e in zip(seeds, lmnt, explicit)
+    prediction = model.forecast(
+        series[:, 599:699], initial_feedback=series[:, 699:700], horizon=100
     )
-    # The two agree to within Monte-Carlo sampling error on the VPT. Use a
-    # relative tolerance on the (already large) VPTs plus a small absolute floor.
-    for s, lm, e in zip(seeds, lmnt, explicit):
-        assert abs(lm - e) <= 0.30 * max(lm, e) + 20, (
-            f"LMNT and explicit-noise VPT disagree on seed {s} "
-            f"(lmnt={lm:.0f}, explicit={e:.0f}).\n{report}"
-        )
+    assert prediction.shape == (1, 100, 2)
+    assert torch.isfinite(prediction).all()
+    assert ((prediction - series[:, 700:800]) ** 2).mean() < 1e-3

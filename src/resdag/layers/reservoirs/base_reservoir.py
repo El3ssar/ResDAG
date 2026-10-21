@@ -390,8 +390,9 @@ class BaseReservoirLayer(nn.Module, ABC):
             keeps the eager time loop below byte-for-byte unchanged.
 
             The compiled path is **inference-only**: it transparently falls back
-            to the eager loop when any parameter requires grad (a differentiable
-            BPTT rollout must stay eager), when there is no projected fast path
+            to the eager loop when any parameter, input projection, or initial
+            state requires grad (a differentiable BPTT rollout must stay eager),
+            when there is no projected fast path
             (e.g. NG-RC), on ``torch < 2.10``, or on any compilation failure
             (with a :class:`RuntimeWarning`), so a correct result is always
             produced.  Because chaotic reservoir dynamics under ``torch.compile``
@@ -426,7 +427,12 @@ class BaseReservoirLayer(nn.Module, ABC):
         # Opt-in compiled/chunked scan.  Gated to the projected fast path and
         # inference-only (no grad required): otherwise the eager loop below runs
         # exactly as before, keeping the default path byte-for-byte unchanged.
-        if compile and projected is not None and seq_len > 0 and self._compile_eligible(projected):
+        if (
+            compile
+            and projected is not None
+            and seq_len > 0
+            and self._compile_eligible(projected, state)
+        ):
             compiled = self._maybe_compiled_scan(projected, state)
             if compiled is not None:
                 return self._run_compiled_scan(compiled, projected, state)
@@ -455,7 +461,7 @@ class BaseReservoirLayer(nn.Module, ABC):
     # Compiled teacher-forced scan (opt-in)
     # ------------------------------------------------------------------
 
-    def _compile_eligible(self, projected: torch.Tensor) -> bool:
+    def _compile_eligible(self, projected: torch.Tensor, state: torch.Tensor | None = None) -> bool:
         """
         Report whether the compiled teacher-forced scan may run for this call.
 
@@ -467,13 +473,16 @@ class BaseReservoirLayer(nn.Module, ABC):
           unavailable, so a CPU projection falls straight back to the eager loop.
         * **Inference-only.**  The compiled chunk never builds an autograd graph,
           so a differentiable BPTT rollout (gradient tracking enabled *and* a
-          cell parameter with ``requires_grad``) must stay on the eager loop,
-          which preserves gradient flow exactly as before.
+          cell parameter, input projection, or initial state requiring a
+          gradient) must stay on the eager loop. Frozen reservoirs can still
+          sit downstream of a trainable encoder.
 
         Parameters
         ----------
         projected : torch.Tensor
             The precomputed input projection; its device selects the CUDA gate.
+        state : torch.Tensor, optional
+            Initial state, which can carry a graph from an earlier chunk.
 
         Returns
         -------
@@ -485,6 +494,8 @@ class BaseReservoirLayer(nn.Module, ABC):
             return False
         if not torch.is_grad_enabled():
             return True
+        if projected.requires_grad or (state is not None and state.requires_grad):
+            return False
         return not any(p.requires_grad for p in self.cell.parameters())
 
     def _maybe_compiled_scan(
@@ -695,7 +706,7 @@ class BaseReservoirLayer(nn.Module, ABC):
             if len(driving_inputs) > 1:
                 raise ValueError("Only one driving input tensor allowed")
             driving_input = driving_inputs[0]
-            if driving_input.shape[0] != batch_size or driving_input.shape[1] != seq_len:
+            if driving_input.dim() != 3 or driving_input.shape[:2] != (batch_size, seq_len):
                 raise ValueError(
                     f"Driving input must match feedback dimensions. "
                     f"Feedback: {feedback.shape}, Driving: {driving_input.shape}"

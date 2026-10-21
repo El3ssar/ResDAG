@@ -41,7 +41,7 @@ resdag.models.classic_esn : Single global reservoir (the baseline it beats at
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -49,7 +49,7 @@ from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import ESNLayer
 from resdag.layers.readouts import ReadoutLayer
 
-from ._builder import ReadoutSpec, _resolve_readout_cls
+from ._builder import ReadoutSpec, _make_readout
 
 
 def _patch_gather_index(input_dim: int, core_width: int, halo: int) -> torch.Tensor:
@@ -86,6 +86,8 @@ def _patch_gather_index(input_dim: int, core_width: int, halo: int) -> torch.Ten
         If ``core_width`` does not divide ``input_dim``, or if any argument is
         out of range (non-positive core width, negative halo).
     """
+    if input_dim <= 0:
+        raise ValueError(f"input_dim must be a positive integer, got {input_dim}.")
     if core_width <= 0:
         raise ValueError(f"core_width must be a positive integer, got {core_width}.")
     if halo < 0:
@@ -158,6 +160,7 @@ class ParallelESNModel(torch.nn.Module):
         halo: int,
     ) -> None:
         super().__init__()
+        patch_index = _patch_gather_index(input_dim, core_width, halo)
         patch_width = core_width + 2 * halo
         if reservoir.feedback_size != patch_width:
             raise ValueError(
@@ -184,13 +187,32 @@ class ParallelESNModel(torch.nn.Module):
         # Non-persistent: rebuilt cheaply from geometry, moves with ``.to()``.
         self.register_buffer(
             "patch_index",
-            _patch_gather_index(input_dim, core_width, halo),
+            patch_index,
             persistent=False,
         )
 
     # ------------------------------------------------------------------
     # Windowing / stitching (batched over patches — no Python loop)
     # ------------------------------------------------------------------
+
+    def forward(self, series: torch.Tensor, *, reset: bool = False) -> torch.Tensor:
+        """Predict each timestep, preserving gradients through the model.
+
+        Accepts ``(batch, time, input_dim)`` and returns that shape. Reservoir
+        state carries across calls; use ``reset=True`` for independent batches.
+        This teacher-forced path composes with ordinary PyTorch modules and
+        optimizers. Use :meth:`forecast` for an autonomous rollout.
+        """
+        if reset:
+            self.reset_reservoirs()
+        states = self.reservoir(self.window(series))
+        batch, timesteps = series.shape[:2]
+        cores = cast(torch.Tensor, self.readout(states))
+        return (
+            cores.reshape(batch, self.n_patches, timesteps, self.core_width)
+            .permute(0, 2, 1, 3)
+            .reshape(batch, timesteps, self.input_dim)
+        )
 
     def window(self, series: torch.Tensor) -> torch.Tensor:
         """Window a full ``(batch, T, D)`` field into per-patch inputs.
@@ -210,6 +232,11 @@ class ParallelESNModel(torch.nn.Module):
             Windowed input of shape ``(batch * P, T, core_width + 2 * halo)`` —
             the patch axis is folded into the leading (reservoir-batch) axis.
         """
+        if series.dim() != 3 or series.shape[-1] != self.input_dim:
+            raise ValueError(
+                f"series must be 3-D (batch, T, input_dim={self.input_dim}); "
+                f"got shape {tuple(series.shape)}."
+            )
         # series: (B, T, D) -> gather patch cells -> (B, T, P, w+2g).
         windowed = series[..., self.patch_index]
         b, t, n_patches, patch_width = windowed.shape
@@ -367,7 +394,7 @@ class ParallelESNModel(torch.nn.Module):
             If ``warmup`` is not 3-D with feature dim ``input_dim``, if
             ``horizon < 1``, or if the readout has not been fitted.
         """
-        if warmup.dim() != 3 or warmup.shape[-1] != self.input_dim:
+        if warmup.dim() != 3 or warmup.shape[-1] != self.input_dim or warmup.shape[1] == 0:
             raise ValueError(
                 f"warmup must be 3-D (batch, T, input_dim={self.input_dim}); "
                 f"got shape {tuple(warmup.shape)}."
@@ -515,6 +542,7 @@ def parallel_esn(
     readout_alpha: float = 1e-4,
     readout_bias: bool = True,
     readout_name: str = "output",
+    readout_kwargs: dict[str, Any] | None = None,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ParallelESNModel:
@@ -580,15 +608,16 @@ def parallel_esn(
     seed : int or torch.Generator, optional
         Reproducibility seed fixing every reservoir parameter.
     readout : str or type[ReadoutLayer], default="ridge"
-        Which readout to attach.  ``"ridge"`` (default) is the exact Cholesky
-        ridge solve; ``"cg"`` is the legacy iterative solver; a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass may be passed.
+        A built-in readout name or a ReadoutLayer subclass, with the same
+        solver choices as :func:`resdag.models.classic_esn`.
     readout_alpha : float, default=1e-4
         Ridge regularization for the readout.
     readout_bias : bool, default=True
         Whether the readout uses a bias term.
     readout_name : str, default="output"
         Name for the readout layer.
+    readout_kwargs : dict, optional
+        Additional readout constructor options. Architecture widths are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to :class:`~resdag.layers.ESNLayer`
         (e.g. ``sparse``, ``noise``, ``input_initializer``).
@@ -625,10 +654,7 @@ def parallel_esn(
     resdag.datasets.kuramoto_sivashinsky : The canonical spatiotemporal benchmark.
     resdag.models.classic_esn : Single global reservoir baseline.
     """
-    if input_dim % core_width != 0:
-        raise ValueError(f"core_width ({core_width}) must divide input_dim ({input_dim}) evenly.")
-    if halo < 0:
-        raise ValueError(f"halo must be a non-negative integer, got {halo}.")
+    _patch_gather_index(input_dim, core_width, halo)
     patch_width = core_width + 2 * halo
 
     # Default the per-patch input map to a *scaled* random init: on a wide
@@ -652,13 +678,14 @@ def parallel_esn(
         **reservoir_kwargs,
     )
 
-    readout_cls = _resolve_readout_cls(readout)
-    readout_layer = readout_cls(
+    readout_layer = _make_readout(
+        readout,
         in_features=reservoir_size,
         out_features=core_width,
         bias=readout_bias,
-        alpha=readout_alpha,  # type: ignore[call-arg]
+        alpha=readout_alpha,
         name=readout_name,
+        readout_kwargs=readout_kwargs,
     )
 
     return ParallelESNModel(

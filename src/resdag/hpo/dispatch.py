@@ -42,6 +42,7 @@ import logging
 import math
 import multiprocessing as mp
 import time
+from copy import deepcopy
 from multiprocessing.context import ForkContext, SpawnContext
 from typing import Callable, cast
 
@@ -231,6 +232,7 @@ def _worker_process(
     worker_seed: int | None,
     pruner: "optuna.pruners.BasePruner | None",
     stop_event: "mp.synchronize.Event",
+    sampler: optuna.samplers.BaseSampler | None = None,
 ) -> None:
     """Execute trials in a worker process (``fork`` *or* ``spawn``).
 
@@ -287,11 +289,18 @@ def _worker_process(
     worker_storage = resolve_storage(storage, n_workers=1)
     assert worker_storage is not None
 
-    sampler = TPESampler(
-        multivariate=True,
-        warn_independent_sampling=False,
-        seed=worker_seed,
-    )
+    if sampler is None:
+        sampler = TPESampler(
+            multivariate=True,
+            warn_independent_sampling=False,
+            seed=worker_seed,
+        )
+    else:
+        # Each worker owns its sampler state; identical inherited RNG streams
+        # would otherwise propose duplicate trials. Use the sampler's public
+        # reseeding hook so custom policies retain their class/configuration.
+        sampler = deepcopy(sampler)
+        sampler.reseed_rng()
     study = optuna.load_study(
         study_name=study_name,
         storage=worker_storage,
@@ -382,6 +391,7 @@ def run_multiprocess(
     pruner: "optuna.pruners.BasePruner | None" = None,
     verbosity: int = 1,
     device: "torch.device | None" = None,
+    sampler: optuna.samplers.BaseSampler | None = None,
 ) -> None:
     """Run optimization with multiple OS processes sharing storage.
 
@@ -403,6 +413,10 @@ def run_multiprocess(
         for CUDA studies (see :func:`preferred_start_method`), and the runner
         re-raises the fork/CUDA error rather than penalising it as a last-line
         guard.
+
+    A custom *sampler* is copied and reseeded in each worker. ``None`` builds
+    the default TPESampler from the derived worker seed. Nonzero worker exit
+    codes raise a RuntimeError in the caller after all workers are joined.
 
     Parameters
     ----------
@@ -494,6 +508,7 @@ def run_multiprocess(
                 worker_seed,
                 pruner,
                 stop_event,
+                sampler,
             ),
             daemon=False,
         )
@@ -556,3 +571,9 @@ def run_multiprocess(
                 except ValueError:
                     pass
             bar.close()
+    failed = [p.exitcode for p in processes if p.exitcode != 0]
+    if failed:
+        raise RuntimeError(
+            f"HPO worker process failed (exit codes: {failed}). "
+            "See the worker traceback above; no successful study is returned."
+        )

@@ -657,24 +657,33 @@ def test_full_batch_matches_sequential_to_fp_tolerance(device: torch.device) -> 
         assert torch.allclose(batched[name][0], ref, atol=1e-5, rtol=1e-5)
 
 
-def test_chunk_size_does_not_change_drawn_states(device: torch.device) -> None:
-    """The states are pre-drawn, so ``chunk_size`` never changes which are used.
-
-    A run split into chunks of three must equal the single-pass run bit-for-bit,
-    because chunking only groups the *forward passes*, not the RNG draws (both
-    tile the same number of restarts per matmul).
-    """
+def test_chunk_size_does_not_change_drawn_states(
+    device: torch.device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Restart draws stay exact; different matmul widths may reassociate sums."""
     torch.manual_seed(7)
     model = _esn_model(seq_len=30, size=50, spectral_radius=0.9, device=device)
     fb = torch.randn(2, 30, 3, device=device)
+    original = _esp_index_module._draw_restart_states
+    captured: list[list[dict[str, torch.Tensor]]] = []
 
+    def capture(*args, **kwargs):
+        states = original(*args, **kwargs)
+        captured.append(states)
+        return states
+
+    monkeypatch.setattr(_esp_index_module, "_draw_restart_states", capture)
     torch.manual_seed(555)
     full = esp_index(model, fb, iterations=9, chunk_size=9, verbose=False)
     torch.manual_seed(555)
     chunked = esp_index(model, fb, iterations=9, chunk_size=3, verbose=False)
 
+    for first, second in zip(captured[0], captured[1]):
+        assert first.keys() == second.keys()
+        for name in first:
+            assert torch.equal(first[name], second[name])
     for name, value in full.items():
-        assert torch.equal(chunked[name][0], value[0])
+        assert torch.allclose(chunked[name][0], value[0], atol=1e-6, rtol=1e-6)
 
 
 def test_seeded_result_is_deterministic(device: torch.device) -> None:
@@ -865,3 +874,12 @@ def test_explicit_chunk_size_oom_is_not_swallowed(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(torch.cuda.OutOfMemoryError):
         esp_index(model, fb, iterations=8, chunk_size=4, verbose=False)
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"iterations": 0}, {"iterations": 1.5}, {"transient": -1}, {"window": 1.5}]
+)
+def test_invalid_diagnostic_counts_fail_early(kwargs: dict) -> None:
+    model = _esn_model(feedback_dim=1, size=10)
+    with pytest.raises(ValueError):
+        esp_index(model, torch.randn(1, 10, 1), verbose=False, **kwargs)

@@ -429,3 +429,29 @@ class TestForwardStatelessCompiledScan:
             out = restored(feedback, compile=True)
         assert out.shape == (1, 200, 64)
         assert len(restored._compiled_scan_cache) == 1
+
+
+def test_ngrc_restored_state_becomes_ordinary_after_forward() -> None:
+    layer = NGReservoirLayer(2).double()
+    layer.reset_state(batch_size=1)
+    assert layer.state.dtype == torch.float64
+    layer.set_state(layer.get_state())
+    layer(torch.randn(1, 3, 2, dtype=torch.float64))
+    # Like every other reservoir, a naturally evolved state may resize again.
+    assert layer(torch.randn(4, 3, 2, dtype=torch.float64)).shape[0] == 4
+
+
+@pytest.mark.gpu
+def test_compiled_scan_preserves_upstream_and_initial_state_gradients() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    layer = ESNLayer(12, feedback_size=2, seed=2).cuda()
+    feedback = torch.randn(2, 5, 2, device="cuda", requires_grad=True)
+    state = torch.randn(2, 12, device="cuda", requires_grad=True)
+    projected = layer.cell.project_inputs([feedback])
+    assert not layer._compile_eligible(projected, state)
+    assert not layer._compile_eligible(projected.detach(), state)
+    out, final = layer.forward_stateless([feedback], state, compile=True)
+    (out.sum() + final.sum()).backward()
+    assert feedback.grad is not None
+    assert state.grad is not None

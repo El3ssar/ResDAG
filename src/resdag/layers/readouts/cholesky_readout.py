@@ -11,8 +11,8 @@ It is the readout the streaming / minibatch path needs: the same closed-form
 ridge solve that :class:`IncrementalRidgeReadoutLayer` performs in
 :meth:`~IncrementalRidgeReadoutLayer.finalize`, packaged as a standalone
 single-shot readout. It reuses the shared centering + auto ``gram_dtype``
-policy (float64 on CPU, input dtype on CUDA) so the GPU-slowness footgun stays
-solved.
+policy (the solve dtype, float64 by default, on every device) to preserve
+accuracy for ill-conditioned reservoir states.
 
 See Also
 --------
@@ -70,10 +70,10 @@ class CholeskyReadoutLayer(ReadoutLayer):
     :math:`\\sigma` must be tuned per problem — the default is off). The robust
     guarantee is the mechanism: the default ``noise_draws=None`` uses the
     closed-form **LMNT** term — the *exact analytic expectation* of the noisy
-    Gram, a single diagonal add that costs one solve yet **equals averaging over
-    infinitely many explicit noisy training copies** (to sampling tolerance); set
-    ``noise_draws=M`` (seeded by ``noise_seed``) for an explicit Monte-Carlo
-    average of ``M`` noisy fits instead. See :class:`RidgeReadoutLayer` for the
+    Gram. Solving these expected normal equations is the infinite-copy limit of
+    explicit-noise training; it does not average separately fitted coefficients.
+    Set ``noise_draws=M`` (seeded by ``noise_seed``) to average the normal
+    equations of ``M`` noisy copies, then solve once. See :class:`RidgeReadoutLayer` for the
     full discussion. ``0.0`` (default) is byte-identical to a plain fit.
 
     Parameters
@@ -103,7 +103,8 @@ class CholeskyReadoutLayer(ReadoutLayer):
         definiteness insurance too — the LMNT term is a positive diagonal add.
     noise_draws : int, optional
         ``None`` (default) uses the closed-form LMNT term; an integer ``M >= 1``
-        averages ``M`` explicit noisy-state fits. Ignored when ``state_noise == 0``.
+        averages ``M`` noisy-state normal equations before one solve.
+        Ignored when ``state_noise == 0``.
     noise_seed : int, optional
         Seed for the explicit-noise (``noise_draws``) draws. Ignored for the
         deterministic LMNT path.
@@ -112,10 +113,10 @@ class CholeskyReadoutLayer(ReadoutLayer):
         the result is cast back to the parameter dtype.
     gram_dtype : torch.dtype, optional
         Dtype for forming the Gram matrix and right-hand side (the heavy
-        ``(N, F)`` matmuls). Default ``None`` is automatic: ``float64`` on CPU
-        (cheap there), the input dtype on CUDA (``float64`` matmuls are
-        crippled on consumer GPUs). Pass ``torch.float64`` to force
-        full-precision Gram formation on any device.
+        ``(N, F)`` matmuls). Default ``None`` uses the solve dtype (``float64``
+        with ``use_float64=True``) on every device. An explicit
+        ``gram_dtype=torch.float32`` can speed up well-conditioned fits on
+        CUDA, at the cost of precision when forming the normal equations.
 
     Attributes
     ----------

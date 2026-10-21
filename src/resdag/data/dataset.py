@@ -47,12 +47,14 @@ resdag.layers.IncrementalRidgeReadoutLayer : Streaming ridge readout for the loa
 resdag.layers.ESNLayer.detach_state_between_calls : Cross-batch graph hygiene.
 """
 
+import operator
+from bisect import bisect_right
 from collections.abc import Sequence
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from resdag.data.prepare import NormMethod
+from resdag.data.prepare import NormMethod, _validate_step_count
 
 __all__ = ["TimeSeriesWindowDataset", "make_dataloader"]
 
@@ -120,7 +122,11 @@ def _as_trajectory_list(
             f"got {type(series).__name__}."
         )
 
+    if not trajectories:
+        raise ValueError("series must contain at least one trajectory; batch axis is empty.")
     feature_dim = trajectories[0].shape[-1]
+    if feature_dim == 0:
+        raise ValueError("series trajectories must have a non-empty feature dimension.")
     for i, traj in enumerate(trajectories):
         if traj.shape[-1] != feature_dim:
             raise ValueError(
@@ -148,9 +154,8 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
 
     Windows are generated **per trajectory** and never straddle a trajectory
     boundary, so feeding the loader's batches with a per-batch
-    ``reset_reservoirs()`` (or relying on
-    :attr:`~resdag.layers.BaseReservoirLayer.detach_state_between_calls`) keeps
-    reservoir state from leaking across unrelated trajectories. The first
+    ``reset_reservoirs()`` keeps reservoir state from leaking across unrelated
+    trajectories. The first
     ``washout`` steps of every window are reported in the returned triple so the
     caller can exclude them from the loss while the reservoir synchronises.
 
@@ -180,12 +185,17 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         windows sliced from the *same* source positions and ``horizon`` is
         ignored.
     stats : dict, optional
-        Pre-computed normalization statistics from
-        :func:`resdag.data.normalize_data`. When given, every window is
-        normalized on access with the matching method. Requires ``norm_method``.
+        Pre-computed input normalization statistics from
+        :func:`resdag.data.normalize_data`. Applied to inputs and shifted forecast
+        targets; external regression targets retain their own units. Requires
+        ``norm_method``.
     norm_method : {"minmax", "standard", "noncentered", "meanpreserving"}, optional
         Normalization method matching ``stats``. Required when ``stats`` is
         given, ignored otherwise.
+
+    target_stats, target_norm_method : optional, keyword-only
+        Separate fitted normalization for external regression targets. Both must
+        be supplied together; by default external targets are returned unchanged.
 
     Attributes
     ----------
@@ -236,14 +246,15 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         targets: torch.Tensor | Sequence[torch.Tensor] | None = None,
         stats: dict[str, torch.Tensor] | None = None,
         norm_method: NormMethod | None = None,
+        *,
+        target_stats: dict[str, torch.Tensor] | None = None,
+        target_norm_method: NormMethod | None = None,
     ) -> None:
-        if window_len <= 0:
-            raise ValueError(f"window_len must be positive, got {window_len}.")
-        if horizon < 0:
-            raise ValueError(f"horizon must be non-negative, got {horizon}.")
-        if stride <= 0:
-            raise ValueError(f"stride must be positive, got {stride}.")
-        if not 0 <= washout < window_len:
+        window_len = _validate_step_count("window_len", window_len)
+        horizon = _validate_step_count("horizon", horizon, allow_zero=True)
+        stride = _validate_step_count("stride", stride)
+        washout = _validate_step_count("washout", washout, allow_zero=True)
+        if washout >= window_len:
             raise ValueError(
                 f"washout must satisfy 0 <= washout < window_len, got washout={washout}, "
                 f"window_len={window_len}."
@@ -254,12 +265,21 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
                 f"stats={'set' if stats is not None else None}, norm_method={norm_method!r}."
             )
 
+        if (target_stats is None) != (target_norm_method is None):
+            raise ValueError("target_stats and target_norm_method must be provided together.")
+        if target_stats is not None and targets is None:
+            raise ValueError(
+                "target_stats requires external targets; forecast targets use input stats."
+            )
+
         self.window_len = window_len
         self.horizon = horizon
         self.stride = stride
         self.washout = washout
         self._stats = stats
         self._norm_method = norm_method
+        self._target_stats = target_stats
+        self._target_norm_method = target_norm_method
 
         self._inputs = _as_trajectory_list(series)
         self.feature_dim = self._inputs[0].shape[-1]
@@ -286,21 +306,18 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
             self.target_dim = self.feature_dim
             self._offset = horizon
 
-        # Precompute (trajectory index, window start) for every valid window so
-        # __getitem__ is O(1) and windows never cross a trajectory boundary.
-        # A window of source span [start, start + window_len) plus the target
-        # offset must fit inside the trajectory: start + window_len + offset <= T.
-        self._index: list[tuple[int, int]] = []
-        for t_idx, traj in enumerate(self._inputs):
+        # One cumulative count per trajectory, rather than a Python tuple for
+        # every overlapping window. Memory stays O(number of trajectories).
+        self._window_ends: list[int] = []
+        total = 0
+        for traj in self._inputs:
             max_start = traj.shape[0] - self.window_len - self._offset
-            start = 0
-            while start <= max_start:
-                self._index.append((t_idx, start))
-                start += self.stride
+            total += max(0, max_start // self.stride + 1)
+            self._window_ends.append(total)
 
     def __len__(self) -> int:
         """Return the total number of windows across all trajectories."""
-        return len(self._index)
+        return self._window_ends[-1]
 
     def _normalize(self, window: torch.Tensor) -> torch.Tensor:
         """Normalize ``window`` in place-free fashion using the stored ``stats``.
@@ -336,11 +353,27 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         washout : int
             Number of leading steps to exclude from the loss for this window.
         """
-        traj_idx, start = self._index[idx]
+        idx = operator.index(idx)
+        if idx < 0:
+            idx += len(self)
+        if not 0 <= idx < len(self):
+            raise IndexError("window index out of range")
+        traj_idx = bisect_right(self._window_ends, idx)
+        first = self._window_ends[traj_idx - 1] if traj_idx else 0
+        start = (idx - first) * self.stride
         x = self._inputs[traj_idx][start : start + self.window_len]
         y_start = start + self._offset
         y = self._targets[traj_idx][y_start : y_start + self.window_len]
-        return self._normalize(x), self._normalize(y), self.washout
+        if not self._has_external_targets:
+            y = self._normalize(y)
+        elif self._target_stats is not None and self._target_norm_method is not None:
+            from resdag.data import normalize_data
+
+            y, _ = normalize_data(
+                y.unsqueeze(0), method=self._target_norm_method, stats=self._target_stats
+            )
+            y = y.squeeze(0)
+        return self._normalize(x), y, self.washout
 
 
 def _collate_windows(batch: list[WindowItem]) -> WindowBatch:
@@ -383,6 +416,9 @@ def make_dataloader(
     shuffle: bool = False,
     drop_last: bool = False,
     num_workers: int = 0,
+    *,
+    target_stats: dict[str, torch.Tensor] | None = None,
+    target_norm_method: NormMethod | None = None,
     **dataloader_kwargs: object,
 ) -> DataLoader[WindowItem]:
     """Build a windowed :class:`~torch.utils.data.DataLoader` over ``series``.
@@ -414,6 +450,9 @@ def make_dataloader(
         Pre-computed normalization statistics (with ``norm_method``).
     norm_method : str, optional
         Normalization method matching ``stats``.
+    target_stats, target_norm_method : optional, keyword-only
+        Separate normalization for external regression targets; see
+        :class:`TimeSeriesWindowDataset`.
     shuffle : bool, default=False
         Whether to shuffle window order each epoch.
     drop_last : bool, default=False
@@ -453,6 +492,8 @@ def make_dataloader(
         targets=targets,
         stats=stats,
         norm_method=norm_method,
+        target_stats=target_stats,
+        target_norm_method=target_norm_method,
     )
     return DataLoader(
         dataset,

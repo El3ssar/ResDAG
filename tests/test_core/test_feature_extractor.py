@@ -255,3 +255,61 @@ class TestReferenceRecipe:
         # stayed frozen throughout.
         assert last_loss < first_loss * 0.1
         assert extractor.is_frozen
+
+
+class TestIndependentSequences:
+    def test_stateless_mode_does_not_leak_between_batches(self) -> None:
+        extractor = ReservoirFeatureExtractor(12, feedback_size=2, stateful=False, seed=8)
+        x = torch.randn(3, 9, 2)
+        expected = extractor(x)
+        extractor(torch.randn_like(x))
+        assert torch.equal(extractor(x), expected)
+        assert all(layer.state is None for layer in extractor.reservoirs)
+
+    def test_shared_model_state_is_untouched(self) -> None:
+        inp = reservoir_input(2)
+        layer = ESNLayer(12, feedback_size=2, seed=3)
+        model = ESNModel(inp, layer(inp))
+        model(torch.randn(1, 5, 2))
+        saved = layer.get_state()
+        extractor = ReservoirFeatureExtractor.from_model(model, stateful=False)
+        extractor(torch.randn(4, 7, 2))
+        assert torch.equal(layer.state, saved)
+
+    def test_explicit_state_chunks_match_whole_sequence_and_keep_gradients(self) -> None:
+        extractor = ReservoirFeatureExtractor([12, 8], feedback_size=2, stateful=False, seed=2)
+        encoder = nn.Linear(3, 2)
+        x = encoder(torch.randn(2, 11, 3))
+        whole, final = extractor.forward_stateless(x)
+        first, states = extractor.forward_stateless(x[:, :4])
+        second, chunk_final = extractor.forward_stateless(x[:, 4:], states=states)
+        torch.testing.assert_close(torch.cat((first, second), dim=1), whole)
+        for actual, expected in zip(chunk_final, final):
+            torch.testing.assert_close(actual, expected)
+        second.sum().backward()
+        assert encoder.weight.grad is not None
+        assert torch.count_nonzero(encoder.weight.grad) > 0
+        assert all(layer.state is None for layer in extractor.reservoirs)
+
+    def test_explicit_states_validate_count_and_batch(self) -> None:
+        extractor = ReservoirFeatureExtractor(8, feedback_size=2)
+        x = torch.randn(2, 5, 2)
+        with pytest.raises(ValueError, match="Expected 1 reservoir states"):
+            extractor.forward_stateless(x, states=())
+        with pytest.raises(ValueError, match="batch size"):
+            extractor.forward_stateless(x, states=(torch.zeros(1, 8),))
+
+    def test_stateless_ngrc_rejects_driver(self) -> None:
+        extractor = ReservoirFeatureExtractor(layers=NGReservoirLayer(2), stateful=False)
+        with pytest.raises(ValueError, match="does not accept driving"):
+            extractor(torch.randn(1, 5, 2), torch.randn(1, 5, 1))
+
+    def test_unfreeze_sparse_reservoir_switches_to_dense_trainable_path(self) -> None:
+        layer = ESNLayer(12, feedback_size=2, sparse=True, seed=1)
+        extractor = ReservoirFeatureExtractor(layers=layer, stateful=False)
+        with pytest.warns(RuntimeWarning, match="densifying"):
+            extractor.unfreeze()
+        assert layer.trainable
+        assert not layer.sparse
+        extractor(torch.randn(2, 5, 2)).sum().backward()
+        assert layer.weight_hh.grad is not None

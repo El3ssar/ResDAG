@@ -224,12 +224,11 @@ def load_npz(path: PathLike, key: str = "data", dtype: torch.dtype | None = None
     """
     dtype = dtype or torch.get_default_dtype()
     np_dtype = _torch_to_numpy_dtype(dtype)
-    data_dict = np.load(path)
-    if key not in data_dict:
-        available = list(data_dict.keys())
-        raise KeyError(f"Key '{key}' not found in '{path}'. Available keys: {available}")
-
-    data = data_dict[key].astype(np_dtype)
+    with np.load(path) as data_dict:
+        if key not in data_dict:
+            available = list(data_dict.keys())
+            raise KeyError(f"Key '{key}' not found in '{path}'. Available keys: {available}")
+        data = data_dict[key].astype(np_dtype)
     _warn_if_1d(data, f"NPZ file '{path}' (key '{key}')")
     data = _ensure_3d(data, f"NPZ file '{path}'")
     return torch.from_numpy(data)
@@ -270,7 +269,8 @@ def load_nc(path: PathLike, dtype: torch.dtype | None = None) -> torch.Tensor:
 
     dtype = dtype or torch.get_default_dtype()
     np_dtype = _torch_to_numpy_dtype(dtype)
-    data = xr.open_dataarray(path).to_numpy().astype(np_dtype)
+    with xr.open_dataarray(path) as array:
+        data = array.to_numpy().astype(np_dtype)
     _warn_if_1d(data, f"NetCDF file '{path}'")
     data = _ensure_3d(data, f"NetCDF file '{path}'")
     return torch.from_numpy(data)

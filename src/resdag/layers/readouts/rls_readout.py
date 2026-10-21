@@ -399,10 +399,9 @@ class RLSReadout(ReadoutLayer):
         # Copy the fitted (augmented) weights back into the nn.Linear params.
         if fit_intercept:
             assert self.bias is not None
-            self.weight.copy_(w[:-1].T.to(self.weight.dtype))
-            self.bias.copy_(w[-1].to(self.bias.dtype))
+            self._copy_coefficients(w[:-1], w[-1])
         else:
-            self.weight.copy_(w.T.to(self.weight.dtype))
+            self._copy_coefficients(w, None)
 
         self._n += n
 
@@ -500,6 +499,7 @@ class RLSReadout(ReadoutLayer):
         ValueError
             On a shape mismatch or a non-finite input (see :meth:`partial_fit`).
         """
+        self._validate_fit_shapes(states, targets)
         if states.dim() == 3:
             b, t, f = states.shape
             states = states.reshape(b * t, f)

@@ -281,7 +281,10 @@ class ESN:
 
         # Remember the tail of the *training* series so forecast() can
         # re-synchronise the reservoir from a known, teacher-forced window.
-        self._sync_tail = data[:, timesteps - self.washout :, :].clone()
+        # Keep washout history samples plus the last observed sample. The
+        # latter must seed the rollout directly: using its readout prediction
+        # as the seed would skip the first unseen timestep.
+        self._sync_tail = data[:, timesteps - self.washout - 1 :, :].detach().clone()
         return self
 
     def forecast(
@@ -331,8 +334,9 @@ class ESN:
         # forecast() resets the reservoir internally (reset=True), so two
         # successive forecasts are independent — no manual reset needed.
         prediction = self.model.forecast(
-            self._sync_tail,
+            self._sync_tail[:, :-1, :],
             horizon=horizon,
+            initial_feedback=self._sync_tail[:, -1:, :],
             return_warmup=return_warmup,
         )
         # classic_esn is single-output, so forecast returns a single tensor.

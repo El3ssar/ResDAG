@@ -178,6 +178,8 @@ class NGReservoirLayer(BaseReservoirLayer):
             Updated delay buffer of shape ``(batch, state_size, input_dim)``.
         """
         cell = cast(NGCell, self.cell)  # narrow from Tensor | Module for the type checker
+        if len(inputs) != 1:
+            raise ValueError("NGReservoirLayer does not accept driving inputs")
         return cell.forward_sequence(inputs[0], state)
 
     def forward(
@@ -262,6 +264,7 @@ class NGReservoirLayer(BaseReservoirLayer):
             new_state = new_state.detach()
 
         self.state = new_state
+        self._state_user_set = False
         return outputs
 
     # ------------------------------------------------------------------

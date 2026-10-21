@@ -207,6 +207,18 @@ class TestRunHPOPersistence:
 class TestRunHPOValidation:
     """Test input validation."""
 
+    @pytest.mark.parametrize("n_workers", [0, -1])
+    def test_invalid_n_workers(self, n_workers):
+        with pytest.raises(ValueError, match="n_workers must be positive"):
+            run_hpo(
+                model_creator=simple_model_creator,
+                search_space=simple_search_space,
+                data_loader=simple_data_loader,
+                n_trials=1,
+                n_workers=n_workers,
+                verbosity=0,
+            )
+
     def test_invalid_n_trials(self):
         """Invalid n_trials raises ValueError."""
         with pytest.raises(ValueError):

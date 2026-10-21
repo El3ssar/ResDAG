@@ -376,3 +376,75 @@ def test_incremental_ridge_over_dataloader(sine_series: torch.Tensor) -> None:
         pred = readout(reservoir(x))
         mse = torch.mean((pred[:, washout:] - y[:, washout:]) ** 2).item()
     assert mse < 1.0  # far better than the unit-variance baseline of the signal
+
+
+def test_empty_batch_rejected() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        TimeSeriesWindowDataset(torch.empty(0, 20, 3), window_len=5)
+
+
+def test_ragged_index_handles_empty_trajectories_and_negative_indices() -> None:
+    trajectories = [
+        torch.arange(8.0).unsqueeze(-1),
+        torch.empty(0, 1),
+        torch.arange(20.0, 31.0).unsqueeze(-1),
+    ]
+    dataset = TimeSeriesWindowDataset(trajectories, window_len=3, horizon=2, stride=3)
+    expected_starts = [0.0, 3.0, 20.0, 23.0, 26.0]
+    assert len(dataset) == len(expected_starts)
+    for index, start in enumerate(expected_starts):
+        x, y, _ = dataset[index]
+        assert x[0].item() == start
+        assert torch.equal(y, x + 2)
+    assert torch.equal(dataset[-1][0], dataset[len(dataset) - 1][0])
+    for index in (len(dataset), -len(dataset) - 1):
+        with pytest.raises(IndexError):
+            dataset[index]
+
+
+def test_window_index_storage_scales_with_trajectories() -> None:
+    dataset = TimeSeriesWindowDataset(torch.zeros(1_000_000, 1), window_len=3)
+    assert len(dataset) == 999_997
+    assert len(dataset._window_ends) == 1
+    assert torch.equal(dataset[-1][0], torch.zeros(3, 1))
+
+
+def test_regression_targets_keep_their_units_with_input_normalization() -> None:
+    inputs = torch.arange(30.0).reshape(10, 3)
+    targets = torch.arange(10.0).unsqueeze(-1) * 100
+    _, stats = normalize_data(inputs.unsqueeze(0), method="standard")
+    dataset = TimeSeriesWindowDataset(
+        inputs, window_len=4, targets=targets, stats=stats, norm_method="standard"
+    )
+    x, y, _ = dataset[0]
+    assert x.shape == (4, 3)
+    assert y.shape == (4, 1)
+    assert torch.equal(y, targets[:4])
+    expected, _ = normalize_data(inputs[:4].unsqueeze(0), method="standard", stats=stats)
+    assert torch.equal(x, expected[0])
+
+
+def test_regression_targets_accept_separate_normalization() -> None:
+    inputs = torch.arange(30.0).reshape(10, 3)
+    targets = torch.arange(10.0).unsqueeze(-1) * 100
+    _, target_stats = normalize_data(targets.unsqueeze(0), method="minmax")
+    loader = make_dataloader(
+        inputs,
+        batch_size=2,
+        window_len=4,
+        targets=targets,
+        target_stats=target_stats,
+        target_norm_method="minmax",
+    )
+    _, y, _ = next(iter(loader))
+    expected, _ = normalize_data(targets[:4].unsqueeze(0), method="minmax", stats=target_stats)
+    assert torch.equal(y[0], expected[0])
+
+
+@pytest.mark.parametrize("name", ["window_len", "horizon", "stride", "washout"])
+@pytest.mark.parametrize("value", [True, 1.5])
+def test_noninteger_window_counts_rejected(name: str, value: object) -> None:
+    kwargs = dict(window_len=5, horizon=1, stride=1, washout=0)
+    kwargs[name] = value
+    with pytest.raises(ValueError, match=name):
+        TimeSeriesWindowDataset(torch.randn(20, 1), **kwargs)

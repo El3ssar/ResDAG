@@ -220,3 +220,9 @@ class TestHybridESNGPU:
         out = model(x)
         assert out.is_cuda
         assert out.shape == (2, 20, 3)
+
+
+def test_knowledge_model_rejects_mismatched_time_axes() -> None:
+    expert = KnowledgeModel(lambda x: x[:, :1].expand(-1, 4, -1), model_out_size=2)
+    with pytest.raises(ValueError, match="same batch/time"):
+        expert(torch.randn(3, 5, 2))

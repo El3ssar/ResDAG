@@ -34,6 +34,7 @@ import torch
 from resdag.core import ESNModel
 from resdag.training import ESNTrainer
 
+from ._torch_losses import score_builtin_tensor_loss
 from .losses import LossProtocol
 
 __all__ = ["TrialRunner", "TrialCallback"]
@@ -686,6 +687,10 @@ class TrialRunner:
         fn = loss_fn if loss_fn is not None else self.loss_fn
 
         if self.torch_scoring:
+            with torch.no_grad():
+                builtin_result = score_builtin_tensor_loss(fn, y_true, y_pred, **kwargs)
+            if builtin_result is not None:
+                return float(builtin_result)
             try:
                 with torch.no_grad():
                     # Intentionally feed tensors; pure-NumPy losses raise here

@@ -16,6 +16,7 @@ so they are picklable — required for the ``spawn`` start method.
 """
 
 import multiprocessing as mp
+import os
 from pathlib import Path
 
 import optuna
@@ -66,6 +67,15 @@ def _data_loader(trial):
         "f_warmup": data[:, 70:90, :],
         "val": data[:, 90:100, :],
     }
+
+
+def _broken_model_creator(**kwargs):
+    raise RuntimeError("intentional worker failure")
+
+
+def _record_sampler_search_space(trial):
+    trial.set_user_attr("sampler_type", type(trial.study.sampler).__name__)
+    return _search_space(trial)
 
 
 # ── select_start_method ──────────────────────────────────────────────────────
@@ -175,6 +185,44 @@ class TestWorkerBudget:
 @pytest.mark.slow
 class TestMultiprocessEndToEnd:
     """Integration tests that actually spawn workers via ``run_hpo``."""
+
+    def test_custom_sampler_used_by_workers_and_returned_study(self, tmp_path):
+        study = run_hpo(
+            model_creator=_model_creator,
+            search_space=_record_sampler_search_space,
+            data_loader=_data_loader,
+            sampler=optuna.samplers.RandomSampler(seed=42),
+            n_trials=2,
+            n_workers=2,
+            storage=str(tmp_path / "custom_sampler.log"),
+            study_name="custom_sampler",
+            verbosity=0,
+        )
+        assert isinstance(study.sampler, optuna.samplers.RandomSampler)
+        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        assert completed
+        assert all(t.user_attrs["sampler_type"] == "RandomSampler" for t in completed)
+
+    def test_worker_failure_reaches_caller_and_restores_environment(self, tmp_path, monkeypatch):
+        values = {"OMP_NUM_THREADS": "7", "MKL_NUM_THREADS": None, "OPENBLAS_NUM_THREADS": "5"}
+        for key, value in values.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+        with pytest.raises(RuntimeError, match="HPO worker process failed"):
+            run_hpo(
+                model_creator=_broken_model_creator,
+                search_space=_search_space,
+                data_loader=_data_loader,
+                n_trials=1,
+                n_workers=2,
+                storage=str(tmp_path / "crash.log"),
+                study_name="worker_crash",
+                catch_exceptions=False,
+                verbosity=0,
+            )
+        assert {key: os.environ.get(key) for key in values} == values
 
     def test_n_workers_gt_1_runs(self, tmp_path: Path):
         """`n_workers > 1` completes a study and produces a best value."""

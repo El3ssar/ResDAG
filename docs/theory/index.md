@@ -1,4 +1,5 @@
 ---
+title: "Theory"
 description: The equations ResDAG implements, with index origins, shift directions, and centering conventions stated precisely.
 ---
 

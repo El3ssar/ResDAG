@@ -16,14 +16,20 @@ resdag.init.input_feedback : Input/feedback weight initialization.
 
 import warnings
 from collections.abc import Callable, Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from resdag.init.topology import estimate_spectral_radius, scale_to_spectral_radius
-from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer, resolve_topology
+from resdag.init.utils import (
+    InitializerSpec,
+    TopologySpec,
+    resolve_initializer,
+    resolve_topology,
+    select_recurrent_spec,
+)
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
 from .base_cell import ReservoirCell
@@ -273,6 +279,28 @@ class ESNCell(ReservoirCell):
         Structure of the recurrent weight matrix: a registry name (graph or
         matrix topology), any matrix-building callable, a
         ``(callable, params)`` tuple, or a configured topology object.
+    recurrent_initializer : str, callable, tuple, or TopologyInitializer, optional
+        First-class alias for ``topology`` accepting graph and matrix builders,
+        registered names and custom callables. Supply only one of the two.
+    bias_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Override the default random bias. Uses the same formats as input
+        initialization on a ``(1, reservoir_size)`` tensor, then flattens to
+        the bias vector. Requires ``bias=True``. Explicit hook values take
+        precedence over ``bias_scaling``.
+    initial_state_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Initialize a persistent ``(1, reservoir_size)`` state template once
+        at construction. Every reset broadcasts an independent copy to each
+        batch item. ``None`` keeps the zero-state default. The template moves
+        with ``.to()`` and is included in checkpoints.
+    device : torch.device or str, optional
+        Device on which parameters are constructed. Defaults to the Torch
+        default device. CUDA initialization runs on the requested device;
+        MPS cells initialize on CPU and move the complete cell afterward,
+        preserving compatibility across supported Torch versions.
+    dtype : torch.dtype, optional
+        Floating-point initialization precision. Defaults to Torch's default
+        dtype. ``torch.float64`` constructs in double precision rather than
+        rounding float32 weights and converting afterward.
     seed : int or torch.Generator, optional
         Reproducibility seed that deterministically fixes *every* reservoir
         parameter — the recurrent (topology) matrix, the feedback and input
@@ -326,8 +354,47 @@ class ESNCell(ReservoirCell):
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
+        if dtype is not None and not dtype.is_floating_point:
+            raise TypeError("ESN dtype must be floating point")
+        if bias_initializer is not None and not bias:
+            raise ValueError("bias_initializer requires bias=True")
+        target_device = torch.device(device) if device is not None else torch.get_default_device()
+        mps_initialization = target_device.type == "mps"
+        if mps_initialization and (dtype or torch.get_default_dtype()) == torch.float64:
+            raise ValueError(
+                "MPS does not support float64; use dtype=torch.float32 or device='cpu'"
+            )
+        if mps_initialization and sparse is True:
+            raise ValueError("sparse=True is unsupported on MPS; use sparse=False or sparse='auto'")
+        # Initialize MPS cells on CPU for consistent behavior across supported
+        # Torch versions and matrix factorizations, then move the entire cell.
+        # CUDA retains native initialization and device-local generators.
+        self._factory_kwargs: dict[str, Any] = {
+            "device": "cpu" if mps_initialization else device,
+            "dtype": dtype,
+        }
+        self.bias_initializer = bias_initializer
+        self.initial_state_initializer = initial_state_initializer
+        # Optional calibration and initial-state buffers leave ordinary ESNs on
+        # their original arithmetic path. None buffers do not add checkpoint keys.
+        for name in ("_intrinsic_gain", "_intrinsic_bias", "_recurrent_gain", "_initial_state"):
+            self.register_buffer(name, None, persistent=True)
+        self._intrinsic_gain: torch.Tensor | None
+        self._intrinsic_bias: torch.Tensor | None
+        self._recurrent_gain: torch.Tensor | None
+        self._initial_state: torch.Tensor | None
+        # Plain bools avoid optional-buffer __getattr__ lookups in the ordinary
+        # (uncalibrated) recurrent hot path.
+        self._has_intrinsic = False
+        self._has_recurrent_gain = False
 
         # A sparse-CSR recurrent matmul is only valid for a frozen reservoir;
         # sparse-CSR autograd for this update is fragile, so reject the
@@ -351,7 +418,10 @@ class ESNCell(ReservoirCell):
         # (reservoir_size, 0) zero-column tensor produced by passing ``0``
         # explicitly from the premade factories.
         self.input_size = input_size if input_size else None
-        self.topology = topology
+        self.topology = select_recurrent_spec(
+            topology=topology, recurrent_initializer=recurrent_initializer
+        )
+        self.recurrent_initializer = self.topology
         self.spectral_radius = spectral_radius
         self.feedback_initializer = feedback_initializer
         self.input_initializer = input_initializer
@@ -414,6 +484,17 @@ class ESNCell(ReservoirCell):
 
         # Initialize weight matrices
         self._initialize_weights()
+        if self.initial_state_initializer is not None:
+            initial = self.weight_hh.new_empty(1, self.reservoir_size)
+            resolved_state = resolve_initializer(
+                self.initial_state_initializer,
+                seed=_salt_seed(self._seed_int, 4 * _INPUT_SEED_OFFSET),
+            )
+            assert resolved_state is not None
+            resolved_state.initialize(initial)
+            if not bool(torch.isfinite(initial).all()):
+                raise ValueError("initial_state_initializer must produce finite values")
+            self._initial_state = initial
 
         # Apply the requested trainable state to the freshly-built parameters.
         # Going through the property setter (rather than an inline freeze loop)
@@ -425,6 +506,8 @@ class ESNCell(ReservoirCell):
         # density is known, and materialise the derived CSR operator if enabled.
         # Done after the ``trainable`` freeze so the guard sees the final state.
         self._maybe_build_sparse_weight()
+        if mps_initialization:
+            self.to(device=target_device)
 
     # ------------------------------------------------------------------
     # ReservoirCell interface
@@ -540,7 +623,11 @@ class ESNCell(ReservoirCell):
         unconditional ``torch.lerp`` (the scalar ``!= 1.0`` shortcut cannot be
         used once the leak is a tensor).
         """
-        vec = torch.as_tensor(value, dtype=torch.get_default_dtype())
+        vec = torch.as_tensor(
+            value,
+            dtype=self._factory_kwargs["dtype"] or torch.get_default_dtype(),
+            device=self._factory_kwargs["device"],
+        )
         if not vec.is_floating_point():
             vec = vec.to(torch.get_default_dtype())
         if vec.dim() != 1 or vec.shape[0] != self.reservoir_size:
@@ -611,7 +698,13 @@ class ESNCell(ReservoirCell):
         device: torch.device,
         dtype: torch.dtype,
     ) -> torch.Tensor:
-        """Return a zero hidden state of shape ``(batch_size, reservoir_size)``."""
+        """Return the configured initial state, broadcast independently per batch item.
+
+        The optional initializer is sampled once at construction as ``(1, N)``
+        and saved with the weights. Every reset reuses that same vector.
+        """
+        if self._initial_state is not None:
+            return self._initial_state.to(device=device, dtype=dtype).expand(batch_size, -1).clone()
         return torch.zeros(batch_size, self.state_size, device=device, dtype=dtype)
 
     @property
@@ -661,7 +754,11 @@ class ESNCell(ReservoirCell):
         the :meth:`step` fast path, so the two paths stay consistent.
         """
         projected = self.project_inputs(inputs)
-        new_state = self.activation_fn(projected + self._recurrent(state))
+        pre_activation = projected + self._recurrent(state)
+        if self._has_intrinsic:
+            assert self._intrinsic_gain is not None and self._intrinsic_bias is not None
+            pre_activation = self._intrinsic_gain * pre_activation + self._intrinsic_bias
+        new_state = self.activation_fn(pre_activation)
         new_state = self._apply_noise(new_state)
         new_state = self._apply_leak(state, new_state)
         return new_state, new_state
@@ -747,13 +844,16 @@ class ESNCell(ReservoirCell):
         new_state : torch.Tensor
             Same tensor as output.
         """
-        if self._sparse_active:
-            # Sparse CSR path: the fused ``addmm`` has no CSR analogue, so add
+        if self._sparse_active or self._has_recurrent_gain:
+            # Sparse CSR / calibrated recurrent path: the fused ``addmm`` has no CSR analogue, so add
             # the precomputed projection to the sparse spmv result.  Identical
             # math to the dense branch (``projected_t + state @ weight_hh.T``).
             pre_activation = projected_t + self._recurrent(state)
         else:
             pre_activation = torch.addmm(projected_t, state, self.weight_hh.t())
+        if self._has_intrinsic:
+            assert self._intrinsic_gain is not None and self._intrinsic_bias is not None
+            pre_activation = self._intrinsic_gain * pre_activation + self._intrinsic_bias
         new_state = self.activation_fn(pre_activation)
         new_state = self._apply_noise(new_state)
         new_state = self._apply_leak(state, new_state)
@@ -833,8 +933,13 @@ class ESNCell(ReservoirCell):
             # ``state @ W.T == (W @ state.T).T``; ``.contiguous()`` on the
             # feedback so the spmv gets a well-formed dense RHS.
             recurrent: torch.Tensor = torch.sparse.mm(csr, state.t().contiguous())
-            return recurrent.t()
-        return F.linear(state, self.weight_hh)
+            result = recurrent.t()
+        else:
+            result = F.linear(state, self.weight_hh)
+        if self._has_recurrent_gain:
+            assert self._recurrent_gain is not None
+            result = result * self._recurrent_gain
+        return result
 
     # ------------------------------------------------------------------
     # Sparse-CSR recurrent operator (frozen-reservoir opt-in)
@@ -886,7 +991,7 @@ class ESNCell(ReservoirCell):
         reservoir is always dense (the constructor rejects ``sparse=True`` +
         ``trainable``; ``"auto"`` and a live re-freeze route here).
         """
-        if self._trainable:
+        if self._trainable or self.weight_hh.device.type == "mps":
             return False
         if self._sparse_requested is True:
             return True
@@ -958,6 +1063,14 @@ class ESNCell(ReservoirCell):
         only place a load refreshes it.
         """
         self._reconcile_leak_buffer(state_dict, prefix)
+        self._has_intrinsic = prefix + "_intrinsic_gain" in state_dict
+        self._has_recurrent_gain = prefix + "_recurrent_gain" in state_dict
+        if self._has_intrinsic != (prefix + "_intrinsic_bias" in state_dict):
+            error_msgs.append("intrinsic calibration requires both gain and bias buffers")
+        for name in ("_intrinsic_gain", "_intrinsic_bias", "_recurrent_gain", "_initial_state"):
+            key = prefix + name
+            shape = (1, self.reservoir_size) if name == "_initial_state" else (self.reservoir_size,)
+            setattr(self, name, self.weight_hh.new_empty(shape) if key in state_dict else None)
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
@@ -1046,6 +1159,15 @@ class ESNCell(ReservoirCell):
     def __setstate__(self, state: dict) -> None:
         """Restore state, re-creating the empty noise-generator cache."""
         state.setdefault("_noise_generators", {})
+        state.setdefault("_factory_kwargs", {"device": None, "dtype": None})
+        state.setdefault("bias_initializer", None)
+        state.setdefault("initial_state_initializer", None)
+        state.setdefault("recurrent_initializer", state.get("topology"))
+        buffers = state.setdefault("_buffers", {})
+        for name in ("_intrinsic_gain", "_intrinsic_bias", "_recurrent_gain", "_initial_state"):
+            buffers.setdefault(name, None)
+        state.setdefault("_has_intrinsic", buffers["_intrinsic_gain"] is not None)
+        state.setdefault("_has_recurrent_gain", buffers["_recurrent_gain"] is not None)
         self.__dict__.update(state)
 
     # ------------------------------------------------------------------
@@ -1081,7 +1203,11 @@ class ESNCell(ReservoirCell):
         # the parameters are a pure function of the seed and independent of the
         # global RNG state.  When seed is None it is derived from the global RNG
         # so torch.manual_seed still propagates.
-        generator = create_torch_generator(self.seed)
+        target_device = torch.empty(0, **self._factory_kwargs).device
+        init_seed = self.seed
+        if isinstance(init_seed, torch.Generator) and init_seed.device != target_device:
+            init_seed = init_seed.initial_seed()
+        generator = create_torch_generator(init_seed, device=target_device)
 
         self._initialize_feedback_weights(generator)
 
@@ -1096,8 +1222,15 @@ class ESNCell(ReservoirCell):
             # Random bias drawn like the feedback/input weights.  A
             # zero-initialized frozen bias would be a no-op and leave the
             # tanh dynamics oddly symmetric (f(-x) = -f(x)).
-            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size))
-            if self.bias_scaling != 0.0:
+            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size, **self._factory_kwargs))
+            resolved_bias = resolve_initializer(
+                self.bias_initializer, seed=_salt_seed(self._seed_int, 3 * _INPUT_SEED_OFFSET)
+            )
+            if resolved_bias is not None:
+                resolved_bias.initialize(self.bias_h.view(1, -1))
+                if not bool(torch.isfinite(self.bias_h).all()):
+                    raise ValueError("bias_initializer must produce finite values")
+            elif self.bias_scaling != 0.0:
                 nn.init.uniform_(
                     self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
                 )
@@ -1108,7 +1241,9 @@ class ESNCell(ReservoirCell):
 
     def _initialize_feedback_weights(self, generator: torch.Generator) -> None:
         """Initialize feedback weight matrix."""
-        self.weight_feedback = nn.Parameter(torch.empty(self.reservoir_size, self.feedback_size))
+        self.weight_feedback = nn.Parameter(
+            torch.empty(self.reservoir_size, self.feedback_size, **self._factory_kwargs)
+        )
 
         resolved = resolve_initializer(self.feedback_initializer, seed=self._seed_int)
         if resolved is not None:
@@ -1130,7 +1265,9 @@ class ESNCell(ReservoirCell):
         ``_inject_seed`` (spec seed beats forwarded seed).
         """
         assert self.input_size is not None
-        self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
+        self.weight_input = nn.Parameter(
+            torch.empty(self.reservoir_size, self.input_size, **self._factory_kwargs)
+        )
 
         input_seed = _salt_seed(self._seed_int, _INPUT_SEED_OFFSET)
         resolved = resolve_initializer(self.input_initializer, seed=input_seed)
@@ -1141,7 +1278,9 @@ class ESNCell(ReservoirCell):
 
     def _initialize_recurrent_weights(self, generator: torch.Generator) -> None:
         """Initialize recurrent weight matrix from topology or random."""
-        self.weight_hh = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
+        self.weight_hh = nn.Parameter(
+            torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
+        )
 
         resolved = resolve_topology(self.topology, seed=self._seed_int)
         if resolved is not None:
@@ -1169,21 +1308,30 @@ class ESNCell(ReservoirCell):
 
     @property
     def spectral_radius_achieved(self) -> float:
-        """float : Realized largest absolute eigenvalue of ``weight_hh``.
+        """float : Spectral radius of the effective pre-activation recurrent operator.
 
-        Returns the spectral radius actually present in the recurrent matrix
-        after initialization/scaling, as opposed to the *requested*
-        :attr:`spectral_radius` target.  Computed lazily via the shared
-        :func:`resdag.init.topology.estimate_spectral_radius` (power iteration /
-        sparse ``eigs`` / tiny-N dense fallback), so it stays cheap even for
-        large reservoirs and is GPU-resident for dense matrices.
+        Measures ``diag(intrinsic_gain * recurrent_gain) @ weight_hh`` when
+        calibration gains exist, or simply ``weight_hh`` for an uncalibrated
+        cell. Intrinsic plasticity scales both input and recurrent drive;
+        flow control scales recurrent rows only. Neither additive bias affects
+        this matrix radius.
 
-        For a freshly built cell with a non-``None`` ``spectral_radius`` this
-        sits within the estimator's tolerance of the target; it differs once
-        the recurrent weights are trained or otherwise modified.
+        This is the linear recurrent operator immediately before the activation,
+        not the state-dependent tanh derivative or the leaky-update Jacobian.
+        It therefore does not guarantee stable nonlinear dynamics. The original
+        :attr:`spectral_radius` remains the requested construction-time value.
+        Measurement uses the shared estimator; MPS performs its unsupported
+        eigendecomposition on CPU.
         """
         with torch.no_grad():
-            return estimate_spectral_radius(self.weight_hh.data)
+            effective = self.weight_hh.detach()
+            if self._has_recurrent_gain:
+                assert self._recurrent_gain is not None
+                effective = effective * self._recurrent_gain[:, None]
+            if self._has_intrinsic:
+                assert self._intrinsic_gain is not None
+                effective = effective * self._intrinsic_gain[:, None]
+            return estimate_spectral_radius(effective)
 
     def __repr__(self) -> str:
         """Return string representation."""

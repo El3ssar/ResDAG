@@ -20,6 +20,8 @@ resdag.layers.reservoirs.esn : The ungated ESN sequence layer (ESNLayer).
 import warnings
 from typing import Any
 
+import torch
+
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers.cells.gated_cell import GatedReservoirCell
 from resdag.utils.general import SeedLike
@@ -84,6 +86,32 @@ class GatedReservoirLayer(BaseReservoirLayer):
     seed : int or torch.Generator, optional
         Reproducibility seed fixing the entire reservoir.
 
+    recurrent_initializer : spec, optional
+        First-class alias for ``topology``. Supply one spelling only. Names,
+        tuples, callables and registered initializer objects are accepted.
+    bias_initializer : spec, optional
+        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
+        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+    initial_state_initializer : spec, optional
+        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Each batch example receives an independent copy at reset. Zero by default.
+    device : torch.device or str, optional
+        Initial parameter location. Metal construction initializes on CPU before
+        transferring to support initialization operations across backends.
+    dtype : torch.dtype, optional
+        Floating precision used during initialization, not only after conversion.
+
+    gate_recurrent_initializer : spec, optional
+        Separate recurrent gate matrix. Defaults to small dense random weights.
+    gate_spectral_radius : float, optional
+        Outer radius target for the gate recurrence, respecting its scaling policy.
+    gate_feedback_initializer, gate_input_initializer : spec, optional
+        Separate gate projections. Omitted projections share candidate weights.
+        A driver gate initializer requires ``input_size``.
+    gate_bias_initializer : spec, optional
+        Gate-bias initializer on ``(1, reservoir_size)``; overrides
+        ``update_gate_bias``. Requires ``bias=True``.
+
     Attributes
     ----------
     state : torch.Tensor or None
@@ -127,6 +155,17 @@ class GatedReservoirLayer(BaseReservoirLayer):
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+        gate_recurrent_initializer: TopologySpec = None,
+        gate_feedback_initializer: InitializerSpec = None,
+        gate_input_initializer: InitializerSpec = None,
+        gate_bias_initializer: InitializerSpec = None,
+        gate_spectral_radius: float | None = None,
     ) -> None:
         cell = GatedReservoirCell(
             reservoir_size=reservoir_size,
@@ -143,6 +182,16 @@ class GatedReservoirLayer(BaseReservoirLayer):
             input_initializer=input_initializer,
             topology=topology,
             seed=seed,
+            recurrent_initializer=recurrent_initializer,
+            bias_initializer=bias_initializer,
+            initial_state_initializer=initial_state_initializer,
+            device=device,
+            dtype=dtype,
+            gate_recurrent_initializer=gate_recurrent_initializer,
+            gate_feedback_initializer=gate_feedback_initializer,
+            gate_input_initializer=gate_input_initializer,
+            gate_bias_initializer=gate_bias_initializer,
+            gate_spectral_radius=gate_spectral_radius,
         )
         super().__init__(cell)
 

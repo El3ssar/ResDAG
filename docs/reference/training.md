@@ -14,3 +14,6 @@ and FORCE fitting are also available through `fit_online` and `fit_force`.
     options:
       members:
         - ESNTrainer
+        - CalibrationReport
+        - calibrate_intrinsic_plasticity
+        - calibrate_flow_control

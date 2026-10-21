@@ -81,6 +81,21 @@ topology, seed
         regime in which the edge-of-stability property holds.  Other values
         scale the linear memory branch.
 
+    recurrent_initializer : spec, optional
+        First-class alias for ``topology``. Supply one spelling only. Names,
+        tuples, callables and registered initializer objects are accepted.
+    bias_initializer : spec, optional
+        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
+        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+    initial_state_initializer : spec, optional
+        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Each batch example receives an independent copy at reset. Zero by default.
+    device : torch.device or str, optional
+        Initial parameter location. Metal construction initializes on CPU before
+        transferring to support initialization operations across backends.
+    dtype : torch.dtype, optional
+        Floating precision used during initialization, not only after conversion.
+
     Attributes
     ----------
     skip_matrix : torch.Tensor
@@ -109,6 +124,12 @@ topology, seed
         topology: TopologySpec = None,
         orthogonal_scaling: float = 1.0,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         # ESNCell owns the recurrent/feedback/input/bias machinery; drive it with
         # a fixed leak_rate=1.0 (the skip supersedes leaky integration) and no
@@ -131,6 +152,11 @@ topology, seed
             input_initializer=input_initializer,
             topology=topology,
             seed=seed,
+            recurrent_initializer=recurrent_initializer,
+            bias_initializer=bias_initializer,
+            initial_state_initializer=initial_state_initializer,
+            device=device,
+            dtype=dtype,
         )
 
         # Build the frozen orthogonal skip ``O`` on a stream offset from the
@@ -139,7 +165,13 @@ topology, seed
         # non-persistent-agnostic (default persistent=True) buffer so it saves,
         # loads, and follows ``.to()`` / ``.double()`` with the parameters.
         skip_seed = _salt_seed(self._seed_int, _ORTHOGONAL_SEED_OFFSET)
-        skip = orthogonal_matrix(reservoir_size, gain=orthogonal_scaling, seed=skip_seed)
+        skip = orthogonal_matrix(
+            reservoir_size,
+            gain=orthogonal_scaling,
+            seed=skip_seed,
+            dtype=self.weight_hh.dtype,
+            device=self.weight_hh.device,
+        )
         # Align the skip with the recurrent matrix's dtype/device so it sits
         # where the weights are before any ``.to()`` the caller may apply.
         skip = skip.to(dtype=self.weight_hh.dtype, device=self.weight_hh.device)

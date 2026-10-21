@@ -182,6 +182,8 @@ nav:
           - build/architectures/index.md
       - Initialization:
           - build/initialization/index.md
+          - Recurrent weights: build/initialization/recurrent.md
+          - Custom registration: build/initialization/custom.md
           - Topologies:
               - build/initialization/topologies/index.md
           - Initializers:
@@ -189,6 +191,7 @@ nav:
   - Work:
       - workflows/index.md
       - Train: workflows/train.md
+      - Calibrate: workflows/calibration.md
       - Forecast: workflows/forecast.md
       - Lyapunov time: workflows/lyapunov.md
       - NG-RC: workflows/ngrc.md

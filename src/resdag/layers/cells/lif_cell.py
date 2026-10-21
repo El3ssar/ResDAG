@@ -57,15 +57,24 @@ resdag.layers.reservoirs.lif.LIFReservoirLayer : Layer that sequences this cell.
 """
 
 import math
+from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from resdag.init.recurrent import select_recurrent_spec
 from resdag.init.topology import estimate_spectral_radius, scale_to_spectral_radius
 from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer, resolve_topology
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
+from ._initialization import (
+    device_matches_seed,
+    initialize_vector,
+    initialized_state,
+    install_initial_state,
+    restore_initial_state_support,
+)
 from .esn_cell import _INPUT_SEED_OFFSET, _salt_seed
 from .spiking_cell import SpikingReservoirCell
 
@@ -130,6 +139,21 @@ class LIFCell(SpikingReservoirCell):
     seed : int or torch.Generator, optional
         Reproducibility seed fixing every weight and bias.
 
+    recurrent_initializer : spec, optional
+        First-class alias for ``topology``. Supply one spelling only. Names,
+        tuples, callables and registered initializer objects are accepted.
+    bias_initializer : spec, optional
+        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
+        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+    initial_state_initializer : spec, optional
+        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Each batch example receives an independent copy at reset. Zero by default.
+    device : torch.device or str, optional
+        Initial parameter location. Metal construction initializes on CPU before
+        transferring to support initialization operations across backends.
+    dtype : torch.dtype, optional
+        Floating precision used during initialization, not only after conversion.
+
     Attributes
     ----------
     beta : float
@@ -185,6 +209,12 @@ class LIFCell(SpikingReservoirCell):
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         # First-order LIF packs [V | s | r] (3 tensors); CuBa-LIF packs
         # [I | V | s | r] (4).  Set the count BEFORE super().__init__ so
@@ -220,7 +250,21 @@ class LIFCell(SpikingReservoirCell):
         self.beta = math.exp(-self.dt / self.tau_mem)
         self.alpha = math.exp(-self.dt / self.tau_syn)
 
-        self.topology = topology
+        self.topology = select_recurrent_spec(
+            topology=topology, recurrent_initializer=recurrent_initializer
+        )
+        if dtype is not None and not dtype.is_floating_point:
+            raise ValueError("Reservoir dtype must be floating point")
+        if not bias and bias_initializer is not None:
+            raise ValueError("bias_initializer requires bias=True")
+        self.bias_initializer = bias_initializer
+        self.initial_state_initializer = initial_state_initializer
+        target_device = torch.device(device) if device is not None else torch.empty(0).device
+        if target_device.type == "mps" and (dtype or torch.get_default_dtype()) == torch.float64:
+            raise TypeError("MPS does not support float64; use float32 or CPU")
+        # Initialize on CPU before a Metal transfer for portable RNG/linalg support.
+        init_device = "cpu" if target_device is not None and target_device.type == "mps" else device
+        self._factory_kwargs: dict[str, Any] = {"device": init_device, "dtype": dtype}
         self.spectral_radius = spectral_radius
         self.feedback_initializer = feedback_initializer
         self.input_initializer = input_initializer
@@ -232,10 +276,25 @@ class LIFCell(SpikingReservoirCell):
         self._trainable = trainable
 
         self._initialize_weights()
+        install_initial_state(
+            self,
+            self.initial_state_initializer,
+            seed=_salt_seed(self._seed_int, 0x9E3779B9 * 7),
+            state_size=self.state_size,
+            reference=self.weight_feedback,
+        )
 
         # Apply the requested freeze through the base property so construction and
         # post-init ``cell.trainable = ...`` share one code path.
         self.trainable = trainable
+        if target_device is not None and target_device.type == "mps":
+            self.to(target_device)
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore optional reset-state support in historical full-model pickles."""
+        super().__setstate__(state)
+        self.__dict__.setdefault("initial_state_initializer", None)
+        restore_initial_state_support(self)
 
     # ------------------------------------------------------------------
     # ReservoirCell interface
@@ -258,6 +317,16 @@ class LIFCell(SpikingReservoirCell):
         self._trainable = bool(value)
         for p in self.parameters():
             p.requires_grad_(self._trainable)
+
+    def init_state(self, batch_size: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+        """Initialize packed neuron and trace state; zero by default."""
+        return initialized_state(
+            self,
+            batch_size,
+            self.state_size,
+            device,
+            dtype,
+        )
 
     def project_inputs(self, inputs: list[torch.Tensor]) -> torch.Tensor:
         """Precompute the analog input drive ``W_fb x_fb + W_in u + b``.
@@ -369,10 +438,19 @@ class LIFCell(SpikingReservoirCell):
         default draw in a fixed order — feedback, input, recurrent, then bias —
         so a given ``seed`` deterministically reproduces the whole cell.
         """
-        generator = create_torch_generator(self.seed)
+        generator = create_torch_generator(
+            (
+                self.seed
+                if device_matches_seed(self.seed, self._factory_kwargs["device"])
+                else self._seed_int
+            ),
+            device=self._factory_kwargs["device"],
+        )
 
         # Feedback weight.
-        self.weight_feedback = nn.Parameter(torch.empty(self.reservoir_size, self.feedback_size))
+        self.weight_feedback = nn.Parameter(
+            torch.empty(self.reservoir_size, self.feedback_size, **self._factory_kwargs)
+        )
         resolved_fb = resolve_initializer(self.feedback_initializer, seed=self._seed_int)
         if resolved_fb is not None:
             resolved_fb.initialize(self.weight_feedback)
@@ -381,7 +459,9 @@ class LIFCell(SpikingReservoirCell):
 
         # Driving-input weight (salted seed so it never coincides with feedback).
         if self.input_size is not None:
-            self.weight_input = nn.Parameter(torch.empty(self.reservoir_size, self.input_size))
+            self.weight_input = nn.Parameter(
+                torch.empty(self.reservoir_size, self.input_size, **self._factory_kwargs)
+            )
             input_seed = _salt_seed(self._seed_int, _INPUT_SEED_OFFSET)
             resolved_in = resolve_initializer(self.input_initializer, seed=input_seed)
             if resolved_in is not None:
@@ -393,7 +473,9 @@ class LIFCell(SpikingReservoirCell):
 
         # Recurrent spike-coupling weight W_rec: topology-structured + spectral
         # scaled, exactly like the ESN recurrent matrix.
-        self.weight_rec = nn.Parameter(torch.empty(self.reservoir_size, self.reservoir_size))
+        self.weight_rec = nn.Parameter(
+            torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
+        )
         resolved_topo = resolve_topology(self.topology, seed=self._seed_int)
         if resolved_topo is not None:
             resolved_topo.initialize(self.weight_rec, spectral_radius=self.spectral_radius)
@@ -404,13 +486,18 @@ class LIFCell(SpikingReservoirCell):
 
         # Bias current.
         if self._bias:
-            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size))
+            self.bias_h = nn.Parameter(torch.empty(self.reservoir_size, **self._factory_kwargs))
             if self.bias_scaling != 0.0:
                 nn.init.uniform_(
                     self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
                 )
             else:
                 nn.init.zeros_(self.bias_h)
+            initialize_vector(
+                self.bias_h,
+                self.bias_initializer,
+                seed=_salt_seed(self._seed_int, 0x9E3779B9 * 5),
+            )
         else:
             self.register_parameter("bias_h", None)
 

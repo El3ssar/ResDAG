@@ -1,4 +1,5 @@
 ---
+title: "Topology catalog"
 description: Every registered reservoir topology — graph-based and matrix-based — with its connectivity portrait.
 ---
 

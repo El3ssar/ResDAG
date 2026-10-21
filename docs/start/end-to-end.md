@@ -142,3 +142,21 @@ uv run python examples/15_end_to_end.py
 
 For the forecast timing change and old-result reproduction, see
 [Migration](../migrating.md) and [Timing](../theory/timing.md).
+
+## 6. Customize the reservoir
+
+Use `recurrent_initializer=` to choose or register the recurrent weights;
+`topology=` still works. For finer control, set input, feedback, bias and reset
+state initializers separately. [Custom registration](../build/initialization/custom.md)
+walks through defining your own function and selecting it by name.
+
+You can also choose [oscillator dynamics](../build/layers/oscillator.md),
+[Legendre memory](../build/layers/legendre-memory.md), or wrap a
+[PyTorch GRU/LSTM](../build/layers/pytorch-recurrent.md). The same trainer,
+forecasting and `as_module()` integration apply to all of them. Optional
+[calibration](../workflows/calibration.md) adapts a standard tanh ESN on training
+inputs before its readout is fitted.
+
+Run `uv run python examples/16_custom_reservoirs.py` for a small comparison that
+registers a custom initializer, calibrates, trains, forecasts, saves/restores,
+and verifies gradients through each fitted model.

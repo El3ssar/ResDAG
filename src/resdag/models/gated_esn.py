@@ -156,8 +156,16 @@ def gated_esn(
 
     # Resolve the readout up front so an invalid spec fails before construction.
 
-    inp = reservoir_input(feedback_size)
-    driver = reservoir_input(input_size) if input_size else None
+    inp = reservoir_input(
+        feedback_size, dtype=reservoir_kwargs.get("dtype"), device=reservoir_kwargs.get("device")
+    )
+    driver = (
+        reservoir_input(
+            input_size, dtype=reservoir_kwargs.get("dtype"), device=reservoir_kwargs.get("device")
+        )
+        if input_size
+        else None
+    )
 
     reservoir = GatedReservoirLayer(
         reservoir_size=reservoir_size,
@@ -192,6 +200,6 @@ def gated_esn(
         alpha=readout_alpha,
         name=readout_name,
         readout_kwargs=readout_kwargs,
-    )(output)
+    ).to(device=reservoir.weight_feedback.device, dtype=reservoir.weight_feedback.dtype)(output)
 
     return ESNModel(model_inputs, readout_layer)

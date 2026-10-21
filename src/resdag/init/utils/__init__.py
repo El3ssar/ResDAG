@@ -3,17 +3,23 @@
 from .graph_tools import connected_graph
 from .resolve import (
     InitializerSpec,
+    RecurrentInitializerSpec,
     TopologySpec,
     resolve_initializer,
+    resolve_recurrent_initializer,
     resolve_topology,
+    select_recurrent_spec,
 )
 
 __all__ = [
     "connected_graph",
     "resolve_topology",
     "resolve_initializer",
+    "resolve_recurrent_initializer",
+    "select_recurrent_spec",
     "TopologySpec",
     "InitializerSpec",
+    "RecurrentInitializerSpec",
 ]
 
 

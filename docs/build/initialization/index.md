@@ -1,4 +1,5 @@
 ---
+title: "Initialization"
 description: Every weight matrix in a reservoir is built by a swappable function — the recurrent matrix by a topology, the input and feedback matrices by initializers.
 ---
 
@@ -7,8 +8,9 @@ description: Every weight matrix in a reservoir is built by a swappable function
 # Initialization
 
 Every weight matrix in a reservoir is built by a function you can swap: the
-recurrent matrix by a *topology*, the input and feedback matrices by
-*initializers*. One spec grammar covers both:
+recurrent matrix with `recurrent_initializer=`, and the input/feedback
+matrices with their corresponding initializer hooks. `topology=` remains
+a supported alias for recurrent initialization. One spec grammar covers both:
 
 | Spec | Example | Resolves to |
 | --- | --- | --- |
@@ -22,6 +24,10 @@ recurrent matrix by a *topology*, the input and feedback matrices by
 A topology callable is `fn(n, **kw)` returning an `(n, n)` tensor, ndarray,
 or NetworkX graph; an initializer callable is `fn(rows, cols, **kw)` returning the
 rectangular matrix. In-place mutators — the `torch.nn.init.*_` convention — are detected and handled.
+
+Start with [recurrent weight choices](recurrent.md) to compare matrix
+families, [custom registration](custom.md) to define your own, or
+[calibration](../../workflows/calibration.md) to adapt activity using training data.
 
 ## From the registry
 
@@ -95,8 +101,9 @@ layer = ESNLayer(200, feedback_size=3, spectral_radius=1.0,
 
 !!! note "Scale is separate from structure"
     However the matrix is built — graph, registry, bare callable, `torch.nn.init` —
-    `spectral_radius` rescales the result *afterwards*. A topology function does not
-    need to normalize its own spectrum.
+    `spectral_radius` normally rescales the result *afterwards*. Builders marked
+    `prescaled=True` keep their own scale. An explicit initializer object can
+    override either policy; see [scaling control](recurrent.md#decide-who-controls-scaling).
 
 ## The `input_scaling` contract
 

@@ -60,7 +60,12 @@ from .feature_extractor import ReservoirFeatureExtractor
 from .model import ESNModel, Input, ReservoirModelModule
 
 
-def reservoir_input(feature_size: int, dtype: torch.dtype | None = None) -> SymbolicData:
+def reservoir_input(
+    feature_size: int,
+    dtype: torch.dtype | None = None,
+    *,
+    device: torch.device | str | None = None,
+) -> SymbolicData:
     """
     Build a symbolic input tensor for a reservoir model.
 
@@ -74,6 +79,8 @@ def reservoir_input(feature_size: int, dtype: torch.dtype | None = None) -> Symb
         Number of features per timestep.
     dtype : torch.dtype, optional
         Tensor dtype. Defaults to ``torch.get_default_dtype()``.
+    device : torch.device or str, optional
+        Device for the symbolic example, matching layers initialized there.
 
     Returns
     -------
@@ -88,7 +95,10 @@ def reservoir_input(feature_size: int, dtype: torch.dtype | None = None) -> Symb
     """
     if dtype is None:
         dtype = torch.get_default_dtype()
-    return ps.Input((1, feature_size), dtype=dtype)
+    if device is None:
+        return ps.Input((1, feature_size), dtype=dtype)
+    with torch.device(device):
+        return ps.Input((1, feature_size), dtype=dtype)
 
 
 # ``ps`` (the re-exported ``pytorch_symbolic`` module) and ``torch`` remain

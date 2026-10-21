@@ -80,9 +80,19 @@ def _topology_page(name: str, entry) -> str:
     # (builder, defaults, wrapper, prescaled, ...). Bind the leading fields we
     # use and ignore any trailing ones so future additions don't break the hook.
     builder, defaults, wrapper, *_ = entry
+    prescaled = bool(entry[3]) if len(entry) > 3 else False
     kind = "graph" if wrapper.__name__ == "GraphTopology" else "matrix"
     summary = _doc_summary(builder)
     table = _param_table(builder)
+    radius_arg = "" if prescaled else ", spectral_radius=0.9"
+    scaling = (
+        "This builder preserves its native spectrum/scale by default. "
+        "Use its parameters to control that scale, or explicitly configure "
+        "`get_recurrent_initializer(..., rescale=True)` to allow an outer radius rescale."
+        if prescaled else
+        "A layer `spectral_radius` rescales this matrix after construction. "
+        "Use `get_recurrent_initializer(..., rescale=False)` to keep the native scale."
+    )
     fig = f"../../../assets/figures/topologies/{name}.png"
     fig_block = (
         f"<figure markdown>\n![{name}]({fig})\n"
@@ -102,14 +112,16 @@ description: "{summary[:140]}"
 {fig_block}```python
 from resdag.layers import ESNLayer
 
-reservoir = ESNLayer(500, feedback_size=3, topology="{name}", spectral_radius=0.9)
+reservoir = ESNLayer(500, feedback_size=3, recurrent_initializer="{name}"{radius_arg})
 ```
 
 {table}
 
-Override any parameter with the tuple spec — `topology=("{name}", {{...}})` —
-or pre-configure with `get_topology("{name}", ...)`. Scaling to a target
-spectral radius happens after construction, whatever the source.
+Override parameters with `recurrent_initializer=("{name}", {{...}})` or
+pre-configure with `get_recurrent_initializer("{name}", ...)`.
+The existing `topology=` spelling and `get_topology()` also work.
+
+{scaling}
 
 ## See also
 

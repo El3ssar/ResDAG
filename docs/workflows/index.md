@@ -1,4 +1,5 @@
 ---
+title: "Workflows"
 description: Train the readout, run autoregressive forecasts, tune hyperparameters, and scale to larger models and the GPU.
 ---
 
@@ -10,8 +11,8 @@ A reservoir computing project iterates through the same cycle: fit the
 readout (an algebraic solve that takes seconds), forecast against
 held-out validation data, adjust the hyperparameters that affect forecast
 quality, then scale the result with larger reservoirs, ensembles, GPU
-execution, and model persistence. These four pages cover that cycle in
-order.
+execution, and model persistence. The guides below cover that cycle. Optional calibration adapts reservoir
+activity on training data before fitting the readout.
 
 <div class="grid cards" markdown>
 
@@ -22,6 +23,13 @@ order.
     Three training approaches — the one-pass algebraic solve, frozen
     features with a gradient head, and full BPTT — and when each is
     appropriate.
+
+- **[Calibrate](calibration.md)**
+
+    ---
+
+    Optional intrinsic plasticity and flow control, with training-only inputs
+    and checkpoints that retain the adaptation.
 
 - **[Forecast](forecast.md)**
 

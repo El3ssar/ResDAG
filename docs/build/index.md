@@ -1,4 +1,5 @@
 ---
+title: "Composing models"
 description: Reservoir architectures as directed acyclic graphs - composition patterns, plus the layer, readout, architecture, and initialization references.
 ---
 
@@ -123,9 +124,9 @@ model = ESNModel(inp, outputs=[coords, energy])
 
     ---
 
-    Output layers fitted algebraically rather than by gradient descent.
-    Currently `CGReadoutLayer`, a ridge regression readout solved by
-    conjugate gradient.
+    Choose direct ridge, SVD/pseudoinverse, conjugate-gradient, streaming,
+    online RLS, or sparse FISTA readouts. Fit algebraically or enable gradients
+    for an ordinary PyTorch optimizer.
 
 - **[Architectures](architectures/index.md)**
 

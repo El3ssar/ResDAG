@@ -59,6 +59,20 @@ The [first forecast](https://el3ssar.github.io/ResDAG/start/first-forecast/) wal
 
 The [end-to-end guide](docs/start/end-to-end.md) covers data preparation, fitting, evaluation, saving and reuse inside a larger PyTorch model. Run its small complete example with `uv run python examples/15_end_to_end.py`.
 
+## Choose and customize the memory
+
+Use leaky ESNs, oscillators, Legendre delay memory, spiking reservoirs, or
+wrapped PyTorch GRU/LSTM cells through the same composition API. Select recurrent
+weights with `recurrent_initializer=`; names, parameter tuples, callables and
+custom registration all work. Biases, reset states and gated recurrence have
+separate hooks. Optional intrinsic plasticity and flow control calibrate a
+standard ESN on training inputs before fitting its readout.
+
+Start with [recurrent weights](docs/build/initialization/recurrent.md),
+[custom registration](docs/build/initialization/custom.md),
+[the layer catalog](docs/build/layers/index.md), or
+[calibration](docs/workflows/calibration.md).
+
 ## Compose, don't configure
 
 Architectures are DAGs you wire, not options you toggle. Two reservoirs on different timescales, read out together:

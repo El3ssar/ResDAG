@@ -113,6 +113,21 @@ trainable, feedback_initializer, input_initializer, topology, seed
         the adaptive ``'torchdiffeq'`` integrate the *same* vector field more
         accurately (they agree with Euler in the small-``epsilon`` limit).
 
+    recurrent_initializer : spec, optional
+        First-class alias for ``topology``. Supply one spelling only. Names,
+        tuples, callables and registered initializer objects are accepted.
+    bias_initializer : spec, optional
+        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
+        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+    initial_state_initializer : spec, optional
+        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Each batch example receives an independent copy at reset. Zero by default.
+    device : torch.device or str, optional
+        Initial parameter location. Metal construction initializes on CPU before
+        transferring to support initialization operations across backends.
+    dtype : torch.dtype, optional
+        Floating precision used during initialization, not only after conversion.
+
     Attributes
     ----------
     gamma : float
@@ -160,6 +175,12 @@ trainable, feedback_initializer, input_initializer, topology, seed
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         # ``gamma`` is validated by its property setter (shared with live writes);
         # stash the backing field before super().__init__ so the setter is ready,
@@ -193,6 +214,11 @@ trainable, feedback_initializer, input_initializer, topology, seed
             input_initializer=input_initializer,
             topology=topology,
             seed=seed,
+            recurrent_initializer=recurrent_initializer,
+            bias_initializer=bias_initializer,
+            initial_state_initializer=initial_state_initializer,
+            device=device,
+            dtype=dtype,
         )
         # Record the requested target on the base ``spectral_radius`` slot so the
         # ``__repr__`` and any introspection report the meaningful (skew-operator)

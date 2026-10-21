@@ -33,6 +33,9 @@ uv run python examples/01_quickstart.py --plot
 | 13 | `13_windowed_forecast.py` | `windowed_forecast`: gap-filling reconstruction of a sparsely-observed Lorenz trajectory (alternate teacher-force re-sync + autonomous free-run); scoring the unseen gaps | ~10 s |
 | 14 | `14_streaming_dataloader.py` | `TimeSeriesWindowDataset` + `make_dataloader`: windowed SGD (frozen head and full BPTT) and an algebraic `IncrementalRidgeReadout.partial_fit`/`finalize` fit, all over a standard PyTorch `DataLoader` | ~10 s |
 
+| 15 | `15_end_to_end.py` | Train, forecast, save/restore, and reuse a complete fitted model in a larger gradient pipeline | ~3 s |
+| 16 | `16_custom_reservoirs.py` | Register a custom initializer; calibrate; train oscillator, Legendre and native LSTM memories; verify persistence and upstream gradients | ~3 s |
+
 ## Suggested order
 
 Start with **00** for the easiest possible API — the whole train-and-forecast

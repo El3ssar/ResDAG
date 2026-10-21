@@ -19,9 +19,38 @@ from resdag.utils.general import SeedLike, coerce_seed_to_int
 
 # Type aliases for specification formats
 TopologySpec = None | str | Callable | tuple[str | Callable, dict[str, Any]] | TopologyInitializer
+RecurrentInitializerSpec = TopologySpec
 InitializerSpec = (
     None | str | Callable | tuple[str | Callable, dict[str, Any]] | InputFeedbackInitializer
 )
+
+
+def select_recurrent_spec(
+    *,
+    topology: TopologySpec = None,
+    recurrent_initializer: RecurrentInitializerSpec = None,
+) -> RecurrentInitializerSpec:
+    """Choose the recurrent specification, rejecting two explicit choices.
+
+    ``topology`` is the original spelling. Both parameters accept graph and
+    matrix builders; ``recurrent_initializer`` makes that scope explicit.
+    """
+    if topology is not None and recurrent_initializer is not None:
+        raise ValueError("Specify only one of topology and recurrent_initializer, not both.")
+    return recurrent_initializer if recurrent_initializer is not None else topology
+
+
+def resolve_recurrent_initializer(
+    spec: RecurrentInitializerSpec,
+    seed: SeedLike = None,
+) -> TopologyInitializer | None:
+    """Resolve a graph or matrix recurrent initializer using the shared registry.
+
+    Strings, ``(name_or_callable, kwargs)`` tuples, dimension-based or in-place
+    callables, and preconfigured objects retain :func:`resolve_topology`'s
+    seeding and calling conventions.
+    """
+    return resolve_topology(spec, seed=seed)
 
 
 def _accepts_seed(func: Callable) -> bool:

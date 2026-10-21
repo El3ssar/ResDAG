@@ -17,6 +17,7 @@ resdag.init.input_feedback : Input/feedback weight initialization.
 from collections.abc import Sequence
 from typing import Any
 
+import torch
 from torch import Tensor
 
 from resdag.init.utils import InitializerSpec, TopologySpec
@@ -108,6 +109,28 @@ class ESNLayer(BaseReservoirLayer):
         callable ``fn(n, **kw) -> matrix | nx.Graph`` (or in-place
         ``fn(tensor)``), ``(callable, params)``, or a configured topology
         object.
+    recurrent_initializer : str, callable, tuple, or TopologyInitializer, optional
+        First-class alias for ``topology`` accepting graph and matrix builders,
+        registered names and custom callables. Supply only one of the two.
+    bias_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Override the default random bias. Uses the same formats as input
+        initialization on a ``(1, reservoir_size)`` tensor, then flattens to
+        the bias vector. Requires ``bias=True``. Explicit hook values take
+        precedence over ``bias_scaling``.
+    initial_state_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
+        Initialize a persistent ``(1, reservoir_size)`` state template once
+        at construction. Every reset broadcasts an independent copy to each
+        batch item. ``None`` keeps the zero-state default. The template moves
+        with ``.to()`` and is included in checkpoints.
+    device : torch.device or str, optional
+        Device on which parameters are constructed. Defaults to the Torch
+        default device. CUDA initialization runs on the requested device;
+        MPS cells initialize on CPU and move the complete cell afterward,
+        preserving compatibility across supported Torch versions.
+    dtype : torch.dtype, optional
+        Floating-point initialization precision. Defaults to Torch's default
+        dtype. ``torch.float64`` constructs in double precision rather than
+        rounding float32 weights and converting afterward.
     seed : int or torch.Generator, optional
         Reproducibility seed that deterministically fixes the *entire*
         reservoir — topology (recurrent) matrix, feedback weights, input
@@ -234,6 +257,12 @@ class ESNLayer(BaseReservoirLayer):
         input_initializer: InitializerSpec = None,
         topology: TopologySpec = None,
         seed: SeedLike = None,
+        *,
+        recurrent_initializer: TopologySpec = None,
+        bias_initializer: InitializerSpec = None,
+        initial_state_initializer: InitializerSpec = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         cell = ESNCell(
             reservoir_size=reservoir_size,
@@ -251,6 +280,11 @@ class ESNLayer(BaseReservoirLayer):
             input_initializer=input_initializer,
             topology=topology,
             seed=seed,
+            recurrent_initializer=recurrent_initializer,
+            bias_initializer=bias_initializer,
+            initial_state_initializer=initial_state_initializer,
+            device=device,
+            dtype=dtype,
         )
         super().__init__(cell)
 

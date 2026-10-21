@@ -1,4 +1,5 @@
 ---
+title: "Reference"
 description: The complete public API of ResDAG, with a map of where each symbol lives.
 ---
 

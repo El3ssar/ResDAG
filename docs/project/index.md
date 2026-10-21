@@ -1,4 +1,5 @@
 ---
+title: "Project"
 description: How to cite ResDAG, the projects it builds on, how it compares to other reservoir computing libraries, how to contribute, and the release history.
 ---
 

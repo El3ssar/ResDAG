@@ -1,10 +1,9 @@
 """Fast Spectral Initialization (FSI) recurrent matrix.
 
-Builds a recurrent reservoir matrix whose spectral radius is set *analytically*
-at sampling time — no eigendecomposition, no power iteration, no rescaling pass.
-The cost is therefore dominated by drawing the random entries, which makes it
-the recommended topology for very large reservoirs where the ``O(n^3)`` dense
-``eigvals`` (or even an iterative estimate + rescale) is the bottleneck.
+Builds a recurrent reservoir matrix whose spectral radius is targeted
+*approximately* at sampling time, without spectral estimation. The direct
+builder costs O(n²). Disable outer scaling explicitly to retain this advantage
+when configuring a layer; the legacy layer default still measures and rescales.
 
 The construction follows Gallicchio (2020), *Fast Spectral Radius
 Initialization for Recurrent Neural Networks* (in *Recent Advances in Big Data
@@ -37,12 +36,17 @@ import torch
 
 from resdag.init.topology import register_matrix_topology
 
+from ._common import finite_scalar, matrix_device, seeded_generator
+
 
 @register_matrix_topology("fast_spectral_initialization", spectral_radius=0.9)
 def fast_spectral_initialization(
     n: int,
     spectral_radius: float = 0.9,
     seed: int | None = None,
+    *,
+    dtype: torch.dtype = torch.float32,
+    device: torch.device | str | None = None,
 ) -> torch.Tensor:
     """Build a recurrent matrix at a target spectral radius without eigvals.
 
@@ -53,12 +57,12 @@ def fast_spectral_initialization(
     eigendecomposition or power iteration is performed; the whole cost is the
     random draw, which is what makes it attractive for large ``n``.
 
-    Because the spectral radius is fixed analytically here, the usual
-    layer-level rescaling is unnecessary.  Passing this topology to an
-    ``ESNLayer`` with a ``spectral_radius`` argument still works — the realized
-    radius is already on target, so the subsequent rescale is a near no-op — but
-    the target is best controlled through this builder's own ``spectral_radius``
-    parameter (the registry default, ``0.9``).
+    The finite-size radius is approximate. The legacy registration retains
+    the layer's outer spectral estimation and rescaling. To skip that cost,
+    configure ``get_recurrent_initializer("fast_spectral_initialization",
+    spectral_radius=0.9, rescale=False)`` and pass the resulting object to the
+    layer. That explicitly accepts the finite-size approximation; the layer's
+    ``spectral_radius`` is then ignored without a warning.
 
     Parameters
     ----------
@@ -71,23 +75,26 @@ def fast_spectral_initialization(
     seed : int, optional
         Seed for the uniform draw.  ``None`` uses the global torch RNG, so the
         result is reproducible under :func:`torch.manual_seed`.
+    dtype : torch.dtype, default=torch.float32
+        Real floating-point output and random-draw dtype.
+    device : torch.device or str, optional
+        Allocation and random-draw device (CPU by default).
 
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` ``float32`` recurrent matrix with spectral radius
-        ``~= spectral_radius``.
+        Dense ``(n, n)`` recurrent matrix on the requested dtype/device, with
+        spectral radius approximately equal to ``spectral_radius``.
 
     Examples
     --------
+    >>> from resdag.init import get_recurrent_initializer
     >>> from resdag.layers import ESNLayer
     >>> reservoir = ESNLayer(
-    ...     2000, feedback_size=3, topology="fast_spectral_initialization"
-    ... )
-    >>> reservoir = ESNLayer(
-    ...     2000,
-    ...     feedback_size=3,
-    ...     topology=("fast_spectral_initialization", {"spectral_radius": 0.95}),
+    ...     2000, feedback_size=3,
+    ...     recurrent_initializer=get_recurrent_initializer(
+    ...         "fast_spectral_initialization", spectral_radius=0.95, rescale=False
+    ...     ),
     ... )
 
     References
@@ -96,21 +103,18 @@ def fast_spectral_initialization(
     Networks", in *Recent Advances in Big Data and Deep Learning* (INNSBDDL
     2019), Springer, 2020, pp. 380–390.
     """
-    if n <= 0:
-        raise ValueError(f"Matrix size n must be positive, got {n}")
+    target = matrix_device(n, dtype, device)
+    spectral_radius = finite_scalar(spectral_radius, "spectral_radius")
     if spectral_radius < 0:
         raise ValueError(f"spectral_radius must be non-negative, got {spectral_radius}")
 
-    generator = None
-    if seed is not None:
-        generator = torch.Generator()
-        generator.manual_seed(seed)
+    generator = seeded_generator(seed, target)
 
     # Half-width of the uniform distribution that yields the target spectral
     # radius under the circular law (variance a^2/3, radius ~ sqrt(n) * a/sqrt(3)).
     half_width = spectral_radius * math.sqrt(3.0 / n)
 
-    matrix = torch.empty(n, n, dtype=torch.float32)
+    matrix = torch.empty(n, n, dtype=dtype, device=target)
     matrix.uniform_(-half_width, half_width, generator=generator)
 
     return matrix

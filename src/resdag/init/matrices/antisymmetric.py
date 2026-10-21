@@ -38,9 +38,18 @@ import torch
 
 from resdag.init.topology import register_matrix_topology
 
+from ._common import finite_scalar, matrix_device, seeded_generator
+
 
 @register_matrix_topology("antisymmetric", scaling=1.0)
-def antisymmetric_matrix(n: int, scaling: float = 1.0, seed: int | None = None) -> torch.Tensor:
+def antisymmetric_matrix(
+    n: int,
+    scaling: float = 1.0,
+    seed: int | None = None,
+    *,
+    dtype: torch.dtype = torch.float32,
+    device: torch.device | str | None = None,
+) -> torch.Tensor:
     r"""Build a random antisymmetric (skew-symmetric) matrix :math:`A - A^\top`.
 
     Draws a standard-Gaussian matrix :math:`A` and returns
@@ -65,11 +74,15 @@ def antisymmetric_matrix(n: int, scaling: float = 1.0, seed: int | None = None) 
     seed : int, optional
         Seed for the Gaussian draw.  ``None`` uses the global torch RNG (so the
         result is reproducible under :func:`torch.manual_seed`).
+    dtype : torch.dtype, default=torch.float32
+        Real floating-point output and random-draw dtype.
+    device : torch.device or str, optional
+        Allocation and random-draw device (CPU by default).
 
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` ``float32`` antisymmetric matrix.
+        Dense ``(n, n)`` antisymmetric matrix on the requested dtype/device.
 
     Raises
     ------
@@ -91,13 +104,8 @@ def antisymmetric_matrix(n: int, scaling: float = 1.0, seed: int | None = None) 
     ...     128, feedback_size=3, topology="antisymmetric", spectral_radius=0.9
     ... )
     """
-    if n <= 0:
-        raise ValueError(f"Matrix size n must be positive, got {n}")
-
-    generator = None
-    if seed is not None:
-        generator = torch.Generator()
-        generator.manual_seed(seed)
-
-    a = torch.randn(n, n, generator=generator, dtype=torch.float32)
-    return float(scaling) * (a - a.t())
+    target = matrix_device(n, dtype, device)
+    scaling = finite_scalar(scaling, "scaling")
+    generator = seeded_generator(seed, target)
+    a = torch.randn(n, n, generator=generator, dtype=dtype, device=target)
+    return scaling * (a - a.t())

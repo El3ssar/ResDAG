@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.0.1 (2026-10-21)
+
+### Bug Fixes
+
+- **release**: Advance past reserved PyPI version 1.0.0
+  ([#455](https://github.com/El3ssar/ResDAG/pull/455),
+  [`d3cd0c3`](https://github.com/El3ssar/ResDAG/commit/d3cd0c3cc97ba0684a9efa0e99f8baa2cce89f17))
+
+
 ## v1.0.0 (2026-10-21)
 
 ### Features

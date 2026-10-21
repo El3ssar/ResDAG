@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.0.0 (2026-10-21)
+
+### Features
+
+- Unify forecast timing and composable reservoir pipelines
+  ([#454](https://github.com/El3ssar/ResDAG/pull/454),
+  [`ded8c22`](https://github.com/El3ssar/ResDAG/commit/ded8c22c04008af4197678130305c06495286558))
+
+### Breaking Changes
+
+- Low-level forecasts now start at the immediate unseen sample and return_warmup has W-1+H frames.
+  Use alignment="legacy" in preparation and forecasting to reproduce older core/ensemble
+  trajectories.
+
+
 ## v0.11.0 (2026-10-21)
 
 ### Bug Fixes

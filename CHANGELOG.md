@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v0.11.0 (2026-10-21)
+
+### Bug Fixes
+
+- Improve reservoir pipeline integration and forecast correctness
+  ([#453](https://github.com/El3ssar/ResDAG/pull/453),
+  [`0355ef0`](https://github.com/El3ssar/ResDAG/commit/0355ef0f5c62be9df26eff3bc42854a1dc5a2002))
+
+### Features
+
+- **training**: State-noise/LMNT regularizer + observables metrics (phase 15)
+  ([#452](https://github.com/El3ssar/ResDAG/pull/452),
+  [`072c1fc`](https://github.com/El3ssar/ResDAG/commit/072c1fc22ef136648fded9a9050836421fda69aa))
+
+
 ## v0.10.0 (2026-07-06)
 
 ### Features

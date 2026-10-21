@@ -179,7 +179,7 @@ from .training import ESNTrainer
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     # Modules

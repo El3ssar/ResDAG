@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Release commits use GITHUB_TOKEN and skip CI, so their version bump does
+  # not trigger the push workflow. Rebuild from the updated default branch
+  # after a successful release, including its version and changelog changes.
+  workflow_run:
+    workflows: [Release]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dependency-mode:
@@ -28,6 +35,11 @@ env:
 
 jobs:
   build:
+    if: >-
+      ${{ github.event_name != 'workflow_run'
+          || (github.event.workflow_run.conclusion == 'success'
+              && github.event.workflow_run.head_branch == 'main'
+              && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +58,13 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      ${{ github.ref == 'refs/heads/main'
+          && (github.event_name == 'push'
+              || (github.event_name == 'workflow_run'
+                  && github.event.workflow_run.conclusion == 'success'
+                  && github.event.workflow_run.head_branch == 'main'
+                  && github.event.workflow_run.head_repository.full_name == github.repository)) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

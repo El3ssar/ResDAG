@@ -170,6 +170,7 @@ nav:
       - start/index.md
       - Install: start/install.md
       - First forecast: start/first-forecast.md
+      - Train, save and integrate: start/end-to-end.md
       - The mental model: start/concepts.md
   - Build:
       - build/index.md

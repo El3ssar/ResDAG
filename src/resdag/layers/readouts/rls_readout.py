@@ -499,47 +499,7 @@ class RLSReadout(ReadoutLayer):
         ValueError
             On a shape mismatch or a non-finite input (see :meth:`partial_fit`).
         """
-        self._validate_fit_shapes(states, targets)
-        if states.dim() == 3:
-            b, t, f = states.shape
-            states = states.reshape(b * t, f)
-        if targets.dim() == 3:
-            b, t, f = targets.shape
-            targets = targets.reshape(b * t, f)
-
-        readout_id = f"'{self._name}'" if self._name is not None else type(self).__name__
-        if states.shape[0] != targets.shape[0]:
-            raise ValueError(
-                f"{type(self).__name__}.{method}({readout_id}): sample count mismatch. "
-                f"States have {states.shape[0]} samples after flattening, "
-                f"targets have {targets.shape[0]}."
-            )
-        if states.shape[1] != self.in_features:
-            raise ValueError(
-                f"{type(self).__name__}.{method}({readout_id}): state feature dimension "
-                f"({states.shape[1]}) does not match readout in_features "
-                f"({self.in_features})."
-            )
-        if targets.shape[1] != self.out_features:
-            raise ValueError(
-                f"{type(self).__name__}.{method}({readout_id}): target feature dimension "
-                f"({targets.shape[1]}) does not match readout out_features "
-                f"({self.out_features})."
-            )
-        if not torch.isfinite(states).all():
-            raise ValueError(
-                f"{type(self).__name__}.{method}({readout_id}): states contain "
-                f"non-finite values (NaN or Inf). The RLS recursion requires "
-                f"finite inputs — clean or impute the reservoir states (a diverged "
-                f"reservoir is the usual cause) before fitting."
-            )
-        if not torch.isfinite(targets).all():
-            raise ValueError(
-                f"{type(self).__name__}.{method}({readout_id}): targets contain "
-                f"non-finite values (NaN or Inf). The RLS recursion requires "
-                f"finite inputs — clean or impute the targets before fitting."
-            )
-        return states, targets
+        return self._prepare_fit_inputs(states, targets, method)
 
     def _fit_impl(
         self,

@@ -180,7 +180,7 @@ class TestInternalSpeedupTargets:
     def _graph_forecast(
         model: rd.core.ESNModel, warmup: torch.Tensor, horizon: int
     ) -> torch.Tensor:
-        """The pre-#254 path: one full ``model(...)`` graph walk per step."""
+        """Graph-walk reference with the same immediate-next forecast contract."""
         model.reset_reservoirs()
         warm = model.warmup(warmup, return_outputs=True)
         cur = warm[:, -1:, :]
@@ -188,7 +188,8 @@ class TestInternalSpeedupTargets:
             warmup.shape[0], horizon, warm.shape[-1], dtype=warmup.dtype, device=warmup.device
         )
         with torch.no_grad():
-            for t in range(horizon):
+            buf[:, 0, :] = cur.squeeze(1)
+            for t in range(1, horizon):
                 out = model(cur)
                 buf[:, t, :] = out.squeeze(1)
                 cur = out

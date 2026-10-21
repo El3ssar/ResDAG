@@ -57,6 +57,7 @@ import torch
 
 import resdag as rd
 from resdag.core import ESNModel, Input
+from resdag.core._forecast import ForecastAlignment
 from resdag.layers import CGReadoutLayer, NGReservoirLayer
 from resdag.metrics import CANONICAL_LAMBDA_MAX, steps_to_lyapunov
 from resdag.metrics import valid_prediction_time as _metrics_vpt
@@ -121,7 +122,7 @@ VPT_FLOOR_FRAC = 0.3  # committed floor = this fraction of the measured VPT...
 VPT_FLOOR_MIN = 20  # ...but at least this many steps (a clear "not collapsed" bar).
 
 # Schema version stamped into every fixture; bump on incompatible format changes.
-FIXTURE_VERSION = 1
+FIXTURE_VERSION = 2  # immediate unseen timing; legacy v1 fixtures remain frozen
 
 
 # --------------------------------------------------------------------------- #
@@ -227,7 +228,7 @@ SPECS: list[GoldenSpec] = [
 Splits = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
 
-def make_lorenz_splits() -> Splits:
+def make_lorenz_splits(*, alignment: ForecastAlignment = "next") -> Splits:
     """Return the canonical, deterministic Lorenz-63 splits used by every model.
 
     Built from :func:`resdag.lorenz` (NumPy float64 RK4) and split with
@@ -248,12 +249,15 @@ def make_lorenz_splits() -> Splits:
         warmup_steps=WARMUP_STEPS,
         train_steps=TRAIN_STEPS,
         val_steps=HORIZON,
+        alignment=alignment,
     )
     # ``return_stats`` defaults to False, so this is always the 5-tuple form.
     return cast(Splits, splits)
 
 
-def train_and_forecast(model: ESNModel, splits: Splits) -> torch.Tensor:
+def train_and_forecast(
+    model: ESNModel, splits: Splits, *, alignment: ForecastAlignment = "next"
+) -> torch.Tensor:
     """Fit the readout and return the autonomous forecast over :data:`HORIZON`.
 
     Parameters
@@ -274,7 +278,7 @@ def train_and_forecast(model: ESNModel, splits: Splits) -> torch.Tensor:
         train_inputs=(train,),
         targets={"output": target},
     )
-    forecast = model.forecast(forecast_warmup, horizon=val.shape[1])
+    forecast = model.forecast(forecast_warmup, horizon=val.shape[1], alignment=alignment)
     assert isinstance(forecast, torch.Tensor)  # single-output models here
     return forecast
 
@@ -355,6 +359,7 @@ def build_payload(spec: GoldenSpec, splits: Splits) -> dict[str, Any]:
     )
     meta = {
         "fixture_version": FIXTURE_VERSION,
+        "alignment": "next",
         "name": spec.name,
         "description": spec.description,
         "dtype": "float64",

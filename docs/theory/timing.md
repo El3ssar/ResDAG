@@ -1,118 +1,129 @@
 ---
-description: The one-step target shift, default and explicitly seeded forecast indices, driver alignment, and state across calls.
+description: Next-sample training, forecast indices, driver alignment, and recurrent state across calls.
 ---
 
 <span class="nb-kicker">Theory · Timing</span>
 
 # Timing conventions
 
-A next-step readout maps feedback $f_t$ and an optional driver $d_t$ to
-$\hat f_{t+1}$. The reservoir state after consuming that pair also belongs to
-time $t$. Keeping those two indices distinct prevents a plausible forecast
-from being scored one sample early.
+A next-step readout consumes feedback $x_t$ and an optional driver $d_t$ and
+predicts $x_{t+1}$. This same rule applies to training, teacher-forced evaluation,
+and autonomous forecasting.
 
-## Training pairs
+## Training and validation
 
-After discarding any initial transient, let `warmup_steps = W` and
-`train_steps = L`. `prepare_esn_data` builds:
+After discarding any initial transient, let `W = warmup_steps` and
+`L = train_steps`. Both counts must be positive integers. Preparation builds:
 
 ```python
 warmup = data[:, :W]
-train = data[:, W : W + L]
-target = data[:, W + 1 : W + L + 1]
+train = data[:, W:W+L]
+target = data[:, W+1:W+L+1]
+f_warmup = data[:, L+1:W+L+1]
+val = data[:, W+L+1:W+L+1+H]
 ```
 
-State row `t` is fitted to target row `t`. The trainer performs no additional
-shift. The training target includes `data[:, W + L]`, one sample beyond the
-last training input, so preparing a split requires that extra sample.
+The trainer fits each input row to the matching target row without another
+shift. The final training target, `data[:, W+L]`, has already been observed
+during fitting. Forecast warmup includes it; validation starts after it.
+`f_warmup` always contains `W` observations, even when `L < W`.
 
-The forecast warmup is the final `W` samples of the entire observed input
-prefix `data[:, :W + L]`. This remains exactly `W` samples even when `L < W`.
-With `W = 0` it is empty. The validation split starts at
-`data[:, W + L + 1]`, as required by the default forecast convention below.
+Normalization statistics are fitted on training inputs alone and reused across
+all windows. Validation therefore contributes neither targets to fitting nor
+statistics to preprocessing.
 
-## Default forecast: seed from the model's prediction
+## Forecast the immediate unseen sample
 
-`forecast(warmup_inputs, horizon=H)` first processes the warmup. Let $T$
-index its last input pair $(f_T, d_T)$. The last warmup output estimates
-$f_{T+1}$; it seeds the autoregressive loop and is **not** included in the
-returned forecast unless `return_warmup=True`.
+If `observed` contains `x[:, :N]`, then:
 
-Every returned slot performs a new model update:
+```python
+predictions = model.forecast(observed, horizon=H)
+# predictions[:, i] estimates x[:, N+i]
+```
 
-| Phase | Feedback consumed | Driver consumed | Output estimates |
+The last warmup readout already predicts the next sample. Forecast slot zero
+uses that prediction. Only the remaining `H-1` predictions need further model
+updates. `horizon` must be a positive integer; zero is rejected. A one-step
+forecast is useful and does not require any future drivers.
+
+| Output | Feedback consumed | Driver consumed | Sample estimated |
 | --- | --- | --- | --- |
-| last warmup step | $f_T$ | $d_T$ | $f_{T+1}$, used as the seed |
-| forecast slot 0 | $\hat f_{T+1}$ | $d_{T+1}$ | $f_{T+2}$ |
-| forecast slot 1 | $\hat f_{T+2}$ | $d_{T+2}$ | $f_{T+3}$ |
-| forecast slot $i$ | $\hat f_{T+1+i}$ | $d_{T+1+i}$ | $f_{T+2+i}$ |
+| last warmup output / forecast slot 0 | $x_{N-1}$ | $d_{N-1}$ | $x_N$ |
+| forecast slot 1 | $\hat x_N$ | $d_N$ | $x_{N+1}$ |
+| forecast slot 2 | $\hat x_{N+1}$ | $d_{N+1}$ | $x_{N+2}$ |
 
-Thus `predictions[:, i]` estimates $f_{T+2+i}$. With prepared data,
-$T = W + L - 1$, so prediction 0 aligns with `data[:, W + L + 1]`,
-the first validation sample. The preceding seam sample `data[:, W + L]`
-is the final training target and the model's predicted seed.
-
-`forecast_inputs` holds **one driver value per returned step**, starting
-immediately after the warmup driver window. It must contain at least `H`
-steps; only its first `H` values are consumed. A single driver tensor can be
-passed directly; multiple drivers use a tuple.
-
-`return_warmup=True` concatenates all warmup outputs with these `H` new
-outputs. It adds no repeated frame at the boundary.
-
-## Predict immediately after the last observation
-
-For a continuous observed prefix of length `N`, the next unobserved sample
-has index `N`. To predict it in slot 0, keep the final observation as explicit
-feedback and warm up through the preceding sample:
+For a driven model, future drivers start immediately after the observed driver
+history. They accompany the *input being consumed*, not its next-sample target:
 
 ```python
 predictions = model.forecast(
-    observed[:, :-1],
-    initial_feedback=observed[:, -1:],
+    (x[:, :N], d[:, :N]),
+    forecast_inputs=d[:, N:N+H-1],
     horizon=H,
 )
-# predictions[:, i] estimates the sample at index N + i
+truth = x[:, N:N+H]
 ```
 
-The first update consumes the actual observation at index `N - 1`, producing
-the prediction for index `N`. For a driven model, warm up on the corresponding
-prefix of the driver and start `forecast_inputs` at driver index `N - 1`:
-the driver must have the same time index as the feedback it accompanies.
+Longer driver windows are accepted; only the required prefix is consumed.
+With `return_warmup=True`, historical predictions are prepended. The final
+warmup prediction is already slot zero, so it appears once: total length is
+`W-1+H`. Core, coupled ensemble, and parallel models share these semantics.
+The `ESN` facade retains `washout+1` observations and therefore returns
+`washout+H` values when including historical predictions.
 
-An empty warmup is supported with an explicit `initial_feedback`, which is
-useful when starting from zero or deliberately restored states. Without a
-seed, an empty warmup raises because there is no prediction to feed back.
-The high-level `ESN.forecast` facade handles this observed-prefix alignment
-for you.
+## Explicit seeds and continuation
 
-`windowed_forecast` also aligns gap predictions to the original timeline.
-It starts each gap with the final teacher-forced prediction and follows it
-with the required autoregressive predictions. Score only its gap positions
-using the returned observation mask.
+`initial_feedback` is a distinct extra input consumed *after* the complete
+warmup. Slot zero predicts the sample after that seed. Do not repeat the last
+warmup observation as the seed. Explicit seeds need `H` future driver samples,
+starting at the same time as the seed, and `return_warmup=True` has length `W+H`.
+
+A forecast leaves its final returned prediction unconsumed. Continue the same
+trajectory without replaying history by consuming it as the next explicit seed:
+
+```python
+first = model.forecast(observed, horizon=100)
+next_part = model.forecast(
+    observed[:, :0],
+    initial_feedback=first[:, -1:],
+    horizon=100,
+    reset=False,
+)
+```
+
+For driven models, pass empty history for every stream and future drivers
+beginning at the seed's time. Empty warmup without an explicit seed raises.
+`reset=False` uses current states; `reset=True` starts from zero states.
+
+`windowed_forecast` fills gaps at their own timeline indices. It consumes the
+final predicted gap input before the next observed window so recurrent state
+remains continuous. Score only gap positions using its returned mask.
+
+## Reproducing earlier low-level forecasts
+
+`alignment="legacy"` preserves the old core and ensemble convention: it
+consumes the last warmup prediction before returning slot zero, skipping the
+immediate unseen sample. It requires `H` drivers and prepends `W` predictions
+when `return_warmup=True`. Pair it with
+`prepare_esn_data(..., alignment="legacy")`, whose forecast history ends one
+sample earlier. Training and validation splits stay unchanged.
+
+Earlier ParallelESN forecasts already started at the immediate unseen sample;
+keep the default to preserve their future timing. Their old `return_warmup`
+prefix contained raw observations; the prefix now contains predictions.
+See [Migration](../migrating.md) for the compatibility recipe.
 
 ## State across calls
 
-Reservoir layers carry mutable state between ordinary `forward` calls.
+Ordinary `model(x)` calls carry reservoir state. `warmup` and `forecast` reset
+by default. Use `reset_reservoirs()` between independent trajectories or use
+`model.as_module()` for independent PyTorch minibatches. The full model's
+`forward_stateless(..., states=...)` returns predictions and explicit state
+without changing stored reservoir buffers; it supports deliberate chunking and
+backpropagation across chunks.
 
-- `warmup` and `forecast` reset by default (`reset=True`). A bare `model(x)`
-  or `layer(x)` continues the current state; use `reset_reservoirs` or
-  `reset_state` between independent trajectories.
-- `.to(device)` and dtype conversions move the stored state along with the
-  parameters, preserving its values. Move the inputs to match the module.
-  Naturally accumulated states reinitialize to zeros when batch size changes.
-  A state deliberately restored with `set_state` instead raises on a batch
-  mismatch until it is consumed or explicitly reset.
-- By default, stored states detach at call boundaries while returned outputs
-  retain gradients within the call. Set `detach_state_between_calls=False`
-  only when intentionally backpropagating across calls and managing those
-  retained graphs.
-- `ReservoirFeatureExtractor(stateful=False)` starts independent minibatches
-  from zeros without changing stored states. Its `forward_stateless` method
-  accepts and returns explicit states, keeping gradients across chunks until
-  you detach them yourself.
-
-## Next
-
-[**Design of the library**](design.md) explains the composition and execution
-choices behind these interfaces.
+Stored states move with `.to(device)` and dtype conversion. Inputs must match
+the model's device and dtype. By default, stored state detaches at ordinary
+call boundaries. Set `detach_state_between_calls=False` only when managing
+backpropagation across those calls. Explicit stateless states retain gradients
+until you detach them yourself.

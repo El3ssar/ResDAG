@@ -58,14 +58,13 @@ workflow needs:
 
 ```text
 [ warmup │ train ────────────────────── │ seam │ val ]
-                          └─ f_warmup ─┘
+                           └─ f_warmup ─────┘
 ```
 
 `target` is `train` shifted forward one step — the model learns *given the
-signal now, emit the signal one step ahead*. `f_warmup` is the last `warmup_steps` observed inputs before the seam.
-The seam is the final training target, predicted by the last warmup output;
-the first returned autoregressive prediction corresponds to the next sample,
-which starts `val`. Normalization uses only the training inputs, avoiding
+signal now, emit the signal one step ahead*. `f_warmup` contains the final `warmup_steps` observations, including the
+final training target at the seam. Its last readout predicts the first unseen
+sample, which starts `val`. Normalization uses only the training inputs, avoiding
 held-out information in preprocessing. Normalization is important: the tanh activation saturates
 when inputs are far from order one.
 
@@ -81,7 +80,8 @@ readout's `name` parameter; this is how target tensors are routed to
 readout layers.
 
 **The forecast.** Two phases: teacher-forced warmup on `f_warmup`, then
-`horizon` autoregressive steps where each output becomes the next input.
+`horizon` predictions starting with its final next-sample readout. Later
+predictions feed the previous output back as input.
 The returned tensor aligns one-to-one with `val`, so the forecast error can
 be computed directly.
 

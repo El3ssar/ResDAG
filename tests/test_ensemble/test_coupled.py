@@ -320,8 +320,8 @@ class TestFitForecast:
             assert buf.shape == (1, 10, 2)
 
     def test_forecast_return_warmup(self):
-        # Next-step (shifted) target so the genuine first forecast frame differs
-        # from the last warmup frame, making the seam-duplication check active.
+        # Next-step targets make adjacent predictions differ, so a repeated
+        # boundary prediction cannot pass the seam check accidentally.
         x = _toy_data(seq_len=80)
         warmup = x[:, :10]
         train_in, train_tgt = x[:, 10:49], x[:, 11:50]
@@ -337,27 +337,21 @@ class TestFitForecast:
         forecast_only = ens.forecast(f_warm, horizon=horizon)
         full = ens.forecast(f_warm, horizon=horizon, return_warmup=True)
 
-        # Length is exactly warmup_steps + horizon.
-        assert full.shape[1] == warmup_steps + horizon
+        # The final warmup prediction is forecast slot zero, included once.
+        assert full.shape[1] == warmup_steps - 1 + horizon
         # The forecast tail of the return_warmup output equals the standalone
-        # forecast — slot 0 is a genuine step, not a teacher-forced echo.
-        assert torch.allclose(full[:, warmup_steps:, :], forecast_only)
-        # No duplicated seam frame: the old buggy code wrote the aggregated
-        # last-warmup echo into forecast slot 0, so full[:, warmup_steps] would
-        # equal full[:, warmup_steps - 1]. With the fix they differ.
-        assert not torch.allclose(full[:, warmup_steps - 1, :], full[:, warmup_steps, :], atol=1e-5)
+        # forecast, starting at the immediate unseen sample.
+        assert torch.allclose(full[:, warmup_steps - 1 :, :], forecast_only)
+        # The final historical prediction and first unseen prediction differ.
+        assert not torch.allclose(
+            full[:, warmup_steps - 2, :], full[:, warmup_steps - 1, :], atol=1e-5
+        )
 
-    def test_forecast_slot0_is_genuine_step_not_warmup_echo(self):
-        """Slot 0 is a genuine coupled step, not the aggregated warmup echo.
+    def test_forecast_slot0_is_immediate_unseen_prediction(self):
+        """Slot zero aggregates each member's prediction of the unseen sample.
 
-        Reproduces the corrected ESNModel.forecast semantics by hand: warm every
-        sub-model, aggregate the last warmup step as the seed feedback, take one
-        coupled step, and check ``forecast(..., horizon=1)`` matches that — *not*
-        the seed feedback itself (which is what the old off-by-one returned).
-
-        The readout is fitted to a *next-step* (shifted) target so the genuine
-        step provably differs from the seed echo, making the regression check
-        below active rather than vacuous.
+        The compatibility mode consumes this prediction once more and matches
+        an independently executed coupled update instead.
         """
         x = _toy_data(seq_len=80)
         warmup = x[:, :10]
@@ -375,19 +369,22 @@ class TestFitForecast:
             for m in ens.models:
                 w = m.warmup(f_warm, return_outputs=True, reset=True)
                 last_steps.append(w[:, -1:, :])
-            seed_feedback = torch.stack(last_steps, dim=0).mean(dim=0)  # aggregated echo
+            seed_feedback = torch.stack(last_steps, dim=0).mean(
+                dim=0
+            )  # immediate unseen prediction
             step_outputs = [m(seed_feedback) for m in ens.models]
             expected_step = torch.stack(step_outputs, dim=0).mean(dim=0).squeeze(1)
 
         out = ens.forecast(f_warm, horizon=1)
         assert out.shape == (1, 1, 2)
-        # Slot 0 equals the genuine coupled step ...
-        assert torch.allclose(out[:, 0, :], expected_step, atol=1e-5)
-        # ... and the genuine step differs from the seed echo (sanity check that
-        # this test would catch the old off-by-one) ...
+        # Default slot zero is the final warmup next-sample prediction.
+        assert torch.allclose(out[:, 0, :], seed_feedback.squeeze(1), atol=1e-5)
+        legacy = ens.forecast(f_warm, horizon=1, alignment="legacy")
+        assert torch.allclose(legacy[:, 0, :], expected_step, atol=1e-5)
+        # The next coupled update differs, so the timing check is meaningful.
         assert not torch.allclose(expected_step, seed_feedback.squeeze(1), atol=1e-5)
-        # ... so slot 0 is not the old teacher-forced warmup echo.
-        assert not torch.allclose(out[:, 0, :], seed_feedback.squeeze(1), atol=1e-5)
+        # Legacy explicitly returns that later coupled update.
+        assert not torch.allclose(legacy[:, 0, :], seed_feedback.squeeze(1), atol=1e-5)
 
     def test_forecast_rejects_non_positive_horizon(self):
         """``horizon <= 0`` raises a ValueError naming the parameter."""
@@ -403,12 +400,8 @@ class TestFitForecast:
             with pytest.raises(ValueError, match="horizon"):
                 ens.forecast(f_warm, horizon=bad)
 
-    def test_forecast_return_individuals_buffers_are_genuine_steps(self):
-        """Per-model buffers have shape ``(batch, horizon, F)`` and no slot-0 echo.
-
-        Each per-model slot 0 is that sub-model's own forecast of the seed
-        feedback, *not* the aggregated warmup echo that the old code wrote in.
-        """
+    def test_forecast_return_individuals_start_at_each_members_unseen_prediction(self):
+        """Each trajectory starts with its own final next-sample readout."""
         x = _toy_data(seq_len=80)
         warmup = x[:, :10]
         train_in, train_tgt = x[:, 10:49], x[:, 11:50]  # predict next step
@@ -419,22 +412,22 @@ class TestFitForecast:
         )
         ens.fit((warmup,), (train_in,), {"output": train_tgt.clone()})
 
-        # Manual seed feedback (aggregated last warmup) + per-model first steps.
+        # Independent per-member predictions before they enter the coupled loop.
         last_steps = []
         with torch.no_grad():
             for m in ens.models:
                 w = m.warmup(f_warm, return_outputs=True, reset=True)
                 last_steps.append(w[:, -1:, :])
             seed_feedback = torch.stack(last_steps, dim=0).mean(dim=0)
-            expected_first = [m(seed_feedback).squeeze(1) for m in ens.models]
+            expected_first = [out.squeeze(1) for out in last_steps]
 
         _, indiv = ens.forecast(f_warm, horizon=8, return_individuals=True)
         assert len(indiv) == 3
         for buf, exp in zip(indiv, expected_first):
             assert buf.shape == (1, 8, 2)
-            # Slot 0 is the sub-model's genuine first forecast step ...
+            # The member's first prediction is preserved before aggregation.
             assert torch.allclose(buf[:, 0, :], exp, atol=1e-5)
-            # ... and not the aggregated warmup echo (old slot-0 pre-fill).
+            # Individual predictions retain differences between members.
             assert not torch.allclose(buf[:, 0, :], seed_feedback.squeeze(1), atol=1e-5)
 
     def test_fit_parallel_n_workers(self):
@@ -594,7 +587,7 @@ class TestDeviceDtypeCoercion:
         ens.fit((warmup,), (train,), {"output": train.clone()})
         out = ens.forecast(f_warm, horizon=8, return_warmup=True)
         assert out.dtype == torch.float32
-        assert out.shape[1] == f_warm.shape[1] + 8
+        assert out.shape[1] == f_warm.shape[1] - 1 + 8
 
 
 # ---------------------------------------------------------------------------
@@ -813,10 +806,10 @@ class TestDrivenForecast:
 
         # First captured call is the (3-D, whole-sequence) teacher-forced warmup.
         assert seen[0].shape[1] == f_warm.shape[1]
-        # The horizon autoregressive steps consume the forecast drivers in order,
+        # The H-1 further model updates consume future drivers in order,
         # as 2-D per-step slices (the flat step squeezes the singleton time axis).
         autoregressive = seen[1:]
-        assert len(autoregressive) == horizon
+        assert len(autoregressive) == horizon - 1
         for t, captured in enumerate(autoregressive):
             expected = forecast_driver[:, t, :]
             assert torch.equal(captured, expected), (
@@ -825,7 +818,7 @@ class TestDrivenForecast:
             )
 
     def test_driven_accepts_extra_driver_steps(self, monkeypatch):
-        """A longer driver tensor is accepted; only the first ``horizon`` used.
+        """A longer driver tensor is accepted; only the first ``horizon - 1`` used.
 
         Probes the reservoir cell's ``project_inputs`` (driven through the flat
         single-step engine, not the layer ``__call__``); per-step driver slices
@@ -854,7 +847,7 @@ class TestDrivenForecast:
         )
 
         autoregressive = seen[1:]
-        assert len(autoregressive) == horizon
+        assert len(autoregressive) == horizon - 1
         for t, captured in enumerate(autoregressive):
             assert torch.equal(captured, forecast_driver[:, t, :])
 

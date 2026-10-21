@@ -282,8 +282,8 @@ class ESN:
         # Remember the tail of the *training* series so forecast() can
         # re-synchronise the reservoir from a known, teacher-forced window.
         # Keep washout history samples plus the last observed sample. The
-        # latter must seed the rollout directly: using its readout prediction
-        # as the seed would skip the first unseen timestep.
+        # final readout predicts the first unseen timestep. The low-level
+        # forecast method uses this same next-sample convention.
         self._sync_tail = data[:, timesteps - self.washout - 1 :, :].detach().clone()
         return self
 
@@ -295,7 +295,7 @@ class ESN:
     ) -> Any:
         """Roll out an autoregressive forecast continuing the fitted series.
 
-        Resets the reservoir, re-synchronises it on the final ``washout`` steps
+        Resets the reservoir, re-synchronises it on the final ``washout + 1`` steps
         of the training series, then autoregressively generates ``horizon``
         steps via :meth:`~resdag.core.ESNModel.forecast`.  Because the state is
         always reset first, successive calls are independent.
@@ -328,15 +328,11 @@ class ESN:
         """
         if self.model is None or self._sync_tail is None:
             raise RuntimeError("forecast() called before fit(). Call fit(series) first.")
-        if horizon < 1:
-            raise ValueError(f"horizon must be a positive integer, got {horizon}")
-
         # forecast() resets the reservoir internally (reset=True), so two
         # successive forecasts are independent — no manual reset needed.
         prediction = self.model.forecast(
-            self._sync_tail[:, :-1, :],
+            self._sync_tail,
             horizon=horizon,
-            initial_feedback=self._sync_tail[:, -1:, :],
             return_warmup=return_warmup,
         )
         # classic_esn is single-output, so forecast returns a single tensor.

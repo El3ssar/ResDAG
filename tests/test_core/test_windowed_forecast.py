@@ -117,8 +117,9 @@ class TestMatchesManualChaining:
             series, warmup_len=warmup_len, teacher_len=teacher_len, predict_len=predict_len
         )
 
-        # Hand-rolled: reset once, then forecast cycle by cycle with reset=False,
-        # placing each gap with the same one-step-back shift the method uses.
+        # Independent compatibility oracle: reset once, use the historical
+        # shifted rollout and include its boundary prediction. This also checks
+        # that state consumes the final gap input before the next teacher window.
         manual = series.clone()
         pos, window_len, first = 0, warmup_len, True
         T = series.shape[1]
@@ -130,7 +131,11 @@ class TestMatchesManualChaining:
             if gap < 1:
                 break
             full = model.forecast(
-                series[:, pos:teacher_end, :], horizon=gap, return_warmup=True, reset=first
+                series[:, pos:teacher_end, :],
+                horizon=gap,
+                return_warmup=True,
+                reset=first,
+                alignment="legacy",
             )
             manual[:, teacher_end : teacher_end + gap, :] = full[
                 :, window_len - 1 : window_len + gap - 1, :
@@ -141,15 +146,8 @@ class TestMatchesManualChaining:
 
         assert torch.allclose(recon, manual, atol=1e-6)
 
-    def test_single_cycle_reduces_to_shifted_forecast(self, make_tiny_model) -> None:
-        """With one gap running to the end, it equals a one-step-back forecast slice.
-
-        The gap ``[warmup_len, T)`` holds the prediction of
-        ``series[warmup_len .. T - 1]``, which is the last warmup output followed
-        by all but the final autoregressive slot of a plain forecast — i.e.
-        ``full[:, warmup_len - 1 : warmup_len + gap - 1]`` where ``full`` is the
-        warmup-included forecast of horizon ``gap = T - warmup_len``.
-        """
+    def test_single_cycle_equals_default_forecast(self, make_tiny_model) -> None:
+        """A single gap directly equals the next-sample forecast window."""
         model = make_tiny_model(feedback_size=3)
         T, warmup_len = 100, 20
         series = torch.randn(1, T, 3)
@@ -161,8 +159,7 @@ class TestMatchesManualChaining:
 
         gap = T - warmup_len
         model.reset_reservoirs()
-        full = model.forecast(series[:, :warmup_len, :], horizon=gap, return_warmup=True)
-        expected_gap = full[:, warmup_len - 1 : warmup_len + gap - 1, :]
+        expected_gap = model.forecast(series[:, :warmup_len, :], horizon=gap)
 
         assert torch.allclose(recon[:, warmup_len:, :], expected_gap, atol=1e-6)
         assert mask[:warmup_len].all()
@@ -214,7 +211,7 @@ class TestGapAlignmentIsExact:
     A = torch.tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.5]])
 
     def test_forecast_seam_convention(self) -> None:
-        """Baseline: forecast slot ``t`` predicts ``series[warmup + 1 + t]``."""
+        """Forecast slot t predicts series[warmup + t], with no omitted sample."""
         torch.manual_seed(0)
         model = _exact_linear_model(self.A)
         series = _linear_series(self.A, total_steps=60)
@@ -225,8 +222,10 @@ class TestGapAlignmentIsExact:
 
         shifted = series[:, warmup_len + 1 : warmup_len + 1 + horizon, :]
         same = series[:, warmup_len : warmup_len + horizon, :]
-        assert torch.allclose(preds, shifted, atol=1e-5)  # the true convention
-        assert not torch.allclose(preds, same, atol=1e-2)  # NOT one step early
+        assert torch.allclose(preds, same, atol=1e-5)
+        assert not torch.allclose(preds, shifted, atol=1e-2)
+        legacy = model.forecast(series[:, :warmup_len, :], horizon=horizon, alignment="legacy")
+        assert torch.allclose(legacy, shifted, atol=1e-5)
 
     def test_windowed_gap_matches_own_index(self) -> None:
         """Every filled gap value equals ``series`` at its own index (no shift)."""
@@ -335,6 +334,9 @@ class TestValidation:
             (dict(teacher_len=10, predict_len=0), "predict_len"),
             (dict(teacher_len=0, predict_len=10), "teacher_len"),
             (dict(teacher_len=10, predict_len=10, warmup_len=0), "warmup_len"),
+            (dict(teacher_len=10, predict_len=True), "predict_len"),
+            (dict(teacher_len=1.5, predict_len=10), "teacher_len"),
+            (dict(teacher_len=10, predict_len=10, warmup_len=2.5), "warmup_len"),
         ],
     )
     def test_non_positive_lengths_raise(self, make_tiny_model, kwargs, match) -> None:

@@ -18,12 +18,10 @@ its core region; the per-patch core predictions are stitched back into the full
 ``D``-dimensional next state, re-windowed into patches, and the loop repeats
 (closed-loop autoregressive forecast).
 
-Because the reservoir size ``N`` and the input/output widths (``w + 2g`` / ``w``)
-stay fixed as ``D`` grows — only the batch count ``P`` grows — the per-step cost
-is *flat in ``D`` on a GPU* (one batched op over ``P``).  This is what lets the
-architecture forecast ``D`` in the hundreds or thousands where a single
-``D``-wide global reservoir would need an unaffordably large ``N`` (and would
-lose to a comparable-total-size parallel model on valid-prediction-time).
+The reservoir size ``N`` and input/output widths (``w + 2g`` / ``w``) stay fixed
+as ``D`` grows; the batch count ``P`` grows instead. Computational work scales
+with the number of patches, and batching lets accelerators process them in
+parallel. Runtime depends on patch count, reservoir size and available hardware.
 
 References
 ----------
@@ -40,11 +38,22 @@ resdag.models.classic_esn : Single global reservoir (the baseline it beats at
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
 import torch
 
+from resdag._contracts import module_reference, validate_sequence_inputs
+from resdag.core._execution import ReservoirStates
+from resdag.core._forecast import ForecastAlignment, prepare_forecast_inputs
+from resdag.core._persistence import (
+    load_checkpoint,
+    load_full_model,
+    save_checkpoint,
+    save_full_model,
+)
+from resdag.core.model import ReservoirModelModule
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import ESNLayer
 from resdag.layers.readouts import ReadoutLayer
@@ -203,6 +212,9 @@ class ParallelESNModel(torch.nn.Module):
         This teacher-forced path composes with ordinary PyTorch modules and
         optimizers. Use :meth:`forecast` for an autonomous rollout.
         """
+        validate_sequence_inputs(
+            (series,), feature_sizes=(self.input_dim,), reference=module_reference(self)
+        )
         if reset:
             self.reset_reservoirs()
         states = self.reservoir(self.window(series))
@@ -213,6 +225,51 @@ class ParallelESNModel(torch.nn.Module):
             .permute(0, 2, 1, 3)
             .reshape(batch, timesteps, self.input_dim)
         )
+
+    def forward_stateless(
+        self,
+        *inputs: torch.Tensor,
+        states: Mapping[str, torch.Tensor] | None = None,
+        compile: bool = False,
+    ) -> tuple[torch.Tensor, ReservoirStates]:
+        """Predict independently or continue explicit per-patch recurrent states.
+
+        Pass one ``(batch, time, input_dim)`` field. The returned ``reservoir``
+        state folds the patches into its batch axis, with shape
+        ``(batch * n_patches, reservoir_size)``. State tensors retain gradients;
+        this method leaves the model's stored streaming states untouched.
+        """
+        validate_sequence_inputs(
+            inputs, feature_sizes=(self.input_dim,), reference=module_reference(self)
+        )
+        series = inputs[0]
+        patches = self.window(series)
+        if states is None:
+            state = self.reservoir.cell.init_state(patches.shape[0], patches.device, patches.dtype)
+        else:
+            if set(states) != {"reservoir"}:
+                raise ValueError("Reservoir state keys must be exactly ['reservoir']")
+            state = states["reservoir"]
+            if not isinstance(state, torch.Tensor):
+                raise TypeError("State for 'reservoir' must be a torch.Tensor")
+            self.reservoir.cell.validate_state(state)
+            if state.shape[0] != patches.shape[0]:
+                raise ValueError("State batch size must equal batch * n_patches")
+            if state.device != patches.device or state.dtype != patches.dtype:
+                raise ValueError("State must match the input device and dtype")
+        features, final = self.reservoir.forward_stateless([patches], state, compile=compile)
+        batch, timesteps = series.shape[:2]
+        cores = cast(torch.Tensor, self.readout(features))
+        output = (
+            cores.reshape(batch, self.n_patches, timesteps, self.core_width)
+            .permute(0, 2, 1, 3)
+            .reshape(batch, timesteps, self.input_dim)
+        )
+        return output, {"reservoir": final}
+
+    def as_module(self, *, stateful: bool = False) -> ReservoirModelModule:
+        """Share this complete trained model with a larger PyTorch pipeline."""
+        return ReservoirModelModule(self, stateful=stateful)
 
     def window(self, series: torch.Tensor) -> torch.Tensor:
         """Window a full ``(batch, T, D)`` field into per-patch inputs.
@@ -278,6 +335,36 @@ class ParallelESNModel(torch.nn.Module):
         """Reset the shared reservoir's per-patch states (lazy re-init)."""
         self.reservoir.reset_state()
 
+    def get_state(self) -> ReservoirStates:
+        """Return a copy of the initialized, patch-batched streaming state."""
+        state = self.reservoir.get_state()
+        return {} if state is None else {"reservoir": state}
+
+    def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        """Restore the named recurrent state on the model's device and dtype."""
+        if strict and set(states) != {"reservoir"}:
+            raise KeyError("Reservoir state keys must be exactly ['reservoir']")
+        if "reservoir" in states:
+            import warnings
+
+            device, dtype = self.reservoir.reference_device_dtype()
+            state = states["reservoir"]
+            if state.device != device or state.dtype != dtype:
+                warnings.warn(
+                    f"State for 'reservoir' moved/cast to device={device}, dtype={dtype}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            self.reservoir.set_state(state.to(device=device, dtype=dtype))
+
+    def get_reservoir_states(self) -> ReservoirStates:
+        """Return the named recurrent state; alias of :meth:`get_state`."""
+        return self.get_state()
+
+    def set_reservoir_states(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        """Restore named recurrent state; alias of :meth:`set_state`."""
+        self.set_state(states, strict=strict)
+
     # ------------------------------------------------------------------
     # Training
     # ------------------------------------------------------------------
@@ -331,6 +418,17 @@ class ParallelESNModel(torch.nn.Module):
                 f"train and targets must share (batch, T); got {tuple(train.shape[:2])} "
                 f"vs {tuple(targets.shape[:2])}."
             )
+        reference = module_reference(self)
+        for label, tensor in (("warmup", warmup), ("train", train), ("targets", targets)):
+            validate_sequence_inputs(
+                (tensor,),
+                feature_sizes=(self.input_dim,),
+                reference=reference,
+                label=label,
+                allow_empty=label == "warmup",
+            )
+        if warmup.shape[0] != train.shape[0]:
+            raise ValueError("warmup and train must have the same batch size")
 
         if reset:
             self.reset_reservoirs()
@@ -360,89 +458,105 @@ class ParallelESNModel(torch.nn.Module):
         warmup: torch.Tensor,
         *,
         horizon: int,
+        initial_feedback: torch.Tensor | None = None,
         reset: bool = True,
         return_warmup: bool = False,
+        alignment: ForecastAlignment = "next",
     ) -> torch.Tensor:
-        """Closed-loop autoregressive forecast of the full field.
+        """Predict the next full fields after the observed ``warmup``.
 
-        Warms the reservoir on ``warmup``, then autonomously advances the field:
-        each step reads the ``P`` reservoir states, applies the shared readout to
-        get per-patch core predictions, **stitches** them into the full next
-        field, **re-windows** that field into patches, and steps the reservoir —
-        the whole batch of patches advancing as one op per step.
+        Inputs have shape ``(batch, time, input_dim)`` and results have shape
+        ``(batch, horizon, input_dim)``. Slot zero is the final warmup prediction,
+        estimating the immediate unseen field. Each later step feeds the previous
+        prediction through the batched patches. ``horizon`` is a positive integer.
 
-        Parameters
-        ----------
-        warmup : torch.Tensor
-            Teacher-forced warmup field of shape ``(batch, warmup_steps, D)``.
-        horizon : int, keyword-only
-            Number of autonomous steps to generate (``>= 1``).
-        reset : bool, default=True
-            If ``True``, reset the reservoir states before warmup.
-        return_warmup : bool, default=False
-            If ``True``, prepend the (teacher-forced) warmup field to the result.
+        ``initial_feedback`` is a distinct extra field consumed after all warmup
+        fields, shaped ``(batch, 1, input_dim)``. It also permits empty history;
+        use ``reset=False`` to continue states with the previous final prediction
+        as this seed. The final returned prediction has not yet been consumed.
 
-        Returns
-        -------
-        torch.Tensor
-            Forecast field of shape ``(batch, horizon, D)`` (or
-            ``(batch, warmup_steps + horizon, D)`` if ``return_warmup``).
-
-        Raises
-        ------
-        ValueError
-            If ``warmup`` is not 3-D with feature dim ``input_dim``, if
-            ``horizon < 1``, or if the readout has not been fitted.
+        ``return_warmup=True`` prepends historical *predictions*, giving length
+        ``warmup_steps - 1 + horizon``. Explicit seeds give ``warmup_steps + horizon``.
+        ``alignment="legacy"`` uses the old low-level ESN convention: omit the
+        final warmup prediction, then generate ``horizon`` steps, giving a
+        ``warmup_steps + horizon`` result when historical predictions are included.
+        The default future timing already matches earlier ParallelESN releases;
+        their ``return_warmup`` prefix contained raw observations instead.
         """
-        if warmup.dim() != 3 or warmup.shape[-1] != self.input_dim or warmup.shape[1] == 0:
+        inputs, _, horizon, boundary = prepare_forecast_inputs(
+            warmup,
+            None,
+            num_inputs=1,
+            horizon=horizon,
+            initial_feedback=initial_feedback,
+            alignment=alignment,
+        )
+        warmup = inputs[0]
+        if warmup.shape[-1] != self.input_dim:
             raise ValueError(
-                f"warmup must be 3-D (batch, T, input_dim={self.input_dim}); "
-                f"got shape {tuple(warmup.shape)}."
+                f"warmup must have input_dim={self.input_dim} features; got {warmup.shape[-1]}"
             )
-        if horizon < 1:
-            raise ValueError(f"horizon must be a positive integer, got {horizon}.")
         if not self.readout.is_fitted:
             raise ValueError("forecast() requires a fitted readout; call fit() first.")
-
-        batch = warmup.shape[0]
-
         with torch.no_grad():
-            if reset:
-                self.reset_reservoirs()
-            # Warmup: teacher-force every step *except the last* so the closed
-            # loop can feed that last real field itself.  This mirrors training
-            # exactly — the reservoir state that consumed field ``k`` is the one
-            # regressed onto field ``k + 1`` — so there is no double-feed of, or
-            # gap before, the seam.  (A warmup of length 1 skips this pass and
-            # seeds the loop directly from that single observed field.)
-            if warmup.shape[1] > 1:
-                self.reservoir(self.window(warmup[:, :-1, :]))
-
-            # Seed the closed loop from the last observed full field.
-            current = warmup[:, -1, :]  # (batch, D)
-            outputs = torch.empty(
-                batch, horizon, self.input_dim, dtype=warmup.dtype, device=warmup.device
+            warmup_outputs = self.forward(warmup, reset=reset)
+            current = (
+                initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
             )
-
-            for t in range(horizon):
-                # Window the current field into (batch*P, 1, w+2g) and step the
-                # reservoir once (all patches advance in one batched op); the
-                # readout then predicts each patch's core of the *next* field.
-                windowed = self.window(current.unsqueeze(1))  # (batch*P, 1, w+2g)
-                state_seq = self.reservoir(windowed)  # (batch*P, 1, N)
-                cores = self.readout(state_seq[:, 0, :])  # (batch*P, w)
-                # Unfold the patch axis back out and stitch into the full field.
-                cores = cores.reshape(batch, self.n_patches, self.core_width)
-                current = self.stitch(cores)  # (batch, D)
-                outputs[:, t, :] = current
-
+            outputs = torch.empty(
+                warmup.shape[0],
+                horizon,
+                self.input_dim,
+                dtype=warmup_outputs.dtype,
+                device=warmup_outputs.device,
+            )
+            if boundary:
+                outputs[:, :1, :] = current
+            for t in range(int(boundary), horizon):
+                current = self.forward(current)
+                outputs[:, t : t + 1, :] = current
             if return_warmup:
-                return torch.cat([warmup, outputs], dim=1)
+                prefix = warmup_outputs[:, :-1, :] if boundary else warmup_outputs
+                return torch.cat((prefix, outputs), dim=1)
             return outputs
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
+
+    def save(
+        self,
+        path: str | Path,
+        include_states: bool = False,
+        **metadata: Any,
+    ) -> None:
+        """Save weights and optional recurrent state; recreate the architecture to load."""
+        save_checkpoint(self, path, include_states, metadata)
+
+    def load(
+        self,
+        path: str | Path,
+        strict: bool = True,
+        load_states: bool = False,
+        map_location: Any = None,
+    ) -> None:
+        """Restore a matching model, optionally remapping saved tensor devices."""
+        load_checkpoint(self, path, strict, load_states, map_location)
+
+    @classmethod
+    def load_from_file(
+        cls,
+        path: str | Path,
+        model: "ParallelESNModel | None" = None,
+        strict: bool = True,
+        load_states: bool = False,
+        map_location: Any = None,
+    ) -> "ParallelESNModel":
+        """Restore weights into an already constructed matching model."""
+        if model is None:
+            raise ValueError("model argument is required")
+        model.load(path, strict=strict, load_states=load_states, map_location=map_location)
+        return model
 
     def save_full(self, path: str | Path, **metadata: Any) -> None:
         """Serialize the whole model (architecture + weights + states) to a file.
@@ -459,9 +573,7 @@ class ParallelESNModel(torch.nn.Module):
         **metadata
             Additional metadata stored alongside the model.
         """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save({"resdag_parallel_model": self, "metadata": metadata}, path)
+        save_full_model(self, path, metadata)
 
     @classmethod
     def load_full(
@@ -496,21 +608,7 @@ class ParallelESNModel(torch.nn.Module):
         Loads with ``weights_only=False`` (unpickles arbitrary objects); only
         call on trusted files.
         """
-        path = Path(path)
-        payload = torch.load(path, weights_only=False, map_location=map_location)
-        model: ParallelESNModel
-        if isinstance(payload, dict) and "resdag_parallel_model" in payload:
-            model = payload["resdag_parallel_model"]
-            metadata = payload.get("metadata", {})
-        elif isinstance(payload, ParallelESNModel):
-            model, metadata = payload, {}
-        else:
-            raise ValueError(
-                f"{path} does not contain a ParallelESNModel. Write one with save_full()."
-            )
-        if return_metadata:
-            return model, metadata
-        return model
+        return load_full_model(cls, path, return_metadata, map_location)
 
     def __repr__(self) -> str:
         """Return a concise string representation."""

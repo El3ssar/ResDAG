@@ -57,6 +57,8 @@ prediction = model.forecast(f_warmup, horizon=300)   # autoregressive, (1, 300, 
 
 The [first forecast](https://el3ssar.github.io/ResDAG/start/first-forecast/) walkthrough does the same on the Lorenz attractor, with the math explained.
 
+The [end-to-end guide](docs/start/end-to-end.md) covers data preparation, fitting, evaluation, saving and reuse inside a larger PyTorch model. Run its small complete example with `uv run python examples/15_end_to_end.py`.
+
 ## Compose, don't configure
 
 Architectures are DAGs you wire, not options you toggle. Two reservoirs on different timescales, read out together:

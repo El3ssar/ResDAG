@@ -6,7 +6,7 @@ description: Install ResDAG, train a first forecaster, and learn the four concep
 
 # Start here
 
-Three pages: installation, a complete worked example, and the concepts the
+Installation, complete worked examples, and the concepts the
 rest of the documentation builds on. They are the only prerequisites for the
 other sections.
 
@@ -32,5 +32,12 @@ other sections.
 
     The four ideas the whole library is built on: frozen dynamics, the
     state, the algebraic readout, and the two-phase forecast.
+
+- **[Train, save and integrate](end-to-end.md)**
+
+    ---
+
+    Prepare your own data, train and evaluate, save the model, and reuse it
+    inside a larger PyTorch pipeline.
 
 </div>

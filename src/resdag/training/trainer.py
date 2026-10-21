@@ -24,19 +24,22 @@ resdag.layers.readouts.IncrementalRidgeReadoutLayer : Streaming partial_fit read
 
 import warnings
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
 import torch
 
+from resdag._contracts import module_reference, validate_sequence_inputs
 from resdag.core import ESNModel
 from resdag.layers import IncrementalRidgeReadoutLayer, ReadoutLayer, RLSReadout
 
 # A streaming chunk: a tuple of contiguous input tensors (feedback, driver1,
 # ...) paired with a dict mapping each readout name to its target tensor for
 # that chunk.
-StreamChunk = tuple[tuple[torch.Tensor, ...], dict[str, torch.Tensor]]
+InputStreams = torch.Tensor | Sequence[torch.Tensor]
+ReadoutTargets = torch.Tensor | dict[str, torch.Tensor]
+StreamChunk = tuple[InputStreams, ReadoutTargets]
 
 
 class ESNTrainer:
@@ -119,9 +122,9 @@ class ESNTrainer:
 
     def fit(
         self,
-        warmup_inputs: tuple[torch.Tensor, ...],
-        train_inputs: tuple[torch.Tensor, ...],
-        targets: dict[str, torch.Tensor],
+        warmup_inputs: InputStreams,
+        train_inputs: InputStreams,
+        targets: ReadoutTargets,
         *,
         state_noise: float = 0.0,
         noise_draws: int | None = None,
@@ -136,17 +139,18 @@ class ESNTrainer:
 
         Parameters
         ----------
-        warmup_inputs : tuple of torch.Tensor
+        warmup_inputs : torch.Tensor or sequence of torch.Tensor
             Warmup sequences for state synchronization.
             Format: ``(feedback, driver1, driver2, ...)``.
             Each tensor shape: ``(batch, warmup_steps, features)``.
-        train_inputs : tuple of torch.Tensor
+        train_inputs : torch.Tensor or sequence of torch.Tensor
             Training sequences for fitting.
             Format: ``(feedback, driver1, driver2, ...)``.
             Each tensor shape: ``(batch, train_steps, features)``.
             Must have same sequence length as targets.
-        targets : dict of str to torch.Tensor
+        targets : torch.Tensor or dict of str to torch.Tensor
             Dictionary mapping readout name to target tensor.
+            For a single readout, pass the target tensor directly.
             Each target shape: ``(batch, train_steps, out_features)``.
             Names are either user-defined (via ``name="output"`` in readout
             constructor) or auto-generated module names (e.g., ``"CGReadoutLayer_1"``).
@@ -216,6 +220,8 @@ class ESNTrainer:
         ...     state_noise=1e-3,
         ... )
         """
+        warmup_inputs = self._input_tuple(warmup_inputs)
+        train_inputs = self._input_tuple(train_inputs)
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input is required")
         if len(train_inputs) == 0:
@@ -232,6 +238,7 @@ class ESNTrainer:
 
         # Resolve readouts once; reuse for target validation and hook setup.
         readouts = self._discover_readouts()
+        targets = self._target_dict(targets, readouts)
         self._validate_targets(targets, readouts)
 
         self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
@@ -294,7 +301,7 @@ class ESNTrainer:
 
     def fit_stream(
         self,
-        warmup_inputs: tuple[torch.Tensor, ...],
+        warmup_inputs: InputStreams,
         chunks: Iterable[StreamChunk],
     ) -> None:
         """Fit :class:`IncrementalRidgeReadoutLayer` readouts over a stream of chunks.
@@ -372,6 +379,7 @@ class ESNTrainer:
         fit : Single-pass in-memory fitting.
         resdag.layers.IncrementalRidgeReadoutLayer : The streaming readout.
         """
+        warmup_inputs = self._input_tuple(warmup_inputs)
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input is required")
 
@@ -386,6 +394,7 @@ class ESNTrainer:
                 f"or rebuild the model with IncrementalRidgeReadoutLayer."
             )
 
+        self.model._get_execution_plan()
         self._validate_stream_dependencies()
         self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
 
@@ -403,6 +412,8 @@ class ESNTrainer:
         # state forward into the next chunk.
         n_chunks = 0
         for inputs, targets in chunks:
+            inputs = self._input_tuple(inputs)
+            targets = self._target_dict(targets, readouts)
             if len(inputs) != len(warmup_inputs):
                 raise ValueError(
                     f"Chunk {n_chunks} has {len(inputs)} input tensors, but warmup_inputs "
@@ -468,7 +479,7 @@ class ESNTrainer:
 
     def fit_force(
         self,
-        warmup_inputs: tuple[torch.Tensor, ...],
+        warmup_inputs: InputStreams,
         targets: torch.Tensor,
         *,
         forgetting: float | None = None,
@@ -502,10 +513,9 @@ class ESNTrainer:
         low-dimensional periodic* target trained over a long window, an open-loop
         teacher-forced ridge readout (:meth:`fit`) is already an excellent
         closed-loop generator — the smooth target leaves little error to compound
-        — and FORCE will *match* it rather than beat it (empirically, across
-        seeds, FORCE reproduces such a target to a small fraction of its scale and
-        stays competitive with ridge, but any seed-specific win is not a
-        guaranteed property). Reach for FORCE when the reservoir is chaotic enough
+        — and ridge can be much more accurate than FORCE on such a target.
+        FORCE's relative accuracy depends on the seed and problem. Reach for
+        FORCE when the reservoir is chaotic enough
         that the open-loop free run is unstable, or when the target is
         non-stationary and you want the online / forgetting machinery of
         :class:`RLSReadout`; for a stationary, easily-generated target, the
@@ -513,6 +523,12 @@ class ESNTrainer:
 
         Per step ``t`` (after an optional teacher-forced warmup that settles the
         reservoir on the target):
+
+        The default bootstrap consumes the final observed warmup feedback once
+        more as the first closed-loop input; the initially zero RLS readout
+        cannot supply a useful seed. ``initial_feedback`` overrides this input.
+        This training bootstrap differs from :meth:`ESNModel.forecast`, whose
+        default returns the trained readout's immediate next-sample prediction.
 
         1. Feed the current feedback ``z_t`` (the network's own last output, or
            the warmup's for the first step) through the model, reading the
@@ -627,6 +643,7 @@ class ESNTrainer:
         resdag.layers.RLSReadout : The online RLS readout FORCE drives.
         resdag.core.ESNModel.forecast : Free-run generation after FORCE training.
         """
+        warmup_inputs = self._input_tuple(warmup_inputs)
         if len(warmup_inputs) == 0:
             raise ValueError(
                 "fit_force() requires at least one warmup input (the feedback tensor), "
@@ -676,6 +693,13 @@ class ESNTrainer:
                 f"warmup_inputs carries {num_drivers}. Pass (feedback, driver1, ...) matching "
                 f"the model's inputs."
             )
+
+        self.model._get_execution_plan()
+        self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
+        if targets.shape[0] != warmup_inputs[0].shape[0]:
+            raise ValueError("fit_force(): targets and warmup_inputs must share batch size")
+        if targets.device != warmup_inputs[0].device:
+            raise ValueError("fit_force(): targets and warmup_inputs must share device")
 
         # Driven models hold each driver at its last warmup value during the
         # closed-loop phase, so an empty warmup leaves no value to hold.
@@ -802,6 +826,24 @@ class ESNTrainer:
                     )
                 ancestors.extend(parent.parents)
 
+    @staticmethod
+    def _input_tuple(inputs: InputStreams) -> tuple[torch.Tensor, ...]:
+        """A tensor is one stream; a sequence is an explicit multi-input call."""
+        return (inputs,) if isinstance(inputs, torch.Tensor) else tuple(inputs)
+
+    @staticmethod
+    def _target_dict(
+        targets: ReadoutTargets, readouts: list[tuple[str, ReadoutLayer]]
+    ) -> dict[str, torch.Tensor]:
+        if isinstance(targets, torch.Tensor):
+            if len(readouts) != 1:
+                raise ValueError(
+                    "A target tensor requires exactly one readout. For multiple "
+                    "readouts, pass a dictionary mapping each readout name to its target."
+                )
+            return {readouts[0][0]: targets}
+        return targets
+
     def _validate_input_shapes(
         self,
         inputs: tuple[torch.Tensor, ...],
@@ -811,16 +853,13 @@ class ESNTrainer:
         readouts: list[tuple[str, ReadoutLayer]] | None = None,
     ) -> None:
         """Validate paired axes before flattening can hide trajectory mismatch."""
-        if len(inputs) != len(self.model.inputs):
-            raise ValueError(
-                f"{label} has {len(inputs)} tensors but the model expects "
-                f"{len(self.model.inputs)} input tensors. Must match."
-            )
-        for i, tensor in enumerate(inputs):
-            if tensor.ndim != 3:
-                raise ValueError(f"{label}[{i}] must be 3-D (batch, time, features)")
-            if tensor.shape[:2] != inputs[0].shape[:2]:
-                raise ValueError(f"{label} tensors must share batch size and timesteps")
+        validate_sequence_inputs(
+            inputs,
+            feature_sizes=[int(item.shape[-1]) for item in self.model.inputs],
+            reference=module_reference(self.model),
+            label=label,
+            allow_empty=targets is None,
+        )
         if targets is not None and readouts is not None:
             for name, readout in readouts:
                 target = targets[name]
@@ -833,6 +872,11 @@ class ESNTrainer:
                     raise ValueError(
                         f"Target for '{name}' has {target.shape[-1]} features but readout "
                         f"expects {readout.out_features}"
+                    )
+                if target.device != inputs[0].device:
+                    raise ValueError(
+                        f"Target for '{name}' must be on device={inputs[0].device}, "
+                        f"got device={target.device}"
                     )
 
     @staticmethod

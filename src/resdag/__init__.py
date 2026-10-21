@@ -88,7 +88,14 @@ from typing import Any
 from . import core, data, datasets, ensemble, init, layers, metrics, models, training, utils
 
 # Convenience imports for common use cases
-from .core import ESNModel, Input, ReservoirFeatureExtractor, reservoir_input
+from .core import (
+    ESNModel,
+    Input,
+    ReservoirFeatureExtractor,
+    ReservoirModelModule,
+    ReservoirStates,
+    reservoir_input,
+)
 from .data import TimeSeriesWindowDataset, make_dataloader
 
 # Canonical dataset generators. ``resdag.datasets`` (imported above) is the
@@ -204,6 +211,8 @@ __all__ = [
     "Input",
     "ESNModel",
     "ReservoirFeatureExtractor",
+    "ReservoirModelModule",
+    "ReservoirStates",
     "reservoir_input",
     # Core reservoir layers / cells
     "BaseReservoirLayer",

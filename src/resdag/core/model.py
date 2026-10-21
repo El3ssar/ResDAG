@@ -43,19 +43,33 @@ from __future__ import annotations
 import colorsys
 import contextlib
 import copy
-import operator
+from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytorch_symbolic as ps
 import torch
 from pytorch_symbolic.symbolic_data import SymbolicData
 
+from resdag.core._execution import (
+    ExecutionPlan,
+    ModelOutput,
+    ReservoirModelProtocol,
+    ReservoirStates,
+    build_execution_plan,
+)
 from resdag.core._flat_inference import (
     FlatStep,
     build_flat_step,
     rollout,
+)
+from resdag.core._forecast import ForecastAlignment, positive_step_count, prepare_forecast_inputs
+from resdag.core._persistence import (
+    load_checkpoint,
+    load_full_model,
+    save_checkpoint,
+    save_full_model,
 )
 from resdag.layers.reservoirs import BaseReservoirLayer
 
@@ -220,7 +234,7 @@ class ESNModel(ps.SymbolicModel):
             shell.__dict__.update(copy.deepcopy(node_dict, memo))
 
         for key, value in self.__dict__.items():
-            if key == "_flat_step_cache":
+            if key in {"_flat_step_cache", "_execution_plan_cache"}:
                 # The flattened-step cache holds an ``exec``-built closure that
                 # ``copy.deepcopy`` treats as atomic (it would keep closing over
                 # the *original* layers). Skip it; the copy rebuilds lazily on
@@ -241,6 +255,7 @@ class ESNModel(ps.SymbolicModel):
         """
         state: dict[str, Any] = super().__getstate__()
         state.pop("_flat_step_cache", None)
+        state.pop("_execution_plan_cache", None)
         return state
 
     def _graph_nodes(self) -> list[SymbolicData]:
@@ -258,6 +273,53 @@ class ESNModel(ps.SymbolicModel):
             stack.extend(node._children)
             stack.extend(node._layer_full_siblings)
         return nodes
+
+    def _get_execution_plan(self) -> ExecutionPlan:
+        """Share one graph description across sequence and forecast backends."""
+        cache: tuple[tuple[SymbolicData, ...], ExecutionPlan] | None = getattr(
+            self, "_execution_plan_cache", None
+        )
+        if cache is None or cache[0] is not self.outputs:
+            plan = build_execution_plan(self)
+            self._execution_plan_cache = (self.outputs, plan)
+            return plan
+        return cache[1]
+
+    def forward_stateless(
+        self,
+        *inputs: torch.Tensor,
+        states: Mapping[str, torch.Tensor] | None = None,
+        compile: bool = False,
+    ) -> tuple[ModelOutput, ReservoirStates]:
+        """Run the complete DAG with explicit recurrent states.
+
+        Inputs use ``(batch, time, features)``. Omitting ``states`` starts each
+        reservoir from zeros. Otherwise pass the complete state dictionary
+        returned by an earlier call; keys match :meth:`get_reservoir_states`.
+        The returned output includes every original transform and readout.
+        Stored reservoir states and supplied state tensors are not changed.
+
+        Returned states retain gradients across chunks. Detach their tensors
+        explicitly when truncated backpropagation is desired. Ordinary layer
+        behavior (such as BatchNorm running statistics in training mode) still
+        applies to non-reservoir modules in the graph.
+
+        Each graph position must use a distinct reservoir layer instance.
+        Separate instances may share weights, but sharing their recurrent
+        state would make predictions depend on sequence chunk boundaries.
+        """
+        return self._get_execution_plan().run_sequence(inputs, states, compile=compile)
+
+    def as_module(self, *, stateful: bool = False) -> "ReservoirModelModule":
+        """Wrap the complete trained graph for a larger PyTorch pipeline.
+
+        The wrapper shares this model's parameters and readouts. The default
+        processes independent batches without touching stored reservoir state.
+        Set ``stateful=True`` to carry state between calls, as ``model(x)``
+        does, or use the wrapper's ``forward_stateless`` for explicit state.
+        """
+        self._get_execution_plan()
+        return ReservoirModelModule(self, stateful=stateful)
 
     def reset_reservoirs(self) -> None:
         """
@@ -324,6 +386,14 @@ class ESNModel(ps.SymbolicModel):
             if isinstance(module, BaseReservoirLayer) and module.state is not None:
                 states[name] = module.state.clone()
         return states
+
+    def get_state(self) -> ReservoirStates:
+        """Return named copies of all currently initialized recurrent states."""
+        return self.get_reservoir_states()
+
+    def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        """Restore named recurrent states; names match ``forward_stateless``."""
+        self.set_reservoir_states(dict(states), strict=strict)
 
     def set_reservoir_states(
         self,
@@ -434,8 +504,8 @@ class ESNModel(ps.SymbolicModel):
             :meth:`get_reservoir_states`); reservoirs that are still
             lazily-uninitialised at save time — e.g. a model saved before any
             warmup — are omitted from the checkpoint. :meth:`load` restores the
-            saved states tolerantly, so this partial-key checkpoint round-trips
-            without error.
+            saved states after resetting current recurrent state, so omitted
+            reservoirs resume from an uninitialized state.
         **metadata
             Additional metadata to store with the model (e.g., training info).
 
@@ -458,20 +528,7 @@ class ESNModel(ps.SymbolicModel):
         --------
         load : Load model from file.
         """
-        path = Path(path)
-
-        # Create parent directories if they don't exist
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        save_dict = {
-            "state_dict": self.state_dict(),
-            "metadata": metadata,
-        }
-
-        if include_states:
-            save_dict["reservoir_states"] = self.get_reservoir_states()
-
-        torch.save(save_dict, path)
+        save_checkpoint(self, path, include_states, metadata)
 
     def load(
         self,
@@ -494,8 +551,8 @@ class ESNModel(ps.SymbolicModel):
             restored tolerantly (``strict=False``): because
             :meth:`save` only persists reservoirs whose state is non-``None``,
             a checkpoint may legitimately omit some reservoir keys (e.g. one
-            saved before warmup). Reservoirs absent from the checkpoint keep
-            their current state and no ``KeyError`` is raised.
+            saved before warmup). Current states are reset first; reservoirs
+            absent from the checkpoint start uninitialized.
         map_location : optional
             Passed to ``torch.load``. Use ``"cpu"`` to load a checkpoint
             written on a GPU on a machine without that GPU.
@@ -515,32 +572,7 @@ class ESNModel(ps.SymbolicModel):
         save : Save model to file.
         load_from_file : Class method for loading.
         """
-        import warnings
-
-        path = Path(path)
-        checkpoint = torch.load(path, weights_only=False, map_location=map_location)
-
-        if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
-            raise ValueError(
-                f"{path} is not a save() state-dict checkpoint. If it was written "
-                f"by save_full() (or torch.save(model)), use ESNModel.load_full()."
-            )
-
-        self.load_state_dict(checkpoint["state_dict"], strict=strict)
-
-        if load_states:
-            if "reservoir_states" in checkpoint:
-                # save(include_states=True) only persists reservoirs whose state
-                # is non-None (see save / get_reservoir_states), so a checkpoint
-                # written before warmup legitimately omits some reservoir keys.
-                # Restore tolerantly (strict=False) to mirror that asymmetry —
-                # reservoirs missing from the checkpoint keep their current
-                # (typically None / lazily-initialised) state.
-                self.set_reservoir_states(checkpoint["reservoir_states"], strict=False)
-            else:
-                warnings.warn(
-                    "load_states=True but no reservoir states found in checkpoint", UserWarning
-                )
+        load_checkpoint(self, path, strict, load_states, map_location)
 
     @classmethod
     def load_from_file(
@@ -638,9 +670,7 @@ class ESNModel(ps.SymbolicModel):
         load_full : Reconstruct a model saved with this method.
         save : Lighter, state-dict-only persistence (architecture not stored).
         """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save({"resdag_full_model": self, "metadata": metadata}, path)
+        save_full_model(self, path, metadata)
 
     @classmethod
     def load_full(
@@ -699,26 +729,7 @@ class ESNModel(ps.SymbolicModel):
         save_full : Serialize a complete model.
         load_from_file : Load a state-dict checkpoint into an existing model.
         """
-        path = Path(path)
-        payload = torch.load(path, weights_only=False, map_location=map_location)
-        model: ESNModel
-        metadata: dict[str, Any]
-        if isinstance(payload, dict) and "resdag_full_model" in payload:
-            model = payload["resdag_full_model"]
-            metadata = payload.get("metadata", {})
-        elif isinstance(payload, ESNModel):
-            # A bare ``torch.save(model)`` file, with no metadata wrapper.
-            model = payload
-            metadata = {}
-        else:
-            raise ValueError(
-                f"{path} does not contain a full ESNModel. Write one with "
-                f"save_full() (or torch.save(model)); for a state-dict checkpoint "
-                f"from save(), rebuild the architecture and use load()/load_from_file()."
-            )
-        if return_metadata:
-            return model, metadata
-        return model
+        return load_full_model(cls, path, return_metadata, map_location)
 
     def plot_model(
         self,
@@ -1057,223 +1068,95 @@ class ESNModel(ps.SymbolicModel):
         reset: bool = True,
         compile: bool = False,
         no_grad: bool = True,
+        alignment: ForecastAlignment = "next",
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
-        """
-        Two-phase forecast: teacher-forced warmup + autoregressive generation.
+        """Predict the next ``horizon`` samples after an observed history.
 
-        Phase 1 (Warmup): Runs model with provided inputs to synchronize
-        reservoir states with input dynamics (Echo State Property).
-
-        Phase 2 (Forecast): Autoregressive generation where feedback comes
-        from the model's own output while driving inputs (if any) are
-        supplied through ``forecast_inputs``.
+        Training pairs input ``x[t]`` with target ``x[t+1]``. Accordingly, the
+        final teacher-forced warmup output is already the prediction of the
+        first unseen sample. It becomes forecast slot zero; the remaining
+        ``horizon - 1`` slots feed predictions back into the model.
 
         Parameters
         ----------
-        warmup_inputs : tuple of torch.Tensor or torch.Tensor
-            Warmup tensors of shape ``(batch, warmup_steps, features)``.
-            Convention: first element is feedback, remaining are drivers.
-            A single tensor is accepted for the common feedback-only case.
-        forecast_inputs : tuple of torch.Tensor or torch.Tensor, optional
-            Driver inputs for the autoregressive phase (feedback is provided
-            by the model's own output, so it is not part of this tuple).
-            ``forecast_inputs[i][:, t, :]`` is the driver paired with forecast
-            step ``t`` — pass the driver series for the forecast window,
-            continuing exactly where the warmup drivers ended.  Each tensor
-            must provide at least ``horizon`` timesteps; only the first
-            ``horizon`` are consumed.  Required when the model has driver
-            inputs.
-            A single tensor is accepted for a model with one driver.
-        horizon : int, keyword-only
-            Number of autoregressive steps to generate. Must be ``>= 1``.
+        warmup_inputs : torch.Tensor or tuple of torch.Tensor
+            Observed history, shaped ``(batch, time, features)``. For a driven
+            model pass ``(feedback, driver1, ...)`` with matching batch/time axes.
+            Empty history is allowed only with ``initial_feedback``; with
+            ``reset=False`` this continues saved reservoir states.
+        forecast_inputs : torch.Tensor or tuple of torch.Tensor, optional
+            Future drivers beginning immediately after the warmup drivers.
+            Driver ``d[t]`` pairs with input feedback ``x[t]`` to predict
+            ``x[t+1]``. The default needs ``horizon - 1`` driver samples because
+            warmup already supplied the driver for the first prediction.
+            ``horizon=1`` needs no future drivers. Explicit ``initial_feedback``
+            and ``alignment="legacy"`` need ``horizon`` future driver samples.
+            Extra trailing driver samples are ignored.
+        horizon : int
+            Number of predictions, a positive integer. Zero is rejected; use a
+            normal forward/warmup call when no future predictions are needed.
         initial_feedback : torch.Tensor, optional
-            Custom feedback of shape ``(batch, 1, feedback_dim)`` used to seed
-            the first autoregressive step. If None, the last warmup output is
-            used as the seed.
+            A distinct additional observed input of shape ``(batch, 1, features)``
+            consumed *after* the complete warmup. Slot zero predicts the sample
+            after this seed. Do not pass the last warmup observation again: that
+            would consume it twice. This also seeds an empty warmup continuation.
         return_warmup : bool, default=False
-            If True, prepend warmup outputs to the result.
+            Prepend historical predictions. With default alignment, the last
+            warmup prediction is already forecast slot zero, so the full result
+            has ``warmup_steps - 1 + horizon`` samples with no duplicate seam.
+            With an explicit seed or legacy alignment it has
+            ``warmup_steps + horizon`` samples.
         reset : bool, default=True
-            If True, reservoir states are reset to ``None`` before warmup.
-            Set to ``False`` only if you want to continue from a previously
-            saved state.
+            Reset reservoir states before warmup. False continues current states.
         compile : bool, default=False
-            If ``True``, wrap the flattened per-step engine in
-            :func:`torch.compile` (``mode="reduce-overhead"``, ``fullgraph=True``)
-            to fuse the autoregressive step and cut Python/launch overhead —
-            most useful for long horizons on GPU.  Requires ``torch>=2.10``;
-            on older torch, or if compilation fails, it transparently falls
-            back to the eager flat step (emitting a :class:`RuntimeWarning`).
-            The default eager path is already a flat, graph-free step engine,
-            so ``compile=False`` is fast; ``compile=True`` is an opt-in extra.
+            Compile the flat autoregressive executor when supported, falling
+            back to eager execution with a warning if compilation fails.
+            Incompatible with ``no_grad=False``.
         no_grad : bool, default=True
-            If True (default), the whole two-phase forecast runs under
-            :func:`torch.no_grad` — no autograd graph is built and the result is
-            bit-for-bit and performance-wise identical to the historical
-            ``@torch.no_grad()`` decorator.  Set ``False`` to make the rollout
-            **differentiable**: the warmup and every autoregressive step then
-            build a backpropagation-through-time (BPTT) graph, so calling
-            ``.backward()`` on a loss over the returned tensor reaches the
-            trainable reservoir and readout parameters (and any input that
-            ``requires_grad``).  See Notes for the memory cost and the
-            ``detach_state_between_calls`` interaction.
-
-            ``no_grad=False`` is incompatible with ``compile=True`` (the
-            ``reduce-overhead``/cudagraph step path does not support autograd);
-            requesting both raises ``ValueError``.
+            Disable autograd for inference. False makes the warmup and rollout
+            differentiable. For gradients through carried warmup state, set
+            each reservoir's ``detach_state_between_calls=False``. Memory grows
+            with history and horizon length.
+        alignment : {"next", "legacy"}, default="next"
+            ``"next"`` predicts the immediate unseen sample. ``"legacy"``
+            reproduces the old low-level convention, which consumed the final
+            warmup prediction before returning slot zero and therefore skipped
+            the immediate unseen sample. Pair it with
+            ``prepare_esn_data(..., alignment="legacy")`` to reproduce old runs.
 
         Returns
         -------
         torch.Tensor or tuple of torch.Tensor
-            For single-output models: tensor of shape
-            ``(batch, horizon, output_dim)`` or
-            ``(batch, warmup_steps + horizon, output_dim)`` if ``return_warmup``.
-
-            For multi-output models: tuple of tensors with the same structure.
-
-            With ``no_grad=False`` the returned tensor(s) carry ``grad_fn`` /
-            ``requires_grad=True`` whenever any participating parameter or input
-            requires grad.
-
-        Raises
-        ------
-        ValueError
-            If no warmup inputs are provided, if ``forecast_inputs`` is required
-            but missing, if dimensions don't match, or if both ``compile=True``
-            and ``no_grad=False`` are requested.
+            ``(batch, horizon, output_features)`` per output head, or the longer
+            sequence described above when ``return_warmup=True``. The first
+            output head supplies autoregressive feedback and must match the
+            feedback input width.
 
         Notes
         -----
-        - Convention: first warmup element is always feedback (used for autoregression).
-        - For multi-output models, the first output is used as feedback.
-        - Feedback output dimension must match feedback input dimension.
-        - Every returned step is genuinely autoregressive: the loop feeds the
-          model its own previous output (seeded by ``initial_feedback`` or the
-          last warmup output). No teacher-forced frame is included, so
-          ``horizon=1`` produces one real forecast step rather than echoing the
-          warmup output, and ``return_warmup=True`` introduces no duplicated
-          frame at the warmup/forecast seam.
+        Returned predictions have not yet been consumed as inputs. After a
+        forecast, the stored state has consumed the history and all predictions
+        except the final one. To continue without replaying history, pass empty
+        warmup streams, ``initial_feedback=prediction[:, -1:]`` and ``reset=False``
+        (plus the corresponding future drivers).
 
-        **Driver time alignment.** Training pairs ``(feedback_t, driver_t)``
-        with target ``feedback_{t+1}``.  The forecast loop preserves that
-        pairing: step ``t`` feeds the current feedback together with
-        ``forecast_inputs[:, t]`` — the driver for that same step — and writes
-        the resulting prediction to slot ``t``.  The seed feedback corresponds
-        to the first step after the warmup window, so ``forecast_inputs`` must
-        hold the driver series beginning right after the warmup drivers (no
-        overlap) and provide at least ``horizon`` timesteps.
-
-        **Flat single-step engine.** The autoregressive loop is driven by a
-        flattened, graph-free step compiled once from the model graph (see
-        :mod:`resdag.core._flat_inference`) — numerically identical to the
-        per-step graph re-execution it replaces but without the per-step
-        ``nn.Module.__call__`` dispatch and reservoir sequence-loop bookkeeping.
-        Because it calls each layer's ``forward`` (and the reservoir's
-        :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`)
-        directly, **module forward/pre-hooks do not fire during the
-        autoregressive steps** (the teacher-forced warmup still uses the full
-        graph path).  The teacher-forced warmup runs the standard graph forward.
-
-        **Differentiable rollout (``no_grad=False``).** By default the rollout
-        is wrapped in :func:`torch.no_grad` for speed and memory.  Pass
-        ``no_grad=False`` to keep the autograd graph so gradients flow through
-        the full BPTT unroll — the canonical building block for multi-step
-        training losses (scheduled sampling, tuning a trainable reservoir on
-        forecast error).  Two things to keep in mind:
-
-        - *Memory.* The graph retains every intermediate from the warmup and all
-          ``horizon`` steps, so peak memory grows linearly with
-          ``warmup_steps + horizon``.  Keep the horizon modest, or truncate it,
-          when backpropagating.
-        - *Cross-seam gradients.* For the gradient to flow from a forecast step
-          back through the warmup, the reservoir must not detach its carried
-          state between the warmup forward and the autoregressive loop.  Set
-          ``reservoir.detach_state_between_calls = False`` (it defaults to
-          ``True``; the detach happens in
-          :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.forward`).
-          The autoregressive loop itself threads the state explicitly and never
-          detaches, so gradients always flow *within* the forecast window.
+        Autoregressive steps use a cached flat execution plan. Module forward
+        hooks run during warmup but do not fire for these flat steps.
 
         Examples
         --------
-        Simple feedback-only model:
-
-        >>> warmup_data = torch.randn(1, 50, 3)
-        >>> predictions = model.forecast(warmup_data, horizon=100)
-        >>> print(predictions.shape)
-        torch.Size([1, 100, 3])
-
-        Input-driven model:
-
-        >>> predictions = model.forecast(
-        ...     (warmup_feedback, warmup_driver),
-        ...     forecast_inputs=(future_driver,),
-        ...     horizon=100,
-        ... )
-
-        Include warmup in output:
-
-        >>> full_output = model.forecast(
-        ...     warmup_data,
-        ...     horizon=100,
-        ...     return_warmup=True,
-        ... )
-        >>> print(full_output.shape)  # warmup_steps + horizon
-        torch.Size([1, 150, 3])
-
-        Differentiable multi-step rollout — train a trainable reservoir on a
-        forecast-error loss with BPTT.  Build the reservoir trainable at
-        construction (``trainable=True``), then keep the warmup→forecast seam
-        graph by turning off cross-call detaching:
-
-        >>> reservoir = ESNLayer(reservoir_size, feedback_size, trainable=True)
-        >>> reservoir.detach_state_between_calls = False  # keep the seam graph
-        >>> # ... wire ``reservoir`` into the model and readout ...
-        >>> opt = torch.optim.Adam(model.parameters(), lr=1e-3)
-        >>> for _ in range(steps):
-        ...     opt.zero_grad()
-        ...     preds = model.forecast(warmup_data, horizon=2, no_grad=False)
-        ...     loss = ((preds - target) ** 2).mean()
-        ...     loss.backward()           # reaches reservoir + readout params
-        ...     opt.step()
-
-        See Also
-        --------
-        warmup : Teacher-forced warmup only.
-        reset_reservoirs : Reset reservoir states before forecasting.
+        >>> predictions = model.forecast(observed, horizon=100)
+        >>> # predictions[:, 0] estimates the sample immediately after observed.
         """
-        # Normalise warmup_inputs into a tuple
-        if isinstance(warmup_inputs, torch.Tensor):
-            warmup_inputs = (warmup_inputs,)
-        else:
-            warmup_inputs = tuple(warmup_inputs)
-        if len(warmup_inputs) == 0:
-            raise ValueError("At least one warmup input (feedback) is required")
-
-        if len(warmup_inputs) != len(self.inputs):
-            raise ValueError(
-                f"Expected {len(self.inputs)} warmup input(s), got {len(warmup_inputs)}"
-            )
-        for i, stream in enumerate(warmup_inputs):
-            if stream.dim() != 3:
-                raise ValueError(f"warmup_inputs[{i}] must be 3-D (batch, time, features)")
-            if stream.shape[:2] != warmup_inputs[0].shape[:2]:
-                raise ValueError("All warmup inputs must match feedback batch/time dimensions")
-        if warmup_inputs[0].shape[1] == 0 and initial_feedback is None:
-            raise ValueError("An empty warmup requires initial_feedback to seed the forecast")
-
-        # Validate the horizon up front so callers get a clear error instead of
-        # a downstream IndexError / negative-dimension RuntimeError.
-        try:
-            horizon_value = operator.index(horizon)
-        except TypeError:
-            raise ValueError(f"horizon must be a positive integer, got {horizon}") from None
-        if isinstance(horizon, bool) or horizon_value < 1:
-            raise ValueError(f"horizon must be a positive integer, got {horizon}")
-        horizon = horizon_value
-
-        # A differentiable rollout and the cudagraph/reduce-overhead compile
-        # path are mutually exclusive: the compiled step reuses static output
-        # buffers and is built for inference, so it cannot back-propagate.
+        self._get_execution_plan()
+        warmup_inputs, drivers, horizon, boundary = prepare_forecast_inputs(
+            warmup_inputs,
+            forecast_inputs,
+            num_inputs=len(self.inputs),
+            horizon=horizon,
+            initial_feedback=initial_feedback,
+            alignment=alignment,
+        )
         if compile and not no_grad:
             raise ValueError(
                 "forecast(compile=True) is incompatible with no_grad=False: the "
@@ -1281,189 +1164,64 @@ class ESNModel(ps.SymbolicModel):
                 "Use no_grad=False with compile=False for a differentiable rollout."
             )
 
-        # Determine if model has driving inputs
-        num_drivers = len(warmup_inputs) - 1
-        has_drivers = num_drivers > 0
-        if isinstance(forecast_inputs, torch.Tensor):
-            forecast_inputs = (forecast_inputs,)
-
-        # Validate forecast_inputs (drivers only). Every autoregressive step
-        # consumes one driver value, so at least ``horizon`` are required.
-        if has_drivers:
-            if forecast_inputs is None:
-                raise ValueError(
-                    f"Model has {num_drivers} driving input(s). "
-                    f"forecast_inputs must be provided for the autoregressive phase."
-                )
-            forecast_inputs = tuple(forecast_inputs)
-            if len(forecast_inputs) != num_drivers:
-                raise ValueError(
-                    f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}"
-                )
-            for i, driver in enumerate(forecast_inputs):
-                if driver.dim() != 3:
-                    raise ValueError(f"forecast_inputs[{i}] must be 3-D (batch, time, features)")
-                if driver.shape[0] != warmup_inputs[0].shape[0]:
-                    raise ValueError(f"forecast_inputs[{i}] batch size must match warmup feedback")
-                if driver.shape[-1] != warmup_inputs[i + 1].shape[-1]:
-                    raise ValueError(
-                        f"forecast_inputs[{i}] feature size must match its warmup driver"
-                    )
-                if driver.shape[1] < horizon:
-                    raise ValueError(
-                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected at "
-                        f"least {horizon} (one per autoregressive step). forecast_inputs "
-                        f"must hold the driver series for the forecast window, starting "
-                        f"right after the warmup window."
-                    )
-        elif forecast_inputs is not None and len(forecast_inputs) != 0:
-            raise ValueError("This feedback-only model does not accept forecast driving inputs")
-
-        batch_size = warmup_inputs[0].shape[0]
+        output_shape = self.output_shape
+        multi_output = isinstance(output_shape, tuple) and isinstance(output_shape[0], torch.Size)
         feedback_dim = warmup_inputs[0].shape[-1]
-        device = warmup_inputs[0].device
-        dtype = warmup_inputs[0].dtype
+        feedback_output_dim = output_shape[0][-1] if multi_output else output_shape[-1]
+        if feedback_output_dim != feedback_dim:
+            raise ValueError(
+                "forecast(): feedback dimension mismatch. "
+                f"Feedback input has {feedback_dim} features but the model output "
+                f"used as feedback has {feedback_output_dim} features. "
+                "For autoregressive forecasting the first output must match the feedback input dimension."
+            )
 
-        # Validate the seed feedback shape up front: (batch, 1, feedback_dim).
-        if initial_feedback is not None:
-            expected_shape = (batch_size, 1, feedback_dim)
-            if initial_feedback.dim() != 3 or tuple(initial_feedback.shape) != expected_shape:
-                raise ValueError(
-                    f"initial_feedback must have shape {expected_shape} "
-                    f"(batch, 1, feedback_dim); got {tuple(initial_feedback.shape)}."
-                )
-
-        # Phase 1: Warmup (handles reset internally). With ``return_outputs=True``
-        # the result is never None — a single tensor for single-output models, a
-        # tuple of tensors for multi-output models. ``no_grad`` is threaded
-        # through so the warmup graph is kept (or not) consistently with Phase 2.
         warmup_outputs = self.warmup(
             *warmup_inputs, return_outputs=True, reset=reset, no_grad=no_grad
         )
-
-        # Determine output structure
-        output_shape = self.output_shape
-        multi_output = isinstance(output_shape, tuple) and isinstance(output_shape[0], torch.Size)
-
-        # Validate feedback dimension
-        if multi_output:
-            feedback_output_dim = output_shape[0][-1]
-        else:
-            feedback_output_dim = output_shape[-1]
-
-        if feedback_output_dim != feedback_dim:
-            # Collect readout layer names for a helpful hint.
-            readout_names = []
-            for name, module in self.named_modules():
-                # ReadoutLayer subclasses always have an out_features attribute.
-                if hasattr(module, "out_features") and hasattr(module, "_is_fitted"):
-                    label = getattr(module, "_name", None) or name
-                    readout_names.append(f"{label} (out_features={module.out_features})")
-            readouts_hint = f" Model readouts: {readout_names}." if readout_names else ""
-            raise ValueError(
-                f"forecast(): feedback dimension mismatch. "
-                f"Feedback input has {feedback_dim} features but the model output "
-                f"used as feedback has {feedback_output_dim} features. "
-                f"For autoregressive forecasting the first output must match the "
-                f"feedback input dimension.{readouts_hint}"
-            )
-
-        # Drivers narrowed to a concrete tuple for the loop (empty for the
-        # feedback-only path). Step ``t`` consumes ``drivers[i][:, t:t+1, :]``.
-        drivers: tuple[torch.Tensor, ...] = forecast_inputs if forecast_inputs is not None else ()
-
-        # Phase 2: Autoregressive forecast, driven by the flattened single-step
-        # engine instead of re-walking the symbolic graph each step. Every slot
-        # is produced by feeding the model its own previous output, seeded by
-        # ``initial_feedback`` (if given) or the last warmup output — no
-        # teacher-forced frame is emitted, so slot 0 is a genuine forecast step
-        # and the warmup/forecast seam is not duplicated. The shared
-        # ``rollout`` helper (see :mod:`resdag.core._flat_inference`) owns the
-        # loop body, the compile/eager engine choice, and the two output-assembly
-        # strategies; here we resolve the seed and initial states, delegate, and
-        # persist the advanced states.
-        #
-        # The whole phase runs under ``_grad_context(no_grad)``: ``torch.no_grad``
-        # by default (graph-free, the historical behaviour), or ``nullcontext``
-        # when ``no_grad=False`` so the per-step calls build a BPTT graph.
+        assert warmup_outputs is not None
+        outputs = warmup_outputs if isinstance(warmup_outputs, tuple) else (warmup_outputs,)
+        assert all(isinstance(out, torch.Tensor) for out in outputs)
         with _grad_context(no_grad):
-            flat = self._get_flat_step()
-
-            # Resolve reservoir states (warmup leaves them set; init any that are
-            # somehow missing). They are threaded through ``rollout`` explicitly
-            # rather than mutated in place each iteration.
-            states: list[torch.Tensor] = []
-            for reservoir in flat.reservoir_layers:
-                if reservoir.state is None:
-                    reservoir._maybe_init_state(batch_size, device, dtype)
-                assert reservoir.state is not None  # narrows for mypy
-                states.append(reservoir.state)
-
-            # Per-output feature dimensions and the (batch, 1, feedback_dim) seed.
-            # The engine threads 3-D single-step slices so every non-reservoir layer
-            # sees exactly what the graph path would; only the reservoir update is
-            # squeezed to 2-D internally.
-            if multi_output:
-                assert isinstance(warmup_outputs, tuple)  # guaranteed by multi_output
-                out_dims = [out.shape[-1] for out in warmup_outputs]
-                seed = (
-                    initial_feedback
-                    if initial_feedback is not None
-                    else warmup_outputs[0][:, -1:, :]
+            seed = initial_feedback if initial_feedback is not None else outputs[0][:, -1:, :]
+            steps = horizon - int(boundary)
+            if steps:
+                flat = self._get_flat_step()
+                states: list[torch.Tensor] = []
+                for reservoir in flat.reservoir_layers:
+                    if reservoir.state is None:
+                        reservoir._maybe_init_state(
+                            warmup_inputs[0].shape[0], seed.device, seed.dtype
+                        )
+                    assert reservoir.state is not None
+                    states.append(reservoir.state)
+                forecast_buffers, states = rollout(
+                    flat,
+                    seed,
+                    drivers,
+                    states,
+                    steps,
+                    [out.shape[-1] for out in outputs],
+                    no_grad=no_grad,
+                    compile=compile,
                 )
+                for reservoir, state in zip(flat.reservoir_layers, states):
+                    if reservoir.detach_state_between_calls and state.grad_fn is not None:
+                        reservoir.state = state.detach().clone()
+                    else:
+                        reservoir.state = state.clone()
             else:
-                assert isinstance(warmup_outputs, torch.Tensor)  # guaranteed by single output
-                out_dims = [warmup_outputs.shape[-1]]
-                seed = (
-                    initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
-                )
+                forecast_buffers = [out[:, :0, :] for out in outputs]
 
-            forecast_buffers, states = rollout(
-                flat,
-                seed,
-                drivers,
-                states,
-                horizon,
-                out_dims,
-                no_grad=no_grad,
-                compile=compile,
-            )
-
-            # Persist the final reservoir states so a follow-up
-            # ``forecast(reset=False)`` or ``get_reservoir_states()`` sees them,
-            # mirroring the in-place mutation of the legacy per-step loop. Clone
-            # so a compiled step's static output buffers cannot be overwritten
-            # under the stored state.
-            #
-            # Honour the truncated-BPTT contract on the stored state exactly as
-            # ``BaseReservoirLayer.forward`` and ``set_state`` do: under
-            # ``detach_state_between_calls`` (the default) a grad-bearing rollout
-            # state must be detached before it is stored, otherwise the next
-            # ordinary ``forward``+``backward`` would try to backprop through the
-            # already-freed rollout graph ("backward through the graph a second
-            # time"), and the whole rollout graph would stay pinned in memory.
-            # Cross-window BPTT (``windowed_forecast(no_grad=False)``) still works
-            # because it requires ``detach_state_between_calls=False``, which
-            # preserves the grad_fn here so a continuation shares the rollout graph.
-            for reservoir, state in zip(flat.reservoir_layers, states):
-                if reservoir.detach_state_between_calls and state.grad_fn is not None:
-                    reservoir.state = state.detach().clone()
-                else:
-                    reservoir.state = state.clone()
-
-            if multi_output:
+            predictions = []
+            for warm, generated in zip(outputs, forecast_buffers):
+                if boundary:
+                    generated = torch.cat((warm[:, -1:, :], generated), dim=1)
                 if return_warmup:
-                    assert isinstance(warmup_outputs, tuple)
-                    return tuple(
-                        torch.cat([warmup_outputs[i], forecast_buffers[i]], dim=1)
-                        for i in range(len(forecast_buffers))
-                    )
-                return tuple(forecast_buffers)
-
-            if return_warmup:
-                assert isinstance(warmup_outputs, torch.Tensor)
-                return torch.cat([warmup_outputs, forecast_buffers[0]], dim=1)
-            return forecast_buffers[0]
+                    prefix = warm[:, :-1, :] if boundary else warm
+                    generated = torch.cat((prefix, generated), dim=1)
+                predictions.append(generated)
+            return tuple(predictions) if multi_output else predictions[0]
 
     def windowed_forecast(
         self,
@@ -1605,14 +1363,11 @@ class ESNModel(ps.SymbolicModel):
             raise ValueError(
                 f"series must be 3-D (batch, T, feedback_dim); got shape {tuple(series.shape)}."
             )
-        if predict_len < 1:
-            raise ValueError(f"predict_len must be a positive integer, got {predict_len}")
-        if teacher_len < 1:
-            raise ValueError(f"teacher_len must be a positive integer, got {teacher_len}")
+        predict_len = positive_step_count(predict_len, "predict_len")
+        teacher_len = positive_step_count(teacher_len, "teacher_len")
         if warmup_len is None:
             warmup_len = teacher_len
-        if warmup_len < 1:
-            raise ValueError(f"warmup_len must be a positive integer, got {warmup_len}")
+        warmup_len = positive_step_count(warmup_len, "warmup_len")
 
         num_drivers = len(driver_series)
         expected_drivers = len(self.inputs) - 1
@@ -1669,33 +1424,18 @@ class ESNModel(ps.SymbolicModel):
                     warmup_inputs = (teacher_window,)
                     forecast_inputs = None
 
-                # ``return_warmup=True`` prepends the teacher-forced window's
-                # outputs so we can recover the *last* warmup output — the model's
-                # prediction of ``series[teacher_end]``, the first step of the gap.
-                # By the forecast seam convention (slot ``t`` is the prediction of
-                # index ``teacher_end + 1 + t``), the raw autoregressive block is
-                # shifted one step ahead of the gap it must fill; without the last
-                # warmup output every gap value would land one dt early. See the
-                # slice below.
+                # Generate one additional prediction so the final gap sample is
+                # consumed too. Its value is discarded, but this advances state
+                # through the entire gap before the next observed window.
                 full = self.forecast(
                     warmup_inputs,
                     forecast_inputs=forecast_inputs,
-                    horizon=gap,
-                    return_warmup=True,
+                    horizon=gap + 1,
                     reset=reset and not ran_a_cycle,
                     no_grad=no_grad,
                 )
                 feedback_full = full[0] if isinstance(full, tuple) else full
-                # ``full`` spans ``[window_len warmup outputs][gap AR steps]``.
-                # The gap must be filled with the predictions of
-                # ``series[teacher_end .. teacher_end + gap - 1]``:
-                #   * ``full[window_len - 1]``  -> prediction of ``series[teacher_end]``
-                #     (last warmup output), and
-                #   * ``full[window_len .. window_len + gap - 2]`` -> predictions of
-                #     ``series[teacher_end + 1 .. teacher_end + gap - 1]``.
-                # i.e. ``full[window_len - 1 : window_len + gap - 1]``. The final AR
-                # slot (prediction of one step past the gap) is discarded.
-                gap_preds = feedback_full[:, window_len - 1 : window_len + gap - 1, :]
+                gap_preds = feedback_full[:, :gap, :]
                 reconstruction[:, teacher_end : teacher_end + gap, :] = gap_preds
                 mask[teacher_end : teacher_end + gap] = False
 
@@ -1716,4 +1456,60 @@ class ESNModel(ps.SymbolicModel):
         return reconstruction
 
 
-__all__ = ["Input", "ESNModel"]
+__all__ = ["Input", "ESNModel", "ReservoirModelModule"]
+
+
+class ReservoirModelModule(torch.nn.Module):
+    """A standard module preserving a trained model's full DAG and parameters.
+
+    Construct with ``model.as_module()``. The source model is registered as a
+    child module, so ``parameters()``, ``state_dict()``, ``train()/eval()`` and
+    ``to(device, dtype)`` behave like ordinary PyTorch composition. Parameters
+    are shared with the source, not copied.
+    """
+
+    def __init__(self, model: torch.nn.Module, *, stateful: bool = False) -> None:
+        super().__init__()
+        if not all(
+            callable(getattr(model, name, None))
+            for name in ("forward_stateless", "reset_reservoirs", "get_state", "set_state")
+        ):
+            raise TypeError("model must implement reservoir model execution and state methods")
+        self.model = model
+        self.stateful = stateful
+
+    @property
+    def _model_api(self) -> ReservoirModelProtocol:
+        return cast(ReservoirModelProtocol, self.model)
+
+    def forward(self, *inputs: torch.Tensor) -> ModelOutput:
+        """Predict a sequence, starting from zeros for independent batches."""
+        if self.stateful:
+            output: ModelOutput = self.model(*inputs)
+            return output
+        output, _ = self._model_api.forward_stateless(*inputs)
+        return output
+
+    def forward_stateless(
+        self,
+        *inputs: torch.Tensor,
+        states: Mapping[str, torch.Tensor] | None = None,
+        compile: bool = False,
+    ) -> tuple[ModelOutput, ReservoirStates]:
+        """Predict with explicitly supplied and returned reservoir states."""
+        return self._model_api.forward_stateless(*inputs, states=states, compile=compile)
+
+    def reset_state(self) -> None:
+        """Reset the source model's stored states for stateful streaming."""
+        self._model_api.reset_reservoirs()
+
+    def get_state(self) -> ReservoirStates:
+        """Return copies of the wrapped model's initialized streaming states."""
+        return self._model_api.get_state()
+
+    def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        """Restore the wrapped model's streaming states."""
+        self._model_api.set_state(states, strict=strict)
+
+    def extra_repr(self) -> str:
+        return f"stateful={self.stateful}"

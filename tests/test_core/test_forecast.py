@@ -1,15 +1,8 @@
-"""Forecast pipeline tests — autoregressive semantics, validation, shapes.
+"""Forecast timing, legacy compatibility, flat execution, and gradient tests.
 
-The contract under test (see :meth:`resdag.core.ESNModel.forecast`):
-
-- every returned slot is a *genuine* autoregressive step — the loop feeds the
-  model its own previous output, seeded by ``initial_feedback`` or the last
-  warmup output.  No teacher-forced frame is emitted, so slot 0 is a real
-  forecast (not a copy of the warmup output) and ``return_warmup=True`` does not
-  duplicate the warmup/forecast seam;
-- driver alignment matches training (``target = feedback shifted by 1``): step
-  ``t`` consumes ``forecast_inputs[:, t]``, so the driver series starts right
-  after the warmup window and must supply at least ``horizon`` timesteps.
+Default slot zero predicts the immediate unseen sample using the last warmup
+readout. Further predictions consume H-1 future drivers. Legacy alignment is
+checked against the historical per-step implementation below.
 """
 
 import sys
@@ -58,9 +51,9 @@ def _manual_autoregressive(model: ESNModel, warmup: torch.Tensor, horizon: int) 
     warm = model.warmup(warmup, return_outputs=True)
     assert isinstance(warm, torch.Tensor)
     current = warm[:, -1:, :]
-    steps = []
+    steps = [current]
     with torch.no_grad():
-        for _ in range(horizon):
+        for _ in range(horizon - 1):
             out = model(current)
             steps.append(out)
             current = out
@@ -68,10 +61,10 @@ def _manual_autoregressive(model: ESNModel, warmup: torch.Tensor, horizon: int) 
 
 
 class TestAutoregressiveSlotZero:
-    """Slot 0 must be a genuine autoregressive step, not the warmup output."""
+    """Slot zero predicts the immediate unseen sample."""
 
-    def test_horizon_one_differs_from_warmup_last_output(self, make_tiny_model) -> None:
-        """``forecast(wu, horizon=1)`` is a real step, not an echo of warmup."""
+    def test_horizon_one_equals_warmup_next_sample_prediction(self, make_tiny_model) -> None:
+        """The final warmup readout already predicts the immediate unseen sample."""
         model = make_tiny_model(feedback_size=3)
         warmup = torch.randn(1, 20, 3)
 
@@ -84,7 +77,7 @@ class TestAutoregressiveSlotZero:
         preds = model.forecast(warmup, horizon=1)
 
         assert preds.shape == (1, 1, 3)
-        assert not torch.allclose(preds[:, 0, :], last_warmup_output[:, 0, :], atol=1e-6)
+        assert torch.allclose(preds[:, 0, :], last_warmup_output[:, 0, :], atol=1e-6)
 
     def test_matches_manual_autoregressive_recompute(self, make_tiny_model) -> None:
         """For ``horizon >= 2``, every slot equals a hand-rolled AR loop."""
@@ -149,7 +142,7 @@ class TestInitialFeedback:
 class TestHorizonValidation:
     """``horizon`` must be a positive integer."""
 
-    @pytest.mark.parametrize("horizon", [0, -1, -7])
+    @pytest.mark.parametrize("horizon", [0, -1, -7, True, 1.5])
     def test_non_positive_horizon_raises(self, make_tiny_model, horizon) -> None:
         model = make_tiny_model(feedback_size=3)
         with pytest.raises(ValueError, match="horizon"):
@@ -166,17 +159,17 @@ class TestReturnWarmupSeam:
 
         model.reset_reservoirs()
         full = model.forecast(warmup, horizon=horizon, return_warmup=True)
-        assert full.shape == (1, warmup_steps + horizon, 3)
+        assert full.shape == (1, warmup_steps - 1 + horizon, 3)
 
         # The last warmup frame and the first forecast frame must differ.
-        seam_last_warmup = full[:, warmup_steps - 1, :]
-        seam_first_forecast = full[:, warmup_steps, :]
+        seam_last_warmup = full[:, warmup_steps - 2, :]
+        seam_first_forecast = full[:, warmup_steps - 1, :]
         assert not torch.allclose(seam_last_warmup, seam_first_forecast, atol=1e-6)
 
         # The forecast tail equals a plain (no-warmup) forecast.
         model.reset_reservoirs()
         preds = model.forecast(warmup, horizon=horizon)
-        assert torch.allclose(full[:, warmup_steps:, :], preds, atol=1e-6)
+        assert torch.allclose(full[:, warmup_steps - 1 :, :], preds, atol=1e-6)
 
 
 class TestDriverAlignment:
@@ -222,10 +215,10 @@ class TestDriverAlignment:
 
         # First captured call is the (3-D, whole-sequence) teacher-forced warmup.
         assert seen_drivers[0].shape[1] == 20
-        # The horizon autoregressive steps consume the forecast drivers in
+        # The H-1 further model updates consume future drivers in
         # order, with no gap and no skipped first value (2-D per-step slices).
         autoregressive = seen_drivers[1:]
-        assert len(autoregressive) == horizon
+        assert len(autoregressive) == horizon - 1
         for t, captured in enumerate(autoregressive):
             expected = forecast_driver[:, t, :]
             assert torch.equal(captured, expected), (
@@ -233,8 +226,8 @@ class TestDriverAlignment:
                 f"expected {expected.flatten()[0].item()}"
             )
 
-    def test_accepts_extra_driver_steps_and_consumes_first_horizon(self, monkeypatch) -> None:
-        """A longer driver tensor is accepted; only the first ``horizon`` are used."""
+    def test_accepts_extra_driver_steps_and_consumes_required_prefix(self, monkeypatch) -> None:
+        """A longer driver tensor is accepted; only the first ``horizon - 1`` are used."""
         model, reservoir_layer = _build_driven_model()
         horizon = 5
 
@@ -257,7 +250,7 @@ class TestDriverAlignment:
         )
 
         autoregressive = seen_drivers[1:]
-        assert len(autoregressive) == horizon
+        assert len(autoregressive) == horizon - 1
         for t, captured in enumerate(autoregressive):
             assert torch.equal(captured, forecast_driver[:, t, :])
 
@@ -298,7 +291,7 @@ class TestFeedbackOnlyForecast:
         assert predictions.shape == (1, 15, 3)
 
         full = model.forecast(torch.randn(1, 20, 3), horizon=15, return_warmup=True)
-        assert full.shape == (1, 35, 3)
+        assert full.shape == (1, 34, 3)
 
 
 class TestMultiOutputForecast:
@@ -328,9 +321,9 @@ class TestMultiOutputForecast:
         warm = model.warmup(warmup, return_outputs=True)
         assert isinstance(warm, tuple)
         current = warm[0][:, -1:, :]
-        main_steps, aux_steps = [], []
+        main_steps, aux_steps = [warm[0][:, -1:, :]], [warm[1][:, -1:, :]]
         with torch.no_grad():
-            for _ in range(horizon):
+            for _ in range(horizon - 1):
                 out = model(current)
                 main_steps.append(out[0])
                 aux_steps.append(out[1])
@@ -348,11 +341,11 @@ class TestMultiOutputForecast:
         full = model.forecast(warmup, horizon=horizon, return_warmup=True)
 
         assert isinstance(full, tuple) and len(full) == 2
-        assert full[0].shape == (1, warmup_steps + horizon, 2)
-        assert full[1].shape == (1, warmup_steps + horizon, 3)
+        assert full[0].shape == (1, warmup_steps - 1 + horizon, 2)
+        assert full[1].shape == (1, warmup_steps - 1 + horizon, 3)
         # Feedback channel seam must not be duplicated.
         assert not torch.allclose(
-            full[0][:, warmup_steps - 1, :], full[0][:, warmup_steps, :], atol=1e-6
+            full[0][:, warmup_steps - 2, :], full[0][:, warmup_steps - 1, :], atol=1e-6
         )
 
 
@@ -430,7 +423,7 @@ class TestFlatEngineParity:
         warmup = warmup.double()
 
         model.reset_reservoirs()
-        flat = model.forecast(warmup, horizon=60)
+        flat = model.forecast(warmup, horizon=60, alignment="legacy")
         ref = _legacy_graph_forecast(model, (warmup,), 60)
         assert (flat - ref[0]).abs().max().item() < 1e-10
 
@@ -442,7 +435,9 @@ class TestFlatEngineParity:
         fut_drv = torch.randn(2, 80, 3, dtype=torch.float64)
 
         model.reset_reservoirs()
-        flat = model.forecast((warm_fb, warm_drv), forecast_inputs=(fut_drv,), horizon=70)
+        flat = model.forecast(
+            (warm_fb, warm_drv), forecast_inputs=(fut_drv,), horizon=70, alignment="legacy"
+        )
         ref = _legacy_graph_forecast(model, (warm_fb, warm_drv), 70, (fut_drv,))
         assert (flat - ref[0]).abs().max().item() < 1e-10
 
@@ -452,7 +447,7 @@ class TestFlatEngineParity:
         warmup = torch.randn(2, 20, 2, dtype=torch.float64)
 
         model.reset_reservoirs()
-        flat = _as_tuple(model.forecast(warmup, horizon=55))
+        flat = _as_tuple(model.forecast(warmup, horizon=55, alignment="legacy"))
         ref = _legacy_graph_forecast(model, (warmup,), 55)
         for f, r in zip(flat, ref):
             assert (f - r).abs().max().item() < 1e-10
@@ -462,7 +457,7 @@ class TestFlatEngineParity:
         warmup = torch.randn(2, 20, 2, dtype=torch.float64)
 
         model.reset_reservoirs()
-        flat = model.forecast(warmup, horizon=50)
+        flat = model.forecast(warmup, horizon=50, alignment="legacy")
         ref = _legacy_graph_forecast(model, (warmup,), 50)
         assert (flat - ref[0]).abs().max().item() < 1e-10
         # The DAG really does carry two reservoirs through the engine.
@@ -484,7 +479,7 @@ class TestFlatEngineParity:
         warmup = torch.randn(2, 25, 3, dtype=torch.float64)
 
         model.reset_reservoirs()
-        flat = model.forecast(warmup, horizon=40)
+        flat = model.forecast(warmup, horizon=40, alignment="legacy")
         ref = _legacy_graph_forecast(model, (warmup,), 40)
         assert (flat - ref[0]).abs().max().item() < 1e-10
 
@@ -507,7 +502,7 @@ class TestFlatEngineParity:
         warmup = torch.randn(2, 25, 4, dtype=torch.float64)
 
         model.reset_reservoirs()
-        flat = model.forecast(warmup, horizon=40)
+        flat = model.forecast(warmup, horizon=40, alignment="legacy")
         ref = _legacy_graph_forecast(model, (warmup,), 40)
         assert (flat - ref[0]).abs().max().item() < 1e-10
         # The generated source took the multi-output sibling branch: only that
@@ -534,7 +529,7 @@ class TestFlatEngineParity:
         ref = torch.cat(ref_steps, dim=1)
 
         model.reset_reservoirs()
-        flat = model.forecast(warmup, horizon=30, initial_feedback=seed)
+        flat = model.forecast(warmup, horizon=30, alignment="legacy", initial_feedback=seed)
         assert (flat - ref).abs().max().item() < 1e-10
 
 
@@ -544,17 +539,17 @@ class TestFlatEngineStateSemantics:
     def test_reset_true_makes_calls_independent(self, make_tiny_model) -> None:
         model = make_tiny_model(feedback_size=3)
         warmup = torch.randn(1, 20, 3)
-        first = model.forecast(warmup, horizon=20)
-        second = model.forecast(warmup, horizon=20)  # reset=True default
+        first = model.forecast(warmup, horizon=20, alignment="legacy")
+        second = model.forecast(warmup, horizon=20, alignment="legacy")  # reset=True default
         assert torch.allclose(first, second)
 
     def test_reset_false_continues_from_state(self, make_tiny_model) -> None:
         model = make_tiny_model(feedback_size=3)
         warmup = torch.randn(1, 20, 3)
-        with_reset = model.forecast(warmup, horizon=20, reset=True)
+        with_reset = model.forecast(warmup, horizon=20, alignment="legacy", reset=True)
         # A second reset=False forecast continues from the mutated state, so it
         # must differ from the fresh-reset result.
-        no_reset = model.forecast(warmup, horizon=20, reset=False)
+        no_reset = model.forecast(warmup, horizon=20, alignment="legacy", reset=False)
         assert not torch.allclose(with_reset, no_reset)
 
     def test_state_written_back_matches_legacy(self, make_tiny_model) -> None:
@@ -562,7 +557,7 @@ class TestFlatEngineStateSemantics:
         warmup = torch.randn(1, 20, 3, dtype=torch.float64)
 
         model.reset_reservoirs()
-        model.forecast(warmup, horizon=40)
+        model.forecast(warmup, horizon=40, alignment="legacy")
         flat_states = model.get_reservoir_states()
 
         _legacy_graph_forecast(model, (warmup,), 40)
@@ -579,7 +574,7 @@ class TestFlatEngineStateSemantics:
                 module.detach_state_between_calls = False
         warmup = torch.randn(1, 20, 3, dtype=torch.float64)
         model.reset_reservoirs()
-        flat = model.forecast(warmup, horizon=30)
+        flat = model.forecast(warmup, horizon=30, alignment="legacy")
         ref = _legacy_graph_forecast(model, (warmup,), 30)
         assert (flat - ref[0]).abs().max().item() < 1e-10
 
@@ -966,7 +961,7 @@ class TestDifferentiableForecast:
         model.reset_reservoirs()
         full = model.forecast(warmup, horizon=3, return_warmup=True, no_grad=False)
         assert isinstance(full, torch.Tensor)
-        assert full.shape == (1, 23, 2)
+        assert full.shape == (1, 22, 2)
         assert full.requires_grad
         full.sum().backward()  # must not raise
 

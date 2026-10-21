@@ -14,12 +14,12 @@ mechanics; the design rationale lives in the
 
 ```bash
 git clone https://github.com/El3ssar/ResDAG && cd ResDAG
-uv sync --extra dev          # lint/format/test toolchain (single source of truth)
+uv sync --locked --extra dev # lint/format/test toolchain from the committed lock
 uv run pytest --no-cov -q    # full suite, including golden forecast regressions
 ```
 
 `pip install -e ".[dev]"` works too if you don't use uv. Add `hpo` (Optuna) or
-`docs` (MkDocs + the figure pipeline) as needed — e.g. `uv sync --extra dev
+`docs` (MkDocs + the figure pipeline) as needed — e.g. `uv sync --locked --extra dev
 --extra docs` or `pip install -e ".[dev,docs]"`.
 
 ## Quality gate
@@ -27,8 +27,8 @@ uv run pytest --no-cov -q    # full suite, including golden forecast regressions
 Run before pushing:
 
 ```bash
-uv run ruff check src/ tests/
-uv run black --check src/ tests/
+uv run ruff check src/ tests/ tools/ci_environment.py
+uv run black --check src/ tests/ tools/ci_environment.py
 uv run mypy src/resdag/
 uv run pytest --no-cov -q          # full suite
 ```
@@ -72,6 +72,42 @@ Pull-request CI runs the **same** selector and tests only the affected subset,
 so a typical single-module PR finishes in seconds instead of minutes. The full
 suite is the safety net and still runs on every merge to `main` and on a nightly
 schedule. To force a full run on a PR, add the **`ci-full`** label.
+
+### Reproducible environments and dependency updates
+
+Pull-request, nightly, release, benchmark, and documentation gates install the
+versions in `uv.lock`, including development tools and the editable-build
+backend. CI checks that the lock matches `pyproject.toml` before installing.
+CPU jobs use the matching PyTorch CPU wheel and omit its CUDA-only dependency
+tree. Python 3.11 through 3.14 all run against this baseline.
+
+To reproduce that environment in a fresh virtual environment:
+
+```bash
+python -m pip install uv==0.13.3
+python tools/ci_environment.py --mode locked --extras dev,hpo
+```
+
+Use `--extras docs` for the documentation environment; development tools are
+always included. The installer prints the resolved packages and runs
+`pip check` to catch missing or conflicting dependencies.
+
+The separate **Latest dependency compatibility** workflow runs the full test
+matrix and a strict documentation build every Wednesday and on manual dispatch.
+It resolves current packages within the declared dependency ranges, retaining
+the CPU PyTorch wheel. Its failures reveal upstream compatibility changes
+without silently changing the normal PR baseline. Reproduce it with
+`python tools/ci_environment.py --mode latest --extras dev,hpo`.
+The existing **CI** and **Documentation** workflows also accept a
+`dependency-mode` choice on manual dispatch, so either environment can be
+verified on a branch before merge. Pull requests always use the locked baseline.
+
+When changing dependencies, update `pyproject.toml`, run `uv lock`, and commit
+both files. For an intentional upgrade, prefer `uv lock --upgrade-package NAME`
+and review the resulting lock diff. Run the full suite and strict docs build
+before proposing the new baseline.
+
+### Test markers and GPU checks
 
 The test suite mirrors `src/resdag/`. Markers:
 

@@ -30,6 +30,52 @@ a ridge readout, a warmup, a forecast. What differs is the *mental model*:
 The rest of this page maps concepts and API surface side by side, then walks
 the same Lorenz forecast through all three libraries.
 
+## Forecast timing after v0.11
+
+The default low-level forecast now starts at the **immediate unseen sample**
+after all observations. It agrees with the `ESN` facade and with next-sample
+training. Previously, core and coupled forecasts skipped that first prediction.
+
+```python
+pred = model.forecast(observed, horizon=H)
+truth = full_series[:, observed.shape[1]:observed.shape[1]+H]
+```
+
+`prepare_esn_data` now includes the final supervised target in forecast warmup.
+Validation still starts after that target, and training/target/validation
+windows are unchanged. Prepared predictions continue to align directly with
+`val`; remove any manual shift added around older custom observed histories.
+
+Other intentional interface changes:
+
+- Future drivers begin after observed history and need `H-1` samples, since the
+  final observed driver already produced prediction zero. For `H=1`, omit them.
+- `initial_feedback` is a distinct additional input after full warmup. It needs
+  `H` drivers. Do not repeat the final warmup observation as this seed.
+- `return_warmup=True` has length `W-1+H`, since the boundary prediction occurs
+  once. Explicit seeds and legacy alignment retain length `W+H`.
+- ParallelESN already used immediate unseen timing. Its default future trajectory
+  keeps that convention; its combined prefix now contains historical predictions
+  instead of raw observations, with the same `W-1+H` length as other models.
+
+To reproduce an older prepared-data core or ensemble experiment:
+
+```python
+warmup, train, target, f_warmup, val = rd.prepare_esn_data(
+    data, warmup_steps=W, train_steps=L, val_steps=H, alignment="legacy",
+)
+rd.ESNTrainer(model).fit((warmup,), (train,), {"output": target})
+pred = model.forecast(f_warmup, horizon=H, alignment="legacy")
+```
+
+Both legacy arguments matter: preparation restores the earlier history window,
+and forecasting restores its skipped-boundary rollout. Golden fixtures for the
+new default use version 2, with unchanged numerical tolerances and quality
+rules; frozen version 1 fixtures additionally check legacy reproduction. The
+migration is backed by exact integer and driver recurrence tests before fixture
+regeneration. [Timing](theory/timing.md) explains the indices and saved-state
+continuation.
+
 ## Coming from reservoirpy
 
 reservoirpy composes `Node`s — `Reservoir`, `Ridge`, `Input` — with the `>>`

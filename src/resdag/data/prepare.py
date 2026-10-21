@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 import torch
 
+from resdag.core._forecast import ForecastAlignment, validate_alignment
+
 # Type aliases
 NormMethod = Literal["minmax", "standard", "noncentered", "meanpreserving"]
 ESNDataSplits = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -246,6 +248,7 @@ def prepare_esn_data(
     normalize: bool = False,
     norm_method: NormMethod = "minmax",
     return_stats: bool = False,
+    alignment: ForecastAlignment = "next",
 ) -> ESNDataSplits | ESNDataSplitsWithStats:
     """Prepare time series data for ESN training and forecasting.
 
@@ -253,17 +256,17 @@ def prepare_esn_data(
     1. Warmup: Initial steps for reservoir state synchronization
     2. Train: Training input data
     3. Target: Training targets (train data shifted by 1 step)
-    4. Forecast warmup: Last warmup_steps before train_end for forecast initialization
-    5. Validation: Held-out data for testing, starting one step after the train
-       window so it aligns with the (purely autoregressive) forecast.
+    4. Forecast warmup: Last warmup_steps of all observed data, including the
+       final training target, for forecast initialization
+    5. Validation: Held-out data starting after that final training target.
 
     Data layout (``train_end = warmup_steps + train_steps``)::
 
         [discard][warmup][------- train -------][s][------ val ------]
 
-    ``s`` is ``data[train_end]``: the autoregressive seam — the final training
-    target and the value the forecast warmup's last output predicts (the seed
-    the forecast consumes). It is intentionally excluded from ``val``, so
+    ``s`` is ``data[train_end]``: the final training target, which is already
+    observed during fitting. The forecast warmup includes it. Its readout
+    predicts the first held-out value, ``data[train_end + 1]``, so
     ``forecast(forecast_warmup, horizon=val_steps)`` lines up element-for-element
     with ``val`` (no manual shift).
 
@@ -292,6 +295,11 @@ def prepare_esn_data(
         ``normalize=True`` and ``None`` when ``normalize=False`` (nothing was
         fitted). When False (the default), the legacy 5-tuple is returned
         unchanged.
+    alignment : {"next", "legacy"}, default="next"
+        ``"next"`` includes the final training target in the forecast history.
+        ``"legacy"`` ends that history one sample earlier; pair this with
+        ``model.forecast(..., alignment="legacy")`` to reproduce old runs.
+        Training and validation windows are identical in both modes.
 
     Returns
     -------
@@ -308,7 +316,7 @@ def prepare_esn_data(
     val : torch.Tensor
         Validation data, shape (B, val_steps, D). Starts at ``data[train_end + 1]``
         so it aligns directly with an autoregressive ``forecast`` of the same
-        horizon (the ``data[train_end]`` seam is the forecast's seed, not a target).
+        horizon. The final training target belongs to the observed history.
     stats : dict or None
         Only returned when ``return_stats=True``. The fitted normalization
         statistics (as returned by :func:`normalize_data`) when ``normalize=True``,
@@ -326,7 +334,7 @@ def prepare_esn_data(
     -----
     UserWarning
         If the resulting validation window is empty (``val_steps=0`` or the data
-        is exhausted by warmup/train/seam), meaning no held-out validation data
+        is exhausted by warmup, training inputs, and their final target), so no held-out validation data
         remains.
 
     See Also
@@ -354,6 +362,7 @@ def prepare_esn_data(
     >>> val_physical = denormalize_data(val, "minmax", stats)  # original units
     """
     _validate_series_shape(data)
+    validate_alignment(alignment)
     _, timesteps, _ = data.shape
     warmup_steps = _validate_step_count("warmup_steps", warmup_steps)
     train_steps = _validate_step_count("train_steps", train_steps)
@@ -380,17 +389,17 @@ def prepare_esn_data(
             f"available data length ({timesteps}) after discarding {discard_steps} steps"
         )
 
-    # Determine validation length. The autoregressive forecast consumes
-    # ``data[train_end]`` as its bootstrap seed (the value the forecast warmup's
-    # final output predicts) and only emits predictions from ``data[train_end + 1]``
-    # onward, so the validation window starts one step after ``train_end``.
+    # The final supervised target data[train_end] is already observed. Include
+    # it in canonical forecast history, then hold out data[train_end + 1] onward.
+    # Legacy preparation omits that observation from history and relies on the
+    # old forecast's additional predicted-seed update to reach the same val index.
     val_start = train_end + 1
     if val_steps is None:
         val_steps = timesteps - val_start
         if val_steps == 0:
             warnings.warn(
-                "Validation window is empty: warmup + train + the autoregressive "
-                f"seam consume all {timesteps} available steps (after discarding "
+                "Validation window is empty: warmup + training inputs + their final "
+                f"target consume all {timesteps} available steps (after discarding "
                 f"{discard_steps}), leaving no held-out data for val. Reduce "
                 "warmup_steps/train_steps or supply more data if you need a val split.",
                 UserWarning,
@@ -400,10 +409,10 @@ def prepare_esn_data(
         required = val_start + val_steps
         if required > timesteps:
             raise ValueError(
-                f"Required data ({required} = warmup + train + 1 seam + val) "
-                f"exceeds available length ({timesteps}). The +1 is the "
-                f"autoregressive seam step (data[train_end]) the forecast "
-                f"consumes as its seed before producing val_steps predictions."
+                f"Required data ({required} = warmup + train + 1 final target + val) "
+                f"exceeds available length ({timesteps}). The +1 supplies the final "
+                "supervised target data[train_end], which is already observed "
+                "and must precede held-out validation."
             )
         if val_steps == 0:
             warnings.warn(
@@ -419,7 +428,8 @@ def prepare_esn_data(
     train = data[:, warmup_steps:train_end, :]
     target = data[:, warmup_steps + 1 : train_end + 1, :]
     # Include earlier observed history when train_steps < warmup_steps.
-    forecast_warmup = data[:, train_end - warmup_steps : train_end, :]
+    forecast_end = train_end + (alignment == "next")
+    forecast_warmup = data[:, forecast_end - warmup_steps : forecast_end, :]
     val = data[:, val_start : val_start + val_steps, :]
 
     # Optional normalization (compute stats from training data only)
@@ -447,6 +457,7 @@ def load_and_prepare(
     norm_method: NormMethod = "minmax",
     return_stats: bool = False,
     dtype: torch.dtype | None = None,
+    alignment: ForecastAlignment = "next",
     **load_kwargs: Any,
 ) -> ESNDataSplits | ESNDataSplitsWithStats:
     """Load data from file(s) and prepare for ESN training.
@@ -476,6 +487,8 @@ def load_and_prepare(
         :func:`prepare_esn_data`; see its docstring for details.
     dtype : torch.dtype, optional
         Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
+    alignment : {"next", "legacy"}, default="next"
+        Forecast timing convention forwarded to :func:`prepare_esn_data`.
     **load_kwargs
         Additional arguments passed to load_file (e.g., key for .npz).
 
@@ -522,4 +535,5 @@ def load_and_prepare(
         normalize=normalize,
         norm_method=norm_method,
         return_stats=return_stats,
+        alignment=alignment,
     )

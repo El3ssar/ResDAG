@@ -12,10 +12,9 @@ Coverage:
   seed-shape, and hyperparameter positivity.
 - Generation quality: after FORCE the *free-running* network reproduces a clean
   periodic (sum-of-sines) target to a small fraction of its scale on every tested
-  seed, and stays competitive with a strong open-loop teacher-forced-ridge
-  baseline (never materially worse). On a clean periodic target the baseline is
-  itself an excellent closed-loop generator, so FORCE is asserted to *match* it,
-  not to beat it — see :class:`TestGenerationQuality` for the honest scope.
+  seed. A strong open-loop teacher-forced-ridge baseline can be much more
+  accurate on this clean periodic target; no universal relative ranking is
+  asserted. See :class:`TestGenerationQuality` for the measured scope.
 - Stability: closed-loop training produces no NaN/Inf and the readout's
   inverse-correlation matrix ``P`` stays symmetric positive-definite.
 - Hyperparameter overrides (``delta`` / ``forgetting``) and reset semantics.
@@ -263,37 +262,19 @@ def _force_and_ridge_generation(
 
 
 class TestGenerationQuality:
-    """FORCE makes the free-running network reproduce the target pattern.
+    """FORCE reproduces the continuation within fixed absolute quality bounds.
 
-    Honest scope: for a *clean, low-dimensional periodic* target like this
-    sum-of-sines, a long-window open-loop teacher-forced ridge readout is a very
-    strong closed-loop generator — the smooth target gives it little error to
-    compound — so FORCE does **not** reliably beat it across seeds. Measured over
-    seeds 0-3 (see ``_force_and_ridge_generation``): FORCE reproduces the pattern
-    to a small fraction of its scale on *every* seed and is competitive with the
-    baseline on every seed (never materially worse); on some seeds the baseline's
-    free run happens to drift and FORCE wins several-fold, but that win is
-    seed-dependent, not a guaranteed property, so the tests assert only what holds
-    robustly. Where FORCE has a *reliable* edge is the chaotic-reservoir
-    closed-loop-stability regime — see :class:`TestClosedLoopStability`.
+    Correct next-sample timing reveals that ridge is nearly exact for some
+    seeds on this clean periodic target, while FORCE has finite approximation
+    error. The old forecast skipped one sample; the common phase error masked
+    that difference and made an unsupported relative-ratio assertion pass.
+    Absolute FORCE bounds below are unchanged. Chaotic-reservoir stability is
+    tested independently in TestClosedLoopStability.
     """
 
     @pytest.mark.parametrize("seed", [0, 1, 2, 3])
-    def test_force_robustly_generates_and_matches_baseline(self, seed: int) -> None:
-        """On every seed FORCE reproduces the pattern and stays competitive.
-
-        Asserts the three robustly-true properties (verified across seeds 0-3):
-
-        1. **Converges.** Closed-loop training locks onto the target by the end of
-           the pass (small training-tail RMSE).
-        2. **Generates.** The free run reproduces the continuation to a small
-           fraction of the target's own scale at both a short and a long horizon.
-        3. **Competitive.** FORCE is never materially worse than the strong
-           open-loop teacher-forced-ridge baseline (a conservative one-sided
-           bound). It is *not* asserted to beat the baseline — on a clean periodic
-           target the baseline is excellent, and any FORCE win here is
-           seed-dependent (see the class docstring).
-        """
+    def test_force_robustly_generates_continuation(self, seed: int) -> None:
+        """Training converges and short/long free runs stay near the target."""
         tail, force_rmse, force_rmse_100, base_rmse, target_std, finite = (
             _force_and_ridge_generation(seed)
         )
@@ -304,9 +285,35 @@ class TestGenerationQuality:
         assert finite
         assert force_rmse_100 < 0.25 * target_std
         assert force_rmse < 0.35 * target_std
-        # 3. Competitive: never materially worse than the ridge baseline (worst
-        #    measured force/base ratio over seeds 0-3 is ~1.04; assert < 1.5x).
-        assert force_rmse < 1.5 * base_rmse
+        # The baseline is measured on the identical next-sample timeline, but
+        # its error can be orders of magnitude smaller on this periodic signal.
+        assert torch.isfinite(torch.tensor(base_rmse))
+
+    def test_ridge_baseline_predicts_the_immediate_unseen_sample(self) -> None:
+        """An exact next-step ramp distinguishes aligned scoring from a shift."""
+        model = classic_esn(
+            20,
+            feedback_size=1,
+            output_size=1,
+            readout=RidgeReadoutLayer,
+            readout_alpha=1e-8,
+            readout_bias=True,
+            seed=1,
+        ).double()
+        # Keep only the direct feedback and intercept features, so this is an
+        # exactly representable ridge baseline rather than an extrapolation test.
+        with torch.no_grad():
+            for layer in model.modules():
+                if isinstance(layer, ESNLayer):
+                    layer.cell.weight_feedback.zero_()
+                    layer.cell.weight_hh.zero_()
+                    if layer.cell.bias_h is not None:
+                        layer.cell.bias_h.zero_()
+        data = torch.arange(36, dtype=torch.float64).view(1, 36, 1) / 100
+        ESNTrainer(model).fit((data[:, :5],), (data[:, 5:30],), {"output": data[:, 6:31]})
+        pred = model.forecast(data[:, :31], horizon=5)
+        assert torch.allclose(pred, data[:, 31:], atol=1e-5, rtol=0)
+        assert not torch.allclose(pred[:, :1], data[:, 32:33], atol=1e-3, rtol=0)
 
     def test_returns_closed_loop_training_outputs(self) -> None:
         """fit_force returns the per-step closed-loop outputs of the right shape."""

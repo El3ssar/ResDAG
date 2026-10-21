@@ -53,7 +53,10 @@ AT = _load_selector()
         "tests/conftest.py",
         "src/resdag/__init__.py",
         "tools/affected_tests.py",
+        "tools/ci_environment.py",
+        ".github/actions/setup-environment/action.yml",
         ".github/workflows/ci.yml",
+        ".github/workflows/compatibility.yml",
     ],
 )
 def test_broad_impact_changes_run_full_suite(path: str) -> None:

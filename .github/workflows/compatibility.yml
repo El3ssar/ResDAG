@@ -1,0 +1,31 @@
+# Runtime dependency ranges are tested separately from the reproducible gate.
+# A new upstream release must not silently change every PR's baseline, and a
+# lock must not hide incompatibilities with versions the package permits.
+name: Latest dependency compatibility
+on:
+  schedule:
+    - cron: "49 4 * * 3"
+  workflow_dispatch:
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    uses: ./.github/workflows/_test.yml
+    with:
+      force-full: true
+      dependency-mode: latest
+    secrets: inherit
+  docs:
+    runs-on: ubuntu-latest
+    env:
+      DISABLE_MKDOCS_2_WARNING: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-environment
+        with:
+          python-version: "3.12"
+          extras: docs
+          dependency-mode: latest
+      - name: Build documentation against latest dependencies
+        run: mkdocs build --strict

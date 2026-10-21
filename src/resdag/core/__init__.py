@@ -55,8 +55,9 @@ import pytorch_symbolic as ps
 import torch
 from pytorch_symbolic.symbolic_data import SymbolicData
 
+from ._execution import ReservoirStates
 from .feature_extractor import ReservoirFeatureExtractor
-from .model import ESNModel, Input
+from .model import ESNModel, Input, ReservoirModelModule
 
 
 def reservoir_input(feature_size: int, dtype: torch.dtype | None = None) -> SymbolicData:
@@ -93,7 +94,14 @@ def reservoir_input(feature_size: int, dtype: torch.dtype | None = None) -> Symb
 # ``ps`` (the re-exported ``pytorch_symbolic`` module) and ``torch`` remain
 # importable for backward compatibility but are intentionally left out of the
 # public surface — see ``__dir__`` below.
-__all__ = ["ESNModel", "Input", "ReservoirFeatureExtractor", "reservoir_input"]
+__all__ = [
+    "ESNModel",
+    "Input",
+    "ReservoirFeatureExtractor",
+    "ReservoirModelModule",
+    "ReservoirStates",
+    "reservoir_input",
+]
 
 
 def __dir__() -> list[str]:

@@ -282,7 +282,7 @@ class TestNGRCForecast:
         warmup_steps = warmup.shape[1]
         full = model.forecast(warmup, horizon=horizon, return_warmup=True)
         assert isinstance(full, torch.Tensor)
-        assert full.shape == (1, warmup_steps + horizon, 3)
+        assert full.shape == (1, warmup_steps - 1 + horizon, 3)
         assert torch.isfinite(full).all()
 
     def test_forecast_horizon_one(self) -> None:

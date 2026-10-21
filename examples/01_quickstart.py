@@ -38,7 +38,7 @@ def main() -> None:
     data = rd.lorenz(2300, seed=42)
 
     # prepare_esn_data slices one long series into the five segments every
-    # ESN workflow needs (val follows train, f_warmup is the tail of train):
+    # ESN workflow needs (val follows the final training target, which f_warmup includes):
     #   [warmup][----------train----------][----val----]
     #                          [f_warmup-]^
     warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(

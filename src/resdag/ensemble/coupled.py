@@ -12,17 +12,28 @@ resdag.models.coupled_ensemble_esn : Factory function to build this ensemble.
 resdag.core.ESNModel : Base ESN model used as sub-models.
 """
 
-import warnings
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from itertools import chain
+from pathlib import Path
 from typing import Any, cast
 
 import torch
 import torch.nn as nn
 
 from resdag.core import ESNModel
+from resdag.core._execution import ReservoirStates
 from resdag.core._flat_inference import FlatStep
+from resdag.core._forecast import ForecastAlignment, prepare_forecast_inputs
+from resdag.core._persistence import (
+    load_checkpoint,
+    load_full_model,
+    save_checkpoint,
+    save_full_model,
+)
+from resdag.core.model import ReservoirModelModule
+from resdag.layers.reservoirs import BaseReservoirLayer
 from resdag.training import ESNTrainer
+from resdag.training.trainer import InputStreams, ReadoutTargets
 
 
 class CoupledEnsembleESNModel(nn.Module):
@@ -114,6 +125,19 @@ class CoupledEnsembleESNModel(nn.Module):
             )
 
         self._validate_feedback_output_dims(models)
+
+        reservoir_owners: dict[int, int] = {}
+        for index, model in enumerate(models):
+            for layer in model.modules():
+                if isinstance(layer, BaseReservoirLayer):
+                    owner = reservoir_owners.get(id(layer))
+                    if owner is not None:
+                        raise ValueError(
+                            f"Ensemble members {owner} and {index} share a reservoir layer instance. "
+                            "Members require independent recurrent state. Use distinct reservoir "
+                            "layer instances; their parameter tensors may still share weights."
+                        )
+                    reservoir_owners[id(layer)] = index
 
         self.models = nn.ModuleList(models)
 
@@ -244,6 +268,56 @@ class CoupledEnsembleESNModel(nn.Module):
         outputs = [model(*inputs) for model in self.models]
         return self._aggregate(outputs)
 
+    def forward_stateless(
+        self,
+        *inputs: torch.Tensor,
+        states: Mapping[str, torch.Tensor] | None = None,
+        compile: bool = False,
+    ) -> tuple[torch.Tensor, ReservoirStates]:
+        """Aggregate complete member predictions with explicit recurrent state.
+
+        Omitted states start every member from zero. Otherwise use the named
+        dictionary returned by this method, whose keys are
+        ``models.<member index>.<reservoir name>``. The model's stored states
+        remain untouched; returned states retain gradients across chunks.
+        """
+        names = {
+            f"models.{index}.{name}"
+            for index, model in enumerate(self._iter_models())
+            for name in model._get_execution_plan().reservoir_names
+        }
+        if states is not None and set(states) != names:
+            raise ValueError(
+                "Reservoir state keys must match the model; "
+                f"missing={sorted(names - set(states))}, "
+                f"unexpected={sorted(set(states) - names)}"
+            )
+        outputs = []
+        final: ReservoirStates = {}
+        for index, model in enumerate(self._iter_models()):
+            prefix = f"models.{index}."
+            member_states = (
+                None
+                if states is None
+                else {
+                    key.removeprefix(prefix): value
+                    for key, value in states.items()
+                    if key.startswith(prefix)
+                }
+            )
+            output, member_final = model.forward_stateless(
+                *inputs, states=member_states, compile=compile
+            )
+            outputs.append(cast(torch.Tensor, output))
+            final.update({prefix + key: value for key, value in member_final.items()})
+        return self._aggregate(outputs), final
+
+    def as_module(self, *, stateful: bool = False) -> ReservoirModelModule:
+        """Share all trained members and their aggregator with a PyTorch pipeline."""
+        for model in self._iter_models():
+            model._get_execution_plan()
+        return ReservoirModelModule(self, stateful=stateful)
+
     @torch.no_grad()
     def warmup(self, *inputs: torch.Tensor) -> None:
         """Teacher-forced warmup: synchronize every sub-model's reservoir state.
@@ -274,6 +348,35 @@ class CoupledEnsembleESNModel(nn.Module):
             One dict per sub-model, mapping layer name to state tensor.
         """
         return [model.get_reservoir_states() for model in self._iter_models()]
+
+    def get_state(self) -> ReservoirStates:
+        """Return initialized recurrent states in one named dictionary."""
+        return {
+            f"models.{index}.{name}": state
+            for index, model in enumerate(self._iter_models())
+            for name, state in model.get_state().items()
+        }
+
+    def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        """Restore a named state dictionary matching ``forward_stateless``."""
+        names = {
+            f"models.{index}.{name}"
+            for index, model in enumerate(self._iter_models())
+            for name in model._get_execution_plan().reservoir_names
+        }
+        if strict and set(states) != names:
+            raise KeyError(
+                f"Reservoir state keys must match the model; missing={sorted(names - set(states))}, "
+                f"unexpected={sorted(set(states) - names)}"
+            )
+        for index, model in enumerate(self._iter_models()):
+            prefix = f"models.{index}."
+            member = {
+                key.removeprefix(prefix): value
+                for key, value in states.items()
+                if key.startswith(prefix)
+            }
+            model.set_state(member, strict=strict)
 
     def set_reservoir_states(
         self,
@@ -311,9 +414,9 @@ class CoupledEnsembleESNModel(nn.Module):
 
     def fit(
         self,
-        warmup_inputs: tuple[torch.Tensor, ...],
-        train_inputs: tuple[torch.Tensor, ...],
-        targets: dict[str, torch.Tensor],
+        warmup_inputs: InputStreams,
+        train_inputs: InputStreams,
+        targets: ReadoutTargets,
         n_workers: int = 1,
         coerce: bool = False,
     ) -> None:
@@ -369,6 +472,11 @@ class CoupledEnsembleESNModel(nn.Module):
         if n_workers < 1:
             raise ValueError(f"n_workers must be >= 1, got {n_workers}.")
 
+        warmup_inputs = ESNTrainer._input_tuple(warmup_inputs)
+        train_inputs = ESNTrainer._input_tuple(train_inputs)
+        if isinstance(targets, torch.Tensor):
+            trainer = ESNTrainer(next(self._iter_models()))
+            targets = trainer._target_dict(targets, trainer._discover_readouts())
         ref_device, ref_dtype = self._reference_device_dtype()
         warmup_inputs = tuple(
             self._coerce_tensor_to_reference(
@@ -412,250 +520,118 @@ class CoupledEnsembleESNModel(nn.Module):
     def forecast(
         self,
         warmup_inputs: tuple[torch.Tensor, ...] | torch.Tensor,
-        forecast_inputs: tuple[torch.Tensor, ...] | None = None,
+        forecast_inputs: tuple[torch.Tensor, ...] | torch.Tensor | None = None,
         *,
         horizon: int,
+        initial_feedback: torch.Tensor | None = None,
         return_warmup: bool = False,
         return_individuals: bool = False,
         reset: bool = True,
+        alignment: ForecastAlignment = "next",
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
-        """Coupled autoregressive forecast.
+        """Forecast the immediate unseen samples using shared coupled feedback.
 
-        **Phase 1 — Warmup**: all sub-models are teacher-forced with the same
-        warmup data, advancing their reservoir states independently.
+        All members consume the same observed history. The aggregate of their
+        final warmup predictions is slot zero, then each additional step consumes
+        their previous aggregate. ``forecast_inputs`` contains future drivers
+        starting immediately after history and needs ``horizon - 1`` samples.
+        A one-step forecast needs no future driver.
 
-        **Phase 2 — Coupled autoregression**: at every timestep ``t`` every
-        sub-model receives the *same* ``current_feedback`` (the aggregation of
-        all models' outputs at ``t-1``).  The averaged output couples all models
-        through a shared feedback signal.
+        ``initial_feedback`` is a distinct extra input after all warmup inputs,
+        shaped ``(batch, 1, feedback_features)``; when supplied, every prediction
+        consumes a driver and an empty warmup is supported. ``reset=False``
+        continues saved states. ``alignment="legacy"`` reproduces the old
+        convention which skipped the final warmup prediction and needs
+        ``horizon`` future drivers. These semantics match ``ESNModel.forecast``.
 
-        Parameters
-        ----------
-        warmup_inputs : tuple of torch.Tensor or torch.Tensor
-            Warmup sequences ``(feedback, driver1, ...)``.  A single tensor
-            is accepted for the common feedback-only case.
-        forecast_inputs : tuple of torch.Tensor, optional
-            Exogenous driver inputs for the autoregressive phase (feedback is
-            generated by the ensemble itself).  Autoregressive step ``t``
-            consumes ``forecast_inputs[i][:, t, :]`` — pass the driver series
-            continuing exactly where the warmup drivers ended.  Each tensor
-            must have **at least** ``horizon`` timesteps (one per
-            autoregressive step); extra trailing steps are ignored.  This
-            matches :meth:`resdag.core.ESNModel.forecast` exactly.
-        horizon : int, keyword-only
-            Number of autoregressive steps to generate.
-        return_warmup : bool, default ``False``
-            If ``True``, prepend the averaged warmup outputs to the returned
-            aggregated forecast, giving shape
-            ``(batch, warmup_steps + horizon, output_size)``.
-            Individual trajectories (when ``return_individuals=True``) always
-            cover only the autoregressive phase.
-        return_individuals : bool, default ``False``
-            If ``True``, also return per-sub-model autoregressive trajectories.
-            One buffer of shape ``(batch, horizon, output_size)`` is
-            pre-allocated per sub-model on the same device at the start of the
-            forecast loop — only set this flag when you actually need the
-            individual sequences, to avoid allocating N extra GPU buffers.
-        reset : bool, default ``True``
-            If ``True``, every sub-model's reservoir state is reset before
-            warmup.
+        Results have shape ``(batch, horizon, output_features)``. With
+        ``return_warmup=True``, prepend historical predictions: total length is
+        ``warmup_steps - 1 + horizon``, or ``warmup_steps + horizon`` with an
+        explicit seed or legacy alignment. With ``return_individuals=True``,
+        also return a list of member trajectories, each covering only the
+        ``horizon`` future samples. Per-member buffers are allocated only when
+        requested. ``horizon`` must be a positive integer; zero is rejected.
 
-        Returns
-        -------
-        torch.Tensor
-            Aggregated forecast of shape ``(batch, horizon, output_size)``, or
-            ``(batch, warmup_steps + horizon, output_size)`` when
-            ``return_warmup=True``.  Returned alone when
-            ``return_individuals=False``.
-        tuple of (torch.Tensor, list of torch.Tensor)
-            When ``return_individuals=True``: a 2-tuple whose first element is
-            the aggregated forecast (as above) and whose second element is a
-            list of ``n_models`` tensors each of shape
-            ``(batch, horizon, output_size)``, in the same order as
-            ``self.models``.
-
-        Raises
-        ------
-        ValueError
-            If ``horizon`` is not a positive integer, if driver arguments are
-            inconsistent with the number of warmup inputs, or if a
-            ``forecast_inputs`` tensor has fewer than ``horizon`` timesteps.
+        The final returned prediction has not been consumed. Continue with
+        empty history, that prediction as ``initial_feedback``, and ``reset=False``.
         """
-        if isinstance(warmup_inputs, torch.Tensor):
-            warmup_inputs = (warmup_inputs,)
-        else:
-            warmup_inputs = tuple(warmup_inputs)
-        if len(warmup_inputs) == 0:
-            raise ValueError("At least one warmup input (feedback) is required.")
-
-        # Validate the horizon up front so callers get a clear error instead of
-        # a downstream IndexError / negative-dimension RuntimeError.
-        if horizon < 1:
-            raise ValueError(f"horizon must be a positive integer, got {horizon}")
-
-        num_drivers = len(warmup_inputs) - 1
-        has_drivers = num_drivers > 0
-
-        if has_drivers:
-            if forecast_inputs is None:
-                raise ValueError(
-                    f"Model has {num_drivers} driving input(s). "
-                    "forecast_inputs must be provided for the autoregressive phase."
-                )
-            forecast_inputs = tuple(forecast_inputs)
-            if len(forecast_inputs) != num_drivers:
-                raise ValueError(
-                    f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}."
-                )
-            for i, driver in enumerate(forecast_inputs):
-                if driver.shape[1] < horizon:
-                    raise ValueError(
-                        f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected at "
-                        f"least {horizon} (one per autoregressive step). forecast_inputs "
-                        f"must hold the driver series for the forecast window, starting "
-                        f"right after the warmup window."
-                    )
-
+        models = list(self._iter_models())
+        for model in models:
+            model._get_execution_plan()
+        warmup_inputs, drivers, horizon, boundary = prepare_forecast_inputs(
+            warmup_inputs,
+            forecast_inputs,
+            num_inputs=len(models[0].inputs),
+            horizon=horizon,
+            initial_feedback=initial_feedback,
+            alignment=alignment,
+        )
         batch_size = warmup_inputs[0].shape[0]
-        # Build the output buffers from the sub-models' own device/dtype, not
-        # from ``warmup_inputs`` — the sub-models compute on their parameter
-        # device regardless of where the warmup data lives, so this is the
-        # device/dtype every aggregated step actually has.  Deriving the buffer
-        # from the inputs (the old behaviour) risked a cross-device in-place
-        # write or a silent dtype cast when a custom aggregator changed dtype.
         device, dtype = self._reference_device_dtype()
-
-        # Phase 1: warmup — all models independently, same teacher-forced data
-        warmup_outputs_per_model: list[torch.Tensor] = []
-        for model in self._iter_models():
-            # ``return_outputs=True`` yields the warmup outputs. Sub-models are
-            # guaranteed single-output by ``_validate_feedback_output_dims`` at
-            # construction (multi-output models are rejected there), so this is
-            # always a single tensor rather than a tuple of per-head tensors.
-            out = cast(torch.Tensor, model.warmup(*warmup_inputs, return_outputs=True, reset=reset))
-            warmup_outputs_per_model.append(out)  # (batch, W, output_size)
-
+        warmup_outputs_per_model = [
+            cast(torch.Tensor, model.warmup(*warmup_inputs, return_outputs=True, reset=reset))
+            for model in models
+        ]
         output_size = warmup_outputs_per_model[0].shape[-1]
-
-        # Aggregate the last warmup step as the initial autoregressive feedback.
-        # This seeds ``current_feedback`` but is *not* written into any output
-        # buffer — slot 0 is a genuine forecast step, matching ESNModel.forecast.
-        # Conform it to the reference device/dtype so a dtype-changing custom
-        # aggregator does not feed a float-mismatched tensor into the sub-models
-        # on the very first autoregressive step.
-        last_steps = [out[:, -1:, :] for out in warmup_outputs_per_model]
-        current_feedback = self._coerce_step_for_buffer(
-            self._aggregate(last_steps), device, dtype
-        )  # (batch, 1, output_size)
-
-        # Pre-allocate aggregated forecast buffer
         forecast_outputs = torch.empty(batch_size, horizon, output_size, device=device, dtype=dtype)
+        individual_outputs = (
+            [torch.empty_like(forecast_outputs) for _ in models] if return_individuals else None
+        )
+        if initial_feedback is None:
+            last_steps = [out[:, -1:, :] for out in warmup_outputs_per_model]
+            current_feedback = self._coerce_step_for_buffer(
+                self._aggregate(last_steps), device, dtype
+            )
+        else:
+            last_steps = []
+            current_feedback = self._coerce_step_for_buffer(initial_feedback, device, dtype)
+        if boundary:
+            forecast_outputs[:, :1, :] = current_feedback
+            if individual_outputs is not None:
+                for buf, out in zip(individual_outputs, last_steps):
+                    buf[:, :1, :] = self._coerce_step_for_buffer(out, device, dtype)
 
-        # Per-model buffers: only allocated when the caller explicitly requests them
-        individual_outputs: list[torch.Tensor] | None = None
-        if return_individuals:
-            individual_outputs = [
-                torch.empty(batch_size, horizon, output_size, device=device, dtype=dtype)
-                for _ in self.models
-            ]
-
-        # Resolve each sub-model's flattened single-step executor and its
-        # reservoir states once, *before* the loop. Stepping every member through
-        # its ``FlatStep`` (a straight-line, capture-the-layers step function)
-        # instead of re-invoking ``model(*step_inputs)`` sheds the per-step
-        # symbolic-graph re-walk, ``nn.Module.__call__`` dispatch, and reservoir
-        # sequence-loop bookkeeping — the same overhead the core forecast engine
-        # eliminates for single models. The step is numerically identical to the
-        # graph path (proven bit-exact upstream), so the coupled forecast output
-        # is unchanged. States are threaded explicitly per member rather than
-        # mutated on the module buffers mid-loop; they are persisted back to each
-        # reservoir after the loop so ``reset=False`` / ``get_reservoir_states``
-        # continue to observe the advanced states.
-        flats: list[FlatStep] = [m._get_flat_step() for m in self._iter_models()]
-        states_per_model: list[list[torch.Tensor]] = [
+        flats: list[FlatStep] = [model._get_flat_step() for model in models]
+        states_per_model = [
             self._resolve_member_states(flat, batch_size, device, dtype) for flat in flats
         ]
-
-        # Phase 2: coupled autoregressive loop. Every slot ``0..horizon-1`` is a
-        # genuine coupled step; no teacher-forced warmup echo is emitted. The
-        # members are coupled through the aggregator: every member is stepped on
-        # the *same* ``current_feedback`` (the aggregation of all members' outputs
-        # at ``t-1``), and the aggregated output becomes the shared feedback for
-        # the next step — so the members cannot be rolled out independently and
-        # the aggregation must be interleaved between single steps.
-        for t in range(horizon):
-            if has_drivers:
-                # ``has_drivers`` implies ``forecast_inputs`` was validated as a
-                # non-empty tuple above; restate it for the type-checker.
-                assert forecast_inputs is not None
-                # Same pairing as ESNModel.forecast: step ``t`` consumes the
-                # driver at the ``t``-th step after warmup = forecast_inputs[:, t].
-                driver_slice = tuple(d[:, t : t + 1, :] for d in forecast_inputs)
-                step_inputs: tuple[torch.Tensor, ...] = (current_feedback,) + driver_slice
-            else:
-                step_inputs = (current_feedback,)
-
-            # Step every member through its flat executor on the shared feedback,
-            # threading each member's own reservoir states in and out. Sub-models
-            # are single-output (enforced at construction), so ``out_tuple`` holds
-            # exactly one ``(batch, 1, output_size)`` slice — identical to what
-            # ``model(*step_inputs)`` returned on the graph path.
-            step_outputs: list[torch.Tensor] = []
+        for t in range(int(boundary), horizon):
+            driver_idx = t - int(boundary)
+            step_inputs = (current_feedback,) + tuple(
+                driver[:, driver_idx : driver_idx + 1, :] for driver in drivers
+            )
+            step_outputs = []
             for i, flat in enumerate(flats):
                 out_tuple, states_per_model[i] = flat.step(step_inputs, states_per_model[i])
                 step_outputs.append(out_tuple[0])
-
             if individual_outputs is not None:
                 for buf, out in zip(individual_outputs, step_outputs):
-                    buf[:, t, :] = self._coerce_step_for_buffer(out.squeeze(1), device, dtype)
-
-            # Conform the aggregated feedback to the reference device/dtype once,
-            # deliberately. A custom aggregator that changes dtype would
-            # otherwise (a) be silently down/upcast by the in-place buffer write
-            # and (b) re-enter the float-mismatched sub-models on the *next*
-            # step, raising an opaque ``F.linear`` dtype error. Coercing here
-            # fixes both and keeps the autoregressive loop type-stable.
+                    buf[:, t : t + 1, :] = self._coerce_step_for_buffer(out, device, dtype)
             current_feedback = self._coerce_step_for_buffer(
                 self._aggregate(step_outputs), device, dtype
-            )  # (batch, 1, output_size)
-            forecast_outputs[:, t, :] = current_feedback.squeeze(1)
+            )
+            forecast_outputs[:, t : t + 1, :] = current_feedback
 
-        # Persist each member's advanced reservoir states back onto its layers so
-        # a follow-up ``forecast(reset=False)`` / ``get_reservoir_states`` sees
-        # them, mirroring the in-place mutation of the legacy per-step loop and
-        # honouring the ``detach_state_between_calls`` contract exactly as
-        # ``ESNModel.forecast`` does.
         for flat, states in zip(flats, states_per_model):
             for reservoir, state in zip(flat.reservoir_layers, states):
                 if reservoir.detach_state_between_calls and state.grad_fn is not None:
                     reservoir.state = state.detach().clone()
                 else:
                     reservoir.state = state.clone()
-
         if return_warmup:
-            warmup_stacked = torch.stack(warmup_outputs_per_model, dim=0)
-            warmup_avg = self._aggregate_stacked(warmup_stacked)
-            # Conform the aggregated warmup to the forecast buffer before the
-            # concat so a custom aggregator that changes dtype/device produces a
-            # clear error or deliberate cast rather than a raw ``torch.cat``
-            # mismatch.  ``warmup_avg`` is (batch, W, F); reuse the per-step
-            # coercion over the flattened time axis by checking the tensor as a
-            # whole (device + dtype only, shape is preserved).
+            warmup_avg = self._aggregate_stacked(torch.stack(warmup_outputs_per_model, dim=0))
             if warmup_avg.device != device:
                 raise ValueError(
                     f"Aggregated warmup output is on device={warmup_avg.device}, but "
                     f"the forecast output buffer is on device={device}. A custom "
-                    f"aggregator must keep its output on the sub-models' device."
+                    "aggregator must keep its output on the sub-models' device."
                 )
-            if warmup_avg.dtype != dtype:
-                warmup_avg = warmup_avg.to(dtype=dtype)
-            aggregated = torch.cat([warmup_avg, forecast_outputs], dim=1)
-        else:
-            aggregated = forecast_outputs
-
-        if return_individuals:
-            return aggregated, individual_outputs  # type: ignore[return-value]
-        return aggregated
+            warmup_avg = warmup_avg.to(dtype=dtype)
+            prefix = warmup_avg[:, :-1, :] if boundary else warmup_avg
+            forecast_outputs = torch.cat((prefix, forecast_outputs), dim=1)
+        if individual_outputs is not None:
+            return forecast_outputs, individual_outputs
+        return forecast_outputs
 
     # ------------------------------------------------------------------
     # Persistence
@@ -663,7 +639,7 @@ class CoupledEnsembleESNModel(nn.Module):
 
     def save(
         self,
-        path: str,
+        path: str | Path,
         include_states: bool = False,
         **metadata: Any,
     ) -> None:
@@ -678,15 +654,15 @@ class CoupledEnsembleESNModel(nn.Module):
         **metadata
             Arbitrary key-value pairs stored alongside the weights.
         """
-        save_dict: dict[str, Any] = {
-            "state_dicts": [model.state_dict() for model in self.models],
-            "metadata": metadata,
-        }
-        if include_states:
-            save_dict["reservoir_states"] = self.get_reservoir_states()
-        torch.save(save_dict, path)
+        save_checkpoint(self, path, include_states, metadata)
 
-    def load(self, path: str, strict: bool = True, load_states: bool = False) -> None:
+    def load(
+        self,
+        path: str | Path,
+        strict: bool = True,
+        load_states: bool = False,
+        map_location: Any = None,
+    ) -> None:
         """Load ensemble weights from a file created by :meth:`save`.
 
         Parameters
@@ -697,39 +673,32 @@ class CoupledEnsembleESNModel(nn.Module):
             Passed to ``load_state_dict`` for each sub-model.
         load_states : bool, default ``False``
             If ``True``, also restore reservoir states.
+        map_location : optional
+            Passed to ``torch.load`` to remap saved storage devices.
 
         Raises
         ------
         ValueError
             If the checkpoint contains a different number of sub-models.
         """
-        checkpoint = torch.load(path, weights_only=False)
-        if not isinstance(checkpoint, dict) or "state_dicts" not in checkpoint:
-            raise ValueError(
-                f"{path} is not a save() state-dict checkpoint. If it was written "
-                f"by save_full() (or torch.save(ensemble)), use "
-                f"CoupledEnsembleESNModel.load_full()."
-            )
-        state_dicts: list[dict] = checkpoint["state_dicts"]
-        if len(state_dicts) != len(self.models):
-            raise ValueError(
-                f"Checkpoint has {len(state_dicts)} sub-model(s), "
-                f"but this ensemble has {len(self.models)}."
-            )
-        for model, sd in zip(self.models, state_dicts):
-            model.load_state_dict(sd, strict=strict)
+        load_checkpoint(self, path, strict, load_states, map_location)
 
-        if load_states:
-            if "reservoir_states" in checkpoint:
-                self.set_reservoir_states(checkpoint["reservoir_states"])
-            else:
-                warnings.warn(
-                    "load_states=True but checkpoint has no 'reservoir_states' key.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+    @classmethod
+    def load_from_file(
+        cls,
+        path: str | Path,
+        model: "CoupledEnsembleESNModel | None" = None,
+        strict: bool = True,
+        load_states: bool = False,
+        map_location: Any = None,
+    ) -> "CoupledEnsembleESNModel":
+        """Restore weights into an already constructed matching ensemble."""
+        if model is None:
+            raise ValueError("model argument is required")
+        model.load(path, strict=strict, load_states=load_states, map_location=map_location)
+        return model
 
-    def save_full(self, path: str, **metadata: Any) -> None:
+    def save_full(self, path: str | Path, **metadata: Any) -> None:
         """Serialize the entire ensemble — every sub-model's architecture,
         weights, and reservoir states — to a single file.
 
@@ -757,12 +726,12 @@ class CoupledEnsembleESNModel(nn.Module):
         load_full : Reconstruct an ensemble saved with this method.
         save : Lighter, state-dict-only persistence (architecture not stored).
         """
-        torch.save({"resdag_full_ensemble": self, "metadata": metadata}, path)
+        save_full_model(self, path, metadata)
 
     @classmethod
     def load_full(
         cls,
-        path: str,
+        path: str | Path,
         return_metadata: bool = False,
         map_location: Any = None,
     ) -> "CoupledEnsembleESNModel | tuple[CoupledEnsembleESNModel, dict[str, Any]]":
@@ -795,25 +764,7 @@ class CoupledEnsembleESNModel(nn.Module):
         --------
         save_full : Serialize a complete ensemble.
         """
-        payload = torch.load(path, weights_only=False, map_location=map_location)
-        ensemble: CoupledEnsembleESNModel
-        metadata: dict[str, Any]
-        if isinstance(payload, dict) and "resdag_full_ensemble" in payload:
-            ensemble = payload["resdag_full_ensemble"]
-            metadata = payload.get("metadata", {})
-        elif isinstance(payload, CoupledEnsembleESNModel):
-            # A bare ``torch.save(ensemble)`` file, with no metadata wrapper.
-            ensemble = payload
-            metadata = {}
-        else:
-            raise ValueError(
-                f"{path} does not contain a full ensemble. Write one with "
-                f"save_full() (or torch.save(ensemble)); for a state-dict "
-                f"checkpoint from save(), rebuild the ensemble and use load()."
-            )
-        if return_metadata:
-            return ensemble, metadata
-        return ensemble
+        return load_full_model(cls, path, return_metadata, map_location)
 
     # ------------------------------------------------------------------
     # Internal helpers

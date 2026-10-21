@@ -14,6 +14,8 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 import torch
 import torch.nn as nn
 
+from resdag._contracts import prepare_fit_inputs
+
 
 def _sync_fitted_flag_post_hook(module: "ReadoutLayer", incompatible_keys: object) -> None:
     """Re-derive the Python ``_fitted_flag`` mirror from the loaded buffer.
@@ -279,52 +281,7 @@ class ReadoutLayer(nn.Linear):
         --------
         CGReadoutLayer : Concrete implementation using Conjugate Gradient.
         """
-        self._validate_fit_shapes(states, targets)
-        if states.dim() == 3:
-            b, t, f = states.shape
-            states = states.reshape(b * t, f)
-        if targets.dim() == 3:
-            b, t, f = targets.shape
-            targets = targets.reshape(b * t, f)
-
-        readout_id = f"'{self._name}'" if self._name is not None else type(self).__name__
-        if states.shape[0] != targets.shape[0]:
-            raise ValueError(
-                f"{type(self).__name__}.fit({readout_id}): sample count mismatch. "
-                f"States have {states.shape[0]} samples after flattening, "
-                f"targets have {targets.shape[0]}."
-            )
-        if states.shape[1] != self.in_features:
-            raise ValueError(
-                f"{type(self).__name__}.fit({readout_id}): state feature dimension "
-                f"({states.shape[1]}) does not match readout in_features "
-                f"({self.in_features})."
-            )
-        if targets.shape[1] != self.out_features:
-            raise ValueError(
-                f"{type(self).__name__}.fit({readout_id}): target feature dimension "
-                f"({targets.shape[1]}) does not match readout out_features "
-                f"({self.out_features})."
-            )
-
-        # Reject non-finite inputs *before* the algebraic solve. A diverged
-        # reservoir (or a corrupt target) feeds NaN/Inf into the Gram-matrix
-        # matmuls, which would otherwise propagate straight into the fitted
-        # weights and leave the layer ``is_fitted`` with NaN parameters and no
-        # error. Failing loudly here is far easier to diagnose.
-        if not torch.isfinite(states).all():
-            raise ValueError(
-                f"{type(self).__name__}.fit({readout_id}): states contain "
-                f"non-finite values (NaN or Inf). The readout solve requires "
-                f"finite inputs — clean or impute the reservoir states (a "
-                f"diverged reservoir is the usual cause) before fitting."
-            )
-        if not torch.isfinite(targets).all():
-            raise ValueError(
-                f"{type(self).__name__}.fit({readout_id}): targets contain "
-                f"non-finite values (NaN or Inf). The readout solve requires "
-                f"finite inputs — clean or impute the targets before fitting."
-            )
+        states, targets = self._prepare_fit_inputs(states, targets, "fit")
 
         coefs, intercept = self._fit_impl(states, targets)
 
@@ -348,28 +305,17 @@ class ReadoutLayer(nn.Linear):
         if self.bias is not None and bias is not None:
             self.bias.copy_(bias)
 
-    def _validate_fit_shapes(self, states: torch.Tensor, targets: torch.Tensor) -> None:
-        """Validate sample axes before flattening batch and time for a solve."""
-        for label, tensor in (("states", states), ("targets", targets)):
-            if tensor.dim() not in (2, 3):
-                raise ValueError(
-                    f"{type(self).__name__}: {label} must be 2D (samples, features) "
-                    f"or 3D (batch, time, features), got shape {tuple(tensor.shape)}."
-                )
-            if tensor.numel() == 0:
-                raise ValueError(
-                    f"{type(self).__name__}: {label} must contain at least one sample."
-                )
-        if states.dim() == targets.dim() == 3 and states.shape[:2] != targets.shape[:2]:
-            raise ValueError(
-                f"{type(self).__name__}: states and targets must share batch and time axes; "
-                f"got {tuple(states.shape[:2])} and {tuple(targets.shape[:2])}."
-            )
-        if states.device != targets.device:
-            raise ValueError(
-                f"{type(self).__name__}: states and targets must be on the same device; "
-                f"got {states.device} and {targets.device}."
-            )
+    def _prepare_fit_inputs(
+        self, states: torch.Tensor, targets: torch.Tensor, method: str
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Use one shape/device/finiteness contract for batch and online solvers."""
+        return prepare_fit_inputs(
+            states,
+            targets,
+            in_features=self.in_features,
+            out_features=self.out_features,
+            label=f"{type(self).__name__}.{method}({self.name!r})",
+        )
 
     def _fit_impl(
         self,

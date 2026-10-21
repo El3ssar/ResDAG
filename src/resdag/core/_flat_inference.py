@@ -6,15 +6,13 @@ time.  Driving that loop with the full symbolic ``__call__`` re-walks the entire
 ``pytorch_symbolic`` graph on *every* step: it re-dispatches
 ``nn.Module.__call__`` for the model and each layer and pays the reservoir
 sequence-loop bookkeeping (``torch.stack`` of a one-element list, ``shape[1]``
-reads, lazy-init/detach checks) just to process a single frame.  Profiled, that
-is ~3x the cost of the raw per-step cell update — the reason forecasting lost to
-NumPy baselines at every horizon despite training winning by a wide margin.
+reads, lazy-init/detach checks) just to process a single frame. Flattening the
+graph removes this repeated Python dispatch and sequence bookkeeping.
 
-This module compiles the symbolic graph **once** into a flat, straight-line
-Python step function that captures the layer references directly and threads
-reservoir states explicitly (rather than mutating module buffers mid-loop).
-The generated function mirrors the order ``pytorch_symbolic`` itself uses for
-its codegen'd ``forward`` (``model._execution_order_nodes``), so the result is
+This module compiles the model's shared execution plan **once** into a flat,
+straight-line Python step function that captures layer references directly and
+threads reservoir states explicitly (rather than mutating module buffers
+mid-loop). The plan preserves the symbolic graph's operation order, so the result is
 numerically identical to the per-step ``self(*step_inputs)`` path while shedding
 the per-step dispatch and wrapper overhead.
 
@@ -88,8 +86,8 @@ class FlatStep:
         order) and ``states``/``new_states`` are lists of reservoir states in
         :attr:`reservoir_layers` order.
     reservoir_layers : list[BaseReservoirLayer]
-        Reservoir layers in graph execution (topological) order — the order in
-        which states are threaded through :attr:`step`.
+        Reservoir layers in graph invocation order. Repeated use of one
+        reservoir instance is rejected to keep state independent per node.
     source : str
         The generated Python source of :attr:`step` (kept for debugging /
         introspection, mirroring ``pytorch_symbolic``'s
@@ -112,9 +110,10 @@ def build_flat_step(model: ESNModel) -> FlatStep:
     """
     Compile a model's symbolic graph into a flat single-step executor.
 
-    Walks ``model._execution_order_nodes`` (the same topologically ordered node
-    list ``pytorch_symbolic`` replays in its ``forward``) and emits one
-    straight-line assignment per node into a generated Python function.
+    Consumes the same immutable execution plan as full-sequence explicit-state
+    inference and emits straight-line assignments into a generated function.
+    Reservoir instances must be distinct at each graph position so sequence
+    and stepwise execution have the same causal recurrent-state semantics.
     Reservoir nodes call :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
     with their state threaded in and out; every other node calls its layer's
     ``forward`` directly on its parents' values, bypassing the
@@ -140,85 +139,41 @@ def build_flat_step(model: ESNModel) -> FlatStep:
     :meth:`pytorch_symbolic.SymbolicModel.add_output` — which the model's cache
     detects via the identity of ``model.outputs``.
     """
-    inputs = list(model.inputs)
-    outputs = list(model.outputs)
-    exec_nodes = list(model._execution_order_nodes)
-
-    # id(node) -> the variable name holding its per-step value.
-    var: dict[int, str] = {id(node): f"a{i}" for i, node in enumerate(inputs)}
-
-    callables: list[Any] = []  # referenced as _C[k] in the generated source
-    reservoir_layers: list[BaseReservoirLayer] = []
-    new_state_vars: list[str] = []
-    node_lines: list[str] = []
-    vcount = 0
-
-    for node in exec_nodes:
-        layer = node.layer
-        if layer is None:
-            raise ValueError("A non-input symbolic graph node has no layer to execute.")
-        parent_vars = [var[id(parent)] for parent in node._parents]
-        siblings = node._layer_full_siblings
-
-        if isinstance(layer, BaseReservoirLayer):
-            ridx = len(reservoir_layers)
-            reservoir_layers.append(layer)
-            k = len(callables)
-            callables.append(layer.step_stateless)
-            tmp_var = f"u{ridx}"
-            value_var = f"v{vcount}"
-            vcount += 1
-            var[id(node)] = value_var
-            state_var = f"nr{ridx}"
-            new_state_vars.append(state_var)
-            # step_stateless works in 2-D; squeeze the singleton time axis off
-            # each parent slice, run the single-step update, and restore it.
-            squeezed = ", ".join(f"{p}[:, 0, :]" for p in parent_vars)
-            node_lines.append(f"    {tmp_var}, {state_var} = _C[{k}]([{squeezed}], r{ridx})")
-            node_lines.append(f"    {value_var} = {tmp_var}.unsqueeze(1)")
-        elif len(siblings) > 1:
-            # Multi-output (unpack) node: pytorch_symbolic's ``_launch`` calls the
-            # layer as ``layer(*parent_value)`` (a single, iterable parent), so the
-            # parent must be splatted. Every sibling value is bound, even siblings
-            # that are unused downstream.
-            assert len(parent_vars) == 1, "multi-output node must have exactly one parent"
-            k = len(callables)
-            callables.append(layer.forward)
-            sibling_vars = []
-            for sibling in siblings:
-                sib_var = f"v{vcount}"
-                vcount += 1
-                var[id(sibling)] = sib_var
-                sibling_vars.append(sib_var)
-            node_lines.append(f"    {', '.join(sibling_vars)} = _C[{k}](*{parent_vars[0]})")
+    plan = model._get_execution_plan()
+    callables: list[Any] = []
+    lines = [f"    v{i} = _in[{i}]" for i in range(len(plan.input_features))]
+    lines += [f"    r{i} = _st[{i}]" for i in range(len(plan.reservoirs))]
+    for op in plan.operations:
+        parents = [f"v{i}" for i in op.parents]
+        outputs = [f"v{i}" for i in op.outputs]
+        index = len(callables)
+        if op.reservoir_index is not None:
+            state = f"r{op.reservoir_index}"
+            reservoir = plan.reservoirs[op.reservoir_index]
+            callables.append(reservoir.step_stateless)
+            squeezed = ", ".join(f"{parent}.select(1, 0)" for parent in parents)
+            lines.append(f"    u, {state} = _C[{index}]([{squeezed}], {state})")
+            lines.append(f"    {outputs[0]} = u.unsqueeze(1)")
         else:
-            k = len(callables)
-            callables.append(layer.forward)
-            value_var = f"v{vcount}"
-            vcount += 1
-            var[id(node)] = value_var
-            node_lines.append(f"    {value_var} = _C[{k}]({', '.join(parent_vars)})")
-
-    header = [f"    a{i} = _in[{i}]" for i in range(len(inputs))]
-    header += [f"    r{i} = _st[{i}]" for i in range(len(reservoir_layers))]
-    out_src = ", ".join(var[id(node)] for node in outputs)
-    ns_src = ", ".join(new_state_vars)
-    return_line = f"    return ({out_src},), [{ns_src}]"
-
-    source = "def _flat_step(_in, _st):\n" + "\n".join(header + node_lines + [return_line]) + "\n"
-
+            callables.append(op.layer.forward)
+            if len(outputs) > 1:
+                assert len(parents) == 1, "multi-output node must have one parent"
+                lines.append(f"    {', '.join(outputs)} = _C[{index}](*{parents[0]})")
+            else:
+                lines.append(f"    {outputs[0]} = _C[{index}]({', '.join(parents)})")
+    out_src = ", ".join(f"v{i}" for i in plan.output_slots)
+    state_src = ", ".join(f"r{i}" for i in range(len(plan.reservoirs)))
+    lines.append(f"    return ({out_src},), [{state_src}]")
+    source = "def _flat_step(_in, _st):\n" + "\n".join(lines) + "\n"
     namespace: dict[str, Any] = {"_C": tuple(callables)}
-    # Codegen + exec mirrors pytorch_symbolic's own forward codegen; the source
-    # is fully determined by the model graph (no user input is interpolated).
-    exec(source, namespace)  # noqa: S102
+    exec(source, namespace)  # noqa: S102 - structure comes from the model, not user text.
     step_fn: StepFn = namespace["_flat_step"]
-
     return FlatStep(
         step=step_fn,
-        reservoir_layers=reservoir_layers,
+        reservoir_layers=list(plan.reservoirs),
         source=source,
-        n_inputs=len(inputs),
-        n_outputs=len(outputs),
+        n_inputs=len(plan.input_features),
+        n_outputs=len(plan.output_slots),
     )
 
 
@@ -516,6 +471,12 @@ def rollout(
 
     # Eager single-step loop: the whole horizon when not compiling, or the
     # trailing remainder the chunked path could not cover.
+    # One view per output exposes (time, batch, 1, features). Selecting a frame
+    # then copying avoids repeated three-axis indexing and squeeze operations.
+    # Copy immediately: custom inference layers may reuse their output buffers.
+    output_views = (
+        [buffer.permute(1, 0, 2).unsqueeze(2) for buffer in forecast_buffers] if no_grad else []
+    )
     for t in range(done, horizon):
         if has_drivers:
             step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
@@ -524,7 +485,7 @@ def rollout(
         step_outputs, states = flat.step(step_inputs, states)
         if no_grad:
             for i in range(n_out):
-                forecast_buffers[i][:, t, :] = step_outputs[i].squeeze(1)
+                output_views[i][t].copy_(step_outputs[i])
         else:
             for i in range(n_out):
                 step_accumulators[i].append(step_outputs[i])

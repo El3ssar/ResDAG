@@ -21,20 +21,19 @@ def test_target_is_one_step_ahead_of_train() -> None:
     assert target.shape == train.shape
     assert torch.equal(target[:, 0, :], data[:, warmup_steps + 1, :])
     assert torch.equal(target[:, -1, :], data[:, train_end, :])
-    # val starts one step after the train window (the data[train_end] seam is
-    # the forecast's bootstrap seed, not a val sample), so train and val are
-    # disjoint — no leakage of the last train target into val[0].
+    # The final supervised target is already observed; validation starts
+    # after it, with no overlap between training targets and held-out data.
     assert torch.equal(val[:, 0, :], data[:, train_end + 1, :])
     assert not torch.equal(target[:, -1, :], val[:, 0, :])
 
 
-def test_forecast_warmup_is_train_suffix() -> None:
+def test_forecast_warmup_includes_final_training_target() -> None:
     data = torch.randn(1, 500, 2)
     warmup_steps, train_steps = 50, 200
     _, train, _, f_warmup, _ = prepare_esn_data(data, warmup_steps, train_steps, val_steps=100)
 
     assert f_warmup.shape[1] == warmup_steps
-    assert torch.equal(f_warmup, train[:, -warmup_steps:, :])
+    assert torch.equal(f_warmup, data[:, train_steps + 1 : warmup_steps + train_steps + 1, :])
 
 
 def test_val_steps_none_uses_all_remaining() -> None:
@@ -43,7 +42,7 @@ def test_val_steps_none_uses_all_remaining() -> None:
     train_end = warmup_steps + train_steps
     _, _, _, _, val = prepare_esn_data(data, warmup_steps, train_steps, val_steps=None)
 
-    # All remaining data after the one-step autoregressive seam (data[train_end]).
+    # All remaining data after the final supervised target data[train_end].
     assert val.shape[1] == data.shape[1] - train_end - 1
     assert val[0, -1, 0] == data[0, -1, 0]
     assert val[0, 0, 0] == data[0, train_end + 1, 0]
@@ -123,7 +122,7 @@ def test_zero_val_steps_warns_and_returns_empty_val() -> None:
 
 
 def test_exhausted_data_val_none_warns_empty_val() -> None:
-    # warmup + train + seam == timesteps exactly -> no remaining val data.
+    # Warmup + training inputs + final target exhaust the available samples.
     data = torch.arange(31, dtype=torch.float32).view(1, -1, 1)
     with pytest.warns(UserWarning, match="Validation window is empty"):
         _, _, _, _, val = prepare_esn_data(data, warmup_steps=10, train_steps=20, val_steps=None)
@@ -149,7 +148,7 @@ def test_forecast_warmup_keeps_full_history_when_training_is_short() -> None:
     )
     assert torch.equal(train, data[:, 12:15])
     assert torch.equal(target, data[:, 13:16])
-    assert torch.equal(f_warmup, data[:, 5:15])
+    assert torch.equal(f_warmup, data[:, 6:16])
     assert torch.equal(val, data[:, 16:20])
 
 

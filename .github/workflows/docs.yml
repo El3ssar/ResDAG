@@ -6,13 +6,19 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      dependency-mode:
+        description: Locked baseline or latest dependency compatibility
+        type: choice
+        options: [locked, latest]
+        default: locked
   schedule:
     # Weekly link-check canary (Mondays 06:00 UTC) — catches doc-URL drift
     # such as the GitHub Pages casing without gating day-to-day PRs.
     - cron: "0 6 * * 1"
 
 concurrency:
-  group: docs-${{ github.ref }}
+  group: docs-${{ github.ref }}-${{ inputs.dependency-mode || 'locked' }}
   cancel-in-progress: true
 
 # mkdocs-material (via transitive plugins) may print an MkDocs 2.x deprecation notice;
@@ -29,18 +35,11 @@ jobs:
           # mkdocs-git-revision-date-localized needs history for per-file timestamps
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-environment
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      - name: Install CPU torch (slim CI)
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install package and docs dependencies
-        run: pip install -e ".[docs]"
+          extras: docs
+          dependency-mode: ${{ github.event_name == 'workflow_dispatch' && inputs.dependency-mode || 'locked' }}
 
       - name: Build documentation
         run: mkdocs build --strict
@@ -59,18 +58,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-environment
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      - name: Install CPU torch (slim CI)
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install package and docs dependencies
-        run: pip install -e ".[docs]"
+          extras: docs
 
       - name: Build documentation
         run: mkdocs build --strict

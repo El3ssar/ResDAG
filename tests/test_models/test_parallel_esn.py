@@ -281,8 +281,10 @@ class TestForecast:
         model.fit(s["warmup"], s["train_in"], s["train_tgt"])
         w = s["test_warm"]
         full = model.forecast(w, horizon=100, return_warmup=True)
-        assert full.shape == (1, w.shape[1] + 100, 64)
-        assert torch.allclose(full[:, : w.shape[1], :], w)
+        assert full.shape == (1, w.shape[1] - 1 + 100, 64)
+        history_predictions = model(w, reset=True)
+        assert torch.allclose(full[:, : w.shape[1], :], history_predictions)
+        assert torch.allclose(full[:, w.shape[1] - 1 :], model.forecast(w, horizon=100))
 
     def test_forecast_requires_fitted_readout(self) -> None:
         model = _parallel(input_dim=64, core_width=4, halo=6, reservoir_size=50, seed=0)

@@ -170,6 +170,16 @@ that decides the bump** — so PR titles must be conventional
 (`feat: add Rössler topology`). CI checks the title format on every PR.
 Inside your branch, commit however you like; only the squash title counts.
 
+### Recovering a failed package publication
+
+Treat test results, the GitHub release, and PyPI publication as separate
+outcomes. If PyPI reports that a filename belonged to a deleted upload, that
+version cannot be reused: leave the existing GitHub tag and artifacts intact
+and advance to a fresh patch version through a `fix(release): ...` commit.
+Rerunning the unchanged release cannot resolve the collision. In particular,
+the first 1.x PyPI publication must skip `1.0.0`, whose filenames are reserved
+by a deleted historical upload.
+
 ## Adding components
 
 Every component type is an open set with one extension point:

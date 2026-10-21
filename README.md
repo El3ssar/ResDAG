@@ -31,10 +31,9 @@ pip install "resdag[hpo]"     # + Optuna hyperparameter optimization
 
 Python ≥ 3.11, PyTorch ≥ 2.10.
 
-> **Docs track the dev branch.** Releases are frozen until 1.0, so PyPI serves
-> **0.6.2** — which predates parts of the [documented](https://el3ssar.github.io/ResDAG/)
-> API (the `ESN` facade, `resdag.data` streaming, the newer readout solvers). For
-> the documented API today: `pip install "git+https://github.com/El3ssar/ResDAG"`.
+> **Docs track `main`.** For unreleased changes, install from source:
+> `pip install "git+https://github.com/El3ssar/ResDAG"`. See the
+> [release history](https://github.com/El3ssar/ResDAG/releases) for packaged versions.
 
 ## Try it
 
@@ -47,7 +46,7 @@ import resdag as rd
 t = torch.linspace(0, 60, 3000)
 data = torch.sin(t).reshape(1, -1, 1)            # (batch, time, features)
 
-warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
+warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
     data, warmup_steps=100, train_steps=2000, val_steps=300)
 
 model = rd.models.classic_esn(reservoir_size=300, feedback_size=1, output_size=1)
@@ -111,7 +110,7 @@ import torch.nn as nn
 from resdag import ReservoirFeatureExtractor
 
 net = nn.Sequential(
-    ReservoirFeatureExtractor(500, feedback_size=3, spectral_radius=0.9),
+    ReservoirFeatureExtractor(500, feedback_size=3, spectral_radius=0.9, stateful=False),
     nn.Linear(500, 64), nn.Tanh(), nn.Linear(64, n_classes),
 )
 extractor, head = net[0], net[1:]
@@ -127,6 +126,27 @@ for _ in range(300):
 ```
 
 This is the pure-PyTorch path: gradient heads, full BPTT through the recurrence (`trainable=True`), and embedding frozen reservoirs in larger networks. [Work · Train](https://el3ssar.github.io/ResDAG/workflows/train/) covers all three training paths; [Work · Scale & deploy](https://el3ssar.github.io/ResDAG/workflows/deploy/) shows the frozen-backbone classifier inside a `nn.Module` pipeline.
+
+For independent minibatches, `stateful=False` starts from zeros on each call.
+The default carries state across calls for streaming. Frozen weights still
+allow gradients to flow to an upstream neural encoder. Keep the complete
+trained `esn.model` inside a larger `nn.Module` when you need its readout and
+all DAG branches; reset its reservoirs between independent sequences.
+
+Premade factories accept a readout name or class, plus separate solver options:
+
+```python
+model = rd.classic_esn(
+    reservoir_size=300, feedback_size=3, output_size=3,
+    readout="svd", readout_alpha=1e-6,
+    readout_kwargs={"trainable": True, "rcond": 1e-12},
+)
+```
+
+This fits algebraically with `ESNTrainer` and lets an optimizer fine-tune the
+same readout afterwards. Available names are `ridge`, `cholesky`, `cg`, `svd`,
+`pinv`, `incremental`, `rls`, and `fista`. SVD and pseudoinverse fitting operate
+directly on the design matrix without allocating a feature-by-feature Gram.
 
 ## Documentation
 

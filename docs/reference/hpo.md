@@ -1,12 +1,12 @@
 ---
-description: API reference for resdag.hpo — run_hpo, the five forecast-quality loss functions, and study utilities.
+description: API reference for resdag.hpo — run_hpo, forecast-quality and attractor-fidelity losses, and study utilities.
 ---
 
 <span class="nb-kicker">Reference</span>
 
 # HPO
 
-Optuna-backed hyperparameter optimization: the `run_hpo` entry point, five
+Optuna-backed hyperparameter optimization: the `run_hpo` entry point, six
 loss functions built for judging forecasts of (possibly chaotic) dynamics,
 and helpers for inspecting finished studies.
 
@@ -62,8 +62,8 @@ assert study_a.best_value == study_b.best_value  # identical
 (or `**kwargs`); creators without one are called unchanged, and an explicit
 `seed` returned by `search_space` always wins. Reproducibility is exact for
 single-worker (`n_workers=1`) studies; with `n_workers > 1`, trial *scheduling*
-across processes is non-deterministic, so the set of evaluated configurations is
-reproducible but their order — and therefore `best_value` — may differ.
+across processes is non-deterministic, so both the sampled configurations and
+`best_value` may differ across runs.
 
 ---
 
@@ -72,8 +72,9 @@ reproducible but their order — and therefore `best_value` — may differ.
 Each trial forecasts **once** and is scored at a handful of growing
 forecast-horizon checkpoints, reporting the prefix loss at every one. A diverging
 configuration already shows a large loss at an early checkpoint — so an Optuna
-**pruner** can terminate it before paying for the full horizon. Pass `pruner=` to
-turn this on:
+**pruner** can skip its remaining scoring checkpoints. The full trajectory has
+already been generated, so pruning does not currently reduce forecast-generation
+work. Pass `pruner=` to turn this on:
 
 ```python
 from resdag.hpo import run_hpo
@@ -98,7 +99,7 @@ instance, or `None`:
 | `"median"` | `MedianPruner` | Good default — prunes trials worse than the running median. |
 | `"asha"` | `SuccessiveHalvingPruner` (ASHA) | Aggressive, scales well with many parallel workers. |
 | `"hyperband"` | `HyperbandPruner` | ASHA across several budgets; strong when the right budget is unknown. |
-| `"threshold"` | `ThresholdPruner` | Prune on an absolute loss bound (default `upper=1.0`; pass a configured instance for a different bound). |
+| `"threshold"` | `ThresholdPruner` | Prune collapsed negated-horizon losses (`upper=-0.1`, two warmup checkpoints); pass a configured instance for positive error losses or another bound. |
 
 Need to tune a pruner's knobs? Build the instance and pass it in:
 
@@ -130,6 +131,7 @@ reports; both can be active at once.
         - lyapunov_weighted
         - standard_loss
         - soft_valid_horizon
+        - attractor_dimension_error
 
 ---
 

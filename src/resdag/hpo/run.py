@@ -201,6 +201,8 @@ def run_hpo(
         with ``n_workers > 1``.
     sampler : BaseSampler, optional
         Optuna sampler. Defaults to ``TPESampler`` with ``multivariate=True``.
+        Custom samplers are copied and reseeded per worker in multi-process
+        mode; they must be picklable when the start method is ``spawn``.
     pruner : str or optuna.pruners.BasePruner, optional
         Early-stopping policy fed by the per-trial intermediate
         forecast-horizon reports.  Accepts a registry key — ``"asha"`` (ASHA /
@@ -210,9 +212,9 @@ def run_hpo(
         default) and ``"none"`` disable pruning (:class:`optuna.pruners.NopPruner`);
         ``"median"`` is a good first choice for forecasting studies because it
         stops trials whose intermediate loss is worse than the running median.
-        A diverging configuration reports a large loss at an early
-        forecast-horizon checkpoint and is pruned before the full horizon is
-        evaluated, saving compute.  Pruning is honored in both single- and
+        A diverging configuration can be pruned at an early scoring checkpoint.
+        The complete trajectory has already been generated, so pruning saves
+        later scoring work, not forecast generation. Pruning is honored in both single- and
         multi-process modes and coexists with the ``clip_value`` /
         ``prune_on_clip`` path.
     seed : int, optional
@@ -273,10 +275,10 @@ def run_hpo(
     torch_scoring : bool, default=True
         If ``True``, evaluate the loss on the forecast's device with
         ``torch.Tensor`` inputs, only moving the final scalar to the host, and
-        fall back to NumPy when the loss rejects tensors.  The five built-in
-        losses are NumPy-based and always take the fallback; a **custom
-        torch-native** ``loss`` benefits from staying on-device (no GPU→CPU→NumPy
-        round-trip per checkpoint).  Set ``False`` to always score in NumPy.
+        fall back to NumPy when a custom loss rejects tensors. The built-in
+        horizon and error losses stay on-device (no GPU→CPU→NumPy round-trip per
+        checkpoint); the attractor-dimension loss uses the NumPy fallback.
+        Set ``False`` to always score in NumPy.
     trial_callbacks : list of callable, optional
         Per-trial callbacks invoked after each successful evaluation.  Each is
         called as ``callback(trial, context)`` where *context* is a dict with
@@ -363,6 +365,8 @@ def run_hpo(
     # ── Validate inputs ──────────────────────────────────────────────
     if n_trials <= 0:
         raise ValueError(f"n_trials must be positive, got {n_trials}")
+    if n_workers <= 0:
+        raise ValueError(f"n_workers must be positive, got {n_workers}")
     if not callable(model_creator):
         raise TypeError("model_creator must be callable")
     if not callable(search_space):
@@ -412,6 +416,7 @@ def run_hpo(
                         resolved_monitor_params[func_name] = resolved_monitor_params.pop(user_key)
 
     # ── Configure sampler ────────────────────────────────────────────
+    worker_sampler = sampler
     if sampler is None:
         sampler = TPESampler(
             multivariate=True,
@@ -510,6 +515,7 @@ def run_hpo(
                 pruner=resolved_pruner,
                 verbosity=verbosity,
                 device=device,
+                sampler=worker_sampler,
             )
         else:
             run_single(
@@ -546,6 +552,7 @@ def _dispatch_multiprocess(
     pruner: optuna.pruners.BasePruner,
     verbosity: int,
     device: torch.device | None,
+    sampler: optuna.samplers.BaseSampler | None = None,
 ) -> tuple[optuna.Study, optuna.storages.BaseStorage | None]:
     """Prepare the environment and delegate to :func:`run_multiprocess`.
 
@@ -587,17 +594,16 @@ def _dispatch_multiprocess(
         :func:`~resdag.hpo.dispatch.run_multiprocess` so it can pick a
         device-safe start method (``spawn`` for CUDA, which ``fork`` breaks
         silently).
+    sampler : optuna.samplers.BaseSampler or None
+        Custom sampler to copy into workers. ``None`` uses the default
+        per-worker seeded TPESampler; the returned study retains its parent
+        sampler and pruner.
 
     Returns
     -------
     tuple[optuna.Study, BaseStorage or None]
         Reopened study and storage objects after workers finish.
     """
-    # Throttle BLAS/OpenMP threads BEFORE fork so children inherit it.
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-
     # ``storage_path`` is supplied by ``resolve_storage(..., return_path=True)``;
     # for the auto-temp-journal case this is the temp file path without touching
     # Optuna's private ``_backend._file_path``.
@@ -617,25 +623,41 @@ def _dispatch_multiprocess(
     if isinstance(resolved_storage, optuna.storages.RDBStorage):
         resolved_storage.remove_session()
 
+    parent_sampler = study.sampler
     # Drop the parent's storage references before forking
     del study, resolved_storage
 
     # Enable WAL mode for SQLite (better concurrent reads/writes)
     enable_sqlite_wal(storage_path)
 
-    run_multiprocess(
-        study_name=study_name,
-        storage=storage_path,
-        objective=objective,
-        n_trials=n_trials,
-        remaining=remaining,
-        completed_trials=completed_trials,
-        n_workers=n_workers,
-        seed=seed,
-        pruner=pruner,
-        verbosity=verbosity,
-        device=device,
-    )
+    # Children inherit these settings at launch. Restore the caller's values
+    # even when a worker fails so embedding HPO does not permanently throttle
+    # subsequent work in the host ML pipeline.
+    thread_vars = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+    previous = {key: os.environ.get(key) for key in thread_vars}
+    try:
+        for key in thread_vars:
+            os.environ[key] = "1"
+        run_multiprocess(
+            study_name=study_name,
+            storage=storage_path,
+            objective=objective,
+            n_trials=n_trials,
+            remaining=remaining,
+            completed_trials=completed_trials,
+            n_workers=n_workers,
+            seed=seed,
+            pruner=pruner,
+            verbosity=verbosity,
+            device=device,
+            sampler=sampler,
+        )
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     # Reopen storage to build the return study object. ``storage_path`` is
     # non-None here (guarded above), so the resolved backend is never None.
@@ -644,5 +666,7 @@ def _dispatch_multiprocess(
     new_study = optuna.load_study(
         study_name=study_name,
         storage=new_storage,
+        sampler=parent_sampler,
+        pruner=pruner,
     )
     return new_study, new_storage

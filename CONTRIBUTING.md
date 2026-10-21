@@ -15,7 +15,7 @@ mechanics; the design rationale lives in the
 ```bash
 git clone https://github.com/El3ssar/ResDAG && cd ResDAG
 uv sync --extra dev          # lint/format/test toolchain (single source of truth)
-uv run pytest --no-cov -q    # full suite — ~1,400 tests, a few minutes on CPU
+uv run pytest --no-cov -q    # full suite, including golden forecast regressions
 ```
 
 `pip install -e ".[dev]"` works too if you don't use uv. Add `hpo` (Optuna) or
@@ -79,6 +79,12 @@ The test suite mirrors `src/resdag/`. Markers:
 - `benchmark` — performance assertions, deselected by default
   (`pytest -m benchmark` to run; they assert the GPU beats the CPU at scale)
 
+The weekly GPU workflow requires a self-hosted runner carrying the `gpu` label.
+After provisioning it, set the repository Actions variable
+`RESDAG_GPU_RUNNER_ENABLED=true` to enable scheduled GPU runs. Manual dispatch
+works independently of that variable. A skipped schedule is not CUDA
+verification; only a completed run on a CUDA runner provides that evidence.
+
 ### Golden-forecast regression fixtures
 
 `tests/test_models/test_golden_forecast.py` pins the behaviour of
@@ -113,7 +119,7 @@ python-semantic-release parses the commits since the last release:
 | --- | --- |
 | `feat: ...` | minor release (0.5.0 → 0.6.0) |
 | `fix: ...`, `perf: ...` | patch release (0.5.0 → 0.5.1) |
-| `feat!: ...` or `BREAKING CHANGE:` footer | minor while 0.x, major from 1.0 |
+| `feat!: ...` or `BREAKING CHANGE:` footer | major (including 0.x → 1.0; `major_on_zero=true`) |
 | `docs:`, `chore:`, `ci:`, `refactor:`, `test:`, `style:`, `build:` | no release |
 
 A release rewrites `__version__` in `src/resdag/__init__.py` and the

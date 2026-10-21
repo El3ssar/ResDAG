@@ -17,22 +17,13 @@ algebraic solve; there is no gradient-descent loop.
 import torch
 import resdag as rd
 
-# --- A chaotic system to learn: Lorenz-63, integrated with Euler steps ---
-def lorenz(n, dt=0.01):
-    xyz = torch.tensor([1.0, 1.0, 25.0])
-    out = torch.empty(n, 3)
-    for i in range(n):
-        x, y, z = xyz
-        xyz = xyz + dt * torch.tensor([10 * (y - x), x * (28 - z) - y, x * y - 8 / 3 * z])
-        out[i] = xyz
-    return out.unsqueeze(0)                    # (batch=1, time, 3)
+# --- A chaotic system to learn: Lorenz-63 with fixed-step RK4 ---
+data = rd.datasets.lorenz(7501, normalize=None, seed=0)
 
-data = lorenz(7500)
-data = (data - data.mean(1, keepdim=True)) / data.std(1, keepdim=True)
-
-# --- Split the timeline into warmup / train / validation segments ---
-warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
-    data, warmup_steps=300, train_steps=5000, val_steps=2000
+# Fit normalization on training inputs only, then apply it to every split.
+warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
+    data, warmup_steps=300, train_steps=5000, val_steps=2000,
+    normalize=True, norm_method="standard",
 )
 
 # --- Build, train, forecast ---
@@ -66,14 +57,16 @@ chaotic sensitivity of the system, not a defect in the model.</figcaption>
 workflow needs:
 
 ```text
-[ warmup │ train ────────────────────── │ val ]
+[ warmup │ train ────────────────────── │ seam │ val ]
                           └─ f_warmup ─┘
 ```
 
 `target` is `train` shifted forward one step — the model learns *given the
-signal now, emit the signal one step ahead*. `f_warmup` is the tail of
-`train`, used to re-synchronize the reservoir immediately before the
-held-out window. Normalization is important: the tanh activation saturates
+signal now, emit the signal one step ahead*. `f_warmup` is the last `warmup_steps` observed inputs before the seam.
+The seam is the final training target, predicted by the last warmup output;
+the first returned autoregressive prediction corresponds to the next sample,
+which starts `val`. Normalization uses only the training inputs, avoiding
+held-out information in preprocessing. Normalization is important: the tanh activation saturates
 when inputs are far from order one.
 
 **The model.** `ott_esn` wires the architecture Pathak et al. used for

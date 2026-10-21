@@ -6,7 +6,7 @@ description: How resdag's training and forecasting speed compares to reservoirpy
 
 # Benchmarks
 
-How fast is resdag, really? This page compares it head-to-head with two
+The historical measurements below compare ResDAG 0.6.0 head-to-head with two
 established reservoir-computing libraries — [reservoirpy](https://github.com/reservoirpy/reservoirpy)
 (NumPy/SciPy) and [ReservoirComputing.jl](https://github.com/SciML/ReservoirComputing.jl)
 (Julia) — on the **same Echo State Network architecture**, the **same data**, and
@@ -16,6 +16,10 @@ fitting on a lot of data, and rolling out long autoregressive forecasts.
 The harness is in [`benchmarks/`](https://github.com/El3ssar/ResDAG/tree/main/benchmarks);
 it is re-runnable and adding a library is a single adapter file. Numbers below
 were produced by `python -m rc_bench.run` followed by `python -m rc_bench.report`.
+They describe that version and workload; rerun the harness to measure the current
+release on your own hardware. The repository's
+[benchmark report](https://github.com/El3ssar/ResDAG/blob/main/benchmarks/results/REPORT.md)
+records later sweeps with their own environment and settings.
 
 !!! note "Reading the tables"
     Speedups are relative to **reservoirpy**, so reservoirpy is always `1.00×`

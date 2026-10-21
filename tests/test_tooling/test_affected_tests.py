@@ -16,6 +16,7 @@ most are:
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -113,11 +114,13 @@ def test_io_change_stays_within_utils() -> None:
     assert not any(t.startswith("tests/test_layers/") for t in sel.tests)
 
 
-def test_layers_change_excludes_independent_hpo_losses() -> None:
+def test_layers_change_tracks_attractor_loss_dependency() -> None:
     sel = AT.select_tests(["src/resdag/layers/cells/esn_cell.py"])
     assert any(t.startswith("tests/test_layers/") for t in sel.tests)
-    # hpo's loss functions do not depend on layers.
-    assert "tests/test_hpo/test_losses.py" not in sel.tests
+    # The attractor-dimension loss imports observables, which also implement
+    # reservoir diagnostics. At module granularity this is a real dependency.
+    assert "tests/test_hpo/test_losses.py" in sel.tests
+    assert "tests/test_hpo/test_storage.py" not in sel.tests
 
 
 # --------------------------------------------------------------------------- #
@@ -236,14 +239,22 @@ def test_real_test_file_beside_helper_selects_only_itself() -> None:
     assert sel.tests == ["tests/test_models/test_esn_builder.py"]
 
 
-def test_normal_source_edit_does_not_pull_in_data_dep_tests() -> None:
-    # An ordinary reservoir edit selects its mirror tests but is NOT dragged in
-    # by the new data-dependency mapping. The golden regression test imports
-    # only its ``.golden_forecast`` helper (no resdag source edge), so a source
-    # change must never select it via the new mapping — it only fires on
-    # targets.json / golden fixtures / the regen script. (The perf-regression
-    # test *does* import resdag source, so its import-graph selection here is
-    # correct and unrelated to the new mapping.)
+def test_source_edit_selects_golden_guard_through_helper_import() -> None:
     sel = AT.select_tests(["src/resdag/layers/reservoirs/esn.py"])
     assert "tests/test_layers/test_esn_layer.py" in sel.tests
-    assert "tests/test_models/test_golden_forecast.py" not in sel.tests
+    assert "tests/test_models/test_golden_forecast.py" in sel.tests
+
+
+def test_deleted_source_module_runs_full_suite() -> None:
+    sel = AT.select_tests(["src/resdag/removed_module.py"])
+    assert sel.mode == "full"
+    assert sel.tests == [AT.FULL_SUITE_TARGET]
+
+
+def test_invalid_base_propagates_for_ci_fallback(monkeypatch) -> None:
+    def broken_diff(*args):
+        raise subprocess.CalledProcessError(128, ["git", *args])
+
+    monkeypatch.setattr(AT, "_git", broken_diff)
+    with pytest.raises(subprocess.CalledProcessError):
+        AT.changed_files_from_git("missing-base", include_dirty=False)

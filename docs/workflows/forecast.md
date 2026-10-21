@@ -79,13 +79,30 @@ preds = model.forecast(
     forecast_inputs=(d[:, T : T + horizon],),  # drivers continue at T
     horizon=horizon,
 )
-truth = x[:, T : T + horizon]                  # preds align with this
+truth = x[:, T + 1 : T + 1 + horizon]          # next-sample readout: skip the seed
 ```
 
 </div>
 
-The driver window matches your validation targets exactly: both span
-`[T, T + horizon)`. Supplying *more* than `horizon` steps is accepted —
+For a next-sample readout, the last warmup output predicts `x[:, T]`; that
+value seeds the loop. Driver `d[:, T]` therefore produces the first returned
+prediction for `x[:, T + 1]`. The driver and target windows differ by one sample,
+matching the training pair `(x_t, d_t) → x_{t+1}`.
+
+To continue directly after the final observed sample `x[:, T-1]`, use the
+observed value as the explicit seed and warm up through its predecessor:
+
+```python
+preds = model.forecast(
+    (x[:, :T-1], d[:, :T-1]),
+    initial_feedback=x[:, T-1:T],
+    forecast_inputs=(d[:, T-1:T-1+horizon],),
+    horizon=horizon,
+)
+truth = x[:, T:T+horizon]
+```
+
+Supplying *more* than `horizon` driver steps is accepted —
 only the first `horizon` are consumed — but fewer raises. The validator
 is strict because misaligned drivers fail silently: shifted by one step,
 the model trains without error and only the forecast quality degrades.

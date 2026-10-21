@@ -140,3 +140,23 @@ def test_valid_call_does_not_warn() -> None:
     assert warmup.shape[1] == 20
     assert train.shape[1] == 80
     assert val.shape[1] == 30
+
+
+def test_forecast_warmup_keeps_full_history_when_training_is_short() -> None:
+    data = torch.arange(30, dtype=torch.float32).view(1, -1, 1)
+    _, train, target, f_warmup, val = prepare_esn_data(
+        data, warmup_steps=10, train_steps=3, val_steps=4, discard_steps=2
+    )
+    assert torch.equal(train, data[:, 12:15])
+    assert torch.equal(target, data[:, 13:16])
+    assert torch.equal(f_warmup, data[:, 5:15])
+    assert torch.equal(val, data[:, 16:20])
+
+
+@pytest.mark.parametrize("name", ["warmup_steps", "train_steps", "val_steps", "discard_steps"])
+@pytest.mark.parametrize("value", [True, 1.5])
+def test_noninteger_step_counts_are_rejected(name: str, value: object) -> None:
+    kwargs = dict(warmup_steps=3, train_steps=5, val_steps=2, discard_steps=0)
+    kwargs[name] = value
+    with pytest.raises(ValueError, match=name):
+        prepare_esn_data(torch.randn(1, 20, 1), **kwargs)

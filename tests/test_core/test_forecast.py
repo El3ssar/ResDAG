@@ -1023,3 +1023,70 @@ class TestDifferentiableForecast:
         model.forecast(warmup, horizon=4, no_grad=False)
         persisted = next(iter(model.get_reservoir_states().values()))
         assert persisted.grad_fn is not None
+
+
+@pytest.mark.parametrize("horizon", [1.5, True, "3"])
+def test_non_integer_horizon_rejected(make_tiny_model, horizon) -> None:
+    model = make_tiny_model(feedback_size=3)
+    with pytest.raises(ValueError, match="positive integer"):
+        model.forecast(torch.randn(1, 4, 3), horizon=horizon)
+
+
+def test_empty_warmup_requires_seed(make_tiny_model) -> None:
+    model = make_tiny_model(feedback_size=3)
+    with pytest.raises(ValueError, match="empty warmup requires initial_feedback"):
+        model.forecast(torch.empty(1, 0, 3), horizon=2)
+    prediction = model.forecast(
+        torch.empty(1, 0, 3), initial_feedback=torch.randn(1, 1, 3), horizon=2
+    )
+    assert prediction.shape == (1, 2, 3)
+
+
+@pytest.mark.parametrize(
+    "driver",
+    [torch.randn(1, 5), torch.randn(2, 5, 2), torch.randn(1, 5, 3)],
+)
+def test_forecast_driver_rank_batch_and_features_validated(driver) -> None:
+    model, _ = _build_driven_model()
+    with pytest.raises(ValueError, match=r"forecast_inputs\[0\]"):
+        model.forecast(
+            (torch.randn(1, 4, 1), torch.randn(1, 4, 2)),
+            forecast_inputs=(driver,),
+            horizon=3,
+        )
+
+
+def test_forecast_rejects_missing_warmup_driver() -> None:
+    model, _ = _build_driven_model()
+    with pytest.raises(ValueError, match="Expected 2 warmup"):
+        model.forecast(torch.randn(1, 5, 1), horizon=3)
+
+
+def test_forecast_reuses_compiled_chunk_for_matching_shapes(make_tiny_model, monkeypatch) -> None:
+    import resdag.core._flat_inference as fi
+
+    compiled = []
+
+    def fake_compile(fn, **kwargs):
+        compiled.append(fn)
+        return fn
+
+    monkeypatch.setattr(fi.torch, "compile", fake_compile)
+    monkeypatch.setattr(fi.torch.compiler, "cudagraph_mark_step_begin", lambda: None)
+    model = make_tiny_model(feedback_size=3)
+    warmup = torch.randn(1, 7, 3)
+    first = model.forecast(warmup, horizon=4, compile=True)
+    second = model.forecast(warmup, horizon=4, compile=True)
+    torch.testing.assert_close(first, second)
+    assert len(compiled) == 1
+    model.forecast(warmup.expand(2, -1, -1), horizon=4, compile=True)
+    assert len(compiled) == 2
+
+
+def test_single_driver_tensor_is_equivalent_to_tuple() -> None:
+    model, _ = _build_driven_model()
+    warmup = (torch.randn(1, 4, 1), torch.randn(1, 4, 2))
+    future = torch.randn(1, 3, 2)
+    tuple_prediction = model.forecast(warmup, forecast_inputs=(future,), horizon=3)
+    tensor_prediction = model.forecast(warmup, forecast_inputs=future, horizon=3)
+    torch.testing.assert_close(tensor_prediction, tuple_prediction)

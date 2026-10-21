@@ -140,7 +140,7 @@ class TestES2NUpdateMath:
         assert torch.equal(out_f, out_s)
 
     def test_beta_one_reduces_to_standard_esn(self) -> None:
-        """beta=1 makes ES2N bit-identical to a non-leaky ESN with the same W_r."""
+        """beta=1 has the same update as a non-leaky ESN with identical weights."""
         es2 = ES2NCell(128, 4, beta=1.0, spectral_radius=0.95, seed=99)
         esn = ESNCell(128, 4, spectral_radius=0.95, leak_rate=1.0, seed=99)
         # Subclass + same seed => identical recurrent/feedback/bias draws.
@@ -151,7 +151,14 @@ class TestES2NUpdateMath:
         state, fb = torch.randn(2, 128), torch.randn(2, 4)
         o1, _ = es2([fb], state.clone())
         o2, _ = esn([fb], state.clone())
-        assert torch.equal(o1, o2)
+        # ES2N uses addmm; ESN.forward computes linear + add separately. The
+        # fused and unfused FP32 operations round differently, so use PyTorch's
+        # dtype-specific numerical tolerance for their output comparison.
+        torch.testing.assert_close(o1, o2)
+        # With the same fused step primitive there is no ordering difference.
+        projected = esn.project_inputs([fb])
+        standard_step, _ = esn.step(projected, state)
+        assert torch.equal(o1, standard_step)
 
 
 class TestES2NEdgeOfStability:

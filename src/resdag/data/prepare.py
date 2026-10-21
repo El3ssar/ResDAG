@@ -7,7 +7,9 @@ Provides functions for splitting time series data into:
 - Validation data
 """
 
+import operator
 import warnings
+from pathlib import Path
 from typing import Any, Literal
 
 import torch
@@ -23,6 +25,29 @@ ESNDataSplitsWithStats = tuple[
     torch.Tensor,
     dict[str, torch.Tensor] | None,
 ]
+
+
+def _validate_step_count(name: str, value: int, *, allow_zero: bool = False) -> int:
+    """Accept integer indices without silently truncating floats or booleans."""
+    requirement = "non-negative" if allow_zero else "a positive integer"
+    try:
+        if isinstance(value, bool):
+            raise TypeError
+        count = operator.index(value)
+    except TypeError:
+        raise ValueError(f"{name} must be {requirement}, got {value!r}") from None
+    if count < (0 if allow_zero else 1):
+        raise ValueError(f"{name} must be {requirement}, got {value!r}")
+    return count
+
+
+def _validate_series_shape(data: torch.Tensor) -> None:
+    """Require the batch/time/feature convention before slicing or reducing."""
+    if data.ndim != 3 or data.shape[0] == 0 or data.shape[-1] == 0:
+        raise ValueError(
+            "data must have shape (batch, time, features) with non-empty batch and "
+            f"feature axes, got {tuple(data.shape)}"
+        )
 
 
 def normalize_data(
@@ -48,7 +73,8 @@ def normalize_data(
         - "meanpreserving": Scale deviations to [-1, 1], then restore mean
     stats : dict, optional
         Pre-computed statistics for normalization. If provided, these are used
-        instead of computing from data.
+        instead of computing from data. They are applied on the input device
+        and dtype without modifying the supplied statistics.
 
     Returns
     -------
@@ -64,6 +90,7 @@ def normalize_data(
     >>> # Apply same normalization to new data
     >>> new_normalized, _ = normalize_data(new_data, method="minmax", stats=stats)
     """
+    _validate_series_shape(data)
     if stats is None:
         stats = _compute_stats(data, method)
 
@@ -131,31 +158,35 @@ def denormalize_data(
 
 def _compute_stats(data: torch.Tensor, method: NormMethod) -> dict[str, torch.Tensor]:
     """Compute feature-wise normalization statistics from data."""
+    if data.shape[1] == 0:
+        raise ValueError("Cannot fit normalization statistics on an empty time axis")
     reduce_dims = (0, 1)  # batch and time
 
     if method == "minmax":
         data_min = data.amin(dim=reduce_dims, keepdim=True)
         data_max = data.amax(dim=reduce_dims, keepdim=True)
         data_range = data_max - data_min
-        data_range[data_range == 0] = 1.0
+        data_range = torch.where(data_range == 0, torch.ones_like(data_range), data_range)
         return {"min": data_min, "range": data_range}
 
     elif method == "standard":
         mean = data.mean(dim=reduce_dims, keepdim=True)
-        std = data.std(dim=reduce_dims, keepdim=True)
-        std[std == 0] = 1.0
+        # Keep the public sample-std convention; one observation has no spread.
+        correction = 1 if data.shape[0] * data.shape[1] > 1 else 0
+        std = data.std(dim=reduce_dims, keepdim=True, correction=correction)
+        std = torch.where(std == 0, torch.ones_like(std), std)
         return {"mean": mean, "std": std}
 
     elif method == "noncentered":
         scale = data.abs().amax(dim=reduce_dims, keepdim=True)
-        scale[scale == 0] = 1.0
+        scale = torch.where(scale == 0, torch.ones_like(scale), scale)
         return {"scale": scale}
 
     elif method == "meanpreserving":
         mean = data.mean(dim=reduce_dims, keepdim=True)
         centered = data - mean
         maxdev = centered.abs().amax(dim=reduce_dims, keepdim=True)
-        maxdev[maxdev == 0] = 1.0
+        maxdev = torch.where(maxdev == 0, torch.ones_like(maxdev), maxdev)
         return {"mean": mean, "maxdev": maxdev}
 
     else:
@@ -165,7 +196,13 @@ def _compute_stats(data: torch.Tensor, method: NormMethod) -> dict[str, torch.Te
 def _apply_norm(
     data: torch.Tensor, method: NormMethod, stats: dict[str, torch.Tensor]
 ) -> torch.Tensor:
-    """Apply normalization statistics to data."""
+    """Apply fitted statistics on the input device/dtype without mutating them."""
+    stats = {
+        key: value.to(
+            device=data.device, dtype=data.dtype if data.is_floating_point() else value.dtype
+        )
+        for key, value in stats.items()
+    }
     if method == "minmax":
         return 2 * (data - stats["min"]) / stats["range"] - 1
     elif method == "standard":
@@ -182,6 +219,12 @@ def _apply_denorm(
     data: torch.Tensor, method: NormMethod, stats: dict[str, torch.Tensor]
 ) -> torch.Tensor:
     """Apply the inverse of :func:`_apply_norm` to data (exact round-trip)."""
+    stats = {
+        key: value.to(
+            device=data.device, dtype=data.dtype if data.is_floating_point() else value.dtype
+        )
+        for key, value in stats.items()
+    }
     if method == "minmax":
         return (data + 1) / 2 * stats["range"] + stats["min"]
     elif method == "standard":
@@ -210,7 +253,7 @@ def prepare_esn_data(
     1. Warmup: Initial steps for reservoir state synchronization
     2. Train: Training input data
     3. Target: Training targets (train data shifted by 1 step)
-    4. Forecast warmup: Last warmup_steps of training for forecast initialization
+    4. Forecast warmup: Last warmup_steps before train_end for forecast initialization
     5. Validation: Held-out data for testing, starting one step after the train
        window so it aligns with the (purely autoregressive) forecast.
 
@@ -259,7 +302,9 @@ def prepare_esn_data(
     target : torch.Tensor
         Training target (shifted by 1), shape (B, train_steps, D).
     forecast_warmup : torch.Tensor
-        Last warmup_steps of training for forecast init, shape (B, warmup_steps, D).
+        Last warmup_steps of the observed prefix for forecast init, shape
+        (B, warmup_steps, D). Includes earlier warmup history if train_steps
+        is shorter than warmup_steps.
     val : torch.Tensor
         Validation data, shape (B, val_steps, D). Starts at ``data[train_end + 1]``
         so it aligns directly with an autoregressive ``forecast`` of the same
@@ -308,18 +353,13 @@ def prepare_esn_data(
     ... )
     >>> val_physical = denormalize_data(val, "minmax", stats)  # original units
     """
+    _validate_series_shape(data)
     _, timesteps, _ = data.shape
-
-    # Validate step counts before any negative slicing can silently produce
-    # plausible-but-wrong / empty splits.
-    if warmup_steps <= 0:
-        raise ValueError(f"warmup_steps must be a positive integer, got {warmup_steps}")
-    if train_steps <= 0:
-        raise ValueError(f"train_steps must be a positive integer, got {train_steps}")
-    if discard_steps < 0:
-        raise ValueError(f"discard_steps must be non-negative, got {discard_steps}")
-    if val_steps is not None and val_steps < 0:
-        raise ValueError(f"val_steps must be non-negative or None, got {val_steps}")
+    warmup_steps = _validate_step_count("warmup_steps", warmup_steps)
+    train_steps = _validate_step_count("train_steps", train_steps)
+    discard_steps = _validate_step_count("discard_steps", discard_steps, allow_zero=True)
+    if val_steps is not None:
+        val_steps = _validate_step_count("val_steps", val_steps, allow_zero=True)
 
     # Validate discard_steps
     if discard_steps >= timesteps:
@@ -378,7 +418,8 @@ def prepare_esn_data(
     warmup = data[:, :warmup_steps, :]
     train = data[:, warmup_steps:train_end, :]
     target = data[:, warmup_steps + 1 : train_end + 1, :]
-    forecast_warmup = train[:, -warmup_steps:, :]
+    # Include earlier observed history when train_steps < warmup_steps.
+    forecast_warmup = data[:, train_end - warmup_steps : train_end, :]
     val = data[:, val_start : val_start + val_steps, :]
 
     # Optional normalization (compute stats from training data only)
@@ -397,7 +438,7 @@ def prepare_esn_data(
 
 
 def load_and_prepare(
-    paths: str | list[str],
+    paths: str | Path | list[str | Path],
     warmup_steps: int,
     train_steps: int,
     val_steps: int | None = None,
@@ -415,7 +456,7 @@ def load_and_prepare(
 
     Parameters
     ----------
-    paths : str or list of str
+    paths : str, pathlib.Path, or list of paths
         Path(s) to data file(s). Supports .csv, .npy, .npz, .nc
     warmup_steps : int
         Number of warmup steps.
@@ -462,7 +503,7 @@ def load_and_prepare(
     from .io import load_file
 
     # Handle single path or list of paths
-    if isinstance(paths, (str, type(None))):
+    if isinstance(paths, (str, Path, type(None))):
         paths = [paths] if paths else []
 
     if not paths:

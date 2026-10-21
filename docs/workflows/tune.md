@@ -62,12 +62,12 @@ warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
     data, warmup_steps=200, train_steps=1600, val_steps=300
 )
 
-def model_creator(reservoir_size, spectral_radius, leak_rate, alpha):
+def model_creator(reservoir_size, spectral_radius, leak_rate, alpha, seed=None):
     """One fresh model per trial. Must accept every key of search_space."""
     return rd.classic_esn(
         reservoir_size=reservoir_size, feedback_size=3, output_size=3,
         spectral_radius=spectral_radius, leak_rate=leak_rate,
-        readout_alpha=alpha,
+        readout_alpha=alpha, seed=seed,
     )
 
 def search_space(trial):
@@ -79,7 +79,7 @@ def search_space(trial):
     }
 
 def data_loader(trial):
-    """Must return exactly these five keys, each (batch, time, features)."""
+    """Must include these five keys, each (batch, time, features)."""
     return {"warmup": warmup, "train": train, "target": target,
             "f_warmup": f_warmup, "val": val}
 
@@ -120,11 +120,19 @@ last one sliced with the [pinned alignment](forecast.md).
 | `"lyapunov"` | Error weighted by $e^{-t/\tau}$ with `lyapunov_t` |
 | `"standard"` | Mean geometric-mean error — stable or periodic signals |
 | `"soft_horizon"` | Hill-gated survival horizon — smoother search landscape |
+| `"attractor_dimension"` | Correlation-dimension mismatch for long-term attractor fidelity |
 
 All are minimized; the horizon losses are negated internally, so lower
 study values mean longer usable forecasts. `loss_params` passes kwargs
 (thresholds, metrics) to the chosen loss; `monitor_losses=["standard"]`
 logs extra metrics on every trial without optimizing on them.
+
+With `torch_scoring=True` (the default), the five horizon/error losses score
+directly on the forecast device; each checkpoint transfers only its final
+scalar. The attractor-dimension loss uses NumPy. Custom losses can accept torch
+tensors for the same device-local path, or use the automatic NumPy fallback.
+Checkpoint pruning currently happens after the full trajectory is generated,
+so it saves remaining scoring work, rather than forecast generation.
 
 ### Multi-worker studies
 
@@ -139,11 +147,15 @@ throttled to one per worker before forking, and re-running with the same
 storage and study name resumes where the study stopped.
 
 Seed semantics differ by mode. Single-worker runs are fully
-reproducible: `seed` seeds the sampler, and each trial reseeds
-torch/numpy with `seed + trial.number`. Multi-worker runs derive a
+reproducible when the model creator accepts and forwards `seed`, as above:
+`seed` seeds the sampler, and each trial reseeds torch/numpy/Python with
+`seed + trial.number`. Multi-worker runs derive a
 sampler seed per worker (`seed + i·7919`), but trial numbers are claimed
 in arrival order — so per-trial seeds, and hence the exact trial
 sequence, vary run to run even with a fixed `seed`.
+An explicit `sampler=` is preserved in each worker with an independent copy
+and a call to its `reseed_rng()` hook. Custom samplers must be picklable for
+CUDA/spawn studies; their RNG policy determines reproducibility.
 
 ---
 

@@ -46,7 +46,7 @@ Whole-tensor preparation for the algebraic path:
 >>> from resdag.data import load_file, prepare_esn_data
 >>> data = load_file("lorenz.csv")  # doctest: +SKIP
 >>> warmup, train, target, f_warmup, val = prepare_esn_data(  # doctest: +SKIP
-...     data, warmup_steps=100, train_steps=500, val_steps=200, normalize="minmax"
+...     data, warmup_steps=100, train_steps=500, val_steps=200, normalize=True, norm_method="minmax"
 ... )
 
 Streaming windows for the SGD path:

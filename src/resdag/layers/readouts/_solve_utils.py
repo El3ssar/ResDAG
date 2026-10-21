@@ -36,8 +36,8 @@ build_ridge_problem
     :class:`RidgeProblem` carrying the data and centering means.
 lmnt_gram_add
     The closed-form LMNT (Linearized Multi-Noise Training) noise-covariance
-    term added to the Gram diagonal — the exact analytic expectation of fitting
-    the readout on state-noise-perturbed reservoir states (Wikner et al. 2024).
+    term added to the Gram diagonal — the exact expected noisy Gram for
+    independently perturbed reservoir states.
 apply_lmnt_regularizer
     Add the LMNT diagonal term to a prepared :class:`RidgeProblem`'s Gram in
     place, so the closed-form solve costs one solve, not many noisy copies.
@@ -59,8 +59,9 @@ Wikner et al. 2024, *Stabilizing machine learning prediction of dynamics*, Chaos
 34, 043105).  Whether it nets out positive is problem- and :math:`\\sigma`-
 dependent — it can help or hurt, and :math:`\\sigma` must be tuned per problem;
 it is not a free forecast-quality win.  What *is* robustly guaranteed is the
-mechanism below: LMNT computes the **exact expected noise-regularised readout**
-in one solve.
+mechanism below: the analytic path solves the exact expected noisy normal
+equations in one solve. This is not the expectation of separately fitted
+weights or their autonomous forecasts.
 
 Explicit noise training perturbs each state row :math:`r_i \\to r_i + \\xi_i`
 with :math:`\\xi_i \\sim \\mathcal{N}(0, \\sigma^2 I_F)` (targets unchanged) and
@@ -75,9 +76,10 @@ Gram is
 
 while the right-hand side :math:`\\mathbb{E}[(R+\\Xi)^\\top y] = R^\\top y` is
 unchanged (the noise is zero-mean and independent of both :math:`R` and
-:math:`y`).  **LMNT** replaces the Monte-Carlo average of :math:`M` noisy fits
-with this analytic expectation: add the closed-form term to the Gram diagonal
-and solve *once*.  With an intercept the states are centered first, which
+:math:`y`). The analytic path replaces the Monte-Carlo average of noisy normal
+equations with this expectation: add the closed-form term to the Gram diagonal
+and solve *once*. Averaging matrices before solving differs from averaging
+separately solved coefficient matrices. With an intercept the states are centered first, which
 removes one degree of freedom, so the centered pure-noise Gram expectation is
 :math:`(N-1)\\sigma^2 I_F` (verified analytically and by Monte-Carlo); the raw
 ``bias=False`` term is :math:`N\\sigma^2 I_F`.  Either way the cost is a single
@@ -274,9 +276,8 @@ def build_ridge_problem(
     solve_dtype = resolve_solve_dtype(original_dtype, use_float64)
     resolved_gram_dtype = resolve_gram_dtype(original_dtype, X.device, solve_dtype, gram_dtype)
 
-    if resolved_gram_dtype != X.dtype:
-        X = X.to(resolved_gram_dtype)
-        y = y.to(resolved_gram_dtype)
+    X = X.to(resolved_gram_dtype)
+    y = y.to(resolved_gram_dtype)
 
     x_mean: torch.Tensor | None = None
     y_mean: torch.Tensor | None = None
@@ -305,6 +306,48 @@ def build_ridge_problem(
     )
 
 
+@dataclass
+class LeastSquaresProblem:
+    """Data and centering statistics for solvers that operate directly on X.
+
+    SVD and pseudoinverse solvers need neither X.T @ X nor X.T @ y. Keeping
+    their preparation separate avoids quadratic feature storage, especially
+    for underdetermined problems and wide nonlinear feature maps on GPU.
+    """
+
+    X: torch.Tensor
+    y: torch.Tensor
+    x_mean: torch.Tensor | None
+    y_mean: torch.Tensor | None
+    solve_dtype: torch.dtype
+    original_dtype: torch.dtype
+    fit_intercept: bool
+
+
+def build_least_squares_problem(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    *,
+    fit_intercept: bool,
+    use_float64: bool,
+    gram_dtype: torch.dtype | None,
+) -> LeastSquaresProblem:
+    """Prepare a decomposition-based solve without forming normal equations."""
+    solve_dtype = resolve_solve_dtype(X.dtype, use_float64)
+    work_dtype = resolve_gram_dtype(X.dtype, X.device, solve_dtype, gram_dtype)
+    x = X.to(work_dtype)
+    targets = y.to(work_dtype)
+    return LeastSquaresProblem(
+        X=x,
+        y=targets,
+        x_mean=x.mean(dim=0, keepdim=True) if fit_intercept else None,
+        y_mean=targets.mean(dim=0, keepdim=True) if fit_intercept else None,
+        solve_dtype=solve_dtype,
+        original_dtype=X.dtype,
+        fit_intercept=fit_intercept,
+    )
+
+
 def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) -> float:
     r"""Closed-form LMNT noise-covariance term added to the Gram diagonal.
 
@@ -316,8 +359,8 @@ def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) ->
     problem- and :math:`\sigma`-dependent — tune :math:`\sigma` per problem).
     Averaged over many noise draws the noisy Gram's expectation is
     :math:`R^\top R` plus a scalar on the diagonal, and this function returns that
-    scalar so **a single solve reproduces the many-noise-copy fit exactly** — its
-    analytic expectation, not an approximation (**LMNT** — Linearized Multi-Noise
+    scalar so **a single solve uses the exact expected normal equations**,
+    the infinite-copy limit of the explicit-noise path (**LMNT** — Linearized Multi-Noise
     Training; Wikner et al. 2024, *Stabilizing machine learning prediction of
     dynamics*, Chaos 34, 043105).
 
@@ -619,7 +662,7 @@ def solve_ridge(
     layer_name : str
         Human-readable identifier for the calling layer, used in warnings.
     gram_dtype : torch.dtype, optional
-        The dtype the Gram was *formed* in (``float32`` on CUDA by default).
+        The dtype the Gram was *formed* in (``float64`` by default).
         Used only by the precision-loss estimate to weight the condition
         number by the right machine epsilon; defaults to ``gram.dtype`` when
         not supplied.
@@ -659,7 +702,7 @@ def solve_ridge(
         # indefinite input.)
         eps = torch.finfo(gram.dtype).eps
         max_diag = float(gram.diagonal().abs().max().item())
-        jitter = _JITTER_K * eps * max_diag
+        jitter = max(_JITTER_K * eps * max_diag, torch.finfo(gram.dtype).tiny)
         alpha_eff = max(alpha, jitter)
         a_jittered = gram + alpha_eff * eye
         try:
@@ -772,7 +815,7 @@ def _warn_on_precision_loss(
         warnings.warn(
             f"{layer_name}: the ridge solve is losing accuracy ({detail} > "
             f"{_RESIDUAL_WARN_TOL:g}). The Gram matrix is ill-conditioned and "
-            f"forming it in {gram_dtype} (the GPU default is float32) destroys "
+            f"forming it in {gram_dtype} (the default is float64 on every device) destroys "
             f"precision the solve cannot recover — the fitted readout will "
             f"differ from the float64 result. Pass gram_dtype=torch.float64 "
             f"for an accurate readout, or use SVDReadoutLayer.",
@@ -782,7 +825,7 @@ def _warn_on_precision_loss(
 
 
 def recover_intercept(
-    problem: RidgeProblem,
+    problem: RidgeProblem | LeastSquaresProblem,
     coefs: torch.Tensor,
 ) -> torch.Tensor | None:
     """Recover the unpenalised intercept for a fitted coefficient matrix.
@@ -809,7 +852,7 @@ def recover_intercept(
 
 
 def finalize_fit(
-    problem: RidgeProblem,
+    problem: RidgeProblem | LeastSquaresProblem,
     coefs: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Recover the intercept and cast coefficients back to the input dtype.

@@ -25,10 +25,9 @@ class ExtendedSquare(nn.Module):
     block of the (feature-major) state; here features live on the last axis, so
     the squared block is concatenated along ``dim=-1``.
 
-    Parameters
-    ----------
-    None
-        This layer has no configuration and no learnable parameters.
+    Notes
+    -----
+    This layer has no configuration and no learnable parameters.
 
     Examples
     --------

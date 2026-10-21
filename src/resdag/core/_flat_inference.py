@@ -39,7 +39,7 @@ keep their native shape (2-D for an ESN, 3-D delay buffer for NG-RC).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 import torch
@@ -105,6 +105,7 @@ class FlatStep:
     source: str
     n_inputs: int
     n_outputs: int
+    _compiled_chunks: dict[tuple[Any, ...], ChunkStepFn] = field(default_factory=dict, repr=False)
 
 
 def build_flat_step(model: ESNModel) -> FlatStep:
@@ -154,6 +155,8 @@ def build_flat_step(model: ESNModel) -> FlatStep:
 
     for node in exec_nodes:
         layer = node.layer
+        if layer is None:
+            raise ValueError("A non-input symbolic graph node has no layer to execute.")
         parent_vars = [var[id(parent)] for parent in node._parents]
         siblings = node._layer_full_siblings
 
@@ -325,6 +328,25 @@ def resolve_chunk_step(
         )
         return None
 
+    # Reuse the warmed executor across repeated forecasts. Re-wrapping a new
+    # closure on every call repeats compilation/trial capture even when all
+    # shapes and devices are unchanged. The parent model drops FlatStep when
+    # copied/pickled or when its graph changes, so closures remain model-local.
+    def tensor_key(tensor: torch.Tensor) -> tuple[Any, ...]:
+        return (tuple(tensor.shape), tensor.dtype, tensor.device, tuple(tensor.stride()))
+
+    key = (
+        chunk,
+        n_outputs,
+        mode,
+        tensor_key(trial_feedback),
+        tuple(tensor_key(driver) for driver in trial_drivers),
+        tuple(tensor_key(state) for state in trial_states),
+    )
+    cached = flat._compiled_chunks.get(key)
+    if cached is not None:
+        return cached
+
     try:
         compiled: ChunkStepFn = torch.compile(
             build_chunk_step(flat, chunk, n_outputs), fullgraph=True, mode=mode
@@ -333,6 +355,7 @@ def resolve_chunk_step(
         # surfaces here, where we can still fall back cleanly.
         torch.compiler.cudagraph_mark_step_begin()
         compiled(trial_feedback, trial_drivers, [state.clone() for state in trial_states])
+        flat._compiled_chunks[key] = compiled
         return compiled
     except Exception as exc:
         # Any compilation/capture failure degrades to the eager flat step rather

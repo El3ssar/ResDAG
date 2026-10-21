@@ -39,6 +39,7 @@ def classic_esn(
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
+    readout_kwargs: dict[str, Any] | None = None,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ESNModel:
@@ -99,19 +100,20 @@ def classic_esn(
         Whether to use bias in the reservoir.
     trainable : bool, default=False
         Whether reservoir weights are trainable.
-    readout : str or type, default="ridge"
-        Which readout solver to attach.  ``"ridge"`` (default) is the exact
-        direct Cholesky ridge solve (:class:`~resdag.layers.RidgeReadoutLayer`);
-        ``"cg"`` selects the legacy iterative
-        :class:`~resdag.layers.CGReadoutLayer`.  A
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass may also be passed
-        to use a custom readout.
+    readout : str or type[ReadoutLayer], default="ridge"
+        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in ``readout_kwargs``.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for readout.
     readout_bias : bool, default=True
         Whether to use bias in the readout.
     readout_name : str, default="output"
         Name for the readout layer (used in training targets).
+    readout_kwargs : dict, optional
+        Extra readout options, such as ``trainable=True``, ``solver``,
+        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments passed to :class:`~resdag.layers.ESNLayer`.
 
@@ -172,5 +174,6 @@ def classic_esn(
         readout_alpha=readout_alpha,
         readout_bias=readout_bias,
         readout_name=readout_name,
+        readout_kwargs=readout_kwargs,
         **reservoir_kwargs,
     )

@@ -13,8 +13,9 @@
 # self-hosted runner whose labels are a superset of that set, so until you
 # register a runner carrying BOTH the default `self-hosted` label and a custom
 # `gpu` label, every triggered run simply queues (and eventually cancels) with
-# no runner to pick it up — it will NEVER land on a GitHub-hosted runner and
-# never bill Actions minutes for compute. It is inert by design.
+# no runner to pick it up. Scheduled runs are therefore opt-in through the
+# repository variable RESDAG_GPU_RUNNER_ENABLED=true; manual dispatch remains
+# available for provisioning/verification. It never uses a hosted CPU runner.
 #
 # To activate it, on the CUDA box (e.g. the RTX 3060 workstation):
 #   1. Settings → Actions → Runners → "New self-hosted runner"; follow the
@@ -24,6 +25,7 @@
 #      applied automatically.
 #   3. Ensure an NVIDIA driver + CUDA-enabled PyTorch import works in the
 #      runner's environment (`python -c "import torch; assert torch.cuda.is_available()"`).
+#   4. Set the repository Actions variable RESDAG_GPU_RUNNER_ENABLED to true.
 #
 # Once a matching runner is online, this lane runs on the schedule below and on
 # manual dispatch. It never runs on pull requests, so a missing runner can never
@@ -48,6 +50,7 @@ concurrency:
 
 jobs:
   gpu:
+    if: github.event_name == 'workflow_dispatch' || vars.RESDAG_GPU_RUNNER_ENABLED == 'true'
     # Requires a registered self-hosted runner labelled `gpu`. Does nothing —
     # the job queues without executing — until one exists. See the header.
     runs-on: [self-hosted, gpu]

@@ -1137,3 +1137,44 @@ class TestESNTrainerInternals:
 
         fitted_readouts = [m for _, m in model.named_modules() if isinstance(m, CGReadoutLayer)]
         assert len(fitted_readouts) == 3
+
+
+def test_fit_stream_rejects_stacked_readouts_before_mutation() -> None:
+    inp = rd.reservoir_input(1)
+    first = IncrementalRidgeReadoutLayer(1, 1, name="first")
+    second = IncrementalRidgeReadoutLayer(1, 1, name="second")
+    model = ESNModel(inp, second(first(inp)))
+    first.fit(torch.randn(20, 1), torch.randn(20, 1))
+    original = first.weight.clone()
+    with pytest.raises(ValueError, match="stacked readouts"):
+        ESNTrainer(model).fit_stream((torch.randn(1, 3, 1),), [])
+    assert first.is_fitted
+    assert torch.equal(first.weight, original)
+
+
+def test_fit_stream_accepts_independent_parallel_readouts() -> None:
+    inp = rd.reservoir_input(1)
+    first = IncrementalRidgeReadoutLayer(1, 1, name="first", alpha=1e-8)
+    second = IncrementalRidgeReadoutLayer(1, 1, name="second", alpha=1e-8)
+    model = ESNModel(inp, (first(inp), second(inp)))
+    inputs = torch.arange(20.0).view(1, 20, 1)
+    ESNTrainer(model).fit_stream(
+        (inputs[:, :2],),
+        [
+            ((inputs[:, :10],), {"first": inputs[:, :10] * 2, "second": inputs[:, :10] * 3}),
+            ((inputs[:, 10:],), {"first": inputs[:, 10:] * 2, "second": inputs[:, 10:] * 3}),
+        ],
+    )
+    predictions = model(inputs)
+    assert torch.allclose(predictions[0], inputs * 2, atol=1e-4)
+    assert torch.allclose(predictions[1], inputs * 3, atol=1e-4)
+
+
+def test_fit_rejects_mismatched_target_batch_before_forward() -> None:
+    model = rd.classic_esn(10, feedback_size=1, output_size=1)
+    with pytest.raises(ValueError, match="batch size"):
+        ESNTrainer(model).fit(
+            (torch.randn(2, 3, 1),),
+            (torch.randn(2, 4, 1),),
+            {"output": torch.randn(1, 4, 1)},
+        )

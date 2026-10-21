@@ -16,7 +16,7 @@ resdag.layers.readouts.SVDReadoutLayer : SVD filter-factor readout.
 
 import torch
 
-from ._solve_utils import build_ridge_problem, finalize_fit
+from ._solve_utils import build_least_squares_problem, finalize_fit
 from .base import ReadoutLayer
 
 
@@ -80,8 +80,9 @@ class PinvReadoutLayer(ReadoutLayer):
         is cast back to the parameter dtype.
     gram_dtype : torch.dtype, optional
         Dtype for forming / casting the design matrix. Default ``None`` is
-        automatic: ``float64`` on CPU, the input dtype on CUDA. Pass
-        ``torch.float64`` to force full precision on any device.
+        the solve dtype (``float64`` with ``use_float64=True``) on every
+        device. No Gram matrix is formed; the decomposition operates directly
+        on the design matrix.
 
     Attributes
     ----------
@@ -160,7 +161,7 @@ class PinvReadoutLayer(ReadoutLayer):
         """
         # No Tikhonov penalty here: the normal-equations Gram is unused, so
         # build the problem only to share the centering / precision machinery.
-        problem = build_ridge_problem(
+        problem = build_least_squares_problem(
             states,
             targets,
             fit_intercept=self.bias is not None,

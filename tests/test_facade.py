@@ -280,3 +280,18 @@ class TestDtypeAndDataHygiene:
         series = _sine_series(400)
         pred = ESN(reservoir_size=120, washout=60, seed=0).fit(series).forecast(horizon=900)
         assert pred.shape == (900, 3)
+
+
+@pytest.mark.parametrize("washout", [1, 8])
+def test_forecast_starts_at_the_first_unseen_sample(washout: int) -> None:
+    """Compare the facade against one explicit teacher-forced next step."""
+    series = torch.as_tensor(_sine_series(120, features=2))
+    esn = ESN(reservoir_size=12, washout=washout, seed=5).fit(series)
+    model = esn.model
+    assert model is not None
+    model.reset_reservoirs()
+    with torch.no_grad():
+        model(series[-washout - 1 : -1].unsqueeze(0))
+        expected = model(series[-1:].unsqueeze(0)).squeeze(0)
+    actual = esn.forecast(1)
+    torch.testing.assert_close(actual, expected, rtol=1e-12, atol=1e-12)

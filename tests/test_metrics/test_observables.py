@@ -400,3 +400,27 @@ class TestAttractorDimensionLoss:
         val = attractor_dimension_error(lor, lor, max_points=1500, seed=0)
         assert isinstance(val, float)
         assert val >= 0.0
+
+
+def test_effective_spectral_radius_inverts_leaky_states_before_jacobian() -> None:
+    reservoir = ESNLayer(1, feedback_size=1, leak_rate=0.25, seed=0)
+    with torch.no_grad():
+        reservoir.cell.weight_hh.fill_(0.8)
+    # tanh(pre) is [0.5, -0.6] for these two consecutive state transitions.
+    states = torch.tensor([[[0.1], [0.2], [0.0]]], dtype=torch.float64)
+    expected = ((0.75 + 0.25 * (1 - 0.5**2) * 0.8) + (0.75 + 0.25 * (1 - (-0.6) ** 2) * 0.8)) / 2
+    assert effective_spectral_radius(reservoir, states) == pytest.approx(expected, abs=1e-8)
+
+
+def test_effective_spectral_radius_does_not_join_distinct_trajectories() -> None:
+    reservoir = ESNLayer(1, feedback_size=1, leak_rate=0.25, seed=0)
+    states = torch.tensor([[[0.1], [0.2]], [[-0.3], [0.0]]])
+    separate = sum(effective_spectral_radius(reservoir, row) for row in states) / 2
+    assert effective_spectral_radius(reservoir, states) == pytest.approx(separate)
+
+
+@pytest.mark.parametrize("kwargs", [{"max_states": 0}, {}])
+def test_effective_spectral_radius_rejects_empty_sampling(kwargs: dict) -> None:
+    reservoir = ESNLayer(1, feedback_size=1, seed=0)
+    with pytest.raises(ValueError):
+        effective_spectral_radius(reservoir, torch.empty(1, 0, 1), **kwargs)

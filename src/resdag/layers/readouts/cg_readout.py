@@ -202,7 +202,7 @@ class CGReadoutLayer(ReadoutLayer):
             gram_dtype = solve_dtype if X.device.type == "cpu" else X.dtype
         if gram_dtype != X.dtype:
             X = X.to(gram_dtype)
-            y = y.to(gram_dtype)
+        y = y.to(gram_dtype)
 
         if fit_intercept:
             # Center the data; the intercept is recovered after the solve.

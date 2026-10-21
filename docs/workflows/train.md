@@ -81,18 +81,25 @@ sweep $10^{-8}$ to $10^{-2}$ in decade steps, not linearly.
 `prepare_esn_data` cuts one series into the five tensors used above:
 
 ```text
-[ discard ][ warmup ][———————————— train ————————————][ val ]
+[ discard ][ warmup ][———————————— train ————————————][seam][ val ]
                       [—— target = train shifted +1 ——]
                                       [—— f_warmup ——]
 ```
 
-The contract is *target equals train shifted forward one step*: each pair
-`(train[:, t], target[:, t] == train[:, t+1])` teaches next-step
-prediction, which is exactly what the forecast loop replays. `f_warmup`
-is the tail of `train` (last `warmup_steps` samples), ready to
-re-synchronize the reservoir right before forecasting over `val`. If you
-slice by hand, keep the shift: an off-by-one here raises no error during
-training but degrades forecasts.
+Each training input is paired with the next sample in the original series:
+``target[:, t] = data[:, discard_steps + warmup_steps + t + 1]``.
+The final target is the seam sample, immediately after the training inputs.
+With ``train_end = warmup_steps + train_steps`` measured after discarding,
+validation starts at ``data[:, train_end + 1]``. The seam is therefore used for
+training and excluded from held-out scoring.
+
+`f_warmup` contains the last `warmup_steps` samples before `train_end`; when
+training is shorter than warmup, it includes part of the earlier warmup history.
+Its last output predicts the seam, which seeds the next autoregressive step.
+The required source length is `discard_steps + warmup_steps + train_steps + 1 + val_steps`.
+With `normalize=True`, statistics are fitted on training inputs only and applied
+to every split; `return_stats=True` also returns those statistics for inverting
+predictions with `rd.data.denormalize_data`.
 
 ---
 

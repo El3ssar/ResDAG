@@ -646,3 +646,24 @@ class TestGPUSaveLoad:
             # Verify parameters match (compare on CPU)
             for name, param in model_gpu.named_parameters():
                 assert torch.allclose(param.cpu(), initial_params[name])
+
+
+@pytest.mark.parametrize("via_classmethod", [False, True])
+def test_state_dict_load_supports_storage_remapping(tmp_path, via_classmethod) -> None:
+    model = classic_esn(12, 2, 2, seed=9)
+    path = tmp_path / "portable.pt"
+    model.save(path)
+    restored = classic_esn(12, 2, 2, seed=10)
+    locations = []
+
+    def remap(storage, location):
+        locations.append(location)
+        return storage
+
+    if via_classmethod:
+        ESNModel.load_from_file(path, model=restored, map_location=remap)
+    else:
+        restored.load(path, map_location=remap)
+    assert locations
+    for name, expected in model.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[name], expected)

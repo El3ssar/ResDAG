@@ -25,6 +25,9 @@ series- and System-based paths of `largest_lyapunov` need the optional
     options:
       members:
         - valid_prediction_time
+        - rmse
+        - nrmse
+        - r2
 
 ---
 
@@ -57,3 +60,12 @@ series- and System-based paths of `largest_lyapunov` need the optional
       members:
         - largest_lyapunov
         - reservoir_lyapunov
+
+## Reservoir and attractor observables
+
+::: resdag.metrics
+    options:
+      members:
+        - memory_capacity
+        - effective_spectral_radius
+        - correlation_dimension

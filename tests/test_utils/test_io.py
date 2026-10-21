@@ -447,3 +447,16 @@ def test_load_and_prepare_requires_a_path() -> None:
         load_and_prepare(None, warmup_steps=1, train_steps=1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="At least one data path"):
         load_and_prepare([], warmup_steps=1, train_steps=1)
+
+
+def test_load_and_prepare_accepts_pathlib_path(tmp_path) -> None:
+    from resdag.data import load_and_prepare
+
+    path = tmp_path / "series.npy"
+    np.save(path, np.arange(30.0).reshape(30, 1))
+    warmup, train, target, _, val = load_and_prepare(
+        path, warmup_steps=3, train_steps=5, val_steps=4
+    )
+    assert warmup.shape == (1, 3, 1)
+    assert torch.equal(target, train + 1)
+    assert val[0, 0, 0] == 9

@@ -205,9 +205,9 @@
         <h2>Ten lines to a trained forecaster</h2>
         <p>
           One teacher-forced pass collects reservoir states; one
-          conjugate-gradient ridge solve fits the readout. A 500-unit
-          forecaster trains in well under a second, which keeps wide
-          hyperparameter searches cheap.
+          ridge solve fits the readout. Choose a direct, iterative, or SVD
+          solver for your precision and memory requirements, and benchmark
+          the workload on your hardware.
         </p>
       </div>
       <pre><span class="k">import</span> resdag <span class="k">as</span> rd
@@ -288,7 +288,7 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
 (function () {
   // The hero animation: a chaotic system (ink) and a real ResDAG forecast
   // of it (vermilion), rotating slowly in 3D. Trajectory pairs were
-  // generated offline by scripts/generate_hero_forecasts.py — the orange
+  // generated offline by docs/_tooling/figures/hero_forecasts.py — the forecast
   // curve is a genuine 500-unit ESN running autoregressively. Systems
   // ported from TSDynamics (github.com/El3ssar/TSDynamics).
   var FILES = ["lorenz", "thomas", "halvorsen", "arneodo", "rucklidge", "sprott_b"];

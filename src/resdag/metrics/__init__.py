@@ -37,8 +37,7 @@ memory_capacity
     reconstructing a delayed i.i.d. input, bounded above by the reservoir size.
 effective_spectral_radius
     Mean spectral radius of the state-dependent recurrent Jacobian over an
-    attractor trajectory — the *realized* contraction rate (``tanh`` saturation
-    pushes it below the nominal weight spectral radius).
+    attractor trajectory, accounting for activation saturation and leakage.
 correlation_dimension
     Grassberger-Procaccia correlation dimension of a trajectory (attractor
     fidelity): Lorenz-63 ~2.05, a limit cycle ~1.0, ``d``-dim noise ~``d``.

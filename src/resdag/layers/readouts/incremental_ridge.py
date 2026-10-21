@@ -124,10 +124,9 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         dtype.
     gram_dtype : torch.dtype, optional
         Dtype the per-chunk Gram matmuls run in. Default ``None`` is automatic:
-        ``float64`` on CPU (cheap there), the input dtype on CUDA (``float64``
-        matmuls are crippled on consumer GPUs). Pass ``torch.float64`` to force
-        full-precision accumulation on any device. The device-aware default is
-        resolved from the first chunk seen by :meth:`partial_fit`.
+        the solve dtype (``float64`` with ``use_float64=True``) on every device.
+        Pass ``torch.float32`` explicitly for faster, lower-precision Gram
+        formation on CUDA when the feature matrix is well-conditioned.
 
     Attributes
     ----------
@@ -269,6 +268,7 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
             ``out_features``, or if ``states`` or ``targets`` contain non-finite
             (NaN or Inf) values.
         """
+        self._validate_fit_shapes(states, targets)
         if states.dim() == 3:
             b, t, f = states.shape
             states = states.reshape(b * t, f)
@@ -313,8 +313,8 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
                 f"finite inputs — clean or impute the targets before fitting."
             )
 
-        # Per-chunk Gram matmuls run in the device-aware gram dtype (float64 on
-        # CPU, input dtype on CUDA) and accumulate into the float64 buffers.
+        # Form each chunk in the requested Gram dtype (float64 by default),
+        # then accumulate into the buffers on the module's current dtype/device.
         solve_dtype = resolve_solve_dtype(states.dtype, self.use_float64)
         gram_dtype = resolve_gram_dtype(states.dtype, states.device, solve_dtype, self.gram_dtype)
         self._chunk_gram_dtype = gram_dtype
@@ -363,7 +363,6 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
             )
 
         fit_intercept = self.bias is not None
-        original_dtype = self.weight.dtype
         nf = float(n)
 
         if fit_intercept:
@@ -391,10 +390,10 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
             gram_dtype=self._chunk_gram_dtype,
         )
 
-        self.weight.copy_(coefs.T.to(original_dtype))
+        intercept = None
         if fit_intercept and self.bias is not None:
             intercept = (y_mean - x_mean @ coefs).squeeze(0)
-            self.bias.copy_(intercept.to(self.bias.dtype))
+        self._copy_coefficients(coefs, intercept)
 
         self._set_fitted(True)
 

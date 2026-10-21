@@ -26,6 +26,7 @@ import warnings
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import torch
 
@@ -166,9 +167,11 @@ class ESNTrainer:
             the model's configured readouts are not permanently mutated.
         noise_draws : int, keyword-only, optional
             When ``state_noise > 0``: ``None`` (default) uses the closed-form
-            **LMNT** term (one solve, exact expectation of many noisy copies); an
-            integer ``M >= 1`` averages ``M`` *explicit* noisy-state fits
-            (Monte-Carlo).  Ignored when ``state_noise == 0``.
+            **LMNT** term (one solve of the expected noisy normal equations); an
+            integer ``M >= 1`` averages the Gram matrices and right-hand sides
+            of ``M`` explicit noisy-state draws, then solves once (Monte-Carlo).
+            This does not average separately fitted weights. Ignored when
+            ``state_noise == 0``.
         noise_seed : int, keyword-only, optional
             Seed for the explicit-noise (``noise_draws``) draws, for
             reproducibility.  Ignored for the deterministic LMNT path.
@@ -231,6 +234,12 @@ class ESNTrainer:
         readouts = self._discover_readouts()
         self._validate_targets(targets, readouts)
 
+        self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
+        self._validate_input_shapes(
+            train_inputs, label="train_inputs", targets=targets, readouts=readouts
+        )
+        if warmup_inputs[0].shape[0] != train_inputs[0].shape[0]:
+            raise ValueError("warmup_inputs and train_inputs must have the same batch size")
         train_steps = train_inputs[0].shape[1]
 
         # Validate target shapes
@@ -307,7 +316,8 @@ class ESNTrainer:
         Shuffling the chunks would desynchronise the reservoir and is not
         supported.
 
-        Every readout in the model must be an
+        Readouts must be independent: a readout downstream of another readout
+        needs a separate fitting pass and is rejected. Every readout must be an
         :class:`~resdag.layers.IncrementalRidgeReadoutLayer` (the only readout with a
         ``partial_fit`` / ``finalize`` interface). The accumulators are reset at
         the start, so calling ``fit_stream`` again re-fits from scratch.
@@ -333,7 +343,7 @@ class ESNTrainer:
             If no warmup inputs are provided, if a chunk's input arity does not
             match the warmup arity, if any readout is missing from a chunk's
             targets, or if a target's sequence length does not match its chunk's
-            input length.
+            input length, or if readouts depend on other readouts.
         TypeError
             If any readout in the model is not an ``IncrementalRidgeReadoutLayer``.
         RuntimeError
@@ -376,6 +386,9 @@ class ESNTrainer:
                 f"or rebuild the model with IncrementalRidgeReadoutLayer."
             )
 
+        self._validate_stream_dependencies()
+        self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
+
         # Reset accumulators so a re-fit starts clean, then warm up once. The
         # readouts are unfitted during warmup too, so let their forward flow a
         # value while the reservoir synchronises (shared with ``fit``).
@@ -396,6 +409,14 @@ class ESNTrainer:
                     f"has {len(warmup_inputs)}. Must match."
                 )
             self._validate_targets(targets, readouts)
+            self._validate_input_shapes(
+                inputs, label=f"Chunk {n_chunks}", targets=targets, readouts=readouts
+            )
+            if inputs[0].shape[0] != warmup_inputs[0].shape[0]:
+                raise ValueError(
+                    f"Chunk {n_chunks} batch size must match warmup_inputs; contiguous "
+                    "streams must keep the same trajectories in every batch slot."
+                )
             chunk_steps = inputs[0].shape[1]
 
             hooks: list[torch.utils.hooks.RemovableHandle] = []
@@ -748,6 +769,72 @@ class ESNTrainer:
 
         return outputs
 
+    def _validate_stream_dependencies(self) -> None:
+        """Reject readouts whose fit features depend on an unfinished stream fit.
+
+        Independent parallel readouts are valid. A downstream readout needs
+        upstream fitted weights before collecting states, which a single-pass
+        accumulate-then-finalize stream cannot supply. Walk the public symbolic
+        ``parents``/``layer`` interface, without private execution-order fields.
+        """
+        visited: set[int] = set()
+        pending: list[Any] = list(self.model.outputs)
+        while pending:
+            node = pending.pop()
+            if id(node) in visited:
+                continue
+            visited.add(id(node))
+            pending.extend(node.parents)
+            if not isinstance(node.layer, ReadoutLayer):
+                continue
+            ancestors = list(node.parents)
+            seen: set[int] = set()
+            while ancestors:
+                parent = ancestors.pop()
+                if id(parent) in seen:
+                    continue
+                seen.add(id(parent))
+                if isinstance(parent.layer, ReadoutLayer):
+                    raise ValueError(
+                        "fit_stream() cannot fit stacked readouts: downstream features "
+                        "depend on an upstream readout that is not finalized. Use fit() "
+                        "for the complete DAG, or fit each stage in a separate pass."
+                    )
+                ancestors.extend(parent.parents)
+
+    def _validate_input_shapes(
+        self,
+        inputs: tuple[torch.Tensor, ...],
+        *,
+        label: str,
+        targets: dict[str, torch.Tensor] | None = None,
+        readouts: list[tuple[str, ReadoutLayer]] | None = None,
+    ) -> None:
+        """Validate paired axes before flattening can hide trajectory mismatch."""
+        if len(inputs) != len(self.model.inputs):
+            raise ValueError(
+                f"{label} has {len(inputs)} tensors but the model expects "
+                f"{len(self.model.inputs)} input tensors. Must match."
+            )
+        for i, tensor in enumerate(inputs):
+            if tensor.ndim != 3:
+                raise ValueError(f"{label}[{i}] must be 3-D (batch, time, features)")
+            if tensor.shape[:2] != inputs[0].shape[:2]:
+                raise ValueError(f"{label} tensors must share batch size and timesteps")
+        if targets is not None and readouts is not None:
+            for name, readout in readouts:
+                target = targets[name]
+                if target.ndim != 3 or target.shape[:2] != inputs[0].shape[:2]:
+                    raise ValueError(
+                        f"Target for '{name}' must have matching batch size and timesteps "
+                        f"{tuple(inputs[0].shape[:2])}, got {tuple(target.shape)}"
+                    )
+                if target.shape[-1] != readout.out_features:
+                    raise ValueError(
+                        f"Target for '{name}' has {target.shape[-1]} features but readout "
+                        f"expects {readout.out_features}"
+                    )
+
     @staticmethod
     @contextmanager
     def _state_noise_override(
@@ -918,6 +1005,8 @@ class ESNTrainer:
         """Validate that all readouts have targets."""
         if readouts is None:
             readouts = self._discover_readouts()
+        if not readouts:
+            raise ValueError("The model contains no ReadoutLayer to fit")
         readout_names = [name for name, _ in readouts]
         missing = [name for name in readout_names if name not in targets]
 

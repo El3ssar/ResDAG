@@ -202,6 +202,7 @@ class TestWindowStitch:
 class TestScaling:
     """Growing P (via D) with fixed per-patch work keeps per-patch step cost ~flat."""
 
+    @pytest.mark.benchmark
     def test_step_time_roughly_flat_per_patch(self) -> None:
         """ms/step/patch drops as P grows — the batched op amortises over patches.
 
@@ -375,3 +376,34 @@ class TestPersistence:
         torch.save({"not_a_model": 1}, path)
         with pytest.raises(ValueError, match="ParallelESNModel"):
             ParallelESNModel.load_full(path)
+
+
+def test_forward_integrates_into_a_larger_differentiable_pipeline() -> None:
+    model = parallel_esn(8, 2, 1, reservoir_size=12, seed=7, readout_kwargs={"trainable": True})
+    upstream = torch.nn.Linear(3, 8)
+    downstream = torch.nn.Linear(8, 1)
+    series = torch.randn(2, 5, 3)
+    result = downstream(model(upstream(series), reset=True))
+    assert result.shape == (2, 5, 1)
+    result.square().mean().backward()
+    assert upstream.weight.grad is not None and upstream.weight.grad.abs().sum() > 0
+    assert model.readout.weight.grad is not None
+    assert downstream.weight.grad is not None
+
+
+def test_forward_matches_explicit_patch_predictions() -> None:
+    model = parallel_esn(8, 2, 1, reservoir_size=12, seed=7)
+    series = torch.randn(2, 6, 8)
+    actual = model(series, reset=True)
+    model.reset_reservoirs()
+    states = model.reservoir(model.window(series))
+    expected = model.readout(states).reshape(2, 4, 6, 2).permute(0, 2, 1, 3).reshape(2, 6, 8)
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("kwargs", [{"core_width": 0}, {"input_dim": 0}, {"core_width": -1}])
+def test_invalid_geometry_fails_before_division(kwargs: dict) -> None:
+    arguments = {"input_dim": 8, "core_width": 2, "halo": 1}
+    arguments.update(kwargs)
+    with pytest.raises(ValueError, match="positive"):
+        parallel_esn(**arguments)

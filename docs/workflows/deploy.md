@@ -22,11 +22,17 @@ rd.ESNTrainer(model).fit((warmup.cuda(),), (train.cuda(),), {"output": target.cu
 preds = model.forecast(f_warmup.cuda(), horizon=1000)   # stays on cuda
 ```
 
-`.to("cuda")` moves parameters and buffers as usual. The live reservoir
-state needs no handling of its own — it follows the data, re-initializing
-on the next forward pass whenever the incoming batch's size, device, or
-dtype changes. One consequence: a warmed-up state does not survive a
-device change, so move the model first and warm up afterward.
+CUDA is the accelerated training backend covered by the GPU test lane. MPS
+does not support float64, which the algebraic solvers and some diagnostics use
+by default. For MPS inference, fit on CPU, move a float32 model and its inputs
+to `"mps"`, and validate your workload. Passing `"mps"` to device discovery
+does not guarantee that every solver or diagnostic supports it.
+
+`.to("cuda")` moves parameters and buffers, including a warmed-up reservoir
+state. Device or dtype moves preserve that state's values; move the inputs to
+the same device and dtype too. A different batch size initializes a fresh
+zero state, unless you deliberately restored a state with `set_state`, in
+which case a mismatched batch size raises instead of discarding it.
 
 **When the GPU helps.** The reservoir loop is sequential in time, so each
 timestep is one small kernel launch; the GPU only wins once those kernels
@@ -42,15 +48,17 @@ carry real work. In practice:
   favor the GPU; a single small model runs as fast or faster on CPU.
   Measure your own configuration with `examples/11_gpu_benchmark.py`.
 
-!!! note "Why fit() stays fast on CUDA"
-    The direct ridge readouts (`RidgeReadoutLayer`, the default) and
-    `CGReadoutLayer` share a `gram_dtype` policy that is automatic: the heavy
-    Gram-matrix matmuls run in float64 on CPU (cheap there) but in the input
-    dtype on CUDA — consumer GPUs run float64 at 1/32–1/64 throughput, which is
-    why ESN training has often measured slower on GPU. Pass
-    `gram_dtype=torch.float64` only for badly scaled states (e.g.
-    unnormalized inputs concatenated into the readout); the better fix is
-    normalizing the data.
+!!! note "Readout precision and GPU throughput"
+    Direct readouts such as `RidgeReadoutLayer` form their normal equations
+    in the solve dtype by default: float64 with `use_float64=True`, on CPU
+    and CUDA. This favors accuracy for correlated reservoir features, but
+    float64 throughput can be substantially lower on consumer GPUs. For
+    normalized, sufficiently regularized problems, explicitly setting
+    `gram_dtype=torch.float32` can improve throughput; compare forecast
+    accuracy before adopting that tradeoff. `CGReadoutLayer` has a different
+    default: it forms the Gram matrix in the input dtype on CUDA and uses
+    float64 for the subsequent solve when `use_float64=True`. Pass
+    `gram_dtype=torch.float64` there when the input-dtype Gram loses accuracy.
 
 ### Long horizons: compile the step
 
@@ -65,8 +73,10 @@ overhead:
 preds = model.forecast(f_warmup, horizon=10_000, compile=True)   # GPU: fewer, fatter launches
 ```
 
-The default eager path is already flat and hook-free (bit-for-bit identical
-whether or not you compile), so `compile=True` is a pure opt-in speedup and
+The default eager path is already flat and hook-free. Compiled results should
+be compared with floating-point tolerances, especially for chaotic dynamics;
+compilation can change rounding. Warm compiled executors are reused for
+matching shapes, devices, and dtypes. `compile=True` is an opt-in speedup and
 transparently falls back to eager on `torch < 2.10` or a compilation failure
 (emitting a `RuntimeWarning`). It pays off for **long horizons on the GPU**;
 for short rollouts or on CPU the compile warmup can cost more than it saves, so
@@ -96,7 +106,7 @@ def build():                       # same factory call = same architecture
     return rd.ott_esn(reservoir_size=500, feedback_size=3, output_size=3)
 
 model.save("model.pt")                                   # weights + metadata
-restored = rd.ESNModel.load_from_file("model.pt", model=build())
+restored = rd.ESNModel.load_from_file("model.pt", model=build(), map_location="cpu")
 
 model.save("ckpt.pt", include_states=True, epoch=10, val_mse=0.012)
 restored.load("ckpt.pt", load_states=True)               # weights + live states
@@ -146,13 +156,14 @@ class ReservoirClassifier(nn.Module):
 
     def __init__(self, n_classes: int):
         super().__init__()
-        self.features = rd.headless_esn(reservoir_size=500, feedback_size=3)
+        self.features = rd.ReservoirFeatureExtractor(
+            reservoir_size=500, feedback_size=3, stateful=False,
+        )
         self.head = nn.Sequential(
             nn.Linear(500, 128), nn.ReLU(), nn.Linear(128, n_classes)
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:   # (batch, time, 3)
-        self.features.reset_reservoirs()                   # independent sequences
         states = self.features(x)                          # (batch, time, 500)
         return self.head(states[:, -1])                    # classify on last state
 
@@ -168,12 +179,28 @@ for xb, yb in loader:                                      # (B, T, 3), (B,)
 
 </div>
 
-Gradients flow *through* the reservoir to anything upstream; nothing
-inside it moves. Between forward calls the stored state is detached, so
-this loop needs no special handling for autograd. To fine-tune a readout
+`stateful=False` starts each minibatch from zeros and never changes stored
+reservoir states, so independent or shuffled sequences do not leak history
+into each other. The default `stateful=True` carries state for streaming;
+reset it between independent trajectories. Gradients flow *through* a frozen
+reservoir to a trainable encoder upstream, while its weights stay fixed.
+To fine-tune a readout
 instead of adding a separate head, use the combination pattern from
 [Train](train.md): build it with `trainable=True`, solve algebraically,
 then continue with a small learning rate.
+
+Reuse a trained model's reservoirs with
+`rd.ReservoirFeatureExtractor.from_model(trained_model, stateful=False)`.
+This shares reservoir weights and extracts their features; it does not include
+the trained readout or reproduce arbitrary parallel branches and transforms.
+To retain the complete trained model, place `trained_model` itself inside your
+larger `nn.Module` and reset its reservoirs between independent sequences.
+
+For explicit state threading, call
+`features, states = extractor.forward_stateless(x)` and continue with
+`extractor.forward_stateless(next_chunk, states=states)`. This leaves stored
+states untouched and keeps gradients across chunks; detach the returned states
+yourself when you want truncated backpropagation.
 
 One operational note: reservoir layers carry mutable state, so a model
 instance is not thread-safe — give each thread its own model.

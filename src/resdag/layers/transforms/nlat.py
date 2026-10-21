@@ -75,10 +75,9 @@ class NLAT2(nn.Module):
     on the (static) feature dimension, never on the input values, so the forward
     is branch-free over the data and torch.compile-friendly.
 
-    Parameters
-    ----------
-    None
-        This layer has no configuration and no learnable parameters.
+    Notes
+    -----
+    This layer has no configuration and no learnable parameters.
 
     Examples
     --------
@@ -166,10 +165,9 @@ class NLAT3(nn.Module):
     on the (static) feature dimension, never on the input values, so the forward
     is branch-free over the data and torch.compile-friendly.
 
-    Parameters
-    ----------
-    None
-        This layer has no configuration and no learnable parameters.
+    Notes
+    -----
+    This layer has no configuration and no learnable parameters.
 
     Examples
     --------

@@ -1208,3 +1208,14 @@ class TestStateAndPersistence:
             )
             with pytest.raises(ValueError, match="sub-model"):
                 ens_big.load(str(path))
+
+
+@pytest.mark.parametrize("method", ["z_score", "iqr"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
+def test_robust_aggregation_preserves_prediction_dtype(method, dtype) -> None:
+    from resdag.ensemble.aggregators import OutliersFilteredMean
+
+    members = torch.tensor([1.0, 1.0, 1.0, 1.0, 100.0], dtype=dtype).reshape(5, 1, 1, 1)
+    result = OutliersFilteredMean(method=method)(members)
+    assert result.dtype == dtype
+    torch.testing.assert_close(result, torch.ones(1, 1, 1, dtype=dtype))

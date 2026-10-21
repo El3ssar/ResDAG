@@ -369,3 +369,32 @@ def test_apply_norm_unknown_method_raises() -> None:
     """``_apply_norm`` rejects an unknown method when stats are supplied."""
     with pytest.raises(ValueError, match="Unknown normalization method"):
         normalize_data(_sample_data(), method="bogus", stats={"min": torch.zeros(1)})  # type: ignore[arg-type]
+
+
+def test_standard_normalization_of_single_observation_is_finite() -> None:
+    data = torch.tensor([[[3.0, -2.0]]])
+    normalized, stats = normalize_data(data, method="standard")
+    assert torch.equal(normalized, torch.zeros_like(data))
+    assert torch.equal(stats["std"], torch.ones_like(data))
+    assert torch.equal(denormalize_data(normalized, "standard", stats), data)
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_normalization_supports_autograd_inside_a_pipeline(method: str) -> None:
+    data = torch.tensor([[[0.0, 2.0], [3.0, -1.0], [1.0, 4.0]]], requires_grad=True)
+    normalized, _ = normalize_data(data, method=method)
+    normalized.square().sum().backward()
+    assert data.grad is not None
+    assert torch.isfinite(data.grad).all()
+
+
+def test_reused_statistics_follow_input_dtype_without_mutation() -> None:
+    data = _sample_data()
+    _, stats = normalize_data(data, method="standard")
+    normalized, returned = normalize_data(data.float(), method="standard", stats=stats)
+    assert normalized.dtype == torch.float32
+    assert returned is stats
+    assert all(value.dtype == torch.float64 for value in stats.values())
+    restored = denormalize_data(normalized, "standard", stats)
+    assert restored.dtype == torch.float32
+    assert torch.allclose(restored, data.float(), atol=1e-5)

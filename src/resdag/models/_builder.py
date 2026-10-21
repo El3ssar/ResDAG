@@ -36,7 +36,15 @@ from pytorch_symbolic.symbolic_data import SymbolicTensor
 from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, RidgeReadoutLayer
-from resdag.layers.readouts import ReadoutLayer
+from resdag.layers.readouts import (
+    CholeskyReadoutLayer,
+    FISTAReadoutLayer,
+    IncrementalRidgeReadoutLayer,
+    PinvReadoutLayer,
+    ReadoutLayer,
+    RLSReadout,
+    SVDReadoutLayer,
+)
 from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 
 AugmentFactory = Callable[[], nn.Module]
@@ -50,6 +58,12 @@ ReadoutSpec = str | type[ReadoutLayer]
 _READOUT_REGISTRY: dict[str, type[ReadoutLayer]] = {
     "ridge": RidgeReadoutLayer,
     "cg": CGReadoutLayer,
+    "cholesky": CholeskyReadoutLayer,
+    "svd": SVDReadoutLayer,
+    "pinv": PinvReadoutLayer,
+    "incremental": IncrementalRidgeReadoutLayer,
+    "rls": RLSReadout,
+    "fista": FISTAReadoutLayer,
 }
 
 
@@ -92,6 +106,38 @@ def _resolve_readout_cls(readout: ReadoutSpec) -> type[ReadoutLayer]:
     )
 
 
+def _make_readout(
+    readout: ReadoutSpec,
+    *,
+    in_features: int,
+    out_features: int,
+    alpha: float,
+    bias: bool,
+    name: str,
+    readout_kwargs: dict[str, Any] | None = None,
+) -> ReadoutLayer:
+    """Construct a readout with solver options separate from reservoir options.
+
+    Dimensions are fixed by the architecture. Other options can be overridden.
+    Pseudoinverse readouts have no ridge penalty. For RLS, an explicit delta
+    replaces the default alpha alias; explicitly supplying both remains an error.
+    """
+    readout_cls = _resolve_readout_cls(readout)
+    options = dict(readout_kwargs or {})
+    reserved = {"in_features", "out_features"}.intersection(options)
+    if reserved:
+        raise ValueError(
+            f"readout_kwargs cannot override architecture dimensions: {sorted(reserved)}"
+        )
+    kwargs: dict[str, Any] = {"bias": bias, "name": name}
+    if not issubclass(readout_cls, PinvReadoutLayer) and not (
+        issubclass(readout_cls, RLSReadout) and "delta" in options
+    ):
+        kwargs["alpha"] = alpha
+    kwargs.update(options)
+    return readout_cls(in_features=in_features, out_features=out_features, **kwargs)
+
+
 def _esn_builder(
     reservoir_size: int,
     feedback_size: int,
@@ -115,6 +161,7 @@ def _esn_builder(
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
+    readout_kwargs: dict[str, Any] | None = None,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ESNModel:
@@ -195,21 +242,18 @@ def _esn_builder(
     trainable : bool, default=False
         Whether reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        Which readout to attach.  Accepts the built-in keys ``"ridge"`` (the
-        default — :class:`~resdag.layers.RidgeReadoutLayer` with the exact
-        ``solver='cholesky'`` direct solve) and ``"cg"`` (the legacy iterative
-        :class:`~resdag.layers.CGReadoutLayer`), or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass to instantiate
-        directly.  Any subclass passed must accept the same
-        ``in_features``/``out_features``/``bias``/``alpha``/``name`` constructor
-        arguments the builder forwards.  Only used when ``output_size`` is not
-        ``None``.
+        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.
     readout_bias : bool, default=True
         Whether to use bias in the readout.
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
+    readout_kwargs : dict, optional
+        Solver-specific constructor options, including readout trainability.
+        Architecture dimensions cannot be overridden.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
         :class:`~resdag.layers.ESNLayer`.
@@ -290,21 +334,14 @@ def _esn_builder(
     else:
         readout_in_features = reservoir_size
 
-    # Resolve the readout spec up front so an invalid one fails before any
-    # partial construction. Default is the exact Cholesky ridge solve; ``"cg"``
-    # restores the legacy CGReadoutLayer.
-    readout_cls = _resolve_readout_cls(readout)
-
-    # ``alpha`` is not declared on the ``ReadoutLayer`` base, but every readout
-    # this builder is meant to wire (RidgeReadoutLayer, CGReadoutLayer, and the
-    # other ridge solvers) accepts it. The docstring makes this the contract for
-    # a custom ``readout`` class, so the base-class call-arg check is expected.
-    readout_layer = readout_cls(
+    readout_layer = _make_readout(
+        readout,
         in_features=readout_in_features,
         out_features=output_size,
         bias=readout_bias,
-        alpha=readout_alpha,  # type: ignore[call-arg]
+        alpha=readout_alpha,
         name=readout_name,
+        readout_kwargs=readout_kwargs,
     )(output)
 
     return ESNModel(model_inputs, readout_layer)

@@ -152,7 +152,7 @@ class OutliersFilteredMean(nn.Module):
 
         masked_input = input * mask_expanded
         sum_inliers = masked_input.sum(dim=0)
-        count_inliers = mask_expanded.float().sum(dim=0).expand_as(sum_inliers)
+        count_inliers = mask_expanded.sum(dim=0).expand_as(sum_inliers)
 
         mean_result = torch.where(
             count_inliers > 0,
@@ -209,8 +209,11 @@ class OutliersFilteredMean(nn.Module):
             Boolean mask of shape ``(samples, batch, timesteps)`` that is
             ``True`` for inlier members.
         """
-        q1 = torch.quantile(norms, 0.25, dim=0)
-        q3 = torch.quantile(norms, 0.75, dim=0)
+        # quantile supports float32/float64; keep low-precision ensemble
+        # predictions in their native dtype while computing fences in float32.
+        work = norms.float() if norms.dtype in (torch.float16, torch.bfloat16) else norms
+        q1 = torch.quantile(work, 0.25, dim=0)
+        q3 = torch.quantile(work, 0.75, dim=0)
         iqr = q3 - q1
         lower_bound = q1 - self.threshold * iqr
         upper_bound = q3 + self.threshold * iqr

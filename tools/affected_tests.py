@@ -655,8 +655,13 @@ def associate_test(
     path: Path,
     resolver: ReExportResolver,
     fixture_closures: dict[str, set[str]],
+    _seen: set[Path] | None = None,
 ) -> set[str]:
     """Source modules a single test file depends on."""
+    seen = set() if _seen is None else _seen
+    if path in seen:
+        return set()
+    seen.add(path)
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (SyntaxError, OSError):
@@ -675,6 +680,24 @@ def associate_test(
     used_fixtures = _fixtures_used(tree, set(fixture_closures))
     for fx in used_fixtures:
         modules |= fixture_closures.get(fx, set())
+
+    # Tests can depend on source only through another test/helper module (the
+    # golden-forecast suite, for example). Follow those imports as well, with a
+    # cycle guard; otherwise an actual reservoir change skips its golden guard.
+    package = path.relative_to(REPO_ROOT).with_suffix("").parts[:-1]
+    for node in ast.walk(tree):
+        imported: list[str] = []
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            target = _resolve_relative(node.module, node.level, list(package))
+            if target:
+                imported = [target, *(f"{target}.{alias.name}" for alias in node.names)]
+        for name in imported:
+            if name == "tests" or name.startswith("tests."):
+                helper = REPO_ROOT.joinpath(*name.split(".")).with_suffix(".py")
+                if helper.is_file():
+                    modules |= associate_test(helper, resolver, fixture_closures, seen)
     return modules
 
 
@@ -708,6 +731,13 @@ def select_tests(changed_files: list[str]) -> Selection:
             reason=f"broad-impact change: {', '.join(broad)}",
             changed_files=changed,
         )
+
+    # Removed modules no longer appear in the current import graph; any
+    # surviving import of them can now fail. Include deletions in git's change
+    # list and use the full suite rather than silently treating them as docs.
+    removed = [f for f in changed if f.startswith("src/resdag/") and not (REPO_ROOT / f).exists()]
+    if removed:
+        return Selection("full", [FULL_SUITE_TARGET], "removed source module", changed)
 
     index = build_module_index()
     resolver = ReExportResolver(index)
@@ -795,16 +825,15 @@ def changed_files_from_git(base: str | None, include_dirty: bool) -> list[str]:
     files: set[str] = set()
     # Committed changes since the merge-base (three-dot).
     diff_spec = f"{base}...HEAD" if base != "HEAD" else "HEAD"
-    try:
-        out = _git("diff", "--name-only", "--diff-filter=d", diff_spec)
-        files.update(line.strip() for line in out.splitlines() if line.strip())
-    except subprocess.CalledProcessError:
-        pass
+    # A bad/missing base must fail so CI can fall back to the full suite.
+    # Swallowing the error yields an empty selection and falsely green CI.
+    out = _git("diff", "--name-only", diff_spec)
+    files.update(line.strip() for line in out.splitlines() if line.strip())
     if include_dirty:
         # Unstaged + staged + untracked working-tree changes (local use).
         for extra in (
-            _git("diff", "--name-only", "--diff-filter=d"),
-            _git("diff", "--name-only", "--diff-filter=d", "--cached"),
+            _git("diff", "--name-only"),
+            _git("diff", "--name-only", "--cached"),
             _git("ls-files", "--others", "--exclude-standard"),
         ):
             files.update(line.strip() for line in extra.splitlines() if line.strip())

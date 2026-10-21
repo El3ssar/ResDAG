@@ -19,7 +19,7 @@ uv run python examples/01_quickstart.py --plot
 |---|--------|-----------------|---------------|
 | 00 | `00_easiest_api.py` | The headline one-liner: `rd.ESN(...).fit(series).forecast(horizon=N)`; numpy round-trip; dropping down to `esn.model` | ~3 s |
 | 01 | `01_quickstart.py` | Smallest end-to-end flow: data → `classic_esn` → `ESNTrainer` → `forecast` → MSE | ~5 s |
-| 02 | `02_premade_models.py` | All six factories incl. `coupled_ensemble_esn`; one comparison table on a shared Lorenz task | ~5 s |
+| 02 | `02_premade_models.py` | Six representative factories incl. `coupled_ensemble_esn`; one comparison table on a shared Lorenz task | ~5 s |
 | 03 | `03_functional_api.py` | Building DAGs by hand: minimal, input-driven, ott-style augmentation, parallel reservoirs, multi-readout | ~3 s |
 | 04 | `04_topologies_and_initializers.py` | Topology/initializer registries; bare-callable topologies, `(fn, params)`, `torch.nn.init.*`, `register_matrix_topology`, the `"orthogonal"` matrix topology | ~5 s |
 | 05 | `05_training_paths.py` | Three training styles compared: algebraic ridge, frozen reservoir + SGD head, full BPTT | ~10 s |
@@ -53,5 +53,5 @@ for minibatched SGD or streaming algebraic fits.
 ## More
 
 - Full documentation: <https://el3ssar.github.io/ResDAG/>
-- Developer reference: [`../CLAUDE.md`](../CLAUDE.md)
+- Contributor guide: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 - Releases: <https://github.com/El3ssar/ResDAG/releases>

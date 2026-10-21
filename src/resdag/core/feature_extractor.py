@@ -85,6 +85,11 @@ class ReservoirFeatureExtractor(nn.Module):
         define them), but ``trainable`` still applies as a freeze/unfreeze
         toggle over the provided layers.  The layers are wrapped **by
         reference** — their parameters are shared, not copied.
+    stateful : bool, default=True
+        Carry reservoir states between forward calls. Use ``False`` for
+        independent or shuffled minibatches: every call starts from zeros and
+        leaves the wrapped layers' stored states untouched. Use
+        :meth:`forward_stateless` when state must be passed explicitly.
     **layer_kwargs
         Extra keyword arguments forwarded to every :class:`ESNLayer` that this
         constructor builds (for example ``spectral_radius``, ``leak_rate``,
@@ -156,6 +161,7 @@ class ReservoirFeatureExtractor(nn.Module):
         input_size: int | None = None,
         trainable: bool = False,
         layers: BaseReservoirLayer | Iterable[BaseReservoirLayer] | None = None,
+        stateful: bool = True,
         **layer_kwargs: object,
     ) -> None:
         super().__init__()
@@ -181,6 +187,7 @@ class ReservoirFeatureExtractor(nn.Module):
             )
 
         self.reservoirs: nn.ModuleList = nn.ModuleList(built)
+        self.stateful = stateful
         # Apply the freeze/unfreeze toggle uniformly over the wrapped layers.
         self.unfreeze() if trainable else self.freeze()
 
@@ -249,6 +256,7 @@ class ReservoirFeatureExtractor(nn.Module):
         cls,
         esn_model: nn.Module,
         trainable: bool = False,
+        stateful: bool = True,
     ) -> ReservoirFeatureExtractor:
         """
         Build an extractor that reuses the reservoir layers of an existing model.
@@ -269,6 +277,9 @@ class ReservoirFeatureExtractor(nn.Module):
             Freeze/unfreeze toggle applied to the shared reservoir layers after
             wrapping.  Because the layers are shared, this also changes
             ``requires_grad`` on the source model's reservoir parameters.
+        stateful : bool, default=True
+            Carry state between calls. ``False`` leaves the source model's
+            stored states untouched and processes independent sequences.
 
         Returns
         -------
@@ -279,6 +290,12 @@ class ReservoirFeatureExtractor(nn.Module):
         ------
         ValueError
             If ``esn_model`` contains no reservoir layers.
+
+        Notes
+        -----
+        This extracts and chains reservoir layers only; it does not reproduce
+        arbitrary parallel branches, intermediate transforms, or the trained
+        readout. Embed the source model itself to preserve its full graph.
 
         Examples
         --------
@@ -302,7 +319,7 @@ class ReservoirFeatureExtractor(nn.Module):
                 "`esn_model` contains no reservoir layers (BaseReservoirLayer) "
                 "to reuse. Build the extractor from sizes instead."
             )
-        return cls(layers=reservoirs, trainable=trainable)
+        return cls(layers=reservoirs, trainable=trainable, stateful=stateful)
 
     # ------------------------------------------------------------------
     # Forward
@@ -336,14 +353,17 @@ class ReservoirFeatureExtractor(nn.Module):
 
         Notes
         -----
-        The wrapped reservoirs are stateful: state carries across forward calls
-        until :meth:`reset_state` (or its :meth:`on_epoch_start` alias) is
-        invoked.  When the extractor sits inside a :class:`torch.nn.Sequential`
-        only ``feedback`` is passed, satisfying the single-positional-input
-        contract.
+        With ``stateful=True`` (the default), state carries across calls until
+        :meth:`reset_state` is invoked. With ``stateful=False``, every call
+        starts from zeros. When the extractor sits inside a
+        :class:`torch.nn.Sequential` only ``feedback`` is passed, satisfying
+        the single-positional-input contract.
         """
         if len(driving_inputs) > 1:
             raise ValueError("Only one driving input tensor allowed")
+        if not self.stateful:
+            independent_features, _ = self.forward_stateless(feedback, *driving_inputs)
+            return independent_features
 
         # The driving input enters the first reservoir; deeper reservoirs
         # consume the previous layer's features as their (sole) feedback.
@@ -352,6 +372,56 @@ class ReservoirFeatureExtractor(nn.Module):
         for reservoir in layers[1:]:
             features = reservoir(features)
         return features
+
+    def forward_stateless(
+        self,
+        feedback: torch.Tensor,
+        *driving_inputs: torch.Tensor,
+        states: Iterable[torch.Tensor] | None = None,
+        compile: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+        """Extract features with explicit state, without changing stored states.
+
+        ``feedback`` and the optional driver have shape ``(batch, time,
+        features)``. ``states`` contains one initial state per wrapped
+        reservoir; omit it to start every reservoir from zeros. The result is
+        ``(features, final_states)``. Pass ``final_states`` into a later call
+        to continue the same stream. States retain their autograd graphs;
+        detach them explicitly to truncate gradients between chunks.
+
+        ``compile=True`` opts into the layers' inference-only CUDA scan;
+        differentiable inputs or states keep the eager path.
+        """
+        if feedback.dim() != 3:
+            raise ValueError(f"Feedback must be 3D (B, T, F), got shape {feedback.shape}")
+        if len(driving_inputs) > 1:
+            raise ValueError("Only one driving input tensor allowed")
+        for driver in driving_inputs:
+            if driver.dim() != 3 or driver.shape[:2] != feedback.shape[:2]:
+                raise ValueError(
+                    "Driving input must be 3D and match feedback batch/time dimensions"
+                )
+
+        layers = self._layers
+        initial = tuple(states) if states is not None else None
+        if initial is not None and len(initial) != len(layers):
+            raise ValueError(f"Expected {len(layers)} reservoir states, got {len(initial)}")
+
+        features = feedback
+        final: list[torch.Tensor] = []
+        for i, layer in enumerate(layers):
+            state = (
+                layer.cell.init_state(features.shape[0], features.device, features.dtype)
+                if initial is None
+                else initial[i]
+            )
+            layer.cell.validate_state(state)
+            if state.shape[0] != features.shape[0]:
+                raise ValueError("State batch size must match feedback batch size")
+            inputs = [features, *driving_inputs] if i == 0 else [features]
+            features, state = layer.forward_stateless(inputs, state, compile=compile)
+            final.append(state)
+        return features, tuple(final)
 
     # ------------------------------------------------------------------
     # State and grad management
@@ -406,8 +476,11 @@ class ReservoirFeatureExtractor(nn.Module):
         ReservoirFeatureExtractor
             ``self``, to allow chaining.
         """
-        for param in self.reservoirs.parameters():
-            param.requires_grad_(False)
+        for reservoir in self._layers:
+            if hasattr(reservoir.cell, "trainable"):
+                setattr(reservoir.cell, "trainable", False)
+            for param in reservoir.parameters():
+                param.requires_grad_(False)
         return self
 
     def unfreeze(self) -> ReservoirFeatureExtractor:
@@ -419,8 +492,11 @@ class ReservoirFeatureExtractor(nn.Module):
         ReservoirFeatureExtractor
             ``self``, to allow chaining.
         """
-        for param in self.reservoirs.parameters():
-            param.requires_grad_(True)
+        for reservoir in self._layers:
+            if hasattr(reservoir.cell, "trainable"):
+                setattr(reservoir.cell, "trainable", True)
+            for param in reservoir.parameters():
+                param.requires_grad_(True)
         return self
 
     @property
@@ -436,4 +512,4 @@ class ReservoirFeatureExtractor(nn.Module):
     def extra_repr(self) -> str:
         """Return a one-line summary of the wrapped reservoir stack."""
         widths = ", ".join(str(int(r.cell.output_size)) for r in self._layers)
-        return f"reservoirs=[{widths}], frozen={self.is_frozen}"
+        return f"reservoirs=[{widths}], frozen={self.is_frozen}, stateful={self.stateful}"

@@ -14,7 +14,7 @@ A. The canonical SGD loop — frozen reservoir + trainable head, minibatched
    cross-batch autograd graph hygiene.
 B. The same loop with a *trainable* reservoir (full BPTT through the windows).
 C. The algebraic-over-DataLoader path: stream each batch into
-   ``IncrementalRidgeReadout.partial_fit``, then ``finalize`` once — a one-solve
+   ``IncrementalRidgeReadoutLayer.partial_fit``, then ``finalize`` once — a one-solve
    ridge fit that never holds the whole state matrix in memory.
 
 Expected runtime: ~10 s on CPU.
@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 
 from resdag import ESNLayer, lorenz, make_dataloader
-from resdag.layers import IncrementalRidgeReadout
+from resdag.layers import IncrementalRidgeReadoutLayer
 
 RESERVOIR_SIZE = 200
 WINDOW_LEN = 250
@@ -110,12 +110,12 @@ def main() -> None:
     # Path C: algebraic over the DataLoader (incremental ridge)
     # ------------------------------------------------------------------
     print("\n" + "=" * 70)
-    print("Path C: algebraic over the loader — IncrementalRidgeReadout")
+    print("Path C: algebraic over the loader — IncrementalRidgeReadoutLayer")
     print("=" * 70)
     print("Stream partial_fit per batch, finalize once — no whole-state matrix.")
     torch.manual_seed(42)
     reservoir_c = ESNLayer(RESERVOIR_SIZE, feedback_size=3, spectral_radius=0.9, trainable=False)
-    readout_c = IncrementalRidgeReadout(RESERVOIR_SIZE, 3, name="output", alpha=1e-4)
+    readout_c = IncrementalRidgeReadoutLayer(RESERVOIR_SIZE, 3, name="output", alpha=1e-4)
 
     readout_c.reset_accumulators()
     with torch.no_grad():
@@ -131,7 +131,7 @@ def main() -> None:
         reservoir_c.reset_state()
         pred = readout_c(reservoir_c(x))
         mse_c = torch.mean((pred[:, wo:] - y[:, wo:]) ** 2).item()
-    print(f"  fitted (is_fitted={readout_c.is_fitted}); held-out one-step MSE {mse_c:.5f}")
+    print(f"  fitted (is_fitted={readout_c.is_fitted}); training-window one-step MSE {mse_c:.5f}")
 
     print("\nTakeaway: the same windowed loader drives SGD (A/B) and a one-solve")
     print("algebraic fit (C). Reach for C when the reservoir is fixed and you want")

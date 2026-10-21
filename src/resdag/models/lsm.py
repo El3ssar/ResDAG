@@ -66,7 +66,7 @@ from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import Concatenate
 from resdag.layers.reservoirs.lif import LIFReservoirLayer
 
-from ._builder import ReadoutSpec, _resolve_readout_cls
+from ._builder import ReadoutSpec, _make_readout
 
 
 def lsm(
@@ -95,6 +95,7 @@ def lsm(
     readout_alpha: float = 1e-6,
     readout_bias: bool = True,
     readout_name: str = "output",
+    readout_kwargs: dict[str, Any] | None = None,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ESNModel:
@@ -173,14 +174,19 @@ def lsm(
         Whether to concatenate the raw input with the reservoir trace before the
         readout.
     readout : str or type[ReadoutLayer], default="ridge"
-        Readout solver (``"ridge"`` direct Cholesky, ``"cg"`` legacy iterative,
-        or a :class:`~resdag.layers.readouts.ReadoutLayer` subclass).
+        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in ``readout_kwargs``.
     readout_alpha : float, default=1e-6
         Ridge regularization for the readout.
     readout_bias : bool, default=True
         Whether to use a bias in the readout.
     readout_name : str, default="output"
         Name for the readout layer (the target key in training).
+    readout_kwargs : dict, optional
+        Extra readout options, such as ``trainable=True``, ``solver``,
+        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
         :class:`~resdag.layers.reservoirs.lif.LIFReservoirLayer` (e.g. ``bias_scaling``,
@@ -215,7 +221,6 @@ def lsm(
         raise ValueError(f"output_size must be a positive integer, got {output_size!r}")
 
     # Resolve the readout up front so an invalid spec fails before construction.
-    readout_cls = _resolve_readout_cls(readout)
 
     inp = reservoir_input(feedback_size)
     driver = reservoir_input(input_size) if input_size else None
@@ -250,12 +255,14 @@ def lsm(
     else:
         readout_in_features = reservoir_size
 
-    readout_layer = readout_cls(
+    readout_layer = _make_readout(
+        readout,
         in_features=readout_in_features,
         out_features=output_size,
         bias=readout_bias,
-        alpha=readout_alpha,  # type: ignore[call-arg]
+        alpha=readout_alpha,
         name=readout_name,
+        readout_kwargs=readout_kwargs,
     )(output)
 
     return ESNModel(model_inputs, readout_layer)

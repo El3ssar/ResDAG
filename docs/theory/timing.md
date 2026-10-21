@@ -1,126 +1,118 @@
 ---
-description: The one-step-ahead contract, the target shift, the forecast index map with a worked table, driver alignment, and what state persists across calls.
+description: The one-step target shift, default and explicitly seeded forecast indices, driver alignment, and state across calls.
 ---
 
 <span class="nb-kicker">Theory · Timing</span>
 
 # Timing conventions
 
-Off-by-one errors in autoregressive forecasting are silent — the model
-still produces plausible trajectories, just trained on the wrong pairing.
-This page fixes every index in the pipeline: which target row a state row
-is regressed onto, what `predictions[:, i]` estimates, and which driver
-value each step consumes.
+A next-step readout maps feedback $f_t$ and an optional driver $d_t$ to
+$\hat f_{t+1}$. The reservoir state after consuming that pair also belongs to
+time $t$. Keeping those two indices distinct prevents a plausible forecast
+from being scored one sample early.
 
-## The one-step-ahead contract
+## Training pairs
 
-A trained model is a one-step predictor. Writing $f_t$ for the feedback
-signal and $d_t$ for an optional driver at sample $t$:
-
-$$
-\hat y_t = G(f_t, d_t) \approx f_{t+1}
-$$
-
-Everything else on this page is bookkeeping that preserves this contract
-through training and forecasting.
-
-**The target shift.** `prepare_esn_data` cuts one timeline so the shift
-is built into the splits. With `warmup_steps` $= W$ and `train_steps`
-$= L$ (after `discard_steps`):
+After discarding any initial transient, let `warmup_steps = W` and
+`train_steps = L`. `prepare_esn_data` builds:
 
 ```python
-warmup = data[:, :W]            # synchronize state
-train  = data[:, W     : W+L]   # model input at step t
-target = data[:, W + 1 : W+L+1] # = train shifted forward one step
+warmup = data[:, :W]
+train = data[:, W : W + L]
+target = data[:, W + 1 : W + L + 1]
 ```
 
-`target[:, t]` is `train[:, t+1]`'s value — the split needs one sample
-beyond the training window, which is why `prepare_esn_data` rejects
-`W + L >= len(data)`. The forecast warmup is the tail of `train`
-(`train[:, -W:]`) and `val` starts at `data[:, W+L]`, immediately after.
+State row `t` is fitted to target row `t`. The trainer performs no additional
+shift. The training target includes `data[:, W + L]`, one sample beyond the
+last training input, so preparing a split requires that extra sample.
 
-**Training alignment.** `ESNTrainer.fit` runs the warmup, then one
-forward pass over `train`. The reservoir emits state row $t$ from input
-row $t$; each readout's `fit` hook regresses state row $t$ onto target
-row $t$. Row for row, no internal re-shifting — the shift lives entirely in
-the data preparation above.
+The forecast warmup is the final `W` samples of the entire observed input
+prefix `data[:, :W + L]`. This remains exactly `W` samples even when `L < W`.
+With `W = 0` it is empty. The validation split starts at
+`data[:, W + L + 1]`, as required by the default forecast convention below.
 
----
+## Default forecast: seed from the model's prediction
 
-## The forecast index map
+`forecast(warmup_inputs, horizon=H)` first processes the warmup. Let $T$
+index its last input pair $(f_T, d_T)$. The last warmup output estimates
+$f_{T+1}$; it seeds the autoregressive loop and is **not** included in the
+returned forecast unless `return_warmup=True`.
 
-`forecast(warmup_inputs, horizon=H)` runs a teacher-forced warmup, then
-closes the loop. Let $T$ index the **last warmup sample** $(f_T, d_T)$.
-The invariant:
+Every returned slot performs a new model update:
 
-$$
-\texttt{predictions[:, i]} \;\approx\; f_{T+1+i}
-$$
+| Phase | Feedback consumed | Driver consumed | Output estimates |
+| --- | --- | --- | --- |
+| last warmup step | $f_T$ | $d_T$ | $f_{T+1}$, used as the seed |
+| forecast slot 0 | $\hat f_{T+1}$ | $d_{T+1}$ | $f_{T+2}$ |
+| forecast slot 1 | $\hat f_{T+2}$ | $d_{T+2}$ | $f_{T+3}$ |
+| forecast slot $i$ | $\hat f_{T+1+i}$ | $d_{T+1+i}$ | $f_{T+2+i}$ |
 
-Prediction 0 is not produced by the loop at all — it is the model's
-output for the last warmup pair, stored before the autoregressive phase
-begins. Loop step $t \ge 1$ feeds back prediction $t-1$ and consumes
-driver `forecast_inputs[:, t-1]`. Worked out for `horizon=4`:
+Thus `predictions[:, i]` estimates $f_{T+2+i}$. With prepared data,
+$T = W + L - 1$, so prediction 0 aligns with `data[:, W + L + 1]`,
+the first validation sample. The preceding seam sample `data[:, W + L]`
+is the final training target and the model's predicted seed.
 
-| Step | Feedback in | Driver in | Stored as | Estimates |
-| --- | --- | --- | --- | --- |
-| warmup (last) | $f_T$ | $d_T$ | `predictions[:, 0]` | $f_{T+1}$ |
-| $t = 1$ | `predictions[:, 0]` | `forecast_inputs[:, 0]` $= d_{T+1}$ | `predictions[:, 1]` | $f_{T+2}$ |
-| $t = 2$ | `predictions[:, 1]` | `forecast_inputs[:, 1]` $= d_{T+2}$ | `predictions[:, 2]` | $f_{T+3}$ |
-| $t = 3$ | `predictions[:, 2]` | `forecast_inputs[:, 2]` $= d_{T+3}$ | `predictions[:, 3]` | $f_{T+4}$ |
+`forecast_inputs` holds **one driver value per returned step**, starting
+immediately after the warmup driver window. It must contain at least `H`
+steps; only its first `H` values are consumed. A single driver tensor can be
+passed directly; multiple drivers use a tuple.
 
-With the `prepare_esn_data` splits, the forecast warmup ends at data
-index $W{+}L{-}1$, so $T = W{+}L{-}1$ and `predictions[:, i]` estimates
-`data[:, W+L+i]` $=$ `val[:, i]` — the forecast aligns one-to-one with
-the validation split, so errors can be computed directly as
-`predictions - val` with no re-indexing.
+`return_warmup=True` concatenates all warmup outputs with these `H` new
+outputs. It adds no repeated frame at the boundary.
 
-**Driver alignment.** `forecast_inputs` is the driver series for the
-forecast window, continuing *exactly where the warmup drivers ended*:
-`forecast_inputs[:, t]` is the driver at the $(t{+}1)$-th step after the
-warmup window. Because prediction 0 already consumed $d_T$ during warmup,
-the loop only reads indices $0$ through $H{-}2$ — **$H-1$ values**. Both
-lengths $H-1$ and $H$ are accepted; with $H$ the last value is unused,
-which lets you slice drivers over the same window as your validation
-targets.
+## Predict immediately after the last observation
 
-!!! warning "Changed in 0.5"
-    Pre-0.5, loop step $t$ consumed `forecast_inputs[:, t]` instead of
-    `[:, t-1]`: entry 0 was silently skipped and every prediction was
-    paired with the driver one step *ahead* of the training convention.
-    Since 0.5 the contract above holds, and the required driver length
-    changed from `horizon` to `horizon - 1` (or `horizon`, last value
-    unused). If you offset your driver slices to compensate, remove the
-    offset.
+For a continuous observed prefix of length `N`, the next unobserved sample
+has index `N`. To predict it in slot 0, keep the final observation as explicit
+feedback and warm up through the preceding sample:
 
----
+```python
+predictions = model.forecast(
+    observed[:, :-1],
+    initial_feedback=observed[:, -1:],
+    horizon=H,
+)
+# predictions[:, i] estimates the sample at index N + i
+```
 
-## Statefulness across calls
+The first update consumes the actual observation at index `N - 1`, producing
+the prediction for index `N`. For a driven model, warm up on the corresponding
+prefix of the driver and start `forecast_inputs` at driver index `N - 1`:
+the driver must have the same time index as the feedback it accompanies.
 
-Reservoir layers carry their state between `forward` calls. This
-persistence is what makes the warmup-then-forecast split work; it is also
-a common source of errors.
+An empty warmup is supported with an explicit `initial_feedback`, which is
+useful when starting from zero or deliberately restored states. Without a
+seed, an empty warmup raises because there is no prediction to feed back.
+The high-level `ESN.forecast` facade handles this observed-prefix alignment
+for you.
 
-- **Reset behavior.** `warmup()` and `forecast()` reset all
-  reservoirs by default (`reset=True`); `ESNTrainer.fit` always resets
-  before its warmup. A bare `model(x)` or `layer(x)` never resets —
-  consecutive calls continue the trajectory unless you call
-  `reset_state()` / `reset_reservoirs()`.
-- **Silent re-initialization.** If an incoming batch's size, device, or
-  dtype differs from the stored state's, the state is silently replaced
-  with zeros of the new configuration (`_maybe_init_state`). Convenient
-  for switching from training batches to a single forecast trajectory;
-  surprising if you expected state to survive a `.to("cuda")`.
-- **Detached state at call boundaries.** At the end of each `forward`,
-  the *stored* state is detached from the autograd graph. Gradients flow
-  through the returned states within a call, but never across calls —
-  truncated BPTT at call boundaries, which is what lets SGD over
-  consecutive batches work without "backward through the graph a second
-  time" errors. If you intentionally backprop through state carried
-  across calls, set `layer.detach_state_between_calls = False` and manage
-  the retained graphs yourself.
+`windowed_forecast` also aligns gap predictions to the original timeline.
+It starts each gap with the final teacher-forced prediction and follows it
+with the required autoregressive predictions. Score only its gap positions
+using the returned observation mask.
+
+## State across calls
+
+Reservoir layers carry mutable state between ordinary `forward` calls.
+
+- `warmup` and `forecast` reset by default (`reset=True`). A bare `model(x)`
+  or `layer(x)` continues the current state; use `reset_reservoirs` or
+  `reset_state` between independent trajectories.
+- `.to(device)` and dtype conversions move the stored state along with the
+  parameters, preserving its values. Move the inputs to match the module.
+  Naturally accumulated states reinitialize to zeros when batch size changes.
+  A state deliberately restored with `set_state` instead raises on a batch
+  mismatch until it is consumed or explicitly reset.
+- By default, stored states detach at call boundaries while returned outputs
+  retain gradients within the call. Set `detach_state_between_calls=False`
+  only when intentionally backpropagating across calls and managing those
+  retained graphs.
+- `ReservoirFeatureExtractor(stateful=False)` starts independent minibatches
+  from zeros without changing stored states. Its `forward_stateless` method
+  accepts and returns explicit states, keeping gradients across chunks until
+  you detach them yourself.
 
 ## Next
 
-[**Design of the library**](design.md) — the architecture decisions
-behind the code that enforces these conventions.
+[**Design of the library**](design.md) explains the composition and execution
+choices behind these interfaces.

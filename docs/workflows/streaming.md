@@ -1,5 +1,5 @@
 ---
-description: Train over a torch DataLoader of windowed time series — the canonical SGD loop, the algebraic over-the-loader ridge fit with IncrementalRidgeReadout, and the ESNTrainer.fit_stream path for sequences too long to hold in memory.
+description: Train over a torch DataLoader of windowed time series — the canonical SGD loop, the algebraic over-the-loader ridge fit with IncrementalRidgeReadoutLayer, and the ESNTrainer.fit_stream path for sequences too long to hold in memory.
 ---
 
 <span class="nb-kicker">Work · Streaming</span>
@@ -54,7 +54,9 @@ print(x.shape, y.shape, washout)           # (16, 250, 3) (16, 250, 3) 50
 slice becomes one trajectory), or a ragged list of `(T, D)` tensors of
 differing length — windows are generated per trajectory in every case. For a
 regression task, pass an aligned `targets=` tensor instead of relying on
-`horizon`. Need the underlying dataset for a custom loader? Build a
+`horizon`. Input `stats` normalize inputs and shifted forecast targets;
+external regression targets keep their own units. Pass separate `target_stats`
+and `target_norm_method` to normalize external targets. Need the underlying dataset for a custom loader? Build a
 `TimeSeriesWindowDataset` directly and wrap it yourself.
 
 ## The SGD loop
@@ -104,7 +106,7 @@ well (full BPTT through each window), build the reservoir with
 
 When the reservoir is fixed and you want the classic ridge readout — but the
 full state matrix would not fit in memory — accumulate the fit incrementally.
-`IncrementalRidgeReadout` keeps the ridge **sufficient statistics** (the Gram
+`IncrementalRidgeReadoutLayer` keeps the ridge **sufficient statistics** (the Gram
 matrix and cross term), so `partial_fit` per batch followed by a single
 `finalize` is algebraically identical to one full-batch solve over the
 concatenated data, to floating-point tolerance.
@@ -114,14 +116,14 @@ concatenated data, to floating-point tolerance.
 ```python
 import torch
 from resdag import ESNLayer, make_dataloader, lorenz
-from resdag.layers import IncrementalRidgeReadout
+from resdag.layers import IncrementalRidgeReadoutLayer
 
 series = lorenz(4000, seed=0)[0]
 loader = make_dataloader(series, batch_size=16, window_len=250,
                          horizon=1, stride=125, washout=50)
 
 reservoir = ESNLayer(200, feedback_size=3, spectral_radius=0.9, trainable=False)
-readout = IncrementalRidgeReadout(200, 3, name="output", alpha=1e-4)
+readout = IncrementalRidgeReadoutLayer(200, 3, name="output", alpha=1e-4)
 
 readout.reset_accumulators()
 with torch.no_grad():
@@ -142,13 +144,13 @@ with torch.no_grad():
 </div>
 
 `finalize` must be called once before inference — `forward` on an unfitted
-`IncrementalRidgeReadout` raises with a clear message. Calling `partial_fit`
+`IncrementalRidgeReadoutLayer` raises with a clear message. Calling `partial_fit`
 again after `finalize` keeps accumulating and re-marks the layer unfitted, so
 `finalize` again to refresh; `reset_accumulators` starts a fresh fit.
 
 ## fit_stream — the trainer over a stream
 
-For a full `ESNModel` whose readouts are all `IncrementalRidgeReadout`, the
+For a full `ESNModel` whose readouts are all `IncrementalRidgeReadoutLayer`, the
 trainer wraps the accumulate-then-finalize pattern in `fit_stream`. It warms
 the reservoir once, then consumes chunks one at a time, accumulating each
 readout's statistics and solving once at the end — no more than a single
@@ -160,25 +162,25 @@ chunk's states are ever in memory.
 import torch
 import resdag as rd
 from resdag import ESNLayer, ESNModel, reservoir_input, make_dataloader, lorenz
-from resdag.layers import IncrementalRidgeReadout
+from resdag.layers import IncrementalRidgeReadoutLayer
 
-series = lorenz(4000, seed=0)[0]
-loader = make_dataloader(series, batch_size=16, window_len=250,
-                         horizon=1, stride=125, washout=50)
+series = lorenz(4000, seed=0)                # keep (1, T, D): one continuous stream
 
 inp = reservoir_input(3)
 states = ESNLayer(200, feedback_size=3, spectral_radius=0.9)(inp)
-out = IncrementalRidgeReadout(200, 3, name="output", alpha=1e-4)(states)
+out = IncrementalRidgeReadoutLayer(200, 3, name="output", alpha=1e-4)(states)
 model = ESNModel(inp, out)
 
-warmup = series[:300].unsqueeze(0)          # (1, 300, 3) — re-syncs the reservoir first
+warmup = series[:, :300]                    # (1, 300, 3)
 
 def chunk_stream():
-    for x, y, washout in loader:            # contiguous, in order — state flows between chunks
-        yield (x,), {"output": y}           # (inputs tuple, {readout_name: targets})
+    # Adjacent input chunks, with next-sample targets and fixed batch slots.
+    for start in range(300, series.shape[1] - 1, 250):
+        stop = min(start + 250, series.shape[1] - 1)
+        yield (series[:, start:stop],), {"output": series[:, start+1:stop+1]}
 
 rd.ESNTrainer(model).fit_stream(warmup_inputs=(warmup,), chunks=chunk_stream())
-forecast = model.forecast(warmup, horizon=200)
+forecast = model.forecast(series[:, -300:], horizon=200)
 ```
 
 </div>
@@ -186,11 +188,16 @@ forecast = model.forecast(warmup, horizon=200)
 !!! warning "Chunks must be contiguous and in order"
     `fit_stream` flows reservoir state from the end of one chunk into the start
     of the next, exactly as a single long forward pass would. Do **not**
-    shuffle the loader feeding `fit_stream` — that desynchronizes the reservoir.
+    shuffle or overlap chunks feeding `fit_stream` — that desynchronizes the
+    reservoir. Keep the same batch size and trajectory in each batch slot.
+    Ordinary sliding-window batches represent independent windows and should
+    use the per-window reset/`partial_fit` path above.
     (The shuffled loader earlier on this page is fine for the SGD and
     per-window `partial_fit` paths, which reset state per window.) Every readout
-    in the model must be an `IncrementalRidgeReadout`; mixed readouts raise, and
-    `fit` is the in-memory path for single-pass readouts.
+    in the model must be an `IncrementalRidgeReadoutLayer`; mixed readouts raise, and
+    `fit` is the in-memory path for single-pass readouts. Readouts on separate
+    branches may share the stream; stacked readouts require separate fitting
+    passes because their input features depend on upstream fitted weights.
 
 ## When to use which path
 

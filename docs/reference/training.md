@@ -7,8 +7,8 @@ description: API reference for resdag.training — the ESNTrainer that fits read
 # Training
 
 The trainer that warms up reservoir states, then fits every readout in the
-model algebraically — ridge regression, not gradient descent — in a single
-forward pass.
+model with its configured readout solver in a single forward pass. Online RLS
+and FORCE fitting are also available through `fit_online` and `fit_force`.
 
 ::: resdag.training
     options:

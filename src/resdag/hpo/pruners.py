@@ -9,10 +9,11 @@ Optuna's pruner classes by hand.
 Pruning is driven by the intermediate ``trial.report`` calls that
 :class:`resdag.hpo.trial_runner.TrialRunner` emits at growing forecast-horizon
 checkpoints: a configuration whose forecast has already diverged at an early
-checkpoint reports a large loss, and the pruner can terminate it before paying
-for the full horizon.  Resolution is identical in single- and multi-process
+checkpoint reports a large loss, and the pruner can skip later scoring
+checkpoints. The full trajectory is generated before scoring; pruning does not
+currently save forecast generation. Resolution is identical in single- and multi-process
 mode — the resolved pruner is passed to :func:`optuna.create_study` in the
-parent **and** re-resolved (from the same key) inside each worker's
+parent **and** passed unchanged to each worker's
 :func:`optuna.load_study`, so workers prune with the same policy.
 
 See Also

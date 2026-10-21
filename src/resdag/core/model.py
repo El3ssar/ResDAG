@@ -43,6 +43,7 @@ from __future__ import annotations
 import colorsys
 import contextlib
 import copy
+import operator
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
@@ -477,6 +478,7 @@ class ESNModel(ps.SymbolicModel):
         path: str | Path,
         strict: bool = True,
         load_states: bool = False,
+        map_location: Any = None,
     ) -> None:
         """
         Load model weights from file.
@@ -494,6 +496,9 @@ class ESNModel(ps.SymbolicModel):
             a checkpoint may legitimately omit some reservoir keys (e.g. one
             saved before warmup). Reservoirs absent from the checkpoint keep
             their current state and no ``KeyError`` is raised.
+        map_location : optional
+            Passed to ``torch.load``. Use ``"cpu"`` to load a checkpoint
+            written on a GPU on a machine without that GPU.
 
         Warns
         -----
@@ -513,7 +518,7 @@ class ESNModel(ps.SymbolicModel):
         import warnings
 
         path = Path(path)
-        checkpoint = torch.load(path, weights_only=False)
+        checkpoint = torch.load(path, weights_only=False, map_location=map_location)
 
         if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
             raise ValueError(
@@ -544,6 +549,7 @@ class ESNModel(ps.SymbolicModel):
         model: "ESNModel | None" = None,
         strict: bool = True,
         load_states: bool = False,
+        map_location: Any = None,
     ) -> "ESNModel":
         """
         Load weights into an existing model instance.
@@ -561,6 +567,8 @@ class ESNModel(ps.SymbolicModel):
             If True, strictly enforce state_dict key matching.
         load_states : bool, default=False
             If True, also load reservoir states.
+        map_location : optional
+            Storage-device remapping forwarded to :meth:`load`.
 
         Returns
         -------
@@ -580,7 +588,7 @@ class ESNModel(ps.SymbolicModel):
         if model is None:
             raise ValueError("model argument is required")
 
-        model.load(path, strict=strict, load_states=load_states)
+        model.load(path, strict=strict, load_states=load_states, map_location=map_location)
         return model
 
     def save_full(
@@ -1041,7 +1049,7 @@ class ESNModel(ps.SymbolicModel):
     def forecast(
         self,
         warmup_inputs: tuple[torch.Tensor, ...] | torch.Tensor,
-        forecast_inputs: tuple[torch.Tensor, ...] | None = None,
+        forecast_inputs: tuple[torch.Tensor, ...] | torch.Tensor | None = None,
         *,
         horizon: int,
         initial_feedback: torch.Tensor | None = None,
@@ -1066,7 +1074,7 @@ class ESNModel(ps.SymbolicModel):
             Warmup tensors of shape ``(batch, warmup_steps, features)``.
             Convention: first element is feedback, remaining are drivers.
             A single tensor is accepted for the common feedback-only case.
-        forecast_inputs : tuple of torch.Tensor, optional
+        forecast_inputs : tuple of torch.Tensor or torch.Tensor, optional
             Driver inputs for the autoregressive phase (feedback is provided
             by the model's own output, so it is not part of this tuple).
             ``forecast_inputs[i][:, t, :]`` is the driver paired with forecast
@@ -1075,6 +1083,7 @@ class ESNModel(ps.SymbolicModel):
             must provide at least ``horizon`` timesteps; only the first
             ``horizon`` are consumed.  Required when the model has driver
             inputs.
+            A single tensor is accepted for a model with one driver.
         horizon : int, keyword-only
             Number of autoregressive steps to generate. Must be ``>= 1``.
         initial_feedback : torch.Tensor, optional
@@ -1240,10 +1249,27 @@ class ESNModel(ps.SymbolicModel):
         if len(warmup_inputs) == 0:
             raise ValueError("At least one warmup input (feedback) is required")
 
+        if len(warmup_inputs) != len(self.inputs):
+            raise ValueError(
+                f"Expected {len(self.inputs)} warmup input(s), got {len(warmup_inputs)}"
+            )
+        for i, stream in enumerate(warmup_inputs):
+            if stream.dim() != 3:
+                raise ValueError(f"warmup_inputs[{i}] must be 3-D (batch, time, features)")
+            if stream.shape[:2] != warmup_inputs[0].shape[:2]:
+                raise ValueError("All warmup inputs must match feedback batch/time dimensions")
+        if warmup_inputs[0].shape[1] == 0 and initial_feedback is None:
+            raise ValueError("An empty warmup requires initial_feedback to seed the forecast")
+
         # Validate the horizon up front so callers get a clear error instead of
         # a downstream IndexError / negative-dimension RuntimeError.
-        if horizon < 1:
+        try:
+            horizon_value = operator.index(horizon)
+        except TypeError:
+            raise ValueError(f"horizon must be a positive integer, got {horizon}") from None
+        if isinstance(horizon, bool) or horizon_value < 1:
             raise ValueError(f"horizon must be a positive integer, got {horizon}")
+        horizon = horizon_value
 
         # A differentiable rollout and the cudagraph/reduce-overhead compile
         # path are mutually exclusive: the compiled step reuses static output
@@ -1258,6 +1284,8 @@ class ESNModel(ps.SymbolicModel):
         # Determine if model has driving inputs
         num_drivers = len(warmup_inputs) - 1
         has_drivers = num_drivers > 0
+        if isinstance(forecast_inputs, torch.Tensor):
+            forecast_inputs = (forecast_inputs,)
 
         # Validate forecast_inputs (drivers only). Every autoregressive step
         # consumes one driver value, so at least ``horizon`` are required.
@@ -1273,6 +1301,14 @@ class ESNModel(ps.SymbolicModel):
                     f"Expected {num_drivers} forecast driver(s), got {len(forecast_inputs)}"
                 )
             for i, driver in enumerate(forecast_inputs):
+                if driver.dim() != 3:
+                    raise ValueError(f"forecast_inputs[{i}] must be 3-D (batch, time, features)")
+                if driver.shape[0] != warmup_inputs[0].shape[0]:
+                    raise ValueError(f"forecast_inputs[{i}] batch size must match warmup feedback")
+                if driver.shape[-1] != warmup_inputs[i + 1].shape[-1]:
+                    raise ValueError(
+                        f"forecast_inputs[{i}] feature size must match its warmup driver"
+                    )
                 if driver.shape[1] < horizon:
                     raise ValueError(
                         f"forecast_inputs[{i}] has {driver.shape[1]} steps, expected at "
@@ -1280,6 +1316,8 @@ class ESNModel(ps.SymbolicModel):
                         f"must hold the driver series for the forecast window, starting "
                         f"right after the warmup window."
                     )
+        elif forecast_inputs is not None and len(forecast_inputs) != 0:
+            raise ValueError("This feedback-only model does not accept forecast driving inputs")
 
         batch_size = warmup_inputs[0].shape[0]
         feedback_dim = warmup_inputs[0].shape[-1]

@@ -137,39 +137,43 @@ forward pass, same `state_dict`.
 This makes algebraic fitting and gradient training interchangeable. The
 same layer can be fitted with a single algebraic solve or trained with an
 optimizer such as Adam (`trainable=True` flips `requires_grad`), and a
-checkpoint does not record which path produced the weights, because the
-layer carries no solver-specific state.
+checkpoint stores the fitted weights in the same form. Streaming solvers also
+store their sufficient statistics or inverse-correlation state for continuation.
 
 ## Choosing a solver
 
-Six readout classes (all in `resdag.layers.readouts`, re-exported from
-`resdag.layers` and the top level) solve the *same* ridge objective above;
-they differ only in the numerical method. Pick by conditioning, whether you
-need `alpha = 0`, problem size, and whether the data streams:
+The readouts in `resdag.layers.readouts` are re-exported from `resdag.layers`
+and the top level. Batch and incremental ridge solvers target the objective
+above; RLS supports forgetting, and FISTA adds an L1 penalty. Pick by
+conditioning, regularization, problem size, and whether the data streams:
 
 | Readout | Method | `alpha = 0`? | Rank-deficient Gram? | Cost / notes | Reach for it when |
 | --- | --- | --- | --- | --- | --- |
-| **`RidgeReadoutLayer`** *(default)* | Direct Cholesky (`solver='cholesky'`) or LU (`solver='solve'`) of the normal equations | `'solve'` only | No (fails / unstable) | One factorization; **exact**, fastest at $F \le 2000$ | Almost always — well-conditioned readout, `alpha > 0` |
-| `CholeskyReadoutLayer` | Single-shot Cholesky ridge | No | No | Equivalent to `RidgeReadoutLayer(solver='cholesky')`; the streaming-path direct solver | You want the direct Cholesky solver by name (e.g. behind `IncrementalRidgeReadout`) |
+| **`RidgeReadoutLayer`** *(default)* | Direct Cholesky (`solver='cholesky'`) or LU (`solver='solve'`) of the normal equations | Full-rank design required | With adequate regularization | One factorization; cost depends on feature count and hardware | Well-conditioned readout, `alpha > 0` |
+| `CholeskyReadoutLayer` | Single-shot Cholesky ridge | Full-rank design required | With adequate regularization | Equivalent to `RidgeReadoutLayer(solver='cholesky')` | You want the direct Cholesky solver by name |
 | `CGReadoutLayer` | Iterative conjugate gradient on the Gram | Yes | Tolerates it | Matrix-free, memory-lean in $N$; **approximate** (can under-converge) | Very large $F$, or a memory-bound / matrix-free solve |
 | `SVDReadoutLayer` | SVD with Tikhonov filter factors | Yes | **Yes** (robust) | An SVD of the design; most robust, most expensive | Rank-deficient Gram — high-degree NG-RC maps, more features than samples, or `alpha = 0` |
 | `PinvReadoutLayer` | `torch.linalg.lstsq` / `pinv` with an `rcond` cutoff | Yes | Yes | Least squares with pinv semantics | You want pseudo-inverse / lstsq behavior directly |
-| `IncrementalRidgeReadout` | Streaming ridge — `partial_fit` accumulates the Gram sufficient statistics chunk-by-chunk, `finalize` solves once | No | No | $O(F^2)$ memory, independent of total samples | The state matrix doesn't fit in memory — the DataLoader / long-sequence path ([Streaming](../workflows/streaming.md)) |
+| `IncrementalRidgeReadoutLayer` | Streaming ridge — `partial_fit` accumulates sufficient statistics, `finalize` solves once | Full-rank design required | With adequate regularization | $O(F^2)$ memory, independent of total samples | The state matrix doesn't fit in memory ([Streaming](../workflows/streaming.md)) |
+| `RLSReadout` | Recursive least squares with a ridge prior and optional forgetting | Positive prior required | Maintains inverse correlation online | $O(F^2)$ memory; updates weights per sample | Online adaptation to non-stationary signals |
+| `FISTAReadoutLayer` | Lasso / elastic-net via accelerated proximal gradient | Yes | Depends on regularization and convergence | Iterative; `l1_ratio` mixes L1 and L2 penalties | Sparse readout coefficients |
 
 Rules of thumb:
 
-- **Default to `RidgeReadoutLayer`.** It is exact, fastest at typical widths,
-  and matches CG to `< 1e-8` on well-conditioned fits. The premade factories
+- **Start with `RidgeReadoutLayer`.** It solves the regularized normal equations
+  directly. The premade factories
   (`classic_esn`, `ott_esn`, `power_augmented`) use it via `readout="ridge"`;
-  pass `readout="cg"` for the legacy iterative solver, or a `ReadoutLayer`
-  subclass for any of the others.
+  pass `readout="cg"` for the iterative solver. All built-ins also accept
+  string keys (`"svd"`, `"pinv"`, `"cholesky"`, `"incremental"`, `"rls"`,
+  `"fista"`), or pass a `ReadoutLayer` subclass. Solver options go in
+  `readout_kwargs`, e.g. `readout="fista", readout_kwargs={"l1_ratio": 0.5}`.
 - **`alpha = 0`?** A Cholesky needs `alpha > 0` for guaranteed positive
   definiteness. Use `RidgeReadoutLayer(solver='solve')` on a full-rank Gram,
   or `SVDReadoutLayer` / `PinvReadoutLayer` otherwise.
 - **Rank-deficient Gram** (NG-RC with high `p`, or `F > N`) → `SVDReadoutLayer`
   (filter factors) or `PinvReadoutLayer` (lstsq). A Cholesky/LU solve will
   fail or be unstable here.
-- **Streaming / too-big-for-memory** → `IncrementalRidgeReadout`, which keeps
+- **Streaming / too-big-for-memory** → `IncrementalRidgeReadoutLayer`, which keeps
   only the $F\times F$ sufficient statistics.
 
 !!! note "Standardizing readout inputs"

@@ -9,7 +9,8 @@ description: API reference for resdag.utils — data loading and splitting, rand
 Data loading and ESN-shaped splitting, seeded RNG construction, and the
 echo-state-property diagnostic. `load_file` and `prepare_esn_data` are
 re-exported at `resdag.utils` for convenience; their canonical home is
-`resdag.utils.data`. The ESP index, `esp_index`, is likewise re-exported at
+`resdag.data`. The old `resdag.utils.data` namespace remains a compatibility
+import. The ESP index, `esp_index`, is likewise re-exported at
 `resdag.utils` and at the top level, so all three of these work:
 
 ```python
@@ -27,7 +28,7 @@ from resdag.utils.states import esp_index  # canonical home
 
 ---
 
-::: resdag.utils.data
+::: resdag.data
     options:
       members:
         - load_file

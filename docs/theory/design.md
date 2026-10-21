@@ -25,13 +25,16 @@ resdag/
 ├── init/
 │   ├── topology/       registry + GraphTopology / MatrixTopology
 │   ├── input_feedback/ registry + input/feedback initializers
-│   ├── graphs/         17 NetworkX graph builders
-│   └── matrices/       direct matrix builders (orthogonal)
+│   ├── graphs/         NetworkX graph builders
+│   └── matrices/       direct matrix builders (orthogonal, antisymmetric, …)
 ├── models/           premade factories: classic_esn, ott_esn, …
 ├── ensemble/         coupled ensembles + aggregators
 ├── training/         ESNTrainer — hook-based algebraic fitting
 ├── hpo/              Optuna integration (optional extra)
-└── utils/            data prep & I/O, esp_index
+├── data/             data prep, I/O, window datasets, DataLoader factory
+├── datasets/         public time-series generators
+├── metrics/          forecast, dynamical, and attractor diagnostics
+└── utils/            RNG helpers, esp_index, compatibility data imports
 ```
 
 ## The cell/layer split
@@ -59,7 +62,7 @@ from `project_inputs` and the layer falls back to per-step `forward`.
 
 ## Frozen weights are still `Parameter`s
 
-A reservoir's weights are never trained, so why not store them as
+Reservoir weights are frozen by default, so why not store them as
 buffers? Three reasons:
 
 - **`state_dict` parity.** A frozen and a trainable reservoir serialize
@@ -67,9 +70,9 @@ buffers? Three reasons:
 - **`trainable` is a single flag.** Construction is one code path;
   `trainable=False` calls `requires_grad_(False)` on every parameter,
   and unfreezing is the same call in reverse.
-- **Errors surface immediately.** Running SGD against a fully frozen
-  model makes `loss.backward()` raise, because no tensor in the graph
-  requires grad. With buffers, the optimizer would silently do nothing.
+- **PyTorch integration.** Optimizers can discover the same parameters after
+  unfreezing. A frozen reservoir still propagates gradients to upstream inputs
+  that require them; freezing weights does not detach the computation graph.
 
 ## The trainer is a hook
 

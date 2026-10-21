@@ -25,8 +25,9 @@ $$
 is the timescale over which that separation grows by a factor of $e$. It is the
 system's own unit of "how far ahead is hard", so it makes forecast horizons
 directly comparable: a valid prediction of $6\,t_\lambda$ on the Lorenz system
-and $6\,t_\lambda$ on Rössler represent the same predictive skill, even though
-the raw step counts differ by an order of magnitude.
+and $6\,t_\lambda$ on Rössler span the same multiple of the intrinsic instability
+timescale. Comparing predictive skill still requires matching error thresholds,
+normalization, observation noise, and evaluation conditions.
 
 A horizon in steps converts to Lyapunov times by the headline formula
 
@@ -107,7 +108,7 @@ print(f"reservoir lambda_max = {lam:.4f} per step  (< 0 => ESP-satisfying)")
 
 </div>
 
-Running it prints (exact numbers depend on the BLAS backend):
+An illustrative output (results depend on weights, data, and the numerical backend):
 
 ```text
 VPT = 347 steps  =  6.28 Lyapunov times
@@ -115,9 +116,9 @@ check: 6.28
 reservoir lambda_max = -0.5955 per step  (< 0 => ESP-satisfying)
 ```
 
-The horizon of `~6 Lyapunov times` is the meaningful figure — you can quote it
-alongside any other chaotic-system result and it stays comparable regardless of
-the integration step used.
+Report the normalized horizon alongside the threshold, data scaling, and
+evaluation conditions. Lyapunov-time conversion removes the arbitrary step
+unit; it does not make different forecasting tasks identical.
 
 ## The reservoir's own exponent
 
@@ -128,11 +129,11 @@ algorithm with QR reorthonormalisation of the analytic tangent map along an
 input-driven trajectory, in native torch with no optional dependency.
 
 It is the standard **edge-of-chaos** diagnostic. The Echo State Property
-requires the driven dynamics to contract — trajectories from different initial
-states must converge — so a healthy ESN has a maximal exponent that is negative
-but close to zero (it sits *just below* the edge). A positive value signals a
-reservoir whose state does not forget its initial condition, which breaks the
-ESP. The returned exponent is in inverse-**step** units (per reservoir update);
+requires trajectories from different initial states to converge under the same
+drive. A negative measured exponent supports contraction along the sampled
+trajectory; it does not establish the global ESP for every input. A positive
+value indicates local sensitivity and motivates further stability checks.
+The returned exponent is in inverse-**step** units (per reservoir update);
 multiply by $1/dt$ to compare it with a natural-time attractor exponent.
 
 ```python

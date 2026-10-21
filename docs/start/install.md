@@ -6,11 +6,10 @@ description: Install ResDAG with pip or uv, with optional HPO extras, and set ex
 
 # Install
 
-!!! warning "These docs track the development branch"
-    Releases are frozen until 1.0, so `pip install resdag` currently serves
-    **0.6.2** — which predates parts of the API documented here (the `ESN`
-    facade, `resdag.data` streaming, and the newer readout solvers). To use the
-    documented API today, install from git:
+!!! note "Documentation version"
+    These docs are built from the repository source, version
+    **{{ resdag_version }}**. See [GitHub Releases](https://github.com/El3ssar/ResDAG/releases)
+    for published versions. To use the latest development API, install from git:
     `pip install "git+https://github.com/El3ssar/ResDAG"`.
 
 === "uv"
@@ -27,7 +26,7 @@ description: Install ResDAG with pip or uv, with optional HPO extras, and set ex
     pip install "resdag[hpo]"     # + Optuna hyperparameter optimization
     ```
 
-Requirements: Python ≥ 3.11 and PyTorch ≥ 2.10. Verify:
+Requirements: Python 3.11–3.14 and PyTorch ≥ 2.10. Verify:
 
 ```bash
 python -c "import resdag; print(resdag.__version__)"

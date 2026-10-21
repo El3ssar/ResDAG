@@ -16,30 +16,54 @@ transform layers. All are importable directly from `resdag.layers`.
         - ReservoirCell
         - ESNCell
         - NGCell
+        - ES2NCell
+        - ResESNCell
+        - GatedReservoirCell
+        - ContinuousReservoirCell
+        - EuSNCell
+        - SpikingReservoirCell
+        - LIFCell
 
 ::: resdag.layers.reservoirs
     options:
       members:
-        - BaseReservoirLayer
         - ESNLayer
+        - BaseReservoirLayer
+        - NGReservoirLayer
         - NGReservoir
+        - ES2NLayer
+        - ResESNLayer
+        - GatedReservoirLayer
+        - GatedReservoir
+        - EuSNLayer
+        - LIFReservoirLayer
+        - LIFReservoir
 
 ::: resdag.layers.readouts
     options:
       members:
         - ReadoutLayer
+        - CGReadoutLayer
         - RidgeReadoutLayer
         - CholeskyReadoutLayer
-        - CGReadoutLayer
         - SVDReadoutLayer
         - PinvReadoutLayer
+        - IncrementalRidgeReadoutLayer
         - IncrementalRidgeReadout
+        - RLSReadout
+        - FISTAReadoutLayer
+        - FISTAReadout
 
 ::: resdag.layers.transforms
     options:
       members:
         - Concatenate
+        - ExtendedSquare
         - FeaturePartitioner
+        - NLAT2
+        - NLAT3
+        - Pad
+        - PartialSquare
         - Power
         - SelectiveDropout
         - SelectiveExponentiation

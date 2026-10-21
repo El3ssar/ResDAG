@@ -6,12 +6,12 @@ description: API reference for resdag.models and resdag.ensemble — premade arc
 
 # Models & ensembles
 
-Five factory functions that return ready-to-use `ESNModel` instances
-(two of them — `linear_esn` and `headless_esn` — deliberately ship without
-a readout), plus `coupled_ensemble_esn`, which builds a
-`CoupledEnsembleESNModel`: the coupled-ensemble wrapper that runs N
-sub-models against a shared feedback signal, with the aggregators that
-merge their forecasts.
+Architecture factories return ready-to-use reservoir models. `headless_esn`
+and `linear_esn` omit the readout; `parallel_esn` returns a `ParallelESNModel`
+for spatial patching, while `coupled_ensemble_esn` builds the
+`CoupledEnsembleESNModel` wrapper. The other factories return `ESNModel`
+instances with a configured readout. `KnowledgeModel` adapts a physics prior
+for `hybrid_esn`.
 
 ::: resdag.models
     options:
@@ -21,15 +21,23 @@ merge their forecasts.
     options:
       heading_level: 3
 
-::: resdag.models.ott_esn.ott_esn
+::: resdag.models.coupled_ensemble_esn.coupled_ensemble_esn
     options:
       heading_level: 3
 
-::: resdag.models.power_augmented.power_augmented
+::: resdag.models.deep_esn.deep_esn
     options:
       heading_level: 3
 
-::: resdag.models.linear_esn.linear_esn
+::: resdag.models.es2n.es2n
+    options:
+      heading_level: 3
+
+::: resdag.models.eusn.eusn
+    options:
+      heading_level: 3
+
+::: resdag.models.gated_esn.gated_esn
     options:
       heading_level: 3
 
@@ -37,7 +45,39 @@ merge their forecasts.
     options:
       heading_level: 3
 
-::: resdag.models.coupled_ensemble_esn.coupled_ensemble_esn
+::: resdag.models.hybrid_esn.KnowledgeModel
+    options:
+      heading_level: 3
+
+::: resdag.models.hybrid_esn.hybrid_esn
+    options:
+      heading_level: 3
+
+::: resdag.models.linear_esn.linear_esn
+    options:
+      heading_level: 3
+
+::: resdag.models.lsm.lsm
+    options:
+      heading_level: 3
+
+::: resdag.models.ott_esn.ott_esn
+    options:
+      heading_level: 3
+
+::: resdag.models.parallel_esn.ParallelESNModel
+    options:
+      heading_level: 3
+
+::: resdag.models.parallel_esn.parallel_esn
+    options:
+      heading_level: 3
+
+::: resdag.models.power_augmented.power_augmented
+    options:
+      heading_level: 3
+
+::: resdag.models.resesn.resesn
     options:
       heading_level: 3
 

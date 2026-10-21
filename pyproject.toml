@@ -68,6 +68,8 @@ ode = ["torchdiffeq>=0.2.0"]
 # stays lean. Requires the graphviz *system* binary too (e.g. apt install graphviz).
 viz = ["graphviz>=0.21"]
 dev = [
+    "hatchling>=1.27",  # locked editable-build backend for reproducible CI
+    "editables>=0.5",  # hatchling requests this when building editable installs
     "basedpyright>=1.37.1",
     "pytest>=9.0.2",
     "pytest-cov>=4.0.0",

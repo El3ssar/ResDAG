@@ -94,11 +94,15 @@ _BROAD_IMPACT_EXACT = frozenset(
         "src/resdag/__init__.py",
         # This selector and its own tests gate everything when they change.
         "tools/affected_tests.py",
+        # Environment installation determines how every test runs.
+        "tools/ci_environment.py",
+        ".github/actions/setup-environment/action.yml",
         # Workflows that run the test suite: ci.yml/release.yml call the
         # reusable _test.yml, which owns the pytest invocation itself.
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
         ".github/workflows/_test.yml",
+        ".github/workflows/compatibility.yml",
     }
 )
 

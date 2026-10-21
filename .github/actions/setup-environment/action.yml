@@ -1,0 +1,32 @@
+name: Reproducible Python environment
+description: Locked CPU baseline or an explicit latest-dependencies compatibility environment
+inputs:
+  python-version:
+    description: Python version to test
+    required: true
+  extras:
+    description: Comma-separated project extras (dev is always included)
+    default: dev,hpo
+  dependency-mode:
+    description: locked for the baseline, latest for the independent compatibility canary
+    default: locked
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          uv.lock
+          pyproject.toml
+          tools/ci_environment.py
+    - name: Install pinned lockfile exporter
+      shell: bash
+      run: python -m pip install uv==0.13.3
+    - name: Install project environment
+      shell: bash
+      env:
+        CI_DEPENDENCY_MODE: ${{ inputs.dependency-mode }}
+        CI_EXTRAS: ${{ inputs.extras }}
+      run: python tools/ci_environment.py --mode "$CI_DEPENDENCY_MODE" --extras "$CI_EXTRAS"

@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-10-21)
+
+### Features
+
+- Expand reservoir initialization, dynamics and calibration
+  ([#456](https://github.com/El3ssar/ResDAG/pull/456),
+  [`4024202`](https://github.com/El3ssar/ResDAG/commit/402420247b2ab5e2c58f18836e3f769242892251))
+
+
 ## v1.0.1 (2026-10-21)
 
 ### Bug Fixes

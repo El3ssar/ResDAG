@@ -197,7 +197,7 @@ from .training import (
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 __all__ = [
     # Modules

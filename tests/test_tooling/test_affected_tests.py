@@ -71,6 +71,7 @@ def test_docs_only_change_runs_executable_documentation_checks() -> None:
     assert "tests/test_init/test_correctness_contracts.py" in sel.tests
     assert "tests/test_examples_smoke.py" in sel.tests
     assert "tests/test_workflow_guide.py" in sel.tests
+    assert "tests/test_trajectory_guide.py" in sel.tests
 
 
 def test_changed_test_file_is_always_selected() -> None:

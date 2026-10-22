@@ -10,8 +10,9 @@ from __future__ import annotations
 import copy
 import operator
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+import numpy as np
 import torch
 from pytorch_symbolic.symbolic_data import SymbolicData
 from torch import nn
@@ -22,9 +23,21 @@ from resdag.core._forecast import positive_step_count
 from resdag.core._modes import evaluating
 from resdag.core._preprocessing import FittedNormalization
 from resdag.core.model import ESNModel
+from resdag.data._trajectory import (
+    forecast_trajectory,
+    is_trajectory,
+    prepare_trajectory,
+    trajectory_type,
+    validate_resampling_options,
+    validate_time_grid,
+    validate_trajectory_context,
+)
 from resdag.data.prepare import NormMethod
 from resdag.layers.readouts import ReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
+
+if TYPE_CHECKING:
+    from tsdynamics.data import Trajectory
 
 Streams = torch.Tensor | Mapping[str, torch.Tensor]
 WorkflowOutput = torch.Tensor | dict[str, torch.Tensor]
@@ -39,7 +52,7 @@ def _port_names(names: Sequence[str], count: int, label: str) -> tuple[str, ...]
         raise ValueError(f"{label} must contain {count} non-empty string names")
     if len(set(result)) != len(result):
         raise ValueError(f"{label} must contain distinct names")
-    return result
+    return tuple(str(name) for name in result)
 
 
 def _washout(value: int) -> int:
@@ -83,6 +96,13 @@ class Model(nn.Module):
     ``state_dict`` includes scaling, ordered port metadata and the observed tail;
     reconstruct the same DAG before loading. Complete artifact loading, tuning
     and diagram exports are later roadmap increments.
+
+    With the optional ``dynamics`` extra, ``fit(trajectory)`` learns from one
+    TSDynamics trajectory and forecasts return a trajectory with future times
+    and original component names. ``return_type="tensor"`` keeps predictions
+    on the model device. Ordinary ``forward`` always uses Torch tensors.
+    Uneven timestamps are automatically interpolated with ``resample_method``
+    (linear, PCHIP or cubic); ``resample_dt`` controls the physical step.
     """
 
     _fitted: torch.Tensor
@@ -97,9 +117,16 @@ class Model(nn.Module):
         output_names: Sequence[str] | None = None,
         washout: int = 100,
         preprocessing: Preprocessing = "standard",
+        resample_dt: float | None = None,
+        resample_method: Literal["linear", "pchip", "cubic"] = "linear",
     ) -> None:
         super().__init__()
         self.washout = _washout(washout)
+        self.resample_dt, self.resample_method = validate_resampling_options(
+            resample_dt, resample_method
+        )
+        self._trajectory_context: dict[str, Any] | None = None
+        object.__setattr__(self, "_trajectory_system", None)
         if preprocessing not in (
             None,
             "off",
@@ -322,7 +349,7 @@ class Model(nn.Module):
             raise ValueError("Terminal readouts must have distinct internal names for fitting")
         return names
 
-    def fit(self, training: Streams, targets: Streams | None = None) -> Model:
+    def fit(self, training: Streams | Trajectory, targets: Streams | None = None) -> Model:
         """Fit terminal heads transactionally and retain the original observed tail.
 
         Implicit next-step supervision excludes the last input observation from
@@ -330,12 +357,38 @@ class Model(nn.Module):
         targets align with the supplied input indices; no shift is guessed.
         Successful fitting resets streaming state. Failed fitting leaves the
         existing graph, fitted preprocessing and cached history unchanged.
+        A bare TSDynamics trajectory supports implicit single-input/output
+        next-step fitting. Its time axis, rather than a metadata ``dt``, defines
+        sampling. Tensor refitting clears trajectory output defaults on success.
         """
         from resdag.training import ESNTrainer
 
         readout_names = self._terminal_readouts()
+        trajectory_context = None
+        trajectory_system = None
+        if is_trajectory(training):
+            if (
+                targets is not None
+                or len(self.input_names) != 1
+                or len(self.output_names) != 1
+                or self._input_widths != self._output_widths
+            ):
+                raise ValueError(
+                    "Trajectory fitting requires one input/output of equal width with "
+                    "implicit next-step targets; use named tensors for other graphs"
+                )
+            prepared = prepare_trajectory(
+                training, dt=self.resample_dt, method=self.resample_method
+            )
+            reference = module_reference(self.graph)
+            training = torch.tensor(
+                prepared.values,
+                dtype=None if reference is None else reference.dtype,
+                device=None if reference is None else reference.device,
+            )
+            trajectory_context, trajectory_system = prepared.context, prepared.system
         values, was_2d = self._streams(
-            training, self.input_names, self._input_widths, "training", finite=True
+            cast(Streams, training), self.input_names, self._input_widths, "training", finite=True
         )
         implicit = targets is None
         train_inputs: tuple[torch.Tensor, ...]
@@ -435,6 +488,8 @@ class Model(nn.Module):
         self._fitted_flag = True
         with torch.inference_mode(False):
             self._fitted = torch.ones((), dtype=torch.bool, device=values[0].device)
+        self._trajectory_context = trajectory_context
+        object.__setattr__(self, "_trajectory_system", trajectory_system)
         return self
 
     def _feedback_scaling_matches(self) -> bool:
@@ -447,13 +502,14 @@ class Model(nn.Module):
 
     def forecast(
         self,
-        history: Streams | None = None,
+        history: Streams | Trajectory | None = None,
         *,
         horizon: int,
         future_inputs: Streams | None = None,
         return_warmup: bool = False,
         compile: bool = False,
-    ) -> WorkflowOutput:
+        return_type: Literal["auto", "tensor", "trajectory"] = "auto",
+    ) -> WorkflowOutput | Trajectory:
         """Forecast the immediate unseen sample, then continue the first feedback route.
 
         ``future_inputs`` names the remaining input ports and requires
@@ -462,8 +518,17 @@ class Model(nn.Module):
         temporarily disables training noise. Explicit-target normalization with
         differing feedback scales is currently unsupported and fails before
         recurrent state changes; ordinary forward remains available.
+
+        ``return_type="auto"`` returns a TSDynamics trajectory after trajectory
+        fitting or with trajectory history; otherwise it returns tensors.
+        ``"tensor"`` avoids conversion to NumPy/CPU. A selected trajectory result
+        needs timestamped history or the cached training context; a new tensor
+        history has no absolute clock. Trajectory history is resampled to the
+        fitted physical step and must retain fitted component names/order.
         """
         self._require_scaling()
+        if return_type not in ("auto", "tensor", "trajectory"):
+            raise ValueError("return_type must be 'auto', 'tensor', or 'trajectory'")
         horizon = positive_step_count(horizon, "horizon")
         self.graph._get_execution_plan()
         if any(
@@ -482,6 +547,39 @@ class Model(nn.Module):
                 "explicit targets with different scaling need a feedback bridge. "
                 "Use implicit next-step fit or preprocessing='off'."
             )
+        context = self._trajectory_context
+        system = self._trajectory_system
+        history_times = None
+        cached_history = history is None
+        if is_trajectory(history):
+            if len(self.input_names) != 1 or len(self.output_names) != 1:
+                raise ValueError("Trajectory history requires a single input/output graph")
+            prepared = prepare_trajectory(
+                history,
+                dt=context["dt"] if context is not None else self.resample_dt,
+                method=self.resample_method,
+            )
+            if context is not None and prepared.context["variables"] != context["variables"]:
+                raise ValueError(
+                    "History trajectory components/order must match the fitted trajectory"
+                )
+            context, system, history_times = prepared.context, prepared.system, prepared.times
+            reference = module_reference(self.graph)
+            history = torch.tensor(
+                prepared.values,
+                dtype=None if reference is None else reference.dtype,
+                device=None if reference is None else reference.device,
+            )
+        trajectory_output = return_type == "trajectory" or (
+            return_type == "auto" and context is not None
+        )
+        if trajectory_output:
+            if context is None or (not cached_history and history_times is None):
+                raise ValueError(
+                    "Trajectory output needs timestamped trajectory history or cached "
+                    "trajectory fitting history; pass a Trajectory or return_type='tensor'"
+                )
+            trajectory_type()  # Optional dependency must fail before graph hooks execute.
         if history is None:
             if not self.is_fitted:
                 raise RuntimeError("No cached history; provide history or call fit(training) first")
@@ -490,7 +588,7 @@ class Model(nn.Module):
                 for index, name in enumerate(self.input_names)
             }
         values, was_2d = self._streams(
-            history, self.input_names, self._input_widths, "history", finite=True
+            cast(Streams, history), self.input_names, self._input_widths, "history", finite=True
         )
         driver_names, driver_widths = self.input_names[1:], self._input_widths[1:]
         if not driver_names:
@@ -518,6 +616,25 @@ class Model(nn.Module):
                 drivers = tuple(
                     scaler(value) for scaler, value in zip(self.input_scalers[1:], drivers)
                 )
+        times = None
+        if trajectory_output:
+            assert context is not None
+            if history_times is None:
+                history_times = context["last_time"] - context["dt"] * np.arange(
+                    values[0].shape[1] - 1, -1, -1, dtype=np.float64
+                )
+            with np.errstate(over="ignore", invalid="ignore"):
+                times = context["last_time"] + context["dt"] * np.arange(
+                    1, horizon + 1, dtype=np.float64
+                )
+            if not times[0] > context["last_time"]:
+                raise ValueError("Forecast timestamps cannot advance at float64 precision")
+            validate_time_grid(np.concatenate(([context["last_time"]], times)), context["dt"])
+            if return_warmup:
+                times = np.concatenate((history_times[1:], times))
+                validate_time_grid(times, context["dt"])
+            if not np.isfinite(times).all() or not np.all(np.diff(times) > 0):
+                raise ValueError("Forecast timestamps must remain finite and strictly increasing")
         with evaluating(self.graph):
             output = self.graph.forecast(
                 self._scaled_inputs(values),
@@ -526,7 +643,15 @@ class Model(nn.Module):
                 return_warmup=return_warmup,
                 compile=compile,
             )
-        return self._outputs(output, was_2d)
+        result = self._outputs(output, was_2d)
+        if not trajectory_output:
+            return result
+        assert context is not None and isinstance(result, torch.Tensor)
+        # NumPy has no bfloat16 dtype. Conversion is confined to this explicit
+        # CPU result boundary; tensor forecasts retain their device and dtype.
+        numpy_dtype = torch.float32 if result.dtype == torch.bfloat16 else result.dtype
+        array = result.detach().to(device="cpu", dtype=numpy_dtype).numpy()
+        return forecast_trajectory(array, context, system=system, times=times)
 
     def get_extra_state(self) -> dict[str, Any]:
         """Checkpoint metadata prevents silent remapping of equal-width ports."""
@@ -538,6 +663,9 @@ class Model(nn.Module):
             "output_widths": self._output_widths,
             "preprocessing": self.preprocessing,
             "washout": self.washout,
+            "resample_dt": self.resample_dt,
+            "resample_method": self.resample_method,
+            "trajectory": copy.deepcopy(self._trajectory_context),
         }
 
     def _validate_metadata(self, state: Any) -> None:
@@ -565,11 +693,37 @@ class Model(nn.Module):
             _washout(cast(int, state.get("washout")))
         except ValueError as error:
             raise RuntimeError("Invalid Model checkpoint washout") from error
+        try:
+            validate_resampling_options(
+                state.get("resample_dt"), state.get("resample_method", "linear")
+            )
+            if state.get("trajectory") is not None:
+                context = validate_trajectory_context(state["trajectory"])
+                if (
+                    len(self.input_names) != 1
+                    or len(self.output_names) != 1
+                    or self._input_widths != self._output_widths
+                    or len(context["variables"]) != self._input_widths[0]
+                ):
+                    raise ValueError("trajectory schema differs from the declared graph")
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(
+                f"Invalid Model checkpoint trajectory configuration: {error}"
+            ) from error
 
     def set_extra_state(self, state: Any) -> None:
         """Restore workflow configuration after validating the named graph schema."""
         self._validate_metadata(state)
         self._preprocessing, self.washout = state["preprocessing"], state["washout"]
+        self.resample_dt, self.resample_method = validate_resampling_options(
+            state.get("resample_dt"), state.get("resample_method", "linear")
+        )
+        self._trajectory_context = (
+            validate_trajectory_context(state["trajectory"])
+            if state.get("trajectory") is not None
+            else None
+        )
+        object.__setattr__(self, "_trajectory_system", None)
 
     def _load_from_state_dict(
         self,
@@ -593,6 +747,8 @@ class Model(nn.Module):
         ):
             raise RuntimeError("Invalid Model checkpoint fitted flag")
         fitted_flag = bool(fitted.item())
+        if metadata.get("trajectory") is not None and not fitted_flag:
+            raise RuntimeError("Invalid Model checkpoint: trajectory history requires fitted model")
         if fitted_flag:
             for path, layer in self.graph.named_modules():
                 if isinstance(layer, ReadoutLayer):
@@ -661,6 +817,10 @@ class Model(nn.Module):
         if any(value.ndim != staged[0].ndim for value in staged):
             raise RuntimeError("Invalid Model checkpoint history: input layouts differ")
         canonical = tuple(value.unsqueeze(0) if value.ndim == 2 else value for value in staged)
+        if metadata.get("trajectory") is not None and (
+            staged[0].ndim != 2 or canonical[0].shape[1] > metadata["trajectory"]["n_samples"]
+        ):
+            raise RuntimeError("Invalid Model checkpoint trajectory history layout/count")
         try:
             validate_sequence_inputs(
                 canonical,

@@ -10,6 +10,7 @@ description: API reference for resdag.core — Model, ESNModel, ReservoirFeature
 around a functional graph. Start with the
 [common model guide](../start/model-workflow.md). `ESNModel` remains the
 underlying symbolic graph with lower-level training and state interfaces.
+For timestamped runs, see [TSDynamics trajectories](../start/trajectory-workflow.md).
 
 ::: resdag.core
     options:

@@ -140,6 +140,7 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_init/test_correctness_contracts.py",
         "tests/test_documented_architectures.py",
         "tests/test_workflow_guide.py",
+        "tests/test_trajectory_guide.py",
         "tests/test_examples_smoke.py",
     ),
     "hooks/": ("tests/test_init/test_correctness_contracts.py",),

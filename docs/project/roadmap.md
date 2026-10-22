@@ -138,13 +138,13 @@ execution paths. Ordinary stateful graph calls remain available.
 | P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named ports, branched/multi-head predictions and driver alignment covered. Remaining: named feedback routes and delayed loops with independent timing oracles. |
 | P2-04 | WIP | Coherent cell/state and execution semantics. | Explicit-state execution rejects hidden recurrent containers before running operations; stateful fitting/forward remain supported. Pointwise-container state/gradient parity covered. Remaining: public capability protocol and parity across execution paths. |
 | P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms and off/method switches; training-window, gradient, MPS and checkpoint oracles pass. Remaining: custom transforms, feedback conversion, other families and complete artifacts. |
-| P2-06 | Pending | First-class TSDynamics trajectories through the optional extra. | Preserve sampling times, component names and provenance; forecasts have correct future times; irregular sampling requires an explicit policy. |
+| P2-06 | WIP | First-class TSDynamics trajectories through the optional extra. | Bare trajectory fitting/forecasting preserves component names, future times and checkpoint-safe provenance. Configurable automatic resampling, fitted-step history alignment and tensor-return option implemented. Remaining: named trajectory mappings and custom-target timing. |
 | P2-07 | Pending | Independent per-node RNG streams and public customization templates. | Reproducible heterogeneous graphs; explicit tied/per-node seeds; tiny custom initializer, cell, transform and solver examples without private APIs. |
 | P2-08 | WIP | Standard PyTorch composition and migration. | Executable symbolic-wrapper pipeline passes upstream gradients and preserves one registered graph; state/schema/checkpoint and native MPS paths covered. Remaining: all backend families and lazy preset migration. |
 
 ### First-increment verification record
 
-Local verification on **22 October 2026** covers the symbolic-DAG increment,
+Local verification on **22 October 2026**, commit `665b04a`, covers the symbolic-DAG increment,
 not completion of phase two. The [runnable guide](../start/model-workflow.md)
 shows functional construction, factory wrapping, named targets and PyTorch
 composition; its Python examples execute in CI, including on later docs-only
@@ -162,9 +162,31 @@ changes.
 
 The first increment deliberately retains the established flat forecast engine
 and its single feedback route. Custom preprocessing, feedback conversion,
-named delayed routes, direct trajectories, other backend families and preset
+named delayed routes, trajectory mappings, other backend families and preset
 migration remain open. Required hosted CI and strict documentation checks must
 pass on the implementation PR before merge.
+
+### Trajectory increment
+
+The [trajectory guide](../start/trajectory-workflow.md) covers direct
+`fit(trajectory)`, default trajectory forecasts, the explicit tensor option,
+configurable resampling and portable checkpoints. Uniform time axes are the
+normal case; irregular axes are resampled automatically with linear, PCHIP or
+cubic interpolation. Explicit sampling intervals preserve the last observed
+time and never extrapolate. Future histories use the fitted interval.
+
+The integration adds independent physical-time oracles, source/clock/schema
+validation, real TSDynamics simulation, failed-refit isolation, legacy
+checkpoint and optional-dependency tests. Its runnable guide is included in
+the installed-dynamics CI lanes on Python 3.12–3.14, so missing optional
+packages cannot silently skip integration verification. Phase two remains WIP.
+
+The adapter, workflow and guide comprise **81 checks**, verified from a clean
+installed wheel against the minimum supported **TSDynamics 6.0.2**, and with
+the locked **6.0.3** locally. Native MPS fitting, device-local tensor forecasts,
+portable metadata, bfloat16 output conversion and strict documentation builds
+are covered. Complete-suite and hosted verification are tracked on
+[PR #459](https://github.com/El3ssar/ResDAG/pull/459).
 
 ## Phase 3: tuning and automatic solver policy
 

@@ -79,6 +79,28 @@ forecasting rejects differing feedback scales until a conversion bridge is
 implemented. Parallel/coupled adapters, the `ESN` facade migration and arbitrary
 feedback routes remain unfinished.
 
+## Trajectory integration
+
+The maintainer approved automatic, configurable resampling for uneven time
+axes, with uniform sampling as the normal case. A model fitted on a bare
+TSDynamics trajectory now returns a trajectory by default. The optional
+`return_type="tensor"` keeps forecasts on the model device; ordinary forward
+calls retain the Torch interface.
+
+The trajectory's time axis defines sampling. Default interpolation preserves
+both endpoints and sample count; an explicit `resample_dt` creates an
+in-support grid ending at the latest observation. Later trajectory histories
+use the fitted interval and the same component names/order. Predictions begin
+at the immediate unseen time; optional warmup predictions use the next
+historical sample's time. New tensor histories require tensor output because
+they carry no absolute clock.
+
+Clock, component and primitive source metadata survive state-dictionary
+checkpoints without requiring TSDynamics at load time. Live producing-system
+objects remain transient. This integration currently covers single-input,
+single-output next-step fitting; named trajectory mappings and custom target
+semantics remain open. See the [trajectory guide](../start/trajectory-workflow.md).
+
 The first increment packages the existing four normalization methods in an
 internal fitted PyTorch module. Statistics are learned only by an explicit
 fit operation, remain detached from training gradients, and do not update
@@ -107,8 +129,8 @@ stateful graph calls and supported pointwise containers remain usable. See
 - Define a small capability interface for custom temporal modules, including
   explicit state, causal stepping and compilation support. A module accepting
   a sequence does not establish that it can process one time step at a time.
-- Define trajectory time/metadata behavior and an explicit irregular-sampling
-  policy for the optional TSDynamics integration.
+- Define trajectory mappings and custom-target time/label semantics for
+  multi-input and multi-head models.
 
 Tuning presets remain in phase three. Complete model loading and diagram
 exports remain in phase four. They will use the agreed common interface, with

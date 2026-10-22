@@ -11,12 +11,14 @@ initializers and the readout solver.
 Inputs are floating Torch tensors shaped `(time, features)` or
 `(batch, time, features)`, on the same device and dtype as the graph. Named
 multi-input data uses a dictionary of those tensors. The existing `ESN` facade
-continues to accept NumPy arrays.
+continues to accept NumPy arrays. For single-input/output forecasting,
+`fit` and `forecast` also accept [TSDynamics trajectories](trajectory-workflow.md).
+Ordinary `model(x)` calls retain the tensor interface.
 
 This is the first increment of [phase two](../project/roadmap.md#phase-2-one-functional-workflow).
 The existing `ESN`, `ESNModel` and factory interfaces remain available. The
-common interface is still being extended to parallel/coupled models, explicit
-feedback routes and TSDynamics trajectories. Unified tuning and complete
+common interface is still being extended to parallel/coupled models and explicit
+feedback routes. Unified tuning and complete
 model/diagram saves are later roadmap phases.
 
 ## Build, fit and forecast

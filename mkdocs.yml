@@ -172,6 +172,7 @@ nav:
       - First forecast: start/first-forecast.md
       - Train, save and integrate: start/end-to-end.md
       - Common model workflow: start/model-workflow.md
+      - TSDynamics trajectories: start/trajectory-workflow.md
       - The mental model: start/concepts.md
   - Build:
       - build/index.md

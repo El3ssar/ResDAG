@@ -143,7 +143,9 @@ class ESNTrainer:
         Later stages reset and replay warmup using the fitted upstream mapping
         before fitting their own readouts. Terminal heads and purely algebraic
         readout chains retain a single warmup and training pass. Declare
-        recurrent dependencies as separate functional graph nodes.
+        recurrent dependencies as separate functional graph nodes or through
+        standard :class:`torch.nn.Sequential` containers. Opaque custom modules
+        containing both readouts and reservoirs cannot be ordered safely.
 
         Parameters
         ----------
@@ -315,6 +317,34 @@ class ESNTrainer:
         plan = self.model._get_execution_plan()
         dependencies: list[tuple[set[int], int]] = [(set(), 0) for _ in range(plan.n_values)]
         readout_stages: dict[int, int] = {}
+
+        def ordered_layers(layer: torch.nn.Module) -> Iterator[torch.nn.Module]:
+            if isinstance(layer, (ReadoutLayer, BaseReservoirLayer)):
+                yield layer
+            elif (
+                isinstance(layer, torch.nn.Sequential)
+                and type(layer).forward is torch.nn.Sequential.forward
+            ):
+                # Sequential's iteration order is its execution order, including
+                # repeated uses of the same child instance. modules() deduplicates
+                # children and does not describe that execution contract.
+                for child in layer:
+                    yield from ordered_layers(child)
+            else:
+                descendants = tuple(layer.modules())
+                has_reservoir = any(isinstance(m, BaseReservoirLayer) for m in descendants)
+                has_readout = any(isinstance(m, ReadoutLayer) for m in descendants)
+                if has_reservoir and has_readout:
+                    raise ValueError(
+                        f"Cannot determine recurrent fitting order inside custom module "
+                        f"'{type(layer).__name__}', which contains both a readout and a "
+                        "reservoir. Expose them as separate functional graph nodes or "
+                        "use a standard torch.nn.Sequential container."
+                    )
+                yield from (
+                    m for m in descendants if isinstance(m, (ReadoutLayer, BaseReservoirLayer))
+                )
+
         for op in plan.operations:
             ancestors: set[int] = set()
             stage = 0
@@ -322,10 +352,12 @@ class ESNTrainer:
                 parent_readouts, parent_stage = dependencies[parent]
                 ancestors.update(parent_readouts)
                 stage = max(stage, parent_stage)
-            if any(isinstance(layer, BaseReservoirLayer) for layer in op.layer.modules()):
-                stage = max(stage, max((readout_stages[key] + 1 for key in ancestors), default=0))
-            for layer in op.layer.modules():
-                if isinstance(layer, ReadoutLayer):
+            for layer in ordered_layers(op.layer):
+                if isinstance(layer, BaseReservoirLayer):
+                    stage = max(
+                        stage, max((readout_stages[key] + 1 for key in ancestors), default=0)
+                    )
+                elif isinstance(layer, ReadoutLayer):
                     key = id(layer)
                     if key in readout_stages and readout_stages[key] != stage:
                         raise ValueError(

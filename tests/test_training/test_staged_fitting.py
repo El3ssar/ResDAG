@@ -103,3 +103,93 @@ def test_a_shared_readout_cannot_be_fitted_in_different_recurrent_stages():
         rd.ESNTrainer(model).fit(data, data, data)
     assert memory.state is None
     assert not shared._forward_pre_hooks
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("downstream_cls", [RidgeReadoutLayer, IncrementalRidgeReadoutLayer])
+def test_sequential_cascade_matches_explicit_graph_and_recurrence_oracle(nested, downstream_cls):
+    series = torch.linspace(0.2, 2, 26, dtype=torch.float64).reshape(2, 13, 1)
+    warmup, train = series[:, :4], series[:, 4:]
+    first_expected = _recurrence(2 * series, 0.7)
+    second_expected = _recurrence(3 * first_expected, 0.3)
+    results = []
+    for sequential in (False, True):
+        x = rd.reservoir_input(1, dtype=torch.float64)
+        upstream = RidgeReadoutLayer(1, 1, alpha=0, bias=False, name="upstream").double()
+        middle = downstream_cls(1, 1, alpha=0, bias=False, name="middle").double()
+        final = RidgeReadoutLayer(1, 1, alpha=0, bias=False, name="output").double()
+        first, second = _linear_memory(0.7), _linear_memory(0.3)
+        with torch.no_grad():
+            upstream.weight.fill_(0.25)
+            middle.weight.fill_(0.5)
+        if sequential:
+            block = (
+                nn.Sequential(nn.Sequential(upstream, first), nn.Identity(), middle, second)
+                if nested
+                else nn.Sequential(upstream, first, middle, second)
+            )
+            output = final(block(x))
+        else:
+            output = final(second(middle(first(upstream(x)))))
+        model = rd.ESNModel(x, output)
+        rd.ESNTrainer(model).fit(
+            warmup,
+            train,
+            {
+                "upstream": 2 * train,
+                "middle": 3 * first_expected[:, 4:],
+                "output": 4 * second_expected[:, 4:],
+            },
+        )
+        for readout, gain in ((upstream, 2), (middle, 3), (final, 4)):
+            torch.testing.assert_close(readout.weight, torch.full_like(readout.weight, gain))
+            assert not readout._forward_pre_hooks
+        torch.testing.assert_close(first.state, first_expected[:, -1])
+        torch.testing.assert_close(second.state, second_expected[:, -1])
+        results.append((upstream.weight, middle.weight, final.weight, first.state, second.state))
+    for explicit, sequential in zip(*results):
+        torch.testing.assert_close(explicit, sequential)
+
+
+@pytest.mark.parametrize("overridden_sequential", [False, True])
+def test_opaque_mixed_composite_is_rejected_before_any_training_mutation(overridden_sequential):
+    class OpaqueCascade(nn.Module):
+        def __init__(self, upstream, memory):
+            super().__init__()
+            self.upstream, self.memory = upstream, memory
+
+        def forward(self, inputs):
+            return self.memory(self.upstream(inputs))
+
+    class OverriddenSequential(nn.Sequential):
+        def forward(self, inputs):
+            return super().forward(inputs)
+
+    x = rd.reservoir_input(1, dtype=torch.float64)
+    upstream = RidgeReadoutLayer(1, 1, name="upstream").double()
+    final = RidgeReadoutLayer(1, 1, name="output").double()
+    memory = _linear_memory(0.7)
+    wrapper = OverriddenSequential if overridden_sequential else OpaqueCascade
+    model = rd.ESNModel(x, final(wrapper(upstream, memory)(x)))
+    memory.set_state(torch.full((1, 1), 7.0, dtype=torch.float64))
+    weights = {name: value.clone() for name, value in model.state_dict().items()}
+    original_state = memory.state.clone()
+    original_modes = [module.training for module in model.modules()]
+    calls = []
+    handle = model.register_forward_pre_hook(lambda module, args: calls.append(True))
+    data = torch.ones(1, 3, 1, dtype=torch.float64)
+    try:
+        with pytest.raises(ValueError, match="separate functional graph nodes.*Sequential"):
+            rd.ESNTrainer(model).fit(
+                data, data, {"upstream": 2 * data, "output": 3 * data}, state_noise=0.01
+            )
+    finally:
+        handle.remove()
+    assert not calls
+    torch.testing.assert_close(memory.state, original_state, rtol=0, atol=0)
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, weights[name], rtol=0, atol=0)
+    assert [module.training for module in model.modules()] == original_modes
+    assert not upstream.is_fitted and not final.is_fitted
+    assert upstream.state_noise == final.state_noise == 0
+    assert not upstream._forward_pre_hooks and not final._forward_pre_hooks

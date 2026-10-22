@@ -90,6 +90,12 @@ Those require the documented major-release migration below.
 
 ## Phase 2: one functional workflow
 
+Current boundary: phase 1 orders algebraic fitting inside standard
+`nn.Sequential`, but does not extend the explicit-state or compiled backend to
+reservoirs hidden inside arbitrary containers. Expose reservoirs as separate
+functional graph nodes for those execution paths. The capability and state
+contracts below address that remaining limitation.
+
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
 | P2-01 | Pending | Agree a minimal common model lifecycle and capability contract. | Preset, branched DAG, parallel and coupled examples use the same lifecycle; clear unsupported-operation errors. |

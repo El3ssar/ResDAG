@@ -91,8 +91,11 @@ random, unfitted upstream weights. The final stored states correspond to
 the last stage's training pass. Multiple stages cost additional forward
 passes; ordinary single-stage graphs retain their original execution path.
 
-Declare recurrent dependencies as functional graph nodes so the trainer
-can inspect them. `fit_stream` still requires independent incremental
+Declare recurrent dependencies as separate functional graph nodes or use
+standard `torch.nn.Sequential` containers, whose child order is explicit.
+Custom modules that hide both readouts and reservoirs are rejected before
+fitting: their internal execution order cannot be inferred from registered
+children. `fit_stream` still requires independent incremental
 readouts; it cannot replay a consumed stream for staged fitting.
 
 ## Registries, but callables first

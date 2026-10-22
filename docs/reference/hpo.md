@@ -21,6 +21,34 @@ and helpers for inspecting finished studies.
 
 ---
 
+## Study ownership and inspection
+
+`run_hpo` releases the RDB sessions and persistent-database connection pools
+it opens after optimization or a failure, including errors during setup.
+A returned Optuna study remains usable: later reads or writes reconnect as
+needed. SQLite memory studies retain their backing pool while the returned
+study owns it, because closing the last connection would erase their data.
+If cleanup also fails during an existing error, the original error is raised
+with a note describing the cleanup failure. Cleanup errors after otherwise
+successful work are raised normally.
+
+Passing an existing `optuna.Study` to `transfer_trials` retains caller ownership.
+Passing a storage path lets ResDAG open and release the source connections for
+that transfer. A path must contain exactly one study; pass an explicit study
+when choosing between several.
+
+Transfer ignores completed trials with missing or non-finite objective values,
+even when an external producer did not attach an error flag. Matching
+multi-objective studies preserve the complete vector of finite values.
+Previously evaluated scores are meaningful only for the same data,
+preprocessing and objective; use `warm_start` to re-evaluate configurations
+for a different experiment.
+
+`get_study_summary` orders its top trials according to the study direction:
+lower scores first for minimization and higher scores first for maximization.
+
+---
+
 ## Reproducible studies
 
 Pass `seed=` to `run_hpo` to make a study reproducible end to end. The seed is

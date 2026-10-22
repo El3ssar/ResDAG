@@ -22,12 +22,15 @@ resdag.hpo.run : High-level orchestrator that calls these helpers pre-fork.
 """
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from math import isfinite
 from typing import Any
 
 import optuna
 from optuna.trial import TrialState
 
-from .storage import resolve_storage
+from .storage import _close_storage, resolve_storage
 
 __all__ = ["apply_warm_start", "transfer_trials", "export_best_config"]
 
@@ -80,9 +83,10 @@ def apply_warm_start(
     return count
 
 
-def _resolve_source_study(
+@contextmanager
+def _source_study(
     transfer_from: "optuna.Study | str",
-) -> optuna.Study:
+) -> Iterator[optuna.Study]:
     """Resolve *transfer_from* to a loaded :class:`optuna.Study`.
 
     Accepts an already-loaded study (returned as-is) or a storage path / URL
@@ -96,10 +100,10 @@ def _resolve_source_study(
     transfer_from : optuna.Study or str
         Source study, or a storage path/URL holding exactly one study.
 
-    Returns
-    -------
+    Yields
+    ------
     optuna.Study
-        The resolved source study.
+        The source study; only resources opened from a path are released.
 
     Raises
     ------
@@ -108,18 +112,26 @@ def _resolve_source_study(
         intended source is ambiguous.
     """
     if isinstance(transfer_from, optuna.Study):
-        return transfer_from
+        yield transfer_from
+        return
 
     storage = resolve_storage(transfer_from, n_workers=1)
     assert storage is not None  # resolve_storage only returns None for in-memory
-    summaries = optuna.study.get_all_study_summaries(storage=storage)
-    if len(summaries) != 1:
-        names = [s.study_name for s in summaries]
-        raise ValueError(
-            f"transfer_from={transfer_from!r} holds {len(summaries)} studies "
-            f"({names}); pass an explicit optuna.Study to disambiguate."
-        )
-    return optuna.load_study(study_name=summaries[0].study_name, storage=storage)
+    primary_error: BaseException | None = None
+    try:
+        summaries = optuna.study.get_all_study_summaries(storage=storage)
+        if len(summaries) != 1:
+            names = [s.study_name for s in summaries]
+            raise ValueError(
+                f"transfer_from={transfer_from!r} holds {len(summaries)} studies "
+                f"({names}); pass an explicit optuna.Study to disambiguate."
+            )
+        yield optuna.load_study(study_name=summaries[0].study_name, storage=storage)
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        _close_storage(storage, primary_error=primary_error)
 
 
 def transfer_trials(
@@ -148,7 +160,10 @@ def transfer_trials(
     Both studies must use the same objective directions. Reusing evaluated
     scores also assumes identical data, preprocessing and objective semantics;
     for a new experiment use ``warm_start`` to evaluate prior configurations
-    again. Trials marked with an error/non-finite diagnostic are not copied.
+    again. Trials marked with an error/non-finite diagnostic, or containing
+    any non-finite objective value, are not copied. This validation also applies
+    to externally created trials without ResDAG diagnostic attributes. Matching
+    multi-objective studies preserve every objective value.
 
     Parameters
     ----------
@@ -176,60 +191,65 @@ def transfer_trials(
     >>> transfer_trials(study, "prior_study.db", param_names={"spectral_radius"})
     7
     """
-    source = _resolve_source_study(transfer_from)
-    if study.directions != source.directions:
-        raise ValueError(
-            "Cannot transfer evaluated scores between studies with different objective directions. "
-            "Use warm_start to re-evaluate prior configurations with the new objective."
-        )
+    with _source_study(transfer_from) as source:
+        if study.directions != source.directions:
+            raise ValueError(
+                "Cannot transfer evaluated scores between studies with different objective directions. "
+                "Use warm_start to re-evaluate prior configurations with the new objective."
+            )
 
-    completed = [t for t in source.trials if t.state == TrialState.COMPLETE]
-    transferred = 0
-    for src in completed:
-        if src.value is None:
-            continue
-        if "error" in src.user_attrs or src.user_attrs.get("nonfinite_loss", False):
-            continue
-
-        if param_names is None:
-            kept_params = dict(src.params)
-            kept_dists = dict(src.distributions)
-        else:
-            kept_params = {k: v for k, v in src.params.items() if k in param_names}
-            kept_dists = {k: v for k, v in src.distributions.items() if k in param_names}
-            dropped = sorted(set(src.params) - param_names)
-            if dropped:
+        completed = [t for t in source.trials if t.state == TrialState.COMPLETE]
+        transferred = 0
+        for src in completed:
+            values = src.values
+            if not values or not all(isfinite(value) for value in values):
                 logger.info(
-                    "Transfer: dropping %d mismatched param(s) %s from source trial %d",
-                    len(dropped),
-                    dropped,
+                    "Transfer: skipping source trial %d (missing or non-finite objective values)",
                     src.number,
                 )
+                continue
+            if "error" in src.user_attrs or src.user_attrs.get("nonfinite_loss", False):
+                continue
 
-        if not kept_params:
-            logger.info(
-                "Transfer: skipping source trial %d (no overlapping params)",
-                src.number,
+            if param_names is None:
+                kept_params = dict(src.params)
+                kept_dists = dict(src.distributions)
+            else:
+                kept_params = {k: v for k, v in src.params.items() if k in param_names}
+                kept_dists = {k: v for k, v in src.distributions.items() if k in param_names}
+                dropped = sorted(set(src.params) - param_names)
+                if dropped:
+                    logger.info(
+                        "Transfer: dropping %d mismatched param(s) %s from source trial %d",
+                        len(dropped),
+                        dropped,
+                        src.number,
+                    )
+
+            if not kept_params:
+                logger.info(
+                    "Transfer: skipping source trial %d (no overlapping params)",
+                    src.number,
+                )
+                continue
+
+            new_trial = optuna.trial.create_trial(
+                state=TrialState.COMPLETE,
+                values=values,
+                params=kept_params,
+                distributions=kept_dists,
+                user_attrs=dict(src.user_attrs),
             )
-            continue
+            study.add_trial(new_trial)
+            transferred += 1
 
-        new_trial = optuna.trial.create_trial(
-            state=TrialState.COMPLETE,
-            value=src.value,
-            params=kept_params,
-            distributions=kept_dists,
-            user_attrs=dict(src.user_attrs),
+        logger.info(
+            "Transferred %d of %d completed trial(s) from prior study %r",
+            transferred,
+            len(completed),
+            source.study_name,
         )
-        study.add_trial(new_trial)
-        transferred += 1
-
-    logger.info(
-        "Transferred %d of %d completed trial(s) from prior study %r",
-        transferred,
-        len(completed),
-        source.study_name,
-    )
-    return transferred
+        return transferred
 
 
 def export_best_config(study: optuna.Study) -> dict[str, Any]:

@@ -97,7 +97,7 @@ def get_study_summary(study: optuna.Study, top_n: int = 5) -> str:
     """Generate a human-readable summary of an Optuna study.
 
     Creates a formatted text summary including study statistics, best trial
-    information, and top N trials.
+    information, and top N trials ranked in the study's objective direction.
 
     Parameters
     ----------
@@ -149,12 +149,15 @@ def get_study_summary(study: optuna.Study, top_n: int = 5) -> str:
                 lines.append(f"  {k}: {v}")
         lines.append("")
 
-        # Top N trials. ``completed_trials`` are all COMPLETE, so ``t.value`` is
-        # always a float at runtime; the ``inf`` fallback only satisfies the
-        # ``float | None`` stub and never affects ordering (it would sort last).
+        # COMPLETE single-objective trials have a value. Keep a defensive
+        # missing-value fallback last in either objective direction.
         completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        maximizing = study.direction == optuna.study.StudyDirection.MAXIMIZE
+        missing_value = float("-inf") if maximizing else float("inf")
         sorted_trials = sorted(
-            completed_trials, key=lambda t: t.value if t.value is not None else float("inf")
+            completed_trials,
+            key=lambda t: t.value if t.value is not None else missing_value,
+            reverse=maximizing,
         )
 
         lines.append("-" * 60)

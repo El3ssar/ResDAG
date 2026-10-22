@@ -52,6 +52,10 @@ def spectral_cascade_adjacency(
     spectral_cascade_graph : NetworkX-returning wrapper around this builder.
     """
     # 1) Check that n is triangular:  n = N(N+1)/2.
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer.")
+    if not np.isfinite(spectral_radius) or spectral_radius < 0:
+        raise ValueError("spectral_radius must be finite and non-negative.")
     D = 1 + 8 * n
     sqrt_D = isqrt(D)
     if sqrt_D * sqrt_D != D or (sqrt_D - 1) % 2 != 0:
@@ -92,7 +96,7 @@ def spectral_cascade_adjacency(
         vals = np.linalg.eigvals(A_sub)
         current_r = max(abs(vals)) if len(vals) > 0 else 0.0
 
-        if current_r > 1e-14 and desired_r != 0:
+        if current_r > 1e-14:
             scale_factor = desired_r / current_r
             A_sub *= scale_factor
 

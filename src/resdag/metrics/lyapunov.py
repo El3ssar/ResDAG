@@ -32,6 +32,7 @@ canonical-constant and reservoir-Jacobian paths never touch it.
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -323,7 +324,8 @@ def _lambda_from_series(series: Any, *, dt: float, **kw: Any) -> float:
             "series must be 1-D (time,), 2-D (time, dim), or 3-D (batch, time, dim); "
             f"got shape {np.asarray(series).shape}."
         )
-    result = tsdynamics.lyapunov_from_data(arr, dt=dt, **kw)
+    analysis = tsdynamics.analysis if hasattr(tsdynamics, "analysis") else tsdynamics
+    result = analysis.lyapunov_from_data(arr, dt=dt, **kw)
     # ``lyapunov_from_data`` returns a small result object exposing ``.lyapunov``
     # (and is float-castable); fall back to float() for forward compatibility.
     value = getattr(result, "lyapunov", None)
@@ -333,7 +335,7 @@ def _lambda_from_series(series: Any, *, dt: float, **kw: Any) -> float:
 def _lambda_from_system(system: Any, *, dt: float | None, **kw: Any) -> float:
     """Estimate :math:`\\lambda_\\mathrm{max}` from a `tsdynamics` System.
 
-    Uses ``tsdynamics.lyapunov_spectrum`` (Benettin QR integration of the
+    Uses ``tsdynamics.analysis.lyapunov_spectrum`` (Benettin QR integration of the
     variational equations) and returns the leading exponent — a high-accuracy
     estimate.  Falls back to the system's own ``known_lyapunov`` spectrum when
     available and no override kwargs force a recompute is *not* done here: the
@@ -343,10 +345,10 @@ def _lambda_from_system(system: Any, *, dt: float | None, **kw: Any) -> float:
     call_kw = dict(kw)
     if dt is not None:
         call_kw.setdefault("dt", dt)
-    spectrum = tsdynamics.lyapunov_spectrum(system, **call_kw)
-    # ``lyapunov_spectrum`` returns a bare ``np.ndarray`` (leading entry is the
-    # largest exponent); guard for a possible ``.values`` wrapper in future
-    # versions.
+    analysis = tsdynamics.analysis if hasattr(tsdynamics, "analysis") else tsdynamics
+    spectrum = analysis.lyapunov_spectrum(system, **call_kw)
+    # Current versions return an ArrayResult with .values; older versions
+    # returned a bare array. The first entry is the largest exponent.
     values = getattr(spectrum, "values", spectrum)
     arr = np.asarray(values, dtype=float).ravel()
     if arr.size == 0:
@@ -480,6 +482,54 @@ def _resolve_reservoir(source: Any) -> "BaseReservoirLayer":
     return reservoir
 
 
+def _diagnostic_cell(source: Any, *, tanh_esn: bool = False) -> Any:
+    """Copy a cell for CPU float64 diagnostics without mutating live state/mode.
+
+    Jacobian formulas here describe the standard ESN update exactly, including
+    its calibration and vector leak. Other update equations need their own
+    validated tangent map; a ``weight_hh`` attribute alone is insufficient.
+    """
+    from resdag.layers.cells import ESNCell
+
+    reservoir = _resolve_reservoir(source)
+    if tanh_esn:
+        if type(reservoir.cell) is not ESNCell:
+            raise NotImplementedError(
+                "This Jacobian diagnostic supports the standard ESNCell only; "
+                "other reservoir dynamics need a validated tangent map."
+            )
+        if reservoir.cell.activation != "tanh":
+            raise NotImplementedError("This Jacobian diagnostic requires the 'tanh' activation.")
+    return copy.deepcopy(reservoir.cell).cpu().to(dtype=torch.float64).eval()
+
+
+def _drive_cell(cell: Any, inputs: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run the actual cell update locally, retaining no state on the caller."""
+    state = cell.init_state(inputs[0].shape[0], inputs[0].device, inputs[0].dtype)
+    projected = cell.project_inputs(inputs)
+    outputs = []
+    with torch.no_grad():
+        for t in range(inputs[0].shape[1]):
+            if projected is None:
+                output, state = cell([stream[:, t] for stream in inputs], state)
+            else:
+                output, state = cell.step(projected[:, t], state)
+            outputs.append(output)
+    return torch.stack(outputs, dim=1), state
+
+
+def _esn_recurrent_jacobian_weight(cell: Any) -> torch.Tensor:
+    """Derivative of calibrated preactivation with respect to previous state."""
+    weight = cell.weight_hh.detach()
+    if weight.layout != torch.strided:
+        weight = weight.to_dense()
+    if cell._has_recurrent_gain:
+        weight = cell._recurrent_gain[:, None] * weight
+    if cell._has_intrinsic:
+        weight = cell._intrinsic_gain[:, None] * weight
+    return cast(torch.Tensor, weight)
+
+
 def reservoir_lyapunov(
     source: Any,
     warmup_inputs: torch.Tensor | tuple[torch.Tensor, ...],
@@ -494,10 +544,16 @@ def reservoir_lyapunov(
     Estimates the maximal Lyapunov exponent of the reservoir's own dynamics via
     **Benettin's algorithm with QR reorthonormalisation** of the analytic
     tangent map, iterated along an input-driven reservoir trajectory.  This is a
-    standard reservoir-computing quality / *edge-of-chaos* diagnostic: a healthy
-    ESN sits just below the edge, with a maximal exponent that is negative but
-    close to zero (the Echo State Property requires the driven dynamics to
-    contract, so trajectories from different initial states converge).
+    sampled local-stability diagnostic. Negative estimates support contraction
+    along the supplied driven trajectory; they do not prove a global Echo State
+    Property for every input. This is distinct from the forecasted attractor's
+    largest Lyapunov exponent.
+
+    A local CPU float64 evaluation copy preserves caller weights, device,
+    cached state and training mode. Training-only noise is disabled. The
+    validated tangent map supports the standard tanh ``ESNCell``, including
+    per-neuron leaks, recurrent calibration gains and intrinsic gains/biases.
+    Other update equations are rejected until their tangent maps are validated.
 
     The reservoir map is the leaky-ESN update
 
@@ -512,7 +568,8 @@ def reservoir_lyapunov(
 
         J_t = (1-\\alpha) I + \\alpha\\, \\mathrm{diag}\\!\\big(f'(\\mathrm{pre}_t)\\big)\\, W_\\mathrm{hh},
 
-    with :math:`f' = 1 - \\tanh^2` for the (default) ``tanh`` activation.  The
+    with :math:`f' = 1 - \\tanh^2` and calibrated gains included in
+    :math:`W_\\mathrm{hh}`. Scalar leakage generalizes row-wise for vector leaks.  The
     driving inputs come from ``warmup_inputs``; the trajectory is looped over
     them if ``horizon`` exceeds their length, so a short synchronisation window
     still yields a long tangent-space average.
@@ -534,9 +591,8 @@ def reservoir_lyapunov(
         Number of leading exponents to return.  ``k=1`` returns the scalar
         maximal exponent; ``k>1`` returns the top-``k`` as a ``(k,)`` array.
     transient : int, default=100
-        Leading steps whose tangent growth is discarded so the estimate reflects
-        the attractor rather than the initial state.  Clamped so at least a few
-        accumulation steps remain.
+        Additional tangent iterations discarded before the ``horizon`` scoring
+        iterations. Must be non-negative; it is not subtracted from the horizon.
     seed : int or None, default=0
         Seed for the random initial tangent frame.  Defaults to ``0`` so the
         estimate is fully deterministic (the converged leading exponent is robust
@@ -555,8 +611,7 @@ def reservoir_lyapunov(
         If ``source`` has no (or more than one) ESN reservoir, or ``k`` exceeds
         the reservoir size.
     NotImplementedError
-        If the reservoir activation is not ``tanh`` (the only activation whose
-        analytic derivative is wired here).
+        If the cell is not a standard tanh ``ESNCell``.
 
     Notes
     -----
@@ -570,111 +625,51 @@ def reservoir_lyapunov(
     >>> res = ESNLayer(100, feedback_size=3, spectral_radius=0.9, seed=0)
     >>> feedback = torch.randn(1, 300, 3)
     >>> lam = reservoir_lyapunov(res, feedback, horizon=500)
-    >>> lam < 0.0  # a stable, ESP-satisfying reservoir contracts
+    >>> lam < 0.0  # contraction along this driven trajectory
     True
     """
-    from resdag.layers.cells import ESNCell
+    from resdag.data.prepare import _validate_step_count
 
-    reservoir = _resolve_reservoir(source)
-    # ``_resolve_reservoir`` guarantees a cell that owns ``weight_hh`` (an ESN
-    # cell); narrow the type so the analytic-Jacobian access below is checked.
-    cell = cast("ESNCell", reservoir.cell)
-
-    activation = getattr(cell, "activation", "tanh")
-    if activation != "tanh":
-        raise NotImplementedError(
-            f"reservoir_lyapunov only supports the 'tanh' activation "
-            f"(analytic derivative 1 - tanh^2); got {activation!r}."
-        )
-
-    inputs: tuple[torch.Tensor, ...]
-    if isinstance(warmup_inputs, torch.Tensor):
-        inputs = (warmup_inputs,)
-    else:
-        inputs = tuple(warmup_inputs)
-    if not inputs:
-        raise ValueError("warmup_inputs must contain at least the feedback stream.")
-
-    weight_hh: torch.Tensor = cell.weight_hh
-    native_dtype: torch.dtype = weight_hh.dtype
-    device = weight_hh.device
-    # Work in float64 for a numerically stable QR accumulation regardless of the
-    # reservoir's own dtype.
-    W_hh = weight_hh.detach().to(torch.float64)
-    N = int(W_hh.shape[0])
-
-    if not 1 <= k <= N:
-        raise ValueError(f"k must be in [1, reservoir_size={N}], got {k}.")
-
-    alpha = float(getattr(cell, "leak_rate", 1.0))
-
-    # Use the first sample of the batch; keep a leading singleton batch axis so
-    # the cell's single-step API (project_inputs / forward) accepts it.
-    per_step_inputs = [x[:1].to(device=device, dtype=native_dtype) for x in inputs]
-    seq_len = per_step_inputs[0].shape[1]
-    total_steps = transient + horizon
-
-    # Synchronise the reservoir state on the driving inputs, then read it back so
-    # the tangent iteration starts on the attractor.  Route through the public
-    # forward so state layout / validation is handled by the layer.
-    reservoir.reset_state(batch_size=1)
+    horizon = _validate_step_count("horizon", horizon)
+    transient = _validate_step_count("transient", transient, allow_zero=True)
+    k = _validate_step_count("k", k)
+    cell = _diagnostic_cell(source, tanh_esn=True)
+    streams = [warmup_inputs] if isinstance(warmup_inputs, torch.Tensor) else list(warmup_inputs)
+    if not streams or any(x.ndim != 3 or x.shape[0] < 1 or x.shape[1] < 1 for x in streams):
+        raise ValueError("warmup_inputs must contain non-empty (batch, time, features) streams.")
+    if any(x.shape[:2] != streams[0].shape[:2] for x in streams):
+        raise ValueError("warmup input streams must have matching batch and time dimensions.")
+    inputs = [x[:1].detach().cpu().to(dtype=torch.float64) for x in streams]
+    if not all(bool(torch.isfinite(x).all()) for x in inputs):
+        raise ValueError("warmup inputs must be finite.")
+    _, state = _drive_cell(cell, inputs)
+    n = int(cell.state_size)
+    if k > n:
+        raise ValueError(f"k must be in [1, reservoir_size={n}], got {k}.")
+    weight = _esn_recurrent_jacobian_weight(cell)
+    alpha = torch.as_tensor(cell.leak_rate, dtype=torch.float64)
+    if alpha.ndim == 0:
+        alpha = alpha.expand(n)
+    projected = cell.project_inputs(inputs)
+    generator = torch.Generator().manual_seed(int(seed)) if seed is not None else None
+    frame = torch.linalg.qr(torch.randn(n, k, dtype=torch.float64, generator=generator))[0]
+    log_sums = torch.zeros(k, dtype=torch.float64)
+    identity = torch.eye(n, dtype=torch.float64)
     with torch.no_grad():
-        reservoir(*per_step_inputs)
-    state = reservoir.get_state()
-    if state is None:  # pragma: no cover - forward just materialised the state
-        raise RuntimeError("Reservoir state was not materialised by the warmup pass.")
-    h = state.to(torch.float64).reshape(N)  # (N,)
-
-    # Orthonormal tangent frame (N, k); columns tracked through the flow.  The
-    # converged leading exponent is robust to the initial frame, but seeding it
-    # (default ``seed=0``) makes the whole estimate deterministic instead of
-    # dependent on the process-global RNG.  ``seed=None`` draws from the global
-    # RNG (non-deterministic).
-    generator: torch.Generator | None = None
-    if seed is not None:
-        generator = torch.Generator(device=device)
-        generator.manual_seed(int(seed))
-    Q = torch.linalg.qr(torch.randn(N, k, dtype=torch.float64, device=device, generator=generator))[
-        0
-    ]
-    log_sums = torch.zeros(k, dtype=torch.float64, device=device)
-    n_accum = 0
-
-    identity = torch.eye(N, dtype=torch.float64, device=device)
-
-    with torch.no_grad():
-        for step in range(total_steps):
-            # Cycle through the driving window if the horizon outruns it.
-            t = step % seq_len
-            slices = [x[:, t, :] for x in per_step_inputs]  # each (1, features)
-            # Pre-activation in the cell's native dtype, then promote.
-            projected = cell.project_inputs(slices).to(torch.float64).reshape(N)  # (N,)
-            pre = projected + W_hh @ h  # (N,)
-            new_h = torch.tanh(pre)
-            if alpha != 1.0:
-                new_h = (1.0 - alpha) * h + alpha * new_h
-
-            # Analytic Jacobian J = (1-a) I + a diag(f'(pre)) W_hh.
-            fprime = 1.0 - torch.tanh(pre) ** 2  # (N,)
-            J = alpha * (fprime[:, None] * W_hh)
-            if alpha != 1.0:
-                J = J + (1.0 - alpha) * identity
-
-            # Evolve the tangent frame and reorthonormalise (Benettin/QR).
-            Z = J @ Q  # (N, k)
-            Q, R = torch.linalg.qr(Z)
-            diag_r = torch.abs(torch.diagonal(R))
-            diag_r = torch.clamp(diag_r, min=1e-300)  # guard log(0)
+        for step in range(transient + horizon):
+            t = step % inputs[0].shape[1]
+            # Match the live cell's calibrated preactivation, then advance via
+            # its actual implementation rather than a second update equation.
+            pre = projected[:, t] + cell._recurrent(state)
+            if cell._has_intrinsic:
+                pre = cell._intrinsic_gain * pre + cell._intrinsic_bias
+            gate = 1.0 - torch.tanh(pre).reshape(n).square()
+            jacobian = alpha[:, None] * gate[:, None] * weight
+            jacobian = jacobian + (1.0 - alpha)[:, None] * identity
+            _, state = cell.step(projected[:, t], state)
+            frame, triangular = torch.linalg.qr(jacobian @ frame)
             if step >= transient:
-                log_sums += torch.log(diag_r)
-                n_accum += 1
-
-            h = new_h
-
-    if n_accum == 0:  # pragma: no cover - horizon >= 1 guarantees accumulation
-        raise ValueError("No accumulation steps; increase horizon relative to transient.")
-
-    exponents = (log_sums / n_accum).cpu().numpy()  # per-step exponents
-    if k == 1:
-        return float(exponents[0])
-    return exponents
+                growth = triangular.diagonal().abs().clamp_min(1e-300)
+                log_sums += growth.log()
+    exponents = (log_sums / horizon).numpy()
+    return float(exponents[0]) if k == 1 else exponents

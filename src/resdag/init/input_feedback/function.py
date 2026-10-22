@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 import torch
 
-from resdag.init.topology.base import _call_matrix_builder, _coerce_to_matrix
+from resdag.init.topology.base import _call_matrix_builder, _coerce_to_matrix, _pop_generator_seed
 
 from .base import InputFeedbackInitializer
 
@@ -78,6 +78,7 @@ class FunctionInitializer(InputFeedbackInitializer):
     def __init__(self, fn: Callable, **kwargs: Any) -> None:
         self.fn = fn
         self.kwargs = kwargs
+        self._generator_seed = _pop_generator_seed(fn, self.kwargs)
 
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """
@@ -112,7 +113,13 @@ class FunctionInitializer(InputFeedbackInitializer):
         rows, cols = weight.shape
         call_kwargs = {**self.kwargs, **kwargs}
 
-        result = _call_matrix_builder(self.fn, weight, (rows, cols), call_kwargs)
+        result = _call_matrix_builder(
+            self.fn,
+            weight,
+            (rows, cols),
+            call_kwargs,
+            seed=_pop_generator_seed(self.fn, call_kwargs, getattr(self, "_generator_seed", None)),
+        )
         matrix = _coerce_to_matrix(result, (rows, cols), weight.device, weight.dtype)
 
         with torch.no_grad():

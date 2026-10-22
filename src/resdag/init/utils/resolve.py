@@ -13,8 +13,10 @@ from resdag.init.input_feedback import (
     InputFeedbackInitializer,
     get_input_feedback,
 )
+from resdag.init.input_feedback.registry import _INPUT_FEEDBACK_REGISTRY
 from resdag.init.topology import MatrixTopology, TopologyInitializer, get_topology
 from resdag.init.topology.base import _accepts_generator
+from resdag.init.topology.registry import _TOPOLOGY_REGISTRY
 from resdag.utils.general import SeedLike, coerce_seed_to_int
 
 # Type aliases for specification formats
@@ -91,11 +93,19 @@ def _generator_seed(builder: Callable, params: dict[str, Any], seed: int | None)
     take a ``seed`` (that path threads the int through ``kwargs`` instead), the
     builder *does* accept ``generator``, and the spec did not already bind one.
     """
-    if seed is None or _accepts_seed(builder) or "generator" in params:
+    if _accepts_seed(builder) or "generator" in params:
         return None
     if not _accepts_generator(builder):
         return None
-    return seed
+    return coerce_seed_to_int(params.get("seed", seed))
+
+
+def _callback_kwargs(builder: Callable, params: dict[str, Any], seed: int | None) -> dict[str, Any]:
+    """Keep ``seed`` out of callbacks that take a Torch generator instead."""
+    kwargs = _inject_seed(dict(params), builder, seed)
+    if not _accepts_seed(builder) and _accepts_generator(builder):
+        kwargs.pop("seed", None)
+    return kwargs
 
 
 def _topology_builder(topology: TopologyInitializer) -> Callable | None:
@@ -175,23 +185,31 @@ def resolve_topology(
         builder = _topology_builder(topology)
         if builder is not None and _accepts_seed(builder) and seed is not None:
             return get_topology(spec, seed=seed)
+        if isinstance(topology, MatrixTopology) and builder is not None:
+            if seed is not None:
+                topology.seed = _generator_seed(builder, {}, seed)
         return topology
     if isinstance(spec, tuple):
         name, params = spec
         if callable(name):
             return MatrixTopology(
                 name,
-                _inject_seed(dict(params), name, seed),
+                _callback_kwargs(name, dict(params), seed),
                 seed=_generator_seed(name, dict(params), seed),
             )
-        builder = _topology_builder(get_topology(name))
+        if name not in _TOPOLOGY_REGISTRY:
+            return get_topology(name, **dict(params))
+        builder = _TOPOLOGY_REGISTRY[name][0]
         injected = (
             _inject_seed(dict(params), builder, seed) if builder is not None else dict(params)
         )
-        return get_topology(name, **injected)
+        topology = get_topology(name, **injected)
+        if isinstance(topology, MatrixTopology) and builder is not None:
+            topology.seed = _generator_seed(builder, dict(params), seed)
+        return topology
     if callable(spec):
         return MatrixTopology(
-            spec, _inject_seed({}, spec, seed), seed=_generator_seed(spec, {}, seed)
+            spec, _callback_kwargs(spec, {}, seed), seed=_generator_seed(spec, {}, seed)
         )
     raise TypeError(
         f"Invalid topology spec type: {type(spec).__name__}. "
@@ -210,6 +228,15 @@ def _initializer_seed_target(initializer: InputFeedbackInitializer) -> Callable:
     if fn is not None:
         return fn
     return type(initializer)
+
+
+def _function_initializer(
+    builder: Callable, params: dict[str, Any], seed: int | None
+) -> FunctionInitializer:
+    """Bind callback keywords without reserving a callback's ``seed`` argument."""
+    initializer = FunctionInitializer(builder, **_callback_kwargs(builder, params, seed))
+    initializer._generator_seed = _generator_seed(builder, params, seed)
+    return initializer
 
 
 def resolve_initializer(
@@ -281,16 +308,26 @@ def resolve_initializer(
         target = _initializer_seed_target(initializer)
         if _accepts_seed(target) and seed is not None:
             return get_input_feedback(spec, seed=seed)
+        if isinstance(initializer, FunctionInitializer):
+            if seed is not None:
+                initializer._generator_seed = _generator_seed(initializer.fn, {}, seed)
         return initializer
     if isinstance(spec, tuple):
         name, params = spec
         if callable(name):
-            return FunctionInitializer(name, **_inject_seed(dict(params), name, seed))
-        target = _initializer_seed_target(get_input_feedback(name))
+            return _function_initializer(name, dict(params), seed)
+        if name not in _INPUT_FEEDBACK_REGISTRY:
+            return get_input_feedback(name, **dict(params))
+        # Inspect the registered constructor, without constructing invalid
+        # defaults before the caller's required options have been supplied.
+        target = _INPUT_FEEDBACK_REGISTRY[name][0]
         injected = _inject_seed(dict(params), target, seed)
-        return get_input_feedback(name, **injected)
+        initializer = get_input_feedback(name, **injected)
+        if isinstance(initializer, FunctionInitializer):
+            initializer._generator_seed = _generator_seed(initializer.fn, dict(params), seed)
+        return initializer
     if callable(spec):
-        return FunctionInitializer(spec, **_inject_seed({}, spec, seed))
+        return _function_initializer(spec, {}, seed)
     raise TypeError(
         f"Invalid initializer spec type: {type(spec).__name__}. "
         f"Expected str, callable, tuple[str | callable, dict], or InputFeedbackInitializer."

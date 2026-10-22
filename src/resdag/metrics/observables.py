@@ -45,14 +45,10 @@ Examples
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 import numpy as np
 import torch
-
-if TYPE_CHECKING:
-    from resdag.layers.cells import ESNCell
-    from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 
 __all__ = [
     "rmse",
@@ -247,19 +243,6 @@ def r2(pred: torch.Tensor, truth: torch.Tensor) -> float:
 # --------------------------------------------------------------------------- #
 
 
-def _resolve_reservoir_local(source: Any) -> "BaseReservoirLayer":
-    """Resolve ``source`` to a single ESN reservoir layer (shared with lyapunov).
-
-    Thin re-export of :func:`resdag.metrics.lyapunov._resolve_reservoir` so the
-    observables here accept the same ``BaseReservoirLayer`` / ``ESNModel``
-    dispatch, without importing it at module load (avoids a cycle on the layers
-    package).
-    """
-    from .lyapunov import _resolve_reservoir
-
-    return _resolve_reservoir(source)
-
-
 def memory_capacity(
     source: Any,
     *,
@@ -271,6 +254,7 @@ def memory_capacity(
     input_high: float = 1.0,
     seed: int = 0,
     return_curve: bool = False,
+    test_samples: int | None = None,
 ) -> float | tuple[float, np.ndarray]:
     r"""Linear short-term memory capacity of a reservoir (Jaeger 2001).
 
@@ -286,16 +270,20 @@ def memory_capacity(
                      {\operatorname{var}(\hat u_{t-k})\,\operatorname{var}(u_{t-k})},
 
     the standard forgetting-curve integral (Jaeger, *Short-term memory in echo
-    state networks*, 2001).  Each :math:`R^2_k \in [0, 1]`, and the total is
-    bounded above by the reservoir size :math:`N` — a linear reservoir with an
-    i.i.d. input saturates the bound :math:`MC \to N` as the spectral radius
-    approaches 1, while a ``tanh`` reservoir sits below it (saturation destroys
-    linear memory).  ``MC`` rises with the spectral radius toward that bound.
+    state networks*, 2001). Readouts are fitted on one random input trajectory
+    and scored on an independently generated, independently warmed trajectory.
+    No evaluation samples enter fitting or centering statistics.
 
-    The reconstruction uses one shared ridge factorisation (the design matrix is
-    the same for every delay; only the target shifts), so the whole forgetting
-    curve costs a single :math:`(N{+}1)\times(N{+}1)` solve regardless of
-    ``max_delay``.
+    The theoretical population capacity is at most the number of reservoir
+    states, under the usual independent-input assumptions. This finite-sample
+    estimator may exceed that bound through sampling noise, particularly for
+    many delays and few test samples. It is not guaranteed to increase with
+    spectral radius. Increase ``test_samples`` and repeat seeds to assess
+    uncertainty; this diagnostic is not an autonomous forecast score.
+
+    The actual cell update runs on a local CPU float64 evaluation copy. Caller
+    weights, cached state, device and training mode are preserved. Training-only
+    noise is disabled. A shared ridge solve fits all delayed targets together.
 
     Parameters
     ----------
@@ -309,14 +297,15 @@ def memory_capacity(
         so the tail :math:`R^2_k \approx 0` and the sum has converged.
     n_samples : int, default=2000
         Number of ``(state, delayed-input)`` samples used to fit each linear
-        readout (after the washout).  Must exceed ``N`` for a well-posed fit.
+        readout after washout and delay history. More samples than reservoir
+        states are recommended; positive ridge regularization permits fewer.
     washout : int, default=200
         Leading driven steps discarded so the reservoir state reflects the input
         history rather than the (zero) initial condition.
     alpha : float, default=1e-8
-        Tiny ridge regularisation on the linear readout — large enough to keep
-        the :math:`(N{+}1)` normal equations invertible, small enough not to
-        bias :math:`R^2` downward.
+        Non-negative ridge regularization on centered reservoir features. The
+        intercept is unpenalized. Zero selects an unregularized least-squares
+        fit; positive values stabilize correlated or underdetermined states.
     input_low, input_high : float, default=(-1.0, 1.0)
         Bounds of the uniform input distribution :math:`u_t \sim
         \mathcal{U}(\text{low}, \text{high})`.  The default symmetric ``[-1, 1]``
@@ -324,6 +313,9 @@ def memory_capacity(
         nearer its linear regime (larger MC).
     seed : int, default=0
         Seed for the input draw, so the estimate is fully deterministic.
+    test_samples : int or None, default=None
+        Number of independent scoring samples, at least 2. ``None`` uses
+        ``max(1000, n_samples)`` to limit chance correlations at long delays.
     return_curve : bool, default=False
         If ``True``, also return the per-delay forgetting curve
         :math:`(R^2_1, \dots, R^2_{k_{\max}})` as a ``(max_delay,)`` array.
@@ -337,106 +329,77 @@ def memory_capacity(
     Raises
     ------
     ValueError
-        If the reservoir's feedback dimension is not 1, if ``max_delay`` /
-        ``n_samples`` / ``washout`` are non-positive, or if ``n_samples`` leaves
-        too few samples for the requested delays.
-
-    Notes
-    -----
-    ``MC`` is an upper-bounded, monotone-in-spectral-radius capacity, **not** a
-    forecast score: it measures how much of the input history the reservoir
-    linearly retains, independent of any downstream task.
+        If the reservoir needs multiple feedback channels or an external driver,
+        counts are invalid, training/scoring samples are fewer than 2, or the
+        distribution bounds / regularization are invalid.
 
     Examples
     --------
     >>> from resdag.layers import ESNLayer
     >>> res = ESNLayer(100, feedback_size=1, spectral_radius=0.9, seed=0)
     >>> mc = memory_capacity(res, max_delay=120, n_samples=2000)
-    >>> 0.0 <= mc <= 100.0
+    >>> mc >= 0.0
     True
 
     See Also
     --------
     effective_spectral_radius : Realized contraction rate of the driven reservoir.
     """
-    if max_delay < 1:
-        raise ValueError(f"max_delay must be >= 1, got {max_delay}.")
-    if n_samples < 1:
-        raise ValueError(f"n_samples must be >= 1, got {n_samples}.")
-    if washout < 0:
-        raise ValueError(f"washout must be >= 0, got {washout}.")
+    from resdag.data.prepare import _validate_step_count
+    from resdag.metrics.lyapunov import _diagnostic_cell, _drive_cell
 
-    reservoir = _resolve_reservoir_local(source)
-    # ``_resolve_reservoir_local`` guarantees a cell owning ``weight_hh`` (an ESN
-    # cell); narrow the type so the analytic weight access below type-checks.
-    cell = cast("ESNCell", reservoir.cell)
-    feedback_size = int(getattr(cell, "feedback_size", 0))
-    if feedback_size != 1:
-        raise ValueError(
-            f"memory_capacity requires a scalar-input reservoir (feedback_size == 1), "
-            f"got feedback_size={feedback_size}. Memory capacity is defined for a "
-            f"one-dimensional i.i.d. drive."
-        )
+    max_delay = _validate_step_count("max_delay", max_delay)
+    n_samples = _validate_step_count("n_samples", n_samples)
+    washout = _validate_step_count("washout", washout, allow_zero=True)
+    test_samples = _validate_step_count(
+        "test_samples", max(1000, n_samples) if test_samples is None else test_samples
+    )
+    if n_samples < 2 or test_samples < 2:
+        raise ValueError("n_samples and test_samples must both be at least 2.")
+    if not np.isfinite(alpha) or alpha < 0:
+        raise ValueError("alpha must be finite and non-negative.")
+    if not (np.isfinite(input_low) and np.isfinite(input_high) and input_low < input_high):
+        raise ValueError("input_low and input_high must be finite with input_low < input_high.")
+    cell = _diagnostic_cell(source)
+    if getattr(cell, "feedback_size", None) != 1 or getattr(cell, "input_size", None) not in (
+        None,
+        0,
+    ):
+        raise ValueError("memory_capacity requires feedback_size == 1 and no external driver.")
+    generator = torch.Generator().manual_seed(int(seed))
+    start = washout + max_delay
 
-    weight_hh: torch.Tensor = cell.weight_hh
-    device = weight_hh.device
-    native_dtype = weight_hh.dtype
-    n_reservoir = int(weight_hh.shape[0])
+    def samples(count: int) -> tuple[torch.Tensor, torch.Tensor]:
+        u = torch.rand(1, start + count, 1, generator=generator, dtype=torch.float64)
+        u = input_low + (input_high - input_low) * u
+        states, _ = _drive_cell(cell, [u])
+        times = torch.arange(start, start + count)
+        delays = torch.arange(1, max_delay + 1)
+        targets = u[0, times[:, None] - delays, 0]
+        return states[0, start:], targets
 
-    # The present index t must be able to reach back max_delay steps *and* start
-    # after the washout, so we need washout + max_delay + n_samples driven steps.
-    total = washout + max_delay + n_samples
-    generator = torch.Generator(device="cpu").manual_seed(int(seed))
-    u = torch.rand(total, 1, generator=generator, dtype=torch.float64)
-    u = input_low + (input_high - input_low) * u  # U(low, high)
-    u_native = u.to(device=device, dtype=native_dtype).unsqueeze(0)  # (1, T, 1)
-
-    reservoir.reset_state(batch_size=1)
-    with torch.no_grad():
-        states = reservoir(u_native)  # (1, T, N)
-    states64 = states.squeeze(0).to(device="cpu", dtype=torch.float64)  # (T, N)
-    u_flat = u.squeeze(-1)  # (T,) on CPU float64
-    states_cpu = states64.cpu()
-
-    # The "present" time indices at which we read the state and predict u[t-k].
-    # They start at washout + max_delay so t - max_delay >= washout (the earliest
-    # delayed target still lies in the driven, post-washout window).
-    t0 = washout + max_delay
-    t_idx = torch.arange(t0, t0 + n_samples)
-    if t_idx[-1].item() >= total:
-        raise ValueError(
-            "n_samples/max_delay/washout leave too few driven steps; "
-            "increase n_samples or reduce max_delay/washout."
-        )
-
-    X = states_cpu[t_idx]  # (n_samples, N)
-    ones = torch.ones(X.shape[0], 1, dtype=torch.float64)
-    Xb = torch.cat([X, ones], dim=1)  # (n_samples, N+1) — bias column
-
-    # One shared ridge factorisation reused for every delay (design matrix is
-    # delay-independent; only the target shifts).
-    gram = Xb.T @ Xb + alpha * torch.eye(n_reservoir + 1, dtype=torch.float64)
-    factor = torch.linalg.cholesky(gram)
-    xty_base = Xb.T  # (N+1, n_samples)
-
-    curve = np.empty(max_delay, dtype=np.float64)
-    for k in range(1, max_delay + 1):
-        target = u_flat[t_idx - k]  # (n_samples,)
-        w = torch.cholesky_solve((xty_base @ target).unsqueeze(1), factor).squeeze(1)
-        pred = Xb @ w
-        # Squared correlation coefficient (Jaeger's covariance form). Robust to
-        # the readout's arbitrary scale/offset and bounded in [0, 1].
-        p_c = pred - pred.mean()
-        t_c = target - target.mean()
-        denom = (p_c @ p_c) * (t_c @ t_c)
-        r2_k = float((p_c @ t_c) ** 2 / denom) if float(denom) > 0.0 else 0.0
-        # Guard tiny negative/over-one drift from round-off.
-        curve[k - 1] = min(max(r2_k, 0.0), 1.0)
-
-    mc = float(curve.sum())
-    if return_curve:
-        return mc, curve
-    return mc
+    # Independent i.i.d. streams, independently warmed from the reset template:
+    # no evaluation target or state belongs to the fitting sequence.
+    train_x, train_y = samples(n_samples)
+    test_x, test_y = samples(test_samples)
+    x_mean, y_mean = train_x.mean(0), train_y.mean(0)
+    centered = train_x - x_mean
+    gram = centered.T @ centered
+    gram.diagonal().add_(alpha)
+    coefficients = (
+        torch.linalg.solve(gram, centered.T @ (train_y - y_mean))
+        if alpha > 0
+        else torch.linalg.lstsq(centered, train_y - y_mean).solution
+    )
+    predictions = (test_x - x_mean) @ coefficients + y_mean
+    predictions = predictions - predictions.mean(0)
+    targets = test_y - test_y.mean(0)
+    denominator = predictions.square().sum(0) * targets.square().sum(0)
+    correlations = (predictions * targets).sum(0).square()
+    curve_tensor = torch.where(denominator > 0, correlations / denominator, 0.0).clamp(0, 1)
+    curve = curve_tensor.numpy()
+    capacity = float(curve.sum())
+    return (capacity, curve) if return_curve else capacity
 
 
 # --------------------------------------------------------------------------- #
@@ -462,9 +425,11 @@ def effective_spectral_radius(
               (1-\tanh^2(\mathrm{pre}_t))W.
 
     The activation derivative depends on ``tanh(pre)``, which differs from the
-    stored hidden state when the leak rate is below 1. Consecutive states recover
+    stored hidden state when any neuron has a leak rate below 1. Consecutive states recover
     that activation without re-running the reservoir. Bias and drive affect the
-    result through the trajectory's activation saturation.
+    result through the trajectory's activation saturation. ``W`` here includes
+    calibrated recurrent row gains and intrinsic gains. Leak rates may differ
+    per neuron. Caller weights, cached state and mode are preserved.
 
     This returns a mean local eigenvalue radius. Leakage and non-normal weights
     mean it need not be below the weight spectral radius, and it does not bound
@@ -475,8 +440,8 @@ def effective_spectral_radius(
     ----------
     source : BaseReservoirLayer or ESNModel
         The reservoir whose recurrent Jacobian is analysed, or a model
-        containing exactly one ESN reservoir.  Must use the ``tanh`` activation
-        (the only activation whose derivative is wired here).
+        containing exactly one standard ``ESNCell`` reservoir with ``tanh``.
+        Alternative cell update equations are explicitly unsupported.
     states : torch.Tensor
         Reservoir states sampled along an attractor trajectory, of shape
         ``(batch, time, N)`` or ``(time, N)`` (with ``N`` the reservoir size).
@@ -487,11 +452,11 @@ def effective_spectral_radius(
         trajectory is excluded because its predecessor is unavailable.
     max_states : int, default=256
         Cap on the number of trajectory states the mean is taken over; the
-        states are subsampled evenly (with a fixed seed for the tie-breaking
-        draw when needed) so the estimate stays cheap for a long trajectory —
+        states are subsampled on an evenly spaced deterministic grid so
+        the estimate stays manageable for a long trajectory —
         each state costs one :math:`N \times N` eigenvalue solve.
     seed : int, default=0
-        Seed for the (rare) random subsampling tie-break, for determinism.
+        Retained for API compatibility; even subsampling uses no randomness.
 
     Returns
     -------
@@ -506,7 +471,7 @@ def effective_spectral_radius(
         If ``source`` has no (or more than one) ESN reservoir, or if ``states``
         does not have a trailing dimension equal to the reservoir size.
     NotImplementedError
-        If the reservoir activation is not ``tanh``.
+        If the cell is not a standard tanh ``ESNCell``.
 
     Examples
     --------
@@ -523,79 +488,47 @@ def effective_spectral_radius(
     See Also
     --------
     resdag.layers.cells.ESNCell.spectral_radius_achieved : The *weight* spectral
-        radius (of ``weight_hh`` alone), for contrast.
+        radius including calibration gains, before activation derivatives and leakage.
     resdag.metrics.reservoir_lyapunov : Benettin/QR maximal Lyapunov exponent of
         the driven reservoir (a time-averaged log-contraction, vs this per-step
         eigenvalue mean).
     """
-    reservoir = _resolve_reservoir_local(source)
-    # ``_resolve_reservoir_local`` guarantees a cell owning ``weight_hh`` (an ESN
-    # cell); narrow the type so the analytic weight access below type-checks.
-    cell = cast("ESNCell", reservoir.cell)
+    from resdag.data.prepare import _validate_step_count
+    from resdag.metrics.lyapunov import _diagnostic_cell, _esn_recurrent_jacobian_weight
 
-    activation = getattr(cell, "activation", "tanh")
-    if activation != "tanh":
-        raise NotImplementedError(
-            f"effective_spectral_radius only supports the 'tanh' activation "
-            f"(Jacobian gate 1 - tanh^2); got {activation!r}."
-        )
-
-    if max_states < 1:
-        raise ValueError(f"max_states must be >= 1, got {max_states}.")
-    weight_hh: torch.Tensor = cell.weight_hh
-    # Eigensolves are offline diagnostics. One CPU transfer avoids a device
-    # synchronization per sampled state and supports MPS, which has no float64.
-    W = weight_hh.detach().to(device="cpu", dtype=torch.float64)
-    if W.layout != torch.strided:
-        W = W.to_dense()
-    n_reservoir = int(W.shape[0])
-
-    h = states.detach().to(device="cpu", dtype=torch.float64)
-    if h.dim() not in (2, 3):
-        raise ValueError(
-            f"states must be 2-D (time, N) or 3-D (batch, time, N); got {tuple(states.shape)}."
-        )
-    if h.shape[-1] != n_reservoir:
-        raise ValueError(
-            f"states trailing dimension ({h.shape[-1]}) must equal the reservoir size "
-            f"({n_reservoir})."
-        )
-    alpha = float(getattr(cell, "leak_rate", 1.0))
-    if alpha not in (0.0, 1.0):
-        # A leaky state is a mixture of the previous state and tanh(pre), not
-        # tanh(pre) itself. Preserve each trajectory's time axis for inversion;
-        # never make a pair across a batch boundary.
+    max_states = _validate_step_count("max_states", max_states)
+    cell = _diagnostic_cell(source, tanh_esn=True)
+    weight = _esn_recurrent_jacobian_weight(cell)
+    n = weight.shape[0]
+    h = states.detach().cpu().to(dtype=torch.float64)
+    if h.ndim not in (2, 3) or h.shape[-1] != n:
+        raise ValueError(f"states must have shape (time,{n}) or (batch,time,{n}).")
+    if not bool(torch.isfinite(h).all()):
+        raise ValueError("states must be finite.")
+    alpha = torch.as_tensor(cell.leak_rate, dtype=torch.float64)
+    if alpha.ndim == 0:
+        alpha = alpha.expand(n)
+    if not bool((alpha == 1).all()):
         if h.shape[-2] < 2:
             raise ValueError(
                 "Leaky reservoirs need at least two consecutive states per trajectory."
             )
-        h = (h[..., 1:, :] - (1.0 - alpha) * h[..., :-1, :]) / alpha
-    h = h.reshape(-1, n_reservoir)
-    if h.shape[0] == 0:
+        # Invert leakage per neuron, preserving trajectory boundaries.
+        h = (h[..., 1:, :] - (1 - alpha) * h[..., :-1, :]) / alpha
+    h = h.reshape(-1, n)
+    if not h.shape[0]:
         raise ValueError("states must contain at least one trajectory state.")
-
-    n_total = h.shape[0]
-    if n_total > max_states:
-        # Even subsample so the mean covers the whole trajectory, not a prefix.
-        idx = torch.linspace(0, n_total - 1, steps=max_states, dtype=torch.float64)
-        idx = idx.round().to(torch.long).unique()
-        # ``seed`` reserved for a future randomised tie-break; the deterministic
-        # even grid needs no RNG, so touching it here keeps the signature honest.
-        _ = seed
-        h = h[idx]
-
-    identity = torch.eye(n_reservoir, dtype=torch.float64, device=W.device)
-
-    radii = torch.empty(h.shape[0], dtype=torch.float64)
-    for i in range(h.shape[0]):
-        gate = 1.0 - h[i] ** 2  # f'(pre) = 1 - tanh^2(pre) = 1 - h^2
-        jac = alpha * (gate[:, None] * W)
-        if alpha != 1.0:
-            jac = jac + (1.0 - alpha) * identity
-        eigvals = torch.linalg.eigvals(jac)
-        radii[i] = eigvals.abs().max()
-
-    return float(radii.mean())
+    if h.shape[0] > max_states:
+        indices = torch.linspace(0, h.shape[0] - 1, max_states).round().long().unique()
+        h = h[indices]
+    _ = seed  # The even subsampling grid does not draw randomness.
+    identity = torch.eye(n, dtype=torch.float64)
+    radii = []
+    for activation in h:
+        jacobian = alpha[:, None] * (1 - activation.square())[:, None] * weight
+        jacobian += (1 - alpha)[:, None] * identity
+        radii.append(torch.linalg.eigvals(jacobian).abs().max())
+    return float(torch.stack(radii).mean())
 
 
 # --------------------------------------------------------------------------- #

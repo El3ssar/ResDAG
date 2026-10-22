@@ -22,9 +22,23 @@ import inspect
 import re
 from pathlib import Path
 
-from mkdocs.structure.files import File
-
 DOCS = Path(__file__).resolve().parent.parent / "docs"
+
+# Executable recipes are metadata, not guesses from a common reservoir size.
+# These components have size constraints or required builder arguments.
+CATALOG_EXAMPLES = {
+    "topologies": {
+        "kleinberg_small_world": {"reservoir_size": 484},
+        "multi_cycle": {"reservoir_size": 498},
+        "spectral_cascade": {"reservoir_size": 496},
+    },
+    "initializers": {
+        "chain_of_neurons_input": {"reservoir_size": 501},
+        "dendrocycle_input": {"parameters": {"c": 0.5}},
+        "informed_init": {"parameters": {"model_in_size": 1}},
+        "ring_window": {"parameters": {"c": 0.5, "window": 5}},
+    },
+}
 
 # Sections whose nav children are discovered, not listed.
 AUTOSECTIONS = {
@@ -39,6 +53,7 @@ AUTOSECTIONS = {
 # ---------------------------------------------------------------------------
 # Registry page generation
 # ---------------------------------------------------------------------------
+
 
 def _registries():
     from resdag.init.input_feedback.registry import _INPUT_FEEDBACK_REGISTRY
@@ -59,7 +74,7 @@ def _doc_summary(obj) -> str:
     return " ".join(out) or "No description yet."
 
 
-def _param_table(fn, skip=("n", "rows", "cols", "self", "seed")) -> str:
+def _param_table(fn, defaults=None, skip=("n", "rows", "cols", "self", "seed")) -> str:
     try:
         sig = inspect.signature(fn)
     except (TypeError, ValueError):
@@ -68,11 +83,21 @@ def _param_table(fn, skip=("n", "rows", "cols", "self", "seed")) -> str:
     for pname, p in sig.parameters.items():
         if pname in skip or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
             continue
-        default = "—" if p.default is inspect.Parameter.empty else f"`{p.default!r}`"
+        value = (defaults or {}).get(pname, p.default)
+        default = "—" if value is inspect.Parameter.empty else f"`{value!r}`"
         rows.append(f"| `{pname}` | {default} |")
     if not rows:
         return ""
     return "| parameter | default |\n| --- | --- |\n" + "\n".join(rows)
+
+
+def _catalog_example(name, category, *, radius_arg=""):
+    recipe = CATALOG_EXAMPLES[category].get(name, {})
+    size = recipe.get("reservoir_size", 500)
+    parameters = recipe.get("parameters")
+    spec = repr((name, parameters)) if parameters else repr(name)
+    option = "recurrent_initializer" if category == "topologies" else "feedback_initializer"
+    return f"ESNLayer({size}, feedback_size=3, {option}={spec}{radius_arg}, seed=7)"
 
 
 def _topology_page(name: str, entry) -> str:
@@ -83,21 +108,33 @@ def _topology_page(name: str, entry) -> str:
     prescaled = bool(entry[3]) if len(entry) > 3 else False
     kind = "graph" if wrapper.__name__ == "GraphTopology" else "matrix"
     summary = _doc_summary(builder)
-    table = _param_table(builder)
-    radius_arg = "" if prescaled else ", spectral_radius=0.9"
+    table = _param_table(builder, defaults)
+    radius_arg = (
+        ", spectral_radius=None"
+        if prescaled or name in {"zeros", "delay_line"}
+        else ", spectral_radius=0.9"
+    )
+    example = _catalog_example(name, "topologies", radius_arg=radius_arg)
     scaling = (
         "This builder preserves its native spectrum/scale by default. "
         "Use its parameters to control that scale, or explicitly configure "
         "`get_recurrent_initializer(..., rescale=True)` to allow an outer radius rescale."
-        if prescaled else
-        "A layer `spectral_radius` rescales this matrix after construction. "
+        if prescaled
+        else "A layer `spectral_radius` rescales this matrix after construction. "
         "Use `get_recurrent_initializer(..., rescale=False)` to keep the native scale."
     )
+    if name in {"zeros", "delay_line"}:
+        scaling = (
+            "This builder has a zero eigenvalue radius. A nonzero outer radius "
+            "cannot be obtained by multiplying its weights; control the "
+            "connection magnitude through the builder's own parameters."
+        )
     fig = f"../../../assets/figures/topologies/{name}.png"
     fig_block = (
         f"<figure markdown>\n![{name}]({fig})\n"
         f"<figcaption>Connectivity and weight matrix on a small reservoir.</figcaption>\n</figure>\n\n"
-        if (DOCS / "assets/figures/topologies" / f"{name}.png").exists() else ""
+        if (DOCS / "assets/figures/topologies" / f"{name}.png").exists()
+        else ""
     )
     return f"""---
 description: "{summary[:140]}"
@@ -112,7 +149,7 @@ description: "{summary[:140]}"
 {fig_block}```python
 from resdag.layers import ESNLayer
 
-reservoir = ESNLayer(500, feedback_size=3, recurrent_initializer="{name}"{radius_arg})
+reservoir = {example}
 ```
 
 {table}
@@ -134,12 +171,14 @@ def _initializer_page(name: str, entry) -> str:
     obj, defaults = entry
     target = obj.__init__ if inspect.isclass(obj) else obj
     summary = _doc_summary(obj)
-    table = _param_table(target)
+    table = _param_table(target, defaults)
+    example = _catalog_example(name, "initializers")
     fig = f"../../../assets/figures/initializers/{name}.png"
     fig_block = (
         f"<figure markdown>\n![{name}]({fig})\n"
         f"<figcaption>An 80×8 weight matrix drawn by this initializer.</figcaption>\n</figure>\n\n"
-        if (DOCS / "assets/figures/initializers" / f"{name}.png").exists() else ""
+        if (DOCS / "assets/figures/initializers" / f"{name}.png").exists()
+        else ""
     )
     return f"""---
 description: "{summary[:140]}"
@@ -154,7 +193,7 @@ description: "{summary[:140]}"
 {fig_block}```python
 from resdag.layers import ESNLayer
 
-reservoir = ESNLayer(500, feedback_size=3, feedback_initializer="{name}")
+reservoir = {example}
 ```
 
 {table}
@@ -184,6 +223,8 @@ def _populate_generated():
 
 
 def on_files(files, config):
+    from mkdocs.structure.files import File
+
     for uri, content in _GENERATED.items():
         files.append(File.generated(config, uri, content=content))
     return files
@@ -192,6 +233,7 @@ def on_files(files, config):
 # ---------------------------------------------------------------------------
 # Nav autogen
 # ---------------------------------------------------------------------------
+
 
 def _walk_nav(items):
     for item in items:
@@ -273,8 +315,11 @@ def on_page_markdown(markdown, page, config, files):
             if uri.endswith("/index.md"):
                 continue
             title, desc = _page_meta(uri)
-            rel = Path(uri).relative_to(page_dir) if Path(uri).is_relative_to(page_dir) \
-                else Path("..") / uri  # fallback; index pages live above their children
+            rel = (
+                Path(uri).relative_to(page_dir)
+                if Path(uri).is_relative_to(page_dir)
+                else Path("..") / uri
+            )  # fallback; index pages live above their children
             cards.append(f"- **[`{title}`]({rel.as_posix()})**\n\n    ---\n\n    {desc}\n")
         if not cards:
             return ""

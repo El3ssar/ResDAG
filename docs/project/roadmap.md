@@ -46,7 +46,7 @@ after its acceptance checks pass and its public behavior is documented.
 | Phase | Status | Deliverable | Exit condition |
 | --- | --- | --- | --- |
 | 0. Baseline audit | Done | Review all 173 runtime modules, 62 documentation pages and 17 examples; reproduce high-impact defects. | Explicit coverage inventory, independent numerical/state probes and chronological HPO pilot recorded. |
-| 1. Correctness and verification | WIP | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
+| 1. Correctness and verification | Done | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
 | 2. Unified functional model workflow | Pending | One PyTorch model lifecycle for presets and custom graphs. | The same documented commands work for both; functional construction and PyTorch semantics are preserved. |
 | 3. Reliable automatic tuning | Pending | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies reproduce, respect budgets and leave a fitted winner. |
 | 4. Model artifacts and diagrams | Pending | Save a complete model, load it without rebuilding its DAG, and export readable graph diagrams. | Fresh-process load/forecast parity and diagram correctness for every supported graph family. |
@@ -65,18 +65,18 @@ golden fixtures against independent references.
 
 | ID | Status | Work | Acceptance checks / evidence |
 | --- | --- | --- | --- |
-| P1-01 | WIP | Stable batch and streaming readout statistics. | Offset, rank-deficient and ill-conditioned fixtures agree with independently centered SVD/SciPy references; chunked fitting agrees with batch fitting. |
-| P1-02 | WIP | Preserve working precision in incremental/RLS readouts; correct fresh RLS prior and FISTA convergence. | `.float()` and factory construction retain the configured accumulation policy; fresh streaming parity; adversarial FISTA optimality; legacy checkpoints migrate explicitly. |
-| P1-03 | WIP | Correct staged fitting when an upstream fitted readout drives downstream recurrent state. | Fresh cascaded DAG agrees with a closed-form/stagewise oracle; ordinary one-stage fitting retains its fast path. |
-| P1-04 | WIP | Correct inference mode, multi-head dtype preservation and divergent ensemble behavior. | Repeatable noise-free inference; mode restoration; mixed float/integer output schemas preserved; finite-member and all-invalid policies tested. |
-| P1-05 | WIP | Coherent sparse weight edits and live versus fixed cell settings. | In-place weight changes affect actual recurrence; accepted configuration writes affect dynamics; fixed settings reject misleading edits. |
-| P1-06 | WIP | Consistent initializer arguments, RNGs, precision, discovery and spectral scaling. | Direct/name/tuple/object forms agree; required arguments work; local seeds are independent of unrelated draws; custom float64 is preserved; analytic spectral counterexamples pass. |
-| P1-07 | WIP | Correct calibrated/vector-leak diagnostics and held-out memory-capacity evaluation. | Actual-cell Jacobian/reference comparisons; caller state/modes preserved; held-out estimator validated with stated finite-sample limitations. |
-| P1-08 | WIP | Repair current TSDynamics analysis integration and test it explicitly. | Current supported TSDynamics analyses work; dependency-free tests run without the optional package; optional CI lane runs genuine integration tests. |
-| P1-09 | WIP | Stop failed HPO evaluations masquerading as winners; validate transferred objective directions. | Invalid evaluations are not selected as successful models; all-invalid studies fail clearly; incompatible transfer is rejected; error details remain accessible. |
-| P1-10 | WIP | Repair generated initializer recipes and stale correctness/solver guidance. | All 51 catalog recipes execute; defaults match implementations; examples teach held-out evaluation and training-only scaling. |
-| P1-11 | WIP | Strengthen CI coverage and documentation selection. | Docs-only changes select executable doc tests; optional integrations have a lane; full coverage remains near the established baseline; no performance thresholds weakened. |
-| P1-12 | WIP | Review historical benchmark claims and record release verification. | Historical results are clearly separated from current claims; full tests, strict docs, CPU gates, wheel/install checks and hosted CI recorded before release. |
+| P1-01 | Done | Stable batch and streaming readout statistics. | Offset, rank-deficient and ill-conditioned fixtures agree with independently centered SVD/SciPy references; chunked fitting agrees with batch fitting. |
+| P1-02 | Done | Preserve working precision in incremental/RLS readouts; correct fresh RLS prior and FISTA convergence. | `.float()` and factory construction retain the configured accumulation policy; fresh streaming parity; adversarial FISTA optimality; legacy checkpoints migrate explicitly. |
+| P1-03 | Done | Correct staged fitting when an upstream fitted readout drives downstream recurrent state. | Fresh cascaded DAG agrees with a closed-form/stagewise oracle; ordinary one-stage fitting retains its fast path. |
+| P1-04 | Done | Correct inference mode, multi-head dtype preservation and divergent ensemble behavior. | Repeatable noise-free inference; mode restoration; mixed float/integer output schemas preserved; finite-member and all-invalid policies tested. |
+| P1-05 | Done | Coherent sparse weight edits and live versus fixed cell settings. | In-place weight changes affect actual recurrence; accepted configuration writes affect dynamics; fixed settings reject misleading edits. |
+| P1-06 | Done | Consistent initializer arguments, RNGs, precision, discovery and spectral scaling. | Direct/name/tuple/object forms agree; required arguments work; local seeds are independent of unrelated draws; custom float64 is preserved; analytic spectral counterexamples pass. |
+| P1-07 | Done | Correct calibrated/vector-leak diagnostics and held-out memory-capacity evaluation. | Actual-cell Jacobian/reference comparisons; caller state/modes preserved; held-out estimator validated with stated finite-sample limitations. |
+| P1-08 | Done | Repair current TSDynamics analysis integration and test it explicitly. | Current supported TSDynamics analyses work; dependency-free tests run without the optional package; optional CI lane runs genuine integration tests. |
+| P1-09 | Done | Stop failed HPO evaluations masquerading as winners; validate transferred objective directions. | Invalid evaluations are not selected as successful models; all-invalid studies fail clearly; incompatible transfer is rejected; error details remain accessible. |
+| P1-10 | Done | Repair generated initializer recipes and stale correctness/solver guidance. | All 51 catalog recipes execute; defaults match implementations; examples teach held-out evaluation and training-only scaling. |
+| P1-11 | Done | Strengthen CI coverage and documentation selection. | Docs-only changes select executable doc tests; optional integrations have a lane; full coverage remains near the established baseline; no performance thresholds weakened. |
+| P1-12 | Done | Review historical benchmark claims and record release verification. | Historical results are clearly separated from current claims; full tests, strict docs, CPU gates, wheel/install checks and hosted CI recorded before release. |
 
 The regular graph now honors the requested degree, including odd degrees when
 the node count permits them. Cycle/jump overlaps add both contributions. These
@@ -87,6 +87,29 @@ notes accompany both initializers.
 Phase 1 does not silently change dataset normalization defaults, deep-stack
 seed schedules, feedback routing or the meaning of existing `save()` files.
 Those require the documented major-release migration below.
+
+### Verification record
+
+Verified **22 October 2026**, runtime source commit `453f34a` in
+[PR #458](https://github.com/El3ssar/ResDAG/pull/458). The final tracker update
+changes documentation only.
+
+| Check | Result |
+| --- | --- |
+| Complete local suite | **4,084 passed**, 234 skipped, 13 benchmark cases deselected; **93.06% coverage**. Forecast golden fixtures are unchanged. |
+| Locked hosted CI | **Passed** on Python 3.11–3.14, including lint/types, CPU gates and installed TSDynamics lanes on 3.12–3.14. [Run](https://github.com/El3ssar/ResDAG/actions/runs/39789171340). |
+| Latest-dependency hosted CI | **Passed** on Python 3.11–3.14, optional TSDynamics lanes and strict docs. The 3.13 lane tested Torch 2.14.1 and NumPy 2.5.4. [Run](https://github.com/El3ssar/ResDAG/actions/runs/39789185722). |
+| Documentation | Strict MkDocs build passes; all **51** catalog recipes and three primary architecture guides execute; rendered roadmap and phase navigation inspected. |
+| Optional integration | Real TSDynamics 6.0.2: **32 passed**, one intentional missing-dependency check skipped. |
+| CPU performance gates | **4 passed**, four unavailable-device cases skipped, one deselected; no ratio thresholds weakened. |
+| Package and compatibility | Wheel/sdist build, clean wheel install, fit/forecast/full-model-load smoke; legacy readout checkpoints and old full-model pickle compatibility tests pass. |
+
+Native MPS correctness checks ran on this Mac. CUDA throughput was not measured.
+These checks establish the documented correctness and regression contracts;
+they do not establish comparative forecast superiority. The aligned
+speed–accuracy study remains in phase 5. For a runnable workflow today, see
+[the end-to-end guide](../start/end-to-end.md) and
+[the TSDynamics example](ecosystem.md#generate-train-and-forecast).
 
 ## Phase 2: one functional workflow
 
@@ -165,7 +188,7 @@ complete-artifact format and extension policy before changing legacy saves.
 | --- | --- | --- | --- |
 | 2026-10-22 | Baseline audit | Done | 173 runtime modules reviewed; standard suite 3,809 passed, 91.63% coverage; optional TSDynamics and catalog failures independently reproduced. |
 | 2026-10-22 | Roadmap and maintainer decisions | Done | Canonical tracker is in the documentation navigation; strict MkDocs build and links pass. |
-| 2026-10-22 | Phase 1 implementation | WIP | Fixes and regression oracles implemented; strict docs, whole-package typing, CPU gates and wheel smoke checks pass. Final full-suite and hosted CI verification are in progress. |
+| 2026-10-22 | Phase 1 implementation | Done | 4,084 local tests pass at 93.06% coverage; all supported locked/latest CI lanes, strict docs, optional integration, CPU gates and wheel checks pass. See the phase 1 verification record above. |
 
 ## Standard tools to reuse
 

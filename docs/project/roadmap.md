@@ -5,7 +5,9 @@ description: Delivery tracker for dependable forecasting, functional DAG composi
 # Roadmap
 
 Last updated: **22 October 2026**. Audit baseline: **ResDAG 1.1.0**;
-phase-one corrections released in **1.1.1**.
+phase-one corrections released in **1.1.1**, and the initial trajectory
+workflow in **1.2.0**. Phase-two completion is implemented and verified on
+[PR #460](https://github.com/El3ssar/ResDAG/pull/460), awaiting merge and a major release.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -52,7 +54,7 @@ after its acceptance checks pass and its public behavior is documented.
 | --- | --- | --- | --- |
 | 0. Baseline audit | Done | Review all 173 runtime modules, 62 documentation pages and 17 examples; reproduce high-impact defects. | Explicit coverage inventory, independent numerical/state probes and chronological HPO pilot recorded. |
 | 1. Correctness and verification | Done | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
-| 2. Unified functional model workflow | WIP | One PyTorch model lifecycle for presets and custom graphs. | The same documented commands work for both; functional construction and PyTorch semantics are preserved. |
+| 2. Unified functional model workflow | Done | One PyTorch model lifecycle for presets and custom graphs. | The same documented fit/forecast/state commands work for both; functional construction and PyTorch semantics are preserved. Tuning and complete artifacts remain phases 3 and 4. |
 | 3. Reliable automatic tuning | Pending | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies reproduce, respect budgets and leave a fitted winner. |
 | 4. Model artifacts and diagrams | Pending | Save a complete model, load it without rebuilding its DAG, and export readable graph diagrams. | Fresh-process load/forecast parity and diagram correctness for every supported graph family. |
 | 5. Performance and competitive evidence | Pending | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. |
@@ -133,14 +135,14 @@ execution paths. Ordinary stateful graph calls remain available.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | Native `rd.ESN` and named `rd.Model` share original-unit fit/forecast, carried state and named results across symbolic DAGs, parallel local-state graphs and coupled ensembles. Public fast/history capability contract implemented. Required hosted verification pending; tuning and complete artifacts remain phases 3 and 4. |
-| P2-02 | WIP | Preserve functional construction while evaluating existing graph tooling. | Functional construction retained; [standard-tooling review](graph-tooling.md) records FX/export/module/Graphviz boundaries. Executable FX leaf tracing preserves ownership, state, values and upstream gradients for tensor and named multi-head pipelines. Required hosted checks pending. No private graph API exposed to users. |
-| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named feedback, fanout, delays and separate per-head prediction leads implemented with independent physical-time and driver-count oracles. Includes lead-aware targets, scaling bridges and metadata. Full local suite passes; required hosted verification pending. |
-| P2-04 | WIP | Coherent cell/state and execution semantics. | Public framewise declaration and explicit full-history execution implemented. Temporal fitting preserves the complete prefix; default fast path remains. Explicit-state visibility, final state, batch switching, hooks and gradients covered across model families. Full local suite passes; required hosted verification pending. |
-| P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms, feedback unit conversion and off/method switches across symbolic/parallel/coupled families. Independent training-window, gradient, native MPS and checkpoint oracles pass. Public `Standardize.fit` adopts native precision/device. Per-port reversible custom modules and identity overrides are implemented, with staged fit/state-only validation and preserved module/parameter ownership. Complete integrated/hosted verification pending. Complete artifacts belong to phase 4. |
-| P2-06 | WIP | First-class TSDynamics trajectories through the optional extra. | Bare trajectory fitting/forecasting preserves component names, future times and checkpoint-safe provenance. Configurable automatic resampling, fitted-step history alignment and tensor-return option implemented. Named trajectory mappings and lead-aware physical target alignment are implemented on one shared observed grid, with held-out target clipping and per-head metadata. Complete integrated/hosted verification pending. |
-| P2-07 | WIP | Independent named initialization seeds and public customization templates. | Public `SeedStreams` gives stable named initialization seeds; executable initializer/cell/transform/solver recipes use public APIs, including `ReadoutLayer.solve`. Seeded presets/ensembles preserve caller RNG streams; fresh-process MPS and CPU bit-pattern oracles pass. Full local suite passes; required hosted verification pending. |
-| P2-08 | WIP | Standard PyTorch composition and migration. | Direct new `ESN` module uses the common workflow, eager/build/lazy construction and raw `.graph`; no legacy wrapper. Symbolic/parallel/coupled state, gradients/checkpoints and native MPS covered; FX leaf composition supports presets/custom models. Full local suite passes; required hosted verification pending. |
+| P2-01 | Done | Agree a minimal common model lifecycle and capability contract. | Native `rd.ESN` and named `rd.Model` share original-unit fit/forecast, carried state and named results across symbolic DAGs, parallel local-state graphs and coupled ensembles. Public fast/history capability contract verified. Tuning and complete artifacts remain phases 3 and 4. |
+| P2-02 | Done | Preserve functional construction while evaluating existing graph tooling. | Functional construction retained; [standard-tooling review](graph-tooling.md) records FX/export/module/Graphviz boundaries. Executable FX leaf tracing preserves ownership, state, values and upstream gradients for tensor and named multi-head pipelines. No private graph API exposed to users. |
+| P2-03 | Done | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named feedback, fanout, delays and separate per-head prediction leads pass independent physical-time and driver-count oracles. Includes lead-aware targets, scaling bridges and metadata. |
+| P2-04 | Done | Coherent cell/state and execution semantics. | Public framewise declaration and explicit full-history execution verified. Temporal fitting preserves the complete prefix; default fast path remains. Explicit-state visibility, final state, batch switching, hooks and gradients covered across model families. |
+| P2-05 | Done | Training-only preprocessing owned by the convenient workflow. | Fitted Torch statistics, inverse transforms, feedback unit conversion and off/method switches work across symbolic/parallel/coupled families. Independent training-window, gradient, native MPS and checkpoint oracles pass. Per-port reversible custom modules and identity overrides preserve module/parameter ownership through staged fit and state-only validation. Complete artifacts belong to phase 4. |
+| P2-06 | Done | First-class TSDynamics trajectories through the optional extra. | Bare and named trajectory mappings preserve component names, future times and checkpoint-safe provenance. Configurable resampling, automatic shared-range alignment, physical lead-aware targets, held-out target clipping and tensor-return option pass installed-dependency and independent clock oracles. |
+| P2-07 | Done | Independent named initialization seeds and public customization templates. | Public `SeedStreams` gives stable named initialization seeds; executable initializer/cell/transform/solver recipes use public APIs, including `ReadoutLayer.solve`. Seeded presets/ensembles preserve caller RNG streams; fresh-process MPS and CPU bit-pattern oracles pass. |
+| P2-08 | Done | Standard PyTorch composition and migration. | Direct new `ESN` module uses the common workflow, eager/build/lazy construction and raw `.graph`; no legacy wrapper. Symbolic/parallel/coupled state, gradients/checkpoints and native MPS covered; FX leaf composition supports presets/custom models. |
 
 ### First-increment verification record
 
@@ -160,7 +162,7 @@ changes.
 | Package smoke | Wheel/sdist build and isolated installed-wheel fit/forecast/checkpoint/PyTorch smoke pass, including Torch 2.14.1. |
 | Documentation | Strict MkDocs build passes; the common-model guide executes, and rendered guide/roadmap navigation was inspected. |
 
-The first increment deliberately retains the established flat forecast engine
+At that checkpoint, the first increment retained the established flat forecast engine
 and its single feedback route. Custom preprocessing, feedback conversion,
 named delayed routes, trajectory mappings, other backend families and preset
 migration remain open. Required hosted CI and strict documentation checks must
@@ -179,7 +181,8 @@ The integration adds independent physical-time oracles, source/clock/schema
 validation, real TSDynamics simulation, failed-refit isolation, legacy
 checkpoint and optional-dependency tests. Its runnable guide is included in
 the installed-dynamics CI lanes on Python 3.12–3.14, so missing optional
-packages cannot silently skip integration verification. Phase two remains WIP.
+packages cannot silently skip integration verification. This was an intermediate
+delivery; the completion record below covers the remaining phase-two work.
 
 The adapter, workflow and guide comprise **81 checks**, verified from a clean
 installed wheel against the minimum supported **TSDynamics 6.0.2**, and with
@@ -194,7 +197,7 @@ lint/types and package publication. The initial post-merge
 also passed. This increment is released in
 [1.2.0](https://github.com/El3ssar/ResDAG/releases/tag/v1.2.0).
 
-### Completion increment in progress
+### Completion verification
 
 The completion increment adds parallel/coupled adapters, direct PyTorch `ESN`,
 named delayed feedback and independent prediction leads, full-history temporal
@@ -202,21 +205,33 @@ execution/fitting, stable named seeds and public customization recipes. It also
 repairs `Standardize` precision/device construction and fitting, scripted inverse,
 accelerator RNG isolation, and MPS solve diagnostics. These public changes target
 the next **major release**: the maintainer approved the new API directly, without
-legacy wrappers or compatibility constraints. Reversible, signal-preserving custom preprocessing and automatic shared-range
-alignment of named trajectories are also implemented; complete integrated and
-hosted verification is in progress.
+legacy wrappers or compatibility constraints. Reversible, signal-preserving custom
+preprocessing and automatic shared-range alignment of named trajectories are
+implemented and verified as well.
 
-Local verification of runtime commit `104cd4695d9f6493a97f4f798834d0fa1be10fcc`:
+Verification of source `2942bb5a944248deadd977546a3dff14be41f6e2` on
+22 October 2026. The runtime tree is identical to `7f294ba`; the final source
+adds the stricter coverage gate and 83 dependency-free clock/CI regression cases.
 
 | Check | Evidence |
 | --- | --- |
-| Complete local suite | **4,634 passed**, 231 skipped, 13 benchmark cases deselected; **92.94% coverage**. |
-| Installed branch wheel | **329 passed**, three skipped, including native MPS correctness. All **181 Python modules** match the runtime source byte-for-byte. This is an unreleased branch build, not the published 1.2.0 package. |
-| Minimum optional dependency and newer Torch | **158 passed** from the installed branch wheel with **TSDynamics 6.0.2** and **Torch 2.14.1**. |
+| Complete local runtime suite with dynamics | **4,741 passed**, 231 skipped, 13 benchmark cases deselected; **92.81% coverage** on `7f294ba`, before the final 83 CI/clock cases were added. |
+| Complete final local suite without dynamics | **4,713 passed**, 342 skipped, 13 benchmark cases deselected; **91.08% coverage**, with the strict floor enforced. Native MPS supplies additional local device checks. |
+| Installed branch wheel | **462 passed**, three skipped, including native MPS correctness, with locked **Torch 2.10.0 / TSDynamics 6.0.3**. All **183 Python modules** match the runtime source byte-for-byte; the rebuilt final wheel is identical to this tested wheel. This is an unreleased branch build, not the published 1.2.0 package. |
+| Minimum optional dependency and newer Torch | A further **462 passed**, three skipped, from the same installed branch wheel with **TSDynamics 6.0.2 / Torch 2.14.1**. |
 | CPU performance gates | **Four passed**, four unavailable-device cases skipped, one deselected; thresholds unchanged. CUDA throughput was not measured. |
-| Static and package checks | Ruff, Black, whole-package mypy, lock validation, actionlint and wheel/sdist builds pass. |
-| Documentation | Strict MkDocs build and executable workflow/customization guides pass. Rendered desktop guide navigation and feedback layout inspected. |
-| Hosted CI | Required full Python 3.11–3.14, installed-dynamics, benchmark and documentation checks tracked on [PR #460](https://github.com/El3ssar/ResDAG/pull/460); pending. |
+| Static and package checks | CI-scoped Ruff/Black, whole-package mypy (**183 modules**), lock validation, actionlint and wheel/sdist builds pass. Both archives match runtime source and exclude local coordination notes. |
+| Documentation | Strict locked/latest MkDocs builds and **15 executable guide checks** pass. Rendered desktop guide navigation, custom preprocessing, named trajectories and feedback layout inspected. |
+| Full hosted suites | [Locked CI](https://github.com/El3ssar/ResDAG/actions/runs/39845805396) and [latest compatibility](https://github.com/El3ssar/ResDAG/actions/runs/39845806724) pass all eight Python 3.11–3.14 suites. Each: **4,625 passed**, 430 skipped, 13 deselected; **90.97–91.01% coverage** against the unchanged 90% floor. |
+| Hosted integration and docs | All six Python 3.12–3.14 dynamics lanes pass **212 checks** each, seven skipped, using locked **6.0.3** and latest **6.1.0**. Strict docs, lint/types and CPU benchmark/report jobs pass. |
+
+The final CI fix sets coverage report precision to two decimal places: integer
+rounding had allowed a below-90% result to exit successfully. A real pytest
+subprocess regression now verifies that **89.8% fails** and **90.2% passes**.
+The additional clock tests exercise pure alignment/interpolation/checkpoint
+logic without requiring TSDynamics; no first-party code was excluded to reach
+the floor. Final prose-only roadmap updates retain this runtime/test/config
+tree and run the required PR checks again.
 
 ## Phase 3: tuning and automatic solver policy
 
@@ -227,6 +242,7 @@ Local verification of runtime commit `104cd4695d9f6493a97f4f798834d0fa1be10fcc`:
 | P3-03 | Pending | Complete trial provenance and safe study transfer/resume. | Persist resolved parameters, actual seeds, preprocessing, split identity, objective units and environment; re-evaluate incompatible prior configurations. |
 | P3-04 | Pending | Pruning during rollout and device-local scoring. | Stopped trials skip forecast computation; tensor/NumPy metric parity; no hidden device transfers in the supported fast path. |
 | P3-05 | Pending | Stable automatic readout selection with forced overrides. | Standard primal/dual/QR/SVD choices are validated; report solver, working precision, conditioning/residual diagnostics and fallback; never hide changed regularization. |
+| P3-06 | Pending | Tuning process and storage lifecycle on current Python. | Investigate Python 3.14 fork/SQLite resource warnings; close owned resources and use a documented process strategy without unsafe fork assumptions; resume, failures and cancellation clean up reliably. |
 
 ## Phase 4: diagrams and complete model artifacts
 
@@ -261,6 +277,10 @@ complete-artifact format and extension policy before introducing the new save AP
 | P5-04 | Pending | Profile-driven batching and compilation improvements. | Reference/fast value, state and gradient parity; measured improvement in specified workloads; setup and steady state reported separately. |
 | P5-05 | Pending | Publish speed–accuracy–memory tradeoffs against current competitors. | Reproducible commands, versions, hardware and equal search budgets; no universal unsupported superiority or GPU claim. |
 
+Python 3.14 warns that `torch.jit.script_method` is deprecated. The phase-five
+execution review must address that path using supported PyTorch tooling and
+verify value, state and gradient behavior before replacing it.
+
 ## Phase 6: experiment readiness and ongoing documentation
 
 | ID | Status | Work | Acceptance checks |
@@ -279,7 +299,8 @@ complete-artifact format and extension policy before introducing the new save AP
 | 2026-10-22 | Phase 1 implementation | Done | 4,084 local tests pass at 93.06% coverage; all supported locked/latest CI lanes, strict docs, optional integration, CPU gates and wheel checks pass. See the phase 1 verification record above. |
 | 2026-10-22 | Phase 1 merge | Done | PR #458 squash-merged into `main` as `41a1744`; phase-two branch starts from that commit. |
 | 2026-10-22 | Phase 1 release | Done | Post-merge full Python 3.11–3.14 matrix, optional dynamics lanes and release job passed; [v1.1.1](https://github.com/El3ssar/ResDAG/releases/tag/v1.1.1) published. Documentation deployment passed. |
-| 2026-10-22 | Phase 2 foundations | WIP | Approved `rd.Model` constructor implemented for symbolic DAGs; fitted Torch preprocessing, safe explicit-state validation and executable guide added. Complete common lifecycle is not yet delivered; see the first-increment verification record. |
+| 2026-10-22 | Phase 2 foundations and trajectory release | Done | PR #459 merged as `d63905d`; v1.2.0 publication, full post-merge tests and documentation deployment passed. |
+| 2026-10-22 | Phase 2 completion | Done | Common native ESN/Model workflow, all graph families, explicit feedback, fast/history execution, reversible per-port transforms, named trajectories and PyTorch composition implemented and documented. Full locked/latest matrices, integration, strict coverage, CPU gates and installed wheels verified on PR #460; awaiting merge and major release. |
 
 ## Standard tools to reuse
 

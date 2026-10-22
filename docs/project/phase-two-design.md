@@ -1,34 +1,36 @@
 ---
-description: Agreed behavior, construction proposal and implementation boundaries for the common model workflow.
+description: Implemented behavior, agreed construction and boundaries for the common model workflow.
 ---
 
 # Phase two: the common model workflow
 
-**Status: WIP.** Track delivery in the [roadmap](roadmap.md#phase-2-one-functional-workflow).
+**Status: Done; awaiting merge and major release.** See verification in the
+[roadmap](roadmap.md#completion-verification).
 This page records current decisions and implementation boundaries. Start with
 the runnable [common model guide](../start/model-workflow.md) or the shorter
 [end-to-end guide](../start/end-to-end.md).
 
 ## Agreed behavior
 
-Basic ESNs and custom graphs will share the same `fit`, `forecast`, `tune` and
-`save` commands. Layers will still connect through the existing functional
+Basic ESNs and custom graphs share the same `fit`, `forecast` and state workflow.
+Unified `tune` and complete-artifact `save` commands remain phases three and four.
+Layers connect through the existing functional
 construction API: `hidden = reservoir(input)` and `output = readout(hidden)`.
 
-The common model will be a PyTorch `nn.Module`:
+The common model is a PyTorch `nn.Module`:
 
-- `model(x)` will apply scaling learned from training data and return predictions
-  in the original units. `model.graph(x)` will expose the raw underlying graph
+- `model(x)` applies scaling learned from training data and returns predictions
+  in the original units. `model.graph(x)` exposes the raw underlying graph
   for pipelines that manage their own scaling.
-- Calls will **carry reservoir state by default**. An explicit reset will start
-  an unrelated sequence. Evaluation mode will control noise and other training
+- Calls **carry reservoir state by default**. An explicit reset starts
+  an unrelated sequence. Evaluation mode controls noise and other training
   behavior without implicitly resetting state.
-- One output will return a tensor. Multiple outputs will return a dictionary
+- One output returns a tensor. Multiple outputs return a dictionary
   using the names declared when constructing the model.
-- Ordinary forward calls will retain PyTorch gradients and module hooks.
-  Freezing reservoir weights will still permit gradients to upstream modules.
-- Scaling statistics will be registered buffers, so device/dtype conversions
-  and checkpoints include them. Each input and target will have its own
+- Ordinary forward calls retain PyTorch gradients and module hooks.
+  Freezing reservoir weights still permits gradients to upstream modules.
+- Scaling statistics are registered buffers, so device/dtype conversions
+  and checkpoints include them. Each input and target has its own
   preprocessing where their units or dimensions differ.
 
 These decisions apply directly to the new major API. The maintainer chose
@@ -41,7 +43,7 @@ The maintainer approved `rd.Model(inputs={...}, outputs={...})`. It wraps the
 existing symbolic graph in a common module with one registered `graph` child,
 reusing the current graph construction and execution infrastructure.
 
-The following illustrates the agreed interface under implementation:
+The following illustrates the implemented interface:
 
 ```text
 x = rd.reservoir_input(3)
@@ -182,7 +184,7 @@ The maintainer approved these choices on 22 October 2026:
   Targets use physical timestamps and each head's declared prediction lead.
 
 Both extensions are implemented. Complete integrated and hosted verification
-is in progress. The new major API uses current version-2 workflow/preset
+passes; see the roadmap's completion record. The new major API uses current version-2 workflow/preset
 checkpoint metadata. Older common-workflow checkpoints require reconstruction
 and refitting; no compatibility converter is provided.
 

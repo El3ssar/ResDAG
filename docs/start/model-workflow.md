@@ -250,7 +250,8 @@ general deployment export are not supported; see the
   `CoupledEnsembleESNModel` graphs. Their original low-level APIs remain available.
 - Automatic next-sample targets require one unambiguous input/output pair.
   Several heads need explicit named targets; their predictions are returned
-  as a dictionary. Algebraic fitting currently requires terminal readout heads.
+  as a dictionary. Expose each algebraically fitted readout as a named output;
+  an intermediate head can also feed a downstream reservoir.
 - Default feedback connects the first output to the first input. Custom
   [named routes](feedback.md) support fanout and explicit delays. Inputs
   without a feedback route need future driver values.

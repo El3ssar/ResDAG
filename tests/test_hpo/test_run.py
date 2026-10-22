@@ -108,6 +108,24 @@ class TestRunHPOBasic:
         assert len(study.trials) == 2
         assert study.best_value is not None
 
+    def test_all_pruned_study_returns_without_a_best_trial(self):
+        import optuna
+
+        def pruned_space(trial):
+            raise optuna.TrialPruned("intentionally excluded configuration")
+
+        study = run_hpo(
+            model_creator=simple_model_creator,
+            search_space=pruned_space,
+            data_loader=simple_data_loader,
+            n_trials=2,
+            verbosity=0,
+        )
+        assert len(study.trials) == 2
+        assert all(trial.state == optuna.trial.TrialState.PRUNED for trial in study.trials)
+        with pytest.raises(ValueError, match="No trials are completed"):
+            _ = study.best_trial
+
     def test_returns_study(self):
         """run_hpo returns an optuna Study."""
         import optuna

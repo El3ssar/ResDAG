@@ -129,6 +129,7 @@ if TYPE_CHECKING:
     from .pruners import resolve_pruner as resolve_pruner
     from .run import run_hpo as run_hpo
     from .transfer import export_best_config as export_best_config
+    from .trial_runner import TrialEvaluationError as TrialEvaluationError
     from .utils import get_best_params as get_best_params
     from .utils import get_study_summary as get_study_summary
     from .utils import make_study_name as make_study_name
@@ -136,6 +137,12 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str) -> Any:
     """Lazy import for optuna-dependent functions."""
+    if name == "TrialEvaluationError":
+        _require_optuna()
+        from .trial_runner import TrialEvaluationError
+
+        return TrialEvaluationError
+
     if name == "run_hpo":
         _require_optuna()
         from .run import run_hpo
@@ -184,6 +191,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     # Main function
     "run_hpo",
+    "TrialEvaluationError",
     # Loss functions (always available)
     "LOSSES",
     "LossProtocol",

@@ -52,6 +52,7 @@ from optuna.samplers import TPESampler
 from tqdm.auto import tqdm
 
 from .storage import resolve_storage
+from .trial_runner import TrialEvaluationError
 
 __all__ = [
     "run_single",
@@ -325,6 +326,7 @@ def _worker_process(
     study.optimize(
         objective,
         n_trials=local_budget,
+        catch=(TrialEvaluationError,),
         callbacks=[_stop_callback],
         show_progress_bar=False,
         n_jobs=1,
@@ -365,6 +367,7 @@ def run_single(
         study.optimize(
             objective,
             n_trials=remaining,
+            catch=(TrialEvaluationError,),
             n_jobs=n_workers,
             show_progress_bar=False,
             callbacks=[progress_cb] if progress_cb else None,

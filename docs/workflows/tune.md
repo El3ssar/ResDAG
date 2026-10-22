@@ -104,12 +104,25 @@ models add `drivers_keys=["driver"]` and supply `warmup_driver`,
 `train_driver`, `f_warmup_driver`, and `forecast_driver` entries — the
 last one sliced with the [pinned alignment](forecast.md).
 
-!!! warning "Silent failures by design"
-    `catch_exceptions=True` (the default) converts any per-trial error
-    into `penalty_value` (1e10) and stashes the message in the trial's
-    `"error"` attribute, so a single bad configuration cannot abort a
-    long-running study. If most trials report 1e10, the exceptions are
-    going unread — pass `catch_exceptions=False` while debugging.
+!!! note "Invalid trials and debugging"
+    `catch_exceptions=True` continues after an invalid evaluation, but the
+    default `error_policy="fail"` records it as an Optuna `FAIL` trial so it
+    cannot win. Details remain in the trial's `"error"` attribute. A study
+    with no valid completed evaluation raises clearly. Pass
+    `catch_exceptions=False` to see the original exception immediately.
+    The explicit `error_policy="penalty"` retains legacy numeric penalties;
+    it still cannot return an invalid best model. Low-level `TrialRunner`
+    and `build_objective` keep their old penalty default for compatibility.
+
+The actual forwarded model seed is recorded as `trial.user_attrs["model_seed"]`
+when the creator accepts a seed; `"trial_seed"` records the trial RNG seed.
+Use that model seed when reconstructing the winner. Forecast evaluation uses
+temporary evaluation mode, restoring each module's earlier training flag.
+
+`transfer_from` reuses evaluated scores and requires matching objective
+directions. Only use it for the same data, scaling and objective. For a new
+experiment, pass prior configurations through `warm_start` to evaluate them
+again.
 
 ### Losses
 

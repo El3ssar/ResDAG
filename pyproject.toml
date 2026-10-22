@@ -101,6 +101,9 @@ dev = ["resdag[dev]"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/resdag"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["/.herdr-synapse"]
+
 [tool.hatch.version]
 path = "src/resdag/__init__.py"
 

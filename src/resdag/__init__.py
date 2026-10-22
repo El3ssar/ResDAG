@@ -200,7 +200,7 @@ from .utils.seeds import SeedStreams
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
 
-__version__ = "1.2.0"
+__version__ = "2.0.0"
 
 __all__ = [
     # Modules

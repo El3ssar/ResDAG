@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.0.0 (2026-10-22)
+
+### Features
+
+- **core**: Unify PyTorch training and named forecasting
+  ([#460](https://github.com/El3ssar/ResDAG/pull/460),
+  [`4735542`](https://github.com/El3ssar/ResDAG/commit/47355420b689b7742b570a87d1a39bd6aa69f494))
+
+### Breaking Changes
+
+- **core**: ESN uses the tensor-based common workflow; custom readouts implement solve; raw graphs
+  use .graph; Model and ESN checkpoint metadata uses version 2 and rejects older schemas. No legacy
+  wrappers or conversion layer are provided.
+
+
 ## v1.2.0 (2026-10-22)
 
 ### Features

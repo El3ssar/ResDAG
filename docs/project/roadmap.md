@@ -220,6 +220,7 @@ adds the stricter coverage gate and 83 dependency-free clock/CI regression cases
 | Installed branch wheel | **462 passed**, three skipped, including native MPS correctness, with locked **Torch 2.10.0 / TSDynamics 6.0.3**. All **183 Python modules** match the runtime source byte-for-byte; the rebuilt final wheel is identical to this tested wheel. This is an unreleased branch build, not the published 1.2.0 package. |
 | Minimum optional dependency and newer Torch | A further **462 passed**, three skipped, from the same installed branch wheel with **TSDynamics 6.0.2 / Torch 2.14.1**. |
 | CPU performance gates | **Four passed**, four unavailable-device cases skipped, one deselected; thresholds unchanged. CUDA throughput was not measured. |
+| Supplemental complete CPU benchmark selection | **Seven passed, two failed** locally. The same sparse/parallel timing assertions fail against unchanged `main`; these pre-existing hardware limits are recorded in phase 5 below. They are outside the current four-test CI performance job. |
 | Static and package checks | CI-scoped Ruff/Black, whole-package mypy (**183 modules**), lock validation, actionlint and wheel/sdist builds pass. Both archives match runtime source and exclude local coordination notes. |
 | Documentation | Strict locked/latest MkDocs builds and **15 executable guide checks** pass. Rendered desktop guide navigation, custom preprocessing, named trajectories and feedback layout inspected. |
 | Full hosted suites | [Locked CI](https://github.com/El3ssar/ResDAG/actions/runs/39845805396) and [latest compatibility](https://github.com/El3ssar/ResDAG/actions/runs/39845806724) pass all eight Python 3.11–3.14 suites. Each: **4,625 passed**, 430 skipped, 13 deselected; **90.97–91.01% coverage** against the unchanged 90% floor. |
@@ -268,6 +269,28 @@ complete-artifact format and extension policy before introducing the new save AP
 | P4-05 | Pending | Fresh-process and cross-device artifact verification. | Forecast and preprocessing parity after reload; CPU map-location works; unsupported artifact versions fail clearly. |
 
 ## Phase 5: speed, memory and comparisons
+
+### Known baseline performance limits
+
+Running **all nine** existing non-GPU benchmark cases on this Apple Silicon
+Mac with Torch 2.10.0, float64 CPU tensors and four intra-op threads exposed
+two timing assumptions outside the current CI benchmark directories. The
+seven other cases passed. An isolated import of unchanged `main` (`a24e7a1`)
+reproduced both failures with the same environment and identical test/kernel
+sources; branch/main timings below are separate runs, not a controlled speedup
+comparison.
+
+| Existing assertion | Completion branch | Unchanged main | Required by current test |
+| --- | --- | --- | --- |
+| CSR versus dense recurrent multiplication, size 2,000 / density 5% | Dense/CSR time ratio **0.35×** | **0.44×** | Greater than **1.2×** |
+| Parallel advance with 64 versus eight patches | Large/small time ratio **8.44×** | **7.57×** | Less than **5×** |
+
+These remain open performance work in P5-03/P5-04. Sparse crossover and batching
+claims must be measured for the actual hardware, dtype and batch regime;
+`sparse="auto"` uses fixed size/density heuristics rather than calibration.
+Users can force `sparse=False` where the dense operator wins. Keep the current
+thresholds visible until the policy and measurements are reviewed; widening
+them alone would not improve performance.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |

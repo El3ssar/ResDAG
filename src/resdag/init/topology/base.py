@@ -189,7 +189,7 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
     The current spectral radius is obtained from
     :func:`estimate_spectral_radius`, which picks the exact dense ``eigvals``
     or scipy ``eigs`` for large sparse matrices, with a dense fallback.  Returns the matrix unchanged when its current
-    spectral radius is (numerically) zero — e.g. the ``zero`` topology or a
+    measured spectral radius is zero — e.g. the ``zero`` topology or a
     nilpotent matrix.
 
     This is the single shared rescale implementation used by both
@@ -490,7 +490,7 @@ class GraphTopology(TopologyInitializer):
         Returns
         -------
         numpy.ndarray
-            An ``(n, n)`` ``float32`` weighted adjacency matrix.
+            An ``(n, n)`` weighted adjacency matrix. Custom builder precision is preserved.
 
         Raises
         ------

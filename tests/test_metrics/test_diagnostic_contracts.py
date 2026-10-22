@@ -202,3 +202,66 @@ def test_unregularized_zero_capacity_handles_rank_deficient_states():
         memory_capacity(reservoir, max_delay=3, n_samples=10, test_samples=20, washout=0, alpha=0)
         == 0
     )
+
+
+@pytest.mark.parametrize("scale", [1e4, 1e8])
+@pytest.mark.parametrize("alpha", [0.0, 1e-8])
+def test_memory_capacity_handles_large_duplicate_states_without_mutating_caller(scale, alpha):
+    reservoir = ESNLayer(
+        16,
+        feedback_size=1,
+        bias=False,
+        spectral_radius=None,
+        activation="identity",
+        dtype=torch.float64,
+        seed=17,
+    ).train()
+    with torch.no_grad():
+        reservoir.cell.weight_hh.zero_()
+        reservoir.cell.weight_feedback.fill_(scale)
+    reservoir(torch.ones(2, 3, 1, dtype=torch.float64))
+    reservoir.cell.eval()  # A mixed mode configuration must also be preserved.
+    original_state = reservoir.get_state().clone()
+    original_weights = {name: value.clone() for name, value in reservoir.state_dict().items()}
+    original_modes = [module.training for module in reservoir.modules()]
+    original_rng = torch.random.get_rng_state().clone()
+    n_samples, test_samples, max_delay, washout, seed = 10, 40, 4, 2, 31
+
+    capacity, curve = memory_capacity(
+        reservoir,
+        n_samples=n_samples,
+        test_samples=test_samples,
+        max_delay=max_delay,
+        washout=washout,
+        alpha=alpha,
+        seed=seed,
+        return_curve=True,
+    )
+
+    # Every state is the same scaled current input. Any nonconstant linear
+    # reconstruction has the current input's squared correlation with each
+    # delayed target, independent of the fit's scale, intercept and ridge.
+    generator = torch.Generator().manual_seed(seed)
+    start = washout + max_delay
+    torch.rand(start + n_samples, generator=generator, dtype=torch.float64)
+    test_input = (
+        2 * torch.rand(start + test_samples, generator=generator, dtype=torch.float64) - 1
+    ).numpy()
+    expected = [
+        np.corrcoef(test_input[start:], test_input[start - delay : start + test_samples - delay])[
+            0, 1
+        ]
+        ** 2
+        for delay in range(1, max_delay + 1)
+    ]
+    assert np.isfinite(capacity)
+    assert 0 <= capacity <= max_delay
+    # At scale 1e8, the augmented system spans roughly thirteen orders of
+    # magnitude; compare the observable rather than nearly cancelling weights.
+    np.testing.assert_allclose(curve, expected, atol=1e-7)
+    assert capacity == pytest.approx(np.sum(expected), abs=1e-7)
+    torch.testing.assert_close(reservoir.get_state(), original_state, rtol=0, atol=0)
+    for name, value in reservoir.state_dict().items():
+        torch.testing.assert_close(value, original_weights[name], rtol=0, atol=0)
+    assert [module.training for module in reservoir.modules()] == original_modes
+    assert torch.equal(torch.random.get_rng_state(), original_rng)

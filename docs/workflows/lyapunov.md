@@ -212,7 +212,9 @@ radius = effective_spectral_radius(scalar_reservoir, states, max_states=64)
 ```
 
 Memory readouts fit one random input stream and score a separate, independently
-warmed stream. Increasing `test_samples` and repeating seeds helps assess
+warmed stream. Ridge fitting uses an augmented least-squares solve, so
+correlated states do not lose the regularizer through normal equations.
+Increasing `test_samples` and repeating seeds helps assess
 sampling noise. The theoretical population capacity bound is the state count;
 a finite-sample sum of squared correlations can exceed it. Capacity is not
 guaranteed to increase with spectral radius. Earlier versions scored fitting

@@ -15,8 +15,8 @@ Reservoir capacity / dynamics
     :func:`memory_capacity` — the linear short-term memory capacity of Jaeger
     (2001): drive the reservoir with an i.i.d. signal, fit a linear readout to
     reconstruct the input delayed by ``k`` for ``k = 1..max_delay``, and sum the
-    squared correlations :math:`MC = \\sum_k R^2_k`.  Bounded above by the
-    reservoir size ``N`` and rising with the spectral radius toward that bound.
+    held-out squared correlations :math:`MC = \\sum_k R^2_k`. Finite samples
+    introduce estimation noise; the population capacity bound is ``N``.
     :func:`effective_spectral_radius` — the mean spectral radius of the
     state-dependent recurrent Jacobian over a trajectory, accounting for
     activation saturation and leakage.
@@ -283,7 +283,8 @@ def memory_capacity(
 
     The actual cell update runs on a local CPU float64 evaluation copy. Caller
     weights, cached state, device and training mode are preserved. Training-only
-    noise is disabled. A shared ridge solve fits all delayed targets together.
+    noise is disabled. One augmented least-squares solve fits all delayed
+    targets together, avoiding the loss of conditioning from normal equations.
 
     Parameters
     ----------
@@ -384,13 +385,19 @@ def memory_capacity(
     test_x, test_y = samples(test_samples)
     x_mean, y_mean = train_x.mean(0), train_y.mean(0)
     centered = train_x - x_mean
-    gram = centered.T @ centered
-    gram.diagonal().add_(alpha)
-    coefficients = (
-        torch.linalg.solve(gram, centered.T @ (train_y - y_mean))
-        if alpha > 0
-        else torch.linalg.lstsq(centered, train_y - y_mean).solution
-    )
+    centered_targets = train_y - y_mean
+    if alpha > 0:
+        # Solve the equivalent ridge least-squares problem directly. Forming
+        # X.T @ X squares the condition number and can round away a positive
+        # alpha for large, correlated states, leaving a singular Gram matrix.
+        n_features = centered.shape[1]
+        centered = torch.cat(
+            (centered, np.sqrt(alpha) * torch.eye(n_features, dtype=centered.dtype))
+        )
+        centered_targets = torch.cat(
+            (centered_targets, centered_targets.new_zeros(n_features, max_delay))
+        )
+    coefficients = torch.linalg.lstsq(centered, centered_targets).solution
     predictions = (test_x - x_mean) @ coefficients + y_mean
     predictions = predictions - predictions.mean(0)
     targets = test_y - test_y.mean(0)

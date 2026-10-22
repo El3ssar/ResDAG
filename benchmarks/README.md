@@ -91,7 +91,7 @@ fast path:
 |---|---|---|---|
 | `flat_forecast_vs_graph_reexec` | flat single-step forecast engine vs per-step pytorch_symbolic graph walk | ≥ 1.8× | #254 |
 | `vectorized_ngrc_vs_stepwise` | vectorized `NGCell.forward_sequence` vs a Python loop over `forward` | ≥ 5× | #255 |
-| `fast_spectral_radius_vs_dense_eigvals` | power-iteration spectral-radius estimate vs dense `eigvals` | ≥ 2× | #185 |
+| `fast_spectral_radius_vs_dense_eigvals` | sparse SciPy Arnoldi estimate vs dense `eigvals` | ≥ 2× | #185 |
 
 The floors are deliberately conservative against a loaded CI runner — they catch
 a fast path silently reverting to the naive path (an *algorithmic* regression),

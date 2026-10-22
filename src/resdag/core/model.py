@@ -275,17 +275,23 @@ class ESNModel(ps.SymbolicModel):
             stack.extend(node._layer_full_siblings)
         return nodes
 
-    def _get_execution_plan(self) -> ExecutionPlan:
-        """Share one graph description across sequence and forecast backends."""
+    def _get_execution_plan(self, *, require_explicit_state: bool = True) -> ExecutionPlan:
+        """Share graph structure, validating visibility when explicit execution needs it.
+
+        Stateful training may inspect the structure of supported containers
+        without executing them through the explicit-state backend.
+        """
         cache: tuple[tuple[SymbolicData, ...], ExecutionPlan] | None = getattr(
             self, "_execution_plan_cache", None
         )
         if cache is None or cache[0] is not self.outputs:
             plan = build_execution_plan(self)
             self._execution_plan_cache = (self.outputs, plan)
-            return plan
-        cache[1].validate_reservoir_visibility()
-        return cache[1]
+        else:
+            plan = cache[1]
+        if require_explicit_state:
+            plan.validate_reservoir_visibility()
+        return plan
 
     def forward_stateless(
         self,
@@ -311,7 +317,9 @@ class ESNModel(ps.SymbolicModel):
         Separate instances may share weights, but sharing their recurrent
         state would make predictions depend on sequence chunk boundaries.
         """
-        return self._get_execution_plan().run_sequence(inputs, states, compile=compile)
+        return self._get_execution_plan(require_explicit_state=False).run_sequence(
+            inputs, states, compile=compile
+        )
 
     def as_module(self, *, stateful: bool = False) -> "ReservoirModelModule":
         """Wrap the complete trained graph for a larger PyTorch pipeline.

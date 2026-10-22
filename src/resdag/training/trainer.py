@@ -314,7 +314,7 @@ class ESNTrainer:
         already run in graph order. Crossing a reservoir instead requires a
         new reset/warmup after the upstream readouts have been fitted.
         """
-        plan = self.model._get_execution_plan()
+        plan = self.model._get_execution_plan(require_explicit_state=False)
         dependencies: list[tuple[set[int], int]] = [(set(), 0) for _ in range(plan.n_values)]
         readout_stages: dict[int, int] = {}
 
@@ -468,7 +468,7 @@ class ESNTrainer:
                 f"or rebuild the model with IncrementalRidgeReadoutLayer."
             )
 
-        self.model._get_execution_plan()
+        self.model._get_execution_plan(require_explicit_state=False)
         self._validate_stream_dependencies()
         self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
 
@@ -768,7 +768,7 @@ class ESNTrainer:
                 f"the model's inputs."
             )
 
-        self.model._get_execution_plan()
+        self.model._get_execution_plan(require_explicit_state=False)
         self._validate_input_shapes(warmup_inputs, label="warmup_inputs")
         if targets.shape[0] != warmup_inputs[0].shape[0]:
             raise ValueError("fit_force(): targets and warmup_inputs must share batch size")

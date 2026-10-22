@@ -94,6 +94,7 @@ class ExecutionPlan:
         compile: bool = False,
     ) -> tuple[ModelOutput, ReservoirStates]:
         """Run a whole sequence while leaving stored reservoir states untouched."""
+        self.validate_reservoir_visibility()
         self.validate_inputs(inputs)
         if states is not None:
             missing = set(self.reservoir_names) - set(states)
@@ -228,7 +229,7 @@ def build_execution_plan(model: ESNModel) -> ExecutionPlan:
                 reservoir_index=reservoir_index,
             )
         )
-    plan = ExecutionPlan(
+    return ExecutionPlan(
         operations=tuple(operations),
         input_features=tuple(int(node.shape[-1]) for node in input_nodes),
         output_slots=tuple(slots[id(node)] for node in model.outputs),
@@ -236,5 +237,3 @@ def build_execution_plan(model: ESNModel) -> ExecutionPlan:
         reservoir_names=tuple(reservoir_names),
         n_values=len(slots),
     )
-    plan.validate_reservoir_visibility()
-    return plan

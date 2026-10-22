@@ -123,6 +123,7 @@ def test_stateful_adapter_supports_hidden_reservoir_state_and_rejects_stateless_
         "stateless",
         "adapter",
         "stateful_adapter_stateless",
+        "structural_plan_run",
         "flat",
         "forecast_one",
         "forecast_many",
@@ -144,6 +145,7 @@ def test_cached_execution_rejects_a_reservoir_appended_to_a_container(
     graph.forward_stateless(x)
     if flat_cached:
         graph._get_flat_step()
+    structural_plan = graph._get_execution_plan(require_explicit_state=False)
     reservoir = ESNLayer(1, feedback_size=1, seed=7, dtype=torch.float64)
     container.append(reservoir)
     model(x)
@@ -161,6 +163,8 @@ def test_cached_execution_rejects_a_reservoir_appended_to_a_container(
                 adapter.forward_stateless(x)
             elif entry == "flat":
                 graph._get_flat_step()
+            elif entry == "structural_plan_run":
+                structural_plan.run_sequence((x,))
             else:
                 model.forecast(x, horizon=1 if entry == "forecast_one" else 3)
     finally:
@@ -168,6 +172,27 @@ def test_cached_execution_rejects_a_reservoir_appended_to_a_container(
     assert calls == []
     for name, state in model.get_state().items():
         torch.testing.assert_close(state, stored[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("container", ["sequential", "nested", "custom"])
+def test_structural_plan_describes_hidden_reservoir_but_cannot_execute_it(
+    container: str,
+) -> None:
+    model, before = _hidden_model(container)
+    x = torch.full((1, 3, 1), 0.1, dtype=torch.float64)
+    calls: list[None] = []
+    handle = before.register_forward_hook(lambda *_: calls.append(None))
+    try:
+        plan = model._get_execution_plan(require_explicit_state=False)
+        assert len(plan.operations) == 2
+        assert calls == [] and model.get_state() == {}
+        with pytest.raises(ValueError, match="hidden inside.*functional graph node"):
+            plan.run_sequence((x,))
+        with pytest.raises(ValueError, match="hidden inside.*functional graph node"):
+            model._get_execution_plan()
+    finally:
+        handle.remove()
+    assert calls == [] and model.get_state() == {}
 
 
 @pytest.mark.parametrize("container", ["sequential", "nested", "custom"])

@@ -45,6 +45,7 @@ class Operation:
     """A layer invocation with value slots and an optional recurrent-state slot."""
 
     layer: nn.Module
+    name: str
     parents: tuple[int, ...]
     outputs: tuple[int, ...]
     reservoir_index: int | None = None
@@ -60,6 +61,22 @@ class ExecutionPlan:
     reservoirs: tuple[BaseReservoirLayer, ...]
     reservoir_names: tuple[str, ...]
     n_values: int
+
+    def validate_reservoir_visibility(self) -> None:
+        """Reject recurrent descendants added to ordinary nodes after plan caching."""
+        for op in self.operations:
+            if op.reservoir_index is not None:
+                continue
+            for child_name, child in op.layer.named_modules():
+                if isinstance(child, BaseReservoirLayer):
+                    reservoir_name = f"{op.name}.{child_name}"
+                    raise ValueError(
+                        f"Explicit-state execution cannot thread reservoir '{reservoir_name}' "
+                        f"hidden inside graph operation '{op.name}' "
+                        f"({type(op.layer).__name__}). Expose each reservoir as its own "
+                        "functional graph node instead of placing it inside a container "
+                        "or custom module. Ordinary stateful model execution remains available."
+                    )
 
     def validate_inputs(self, inputs: tuple[torch.Tensor, ...]) -> None:
         """Check the model's sequence contract before graph execution."""
@@ -164,8 +181,24 @@ def _symbolic_operations(
     return tuple(operations)
 
 
+def _validate_unique_reservoir_invocations(model: ESNModel) -> None:
+    """Keep adapter state ownership unambiguous without requiring explicit execution."""
+    seen: set[int] = set()
+    for _, layer, _, _ in _symbolic_operations(model):
+        if isinstance(layer, BaseReservoirLayer):
+            if id(layer) in seen:
+                raise ValueError(
+                    "The same reservoir layer instance is invoked more than once in the graph. "
+                    "Sharing recurrent state this way is noncausal and makes results depend on "
+                    "sequence chunk boundaries. Use distinct reservoir layer instances; "
+                    "their parameter tensors may still share weights."
+                )
+            seen.add(id(layer))
+
+
 def build_execution_plan(model: ESNModel) -> ExecutionPlan:
     """Describe an existing graph without running layers or changing model state."""
+    _validate_unique_reservoir_invocations(model)
     input_nodes = tuple(model.inputs)
     slots = {id(node): index for index, node in enumerate(input_nodes)}
     names = {id(module): name for name, module in model.named_modules()}
@@ -182,13 +215,6 @@ def build_execution_plan(model: ESNModel) -> ExecutionPlan:
             output_slots.append(slot)
         reservoir_index = None
         if isinstance(layer, BaseReservoirLayer):
-            if id(layer) in reservoir_indices:
-                raise ValueError(
-                    "The same reservoir layer instance is invoked more than once in the graph. "
-                    "Sharing recurrent state this way is noncausal and makes results depend on "
-                    "sequence chunk boundaries. Use distinct reservoir layer instances; "
-                    "their parameter tensors may still share weights."
-                )
             reservoir_indices[id(layer)] = len(reservoirs)
             reservoirs.append(layer)
             reservoir_names.append(names[id(layer)])
@@ -196,12 +222,13 @@ def build_execution_plan(model: ESNModel) -> ExecutionPlan:
         operations.append(
             Operation(
                 layer=layer,
+                name=names[id(layer)],
                 parents=tuple(slots[id(parent)] for parent in parents),
                 outputs=tuple(output_slots),
                 reservoir_index=reservoir_index,
             )
         )
-    return ExecutionPlan(
+    plan = ExecutionPlan(
         operations=tuple(operations),
         input_features=tuple(int(node.shape[-1]) for node in input_nodes),
         output_slots=tuple(slots[id(node)] for node in model.outputs),
@@ -209,3 +236,5 @@ def build_execution_plan(model: ESNModel) -> ExecutionPlan:
         reservoir_names=tuple(reservoir_names),
         n_values=len(slots),
     )
+    plan.validate_reservoir_visibility()
+    return plan

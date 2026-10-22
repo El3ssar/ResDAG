@@ -48,6 +48,15 @@ consecutive batches do not accumulate autograd history. Set
 states. A configured reset initializer supplies the starting state; otherwise
 it is zero.
 
+Explicit-state execution requires reservoirs to be separate functional graph
+nodes. If a reservoir is hidden inside `nn.Sequential` or another module,
+`forward_stateless()`, the default `as_module()` adapter and forecasting reject
+the graph before running its operations. This prevents stored state from changing outside the
+returned state dictionary. Ordinary stateful `model(x)` calls still support
+those containers, as does `as_module(stateful=True)`. Containers with only
+pointwise layers, such as a linear readout followed by an activation, can remain
+grouped.
+
 Moving a model with `.to(...)` preserves its stored state values. An ordinary
 batch-size change initializes a fresh state; a state explicitly restored with
 `set_state` instead raises on a mismatched batch size to avoid discarding it.

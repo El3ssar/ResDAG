@@ -57,6 +57,7 @@ from resdag.core._execution import (
     ModelOutput,
     ReservoirModelProtocol,
     ReservoirStates,
+    _validate_unique_reservoir_invocations,
     build_execution_plan,
 )
 from resdag.core._flat_inference import (
@@ -283,6 +284,7 @@ class ESNModel(ps.SymbolicModel):
             plan = build_execution_plan(self)
             self._execution_plan_cache = (self.outputs, plan)
             return plan
+        cache[1].validate_reservoir_visibility()
         return cache[1]
 
     def forward_stateless(
@@ -319,7 +321,10 @@ class ESNModel(ps.SymbolicModel):
         Set ``stateful=True`` to carry state between calls, as ``model(x)``
         does, or use the wrapper's ``forward_stateless`` for explicit state.
         """
-        self._get_execution_plan()
+        if stateful:
+            _validate_unique_reservoir_invocations(self)
+        else:
+            self._get_execution_plan()
         return ReservoirModelModule(self, stateful=stateful)
 
     def reset_reservoirs(self) -> None:
@@ -1049,6 +1054,7 @@ class ESNModel(ps.SymbolicModel):
         ``self.outputs`` so it is transparently rebuilt if the graph's outputs
         change (e.g. via :meth:`add_output`).
         """
+        self._get_execution_plan()
         cache: tuple[tuple[SymbolicData, ...], FlatStep] | None = getattr(
             self, "_flat_step_cache", None
         )

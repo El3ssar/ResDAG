@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 from resdag.core import ESNModel
-from resdag.core._execution import ReservoirStates
+from resdag.core._execution import ReservoirStates, _validate_unique_reservoir_invocations
 from resdag.core._flat_inference import FlatStep
 from resdag.core._forecast import ForecastAlignment, prepare_forecast_inputs
 from resdag.core._persistence import (
@@ -354,7 +354,10 @@ class CoupledEnsembleESNModel(nn.Module):
     def as_module(self, *, stateful: bool = False) -> ReservoirModelModule:
         """Share all trained members and their aggregator with a PyTorch pipeline."""
         for model in self._iter_models():
-            model._get_execution_plan()
+            if stateful:
+                _validate_unique_reservoir_invocations(model)
+            else:
+                model._get_execution_plan()
         return ReservoirModelModule(self, stateful=stateful)
 
     @torch.no_grad()
@@ -401,7 +404,8 @@ class CoupledEnsembleESNModel(nn.Module):
         names = {
             f"models.{index}.{name}"
             for index, model in enumerate(self._iter_models())
-            for name in model._get_execution_plan().reservoir_names
+            for name, module in model.named_modules()
+            if isinstance(module, BaseReservoirLayer)
         }
         if strict and set(states) != names:
             raise KeyError(

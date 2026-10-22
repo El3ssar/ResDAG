@@ -57,6 +57,31 @@ device. Setting `gram_dtype=torch.float32` explicitly can speed up a
 well-conditioned CUDA fit, but can lose accuracy for correlated states. CG's
 automatic Gram dtype remains input precision on CUDA and solve precision on CPU.
 
+## Stable fits and streaming checkpoints
+
+With an intercept, batch solvers center features and targets before forming
+products. Incremental ridge merges centered chunk covariances and running means;
+it avoids subtracting large raw moments. Chunking preserves the same ridge
+objective, with ordinary floating-point differences.
+
+`use_float64=True` keeps incremental accumulators and RLS inverse-correlation
+state in float64 even when model parameters are converted with `.float()` or
+`.to(dtype=torch.float32)`. With `use_float64=False`, working buffers follow the
+parameter dtype. MPS cannot store float64 statistics: keep those readouts on CPU,
+or explicitly opt out for operations supported by your installed PyTorch.
+Ordinary ridge models fitted on CPU still support float32 MPS inference.
+
+Incremental checkpoints now carry a statistics-format version. Legacy raw-moment
+checkpoints load and upgrade with a warning when data was accumulated. Already
+lost precision cannot be recovered: reset accumulators and refit highly offset
+or ill-conditioned streams before continuing. New checkpoints retain only one
+feature-by-feature Gram buffer; centered statistics do not double that storage.
+
+Fresh RLS `partial_fit` starts from the same zero coefficient prior as
+`fit_online`; `delta` controls its strength. FISTA's optional power estimate is
+checked with backtracking before accepting a proximal update, including when
+the initial power vector misses a nonzero eigenspace.
+
 ## See also
 
 - [Train](../../workflows/train.md) — both training paths in practice

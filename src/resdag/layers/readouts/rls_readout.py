@@ -54,9 +54,12 @@ References
    (Recursive Least-Squares Adaptive Filtering).
 """
 
+from collections.abc import Callable
+from typing import Any
+
 import torch
 
-from ._solve_utils import resolve_solve_dtype
+from ._solve_utils import _apply_with_solver_precision, resolve_solve_dtype
 from .base import ReadoutLayer
 
 
@@ -151,6 +154,9 @@ class RLSReadout(ReadoutLayer):
         The rank-1 :math:`P` update accumulates round-off over many steps, so
         double precision materially improves stability; it is cheap because the
         per-step work is only ``O(F^2)``.
+        Parameter casts such as ``.float()`` preserve this working precision.
+        MPS does not support float64 statistics; use CPU or explicitly opt out
+        with ``use_float64=False`` for supported lower-precision operations.
     device : torch.device, optional
         Device for the layer parameters and the ``P`` buffer.
     dtype : torch.dtype, optional
@@ -266,7 +272,26 @@ class RLSReadout(ReadoutLayer):
             "P",
             torch.eye(self._p_dim, dtype=recur_dtype, device=self.weight.device) / self.delta,
         )
-        self.register_buffer("_n", torch.zeros((), dtype=torch.long))
+        self.register_buffer("_n", torch.zeros((), dtype=torch.long, device=self.weight.device))
+        # A fresh partial_fit stream has the same zero coefficient prior as
+        # fit_online/reset_state, including in unobserved feature directions.
+        self.reset_state()
+
+    def _apply(
+        self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True
+    ) -> "RLSReadout":
+        _apply_with_solver_precision(
+            self,
+            fn,
+            ("P",),
+            use_float64=getattr(self, "use_float64", False),
+            recurse=recurse,
+        )
+        return self
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.P = self.P.to(resolve_solve_dtype(self.weight.dtype, self.use_float64))
 
     @property
     def n_seen(self) -> int:

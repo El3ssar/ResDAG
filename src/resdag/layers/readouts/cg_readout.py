@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 import torch
 
+from ._solve_utils import build_ridge_problem, finalize_fit
 from .base import ReadoutLayer
 
 
@@ -193,27 +194,20 @@ class CGReadoutLayer(ReadoutLayer):
 
         fit_intercept = self.bias is not None
 
-        original_dtype = X.dtype
         solve_dtype = torch.float64 if self.use_float64 else X.dtype
         # Auto gram dtype: full precision where it's cheap (CPU), input
         # dtype where float64 throughput is crippled (consumer CUDA).
         gram_dtype = self.gram_dtype
         if gram_dtype is None:
             gram_dtype = solve_dtype if X.device.type == "cpu" else X.dtype
-        if gram_dtype != X.dtype:
-            X = X.to(gram_dtype)
-        y = y.to(gram_dtype)
-
-        if fit_intercept:
-            # Center the data; the intercept is recovered after the solve.
-            X_mean = X.mean(dim=0, keepdim=True)
-            y_mean = y.mean(dim=0, keepdim=True)
-            n = float(X.shape[0])
-            # Gram matrix of centered X
-            XtX = X.T @ X - n * (X_mean.T @ X_mean)
-        else:
-            XtX = X.T @ X
-        XtX = XtX.to(solve_dtype)
+        problem = build_ridge_problem(
+            X,
+            y,
+            fit_intercept=fit_intercept,
+            use_float64=self.use_float64,
+            gram_dtype=gram_dtype,
+        )
+        XtX = problem.gram
 
         def matvec(w: torch.Tensor) -> torch.Tensor:
             """Matrix-vector product: (X^T X + alpha * I) @ w."""
@@ -315,15 +309,8 @@ class CGReadoutLayer(ReadoutLayer):
             converged = (Rs_old <= tol_sq) | frozen
             return X, converged
 
-        # Right-hand side
-        if fit_intercept:
-            rhs = X.T @ y - n * (X_mean.T @ y_mean)
-        else:
-            rhs = X.T @ y
-        rhs = rhs.to(solve_dtype)
-
         # Solve using CG
-        coefs, converged = conjugate_gradient(matvec, rhs, self.max_iter, self.tol)
+        coefs, converged = conjugate_gradient(matvec, problem.rhs, self.max_iter, self.tol)
 
         # Warn on silent under-convergence: the iteration hit ``max_iter`` while
         # one or more output columns were still above ``tol``. Left unflagged
@@ -347,10 +334,7 @@ class CGReadoutLayer(ReadoutLayer):
                 stacklevel=3,
             )
 
-        if fit_intercept:
-            intercept = (y_mean.to(solve_dtype) - X_mean.to(solve_dtype) @ coefs).squeeze(0)
-            return coefs.to(original_dtype), intercept.to(original_dtype)
-        return coefs.to(original_dtype), None
+        return finalize_fit(problem, coefs)
 
     def __repr__(self) -> str:
         """Return string representation."""

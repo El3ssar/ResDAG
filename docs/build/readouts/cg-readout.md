@@ -15,7 +15,7 @@ transform of them — feed any readout.
 timestep (3-D input is flattened to `(batch*time, features)` and back),
 carrying a `name` for multi-readout DAGs, frozen by default, and exposing
 a `fit(states, targets)` interface for algebraic training.
-`CGReadoutLayer`, the current concrete solver, performs ridge regression
+`CGReadoutLayer` performs ridge regression
 by conjugate gradient on the normal equations rather than gradient
 descent:
 
@@ -50,6 +50,10 @@ formulation. With `bias=False` it solves the raw, uncentered normal
 equations, because centering without an intercept at predict time would
 shift every prediction.
 
+CG forms a full feature-by-feature Gram matrix: this is an iterative solve,
+not a matrix-free one. Centering happens before the products to avoid subtracting
+large nearly equal raw moments.
+
 ## Precision
 
 Two parameters control numerical precision. `use_float64=True` (the
@@ -76,12 +80,17 @@ from resdag import ReadoutLayer
 class LstsqReadout(ReadoutLayer):
     def _fit_impl(self, states, targets):
         # already flattened: states (N, in_features), targets (N, out_features)
-        coefs = torch.linalg.lstsq(states, targets).solution
-        return coefs, None    # (in, out) matrix; None leaves the bias untouched
+        if self.bias is None:
+            return torch.linalg.lstsq(states, targets).solution, None
+        mean_x = states.mean(0, keepdim=True)
+        mean_y = targets.mean(0, keepdim=True)
+        coefs = torch.linalg.lstsq(states - mean_x, targets - mean_y).solution
+        intercept = (mean_y - mean_x @ coefs).squeeze(0)
+        return coefs, intercept
 ```
 
 Return a coefficient matrix of shape `(in_features, out_features)` and an
-optional intercept; the base class transposes into the `(out, in)` layout
+intercept when `bias=True` (or `None` with `bias=False`); the base class transposes into the `(out, in)` layout
 `nn.Linear` expects and sets `is_fitted`. Because every readout is an
 ordinary `nn.Linear` underneath, gradient training remains available:
 pass `trainable=True` and fit it with any optimizer instead.

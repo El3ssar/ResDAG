@@ -91,6 +91,7 @@ from . import core, data, datasets, ensemble, init, layers, metrics, models, tra
 from .core import (
     ESNModel,
     Input,
+    Model,
     ReservoirFeatureExtractor,
     ReservoirModelModule,
     ReservoirStates,
@@ -220,6 +221,7 @@ __all__ = [
     "ESN",
     # Composition helpers
     "Input",
+    "Model",
     "ESNModel",
     "ReservoirFeatureExtractor",
     "ReservoirModelModule",

@@ -41,4 +41,11 @@ other sections.
     Prepare your own data, train and evaluate, save the model, and reuse it
     inside a larger PyTorch pipeline.
 
+- **[Common model workflow](model-workflow.md)**
+
+    ---
+
+    Named custom graphs with training-only scaling, original-unit predictions
+    and ordinary PyTorch composition. The first phase-two increment.
+
 </div>

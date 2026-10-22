@@ -7,6 +7,8 @@ ESN architectures using the ``pytorch_symbolic`` library.
 
 Classes
 -------
+Model
+    Named functional graph with training-only scaling and a PyTorch lifecycle.
 ESNModel
     Extended SymbolicModel with ESN-specific methods for forecasting
     and reservoir state management.
@@ -58,6 +60,7 @@ from pytorch_symbolic.symbolic_data import SymbolicData
 from ._execution import ReservoirStates
 from .feature_extractor import ReservoirFeatureExtractor
 from .model import ESNModel, Input, ReservoirModelModule
+from .workflow import Model
 
 
 def reservoir_input(
@@ -105,6 +108,7 @@ def reservoir_input(
 # importable for backward compatibility but are intentionally left out of the
 # public surface — see ``__dir__`` below.
 __all__ = [
+    "Model",
     "ESNModel",
     "Input",
     "ReservoirFeatureExtractor",

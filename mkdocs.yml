@@ -171,6 +171,7 @@ nav:
       - Install: start/install.md
       - First forecast: start/first-forecast.md
       - Train, save and integrate: start/end-to-end.md
+      - Common model workflow: start/model-workflow.md
       - The mental model: start/concepts.md
   - Build:
       - build/index.md
@@ -221,6 +222,7 @@ nav:
   - Project:
       - project/index.md
       - Roadmap: project/roadmap.md
+      - Phase two design: project/phase-two-design.md
       - Citation: project/citation.md
       - Ecosystem: project/ecosystem.md
       - Related work: project/related-work.md

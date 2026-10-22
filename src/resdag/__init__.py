@@ -123,6 +123,7 @@ from .init import graphs, input_feedback, topology
 from .layers import (
     NLAT2,
     NLAT3,
+    AutoReadoutLayer,
     BaseReservoirLayer,
     CGReadoutLayer,
     CholeskyReadoutLayer,
@@ -158,6 +159,7 @@ from .layers import (
     PinvReadoutLayer,
     Power,
     ReadoutLayer,
+    ReadoutSolveReport,
     ReservoirCell,
     ResESNCell,
     ResESNLayer,
@@ -260,6 +262,8 @@ __all__ = [
     "LIFReservoir",
     "ReservoirCell",
     # Readouts
+    "AutoReadoutLayer",
+    "ReadoutSolveReport",
     "CGReadoutLayer",
     "ReadoutLayer",
     "RidgeReadoutLayer",

@@ -15,12 +15,17 @@ solve, or gradient descent with any PyTorch optimizer.
 The solver is a pluggable contract: a new readout implements
 `solve(states, targets)` and inherits shape handling, validation, and
 parameter copy-back from the `ReadoutLayer` base class. Several solvers ship
-with the library — the default, `RidgeReadoutLayer`, fits ridge regression with
-a direct Cholesky solve; `CGReadoutLayer` solves the same problem iteratively by
+with the library — `rd.ESN` defaults to `AutoReadoutLayer`, checking numerical
+suitability while preserving the L2 objective and requested penalty. Lower-level
+model factories retain `RidgeReadoutLayer`, a direct Cholesky solve;
+`CGReadoutLayer` solves the ridge problem iteratively by
 conjugate gradient; and `SVDReadoutLayer`, `PinvReadoutLayer`, and
 `IncrementalRidgeReadoutLayer` cover rank-deficient, pseudo-inverse, and streaming
 cases. [Theory · Readout solvers](../../theory/readout.md#choosing-a-solver)
 tabulates which to reach for.
+
+Start with the [practical solver guide](../../guides/readout-solvers.md) for
+automatic fitting, diagnostics, explicit algorithms and MPS device policies.
 
 <!-- nb-cards: build/readouts -->
 
@@ -39,11 +44,16 @@ model = rd.classic_esn(
 )
 ```
 
-Names are `ridge`, `cholesky`, `cg`, `svd`, `pinv`, `incremental`, `rls`, and
+Names are `auto`, `ridge`, `cholesky`, `cg`, `svd`, `pinv`, `incremental`, `rls`, and
 `fista`; a `ReadoutLayer` subclass also works. `readout_kwargs` passes additional
 constructor options and can override `alpha`, `bias`, and `name`. Input/output
 widths are fixed by the architecture. The pseudoinverse solver has no ridge
 penalty, so `readout_alpha` does not apply to `pinv`.
+
+With `readout="auto"`, `readout_kwargs` accepts `solver`, `solve_dtype`, `rcond`
+and `cpu_fallback` as well as the common readout options. Its `solver` choices
+are `"auto"`, `"primal"`, `"dual"`, `"qr"` and `"svd"`. The `use_float64` and
+`gram_dtype` arguments below belong to other readout classes, not Auto.
 
 `trainable=True` enables gradient updates to the same readout after an algebraic
 fit. Reservoir trainability is controlled independently by the factory's

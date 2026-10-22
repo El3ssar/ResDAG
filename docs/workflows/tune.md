@@ -1,215 +1,333 @@
 ---
-description: The hyperparameters that control forecast quality, manual starting points for each, and complete hyperparameter studies with run_hpo.
+description: Tune a preset or custom DAG, compare autonomous forecasts, and keep a fitted winner ready to use.
 ---
 
 <span class="nb-kicker">Work · Tune</span>
 
-# Tune
+# Tune a model
 
-Eight parameters account for most of the variance in forecast quality.
-Tune them by hand first, since each has a direction you can reason
-about, then use `run_hpo` to search over their interactions.
+Call `model.tune(data)` to choose a configuration using autonomous forecasts.
+It returns the same model, fitted with the winning settings and ready for
+`forecast()`. `rd.ESN` and custom `rd.Model` networks use the same commands.
 
-| Parameter | Controls | Range | First move |
-| --- | --- | --- | --- |
-| `reservoir_size` | model capacity | 100–2000 | double it until gains stall |
-| `spectral_radius` | memory horizon, stability | 0.8–1.2 | sweep ±0.1 around 0.9 |
-| `leak_rate` | state update timescale | 0.05–1.0 | lower it for slow signals |
-| `bias_scaling` | diversity of unit operating points | 0.0–2.0 | leave at 1.0; `0.0` recovers pre-0.5 dynamics |
-| `topology` | recurrent connectivity structure | registry names | default (dense random) first, graphs after |
-| `feedback_initializer` | how the signal enters | registry names | default first; scale before structure |
-| `alpha` | readout ridge regularization | 1e-8–1e-2 | step by ×100 on a log scale |
-| warmup length | state synchronization | 100–500 steps | raise it until forecasts stop changing |
+Install the optional tuning tools:
 
-**Spectral radius** scales the recurrent matrix so its largest eigenvalue
-magnitude hits the target, which sets how long an input echoes through
-the state. Small values forget fast and stay stable; values near one
-remember longer and produce richer transients at the edge of instability
-— for driven, leaky reservoirs the best value often sits slightly above
-1.0. This is the single most effective parameter for forecast horizon.
-Factories default to 0.9; a bare `ESNLayer` leaves the matrix unscaled
-unless you pass a value.
+```sh
+python -m pip install "resdag[hpo]"
+```
 
-**Leak rate** blends the previous state into the new one:
-$x_t = (1-a)\,x_{t-1} + a\,\tilde{x}_t$. At `1.0` the state is fully
-replaced each step (the standard ESN); smaller values integrate slowly,
-matching the reservoir's timescale to the signal's. Slow, smooth signals
-call for small leak rates; `leak_rate=0.1` with a spectral radius near
-1.0 is a standard configuration for long-period oscillations.
+## Start with a preset
 
-**Alpha** sets the bias–variance tradeoff of a ridge readout such as
-`CGReadoutLayer`. Too small, and the readout amplifies state noise and
-forecasts diverge within a few steps; too large, and predictions
-over-smooth toward the mean. The optimum shifts with reservoir size and
-training length, which is why it belongs in every search space.
-
----
-
-## Searching with `run_hpo`
-
-Three callables define a study: a model factory, a search space, and a
-data loader. Each trial builds a fresh model, fits the readout, forecasts
-over the validation window, and scores it.
-
-<div class="nb-specimen" data-label="study.py" markdown>
+Keep a final test segment separate from tuning. This small example uses a
+sine wave so the complete workflow is easy to run:
 
 ```python
+import torch
 import resdag as rd
-from resdag.hpo import run_hpo
 
-data = ...                                  # (1, 2300, 3) — (batch, time, features)
-warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
-    data, warmup_steps=200, train_steps=1600, val_steps=300
-)
+series = torch.sin(torch.arange(600, dtype=torch.float64) * 0.05)[:, None]
+development, test = series[:500], series[500:540]
 
-def model_creator(reservoir_size, spectral_radius, leak_rate, alpha, seed=None):
-    """One fresh model per trial. Must accept every key of search_space."""
-    return rd.classic_esn(
-        reservoir_size=reservoir_size, feedback_size=3, output_size=3,
-        spectral_radius=spectral_radius, leak_rate=leak_rate,
-        readout_alpha=alpha, seed=seed,
-    )
+model = rd.ESN(reservoir_size=64, washout=30, readout="svd", dtype=torch.float64)
+model.tune(development, preset="quick", horizon=40, seed=7)
+prediction = model.forecast(horizon=len(test))
 
+print(model.tuning_report.best_params)
+print("Test RMSE:", (prediction - test).square().mean().sqrt().item())
+assert prediction.shape == test.shape
+```
+
+The tuner first fits on the earliest 80% of `development` and checks forecasts
+against its final 20%. After choosing a winner, it refits on **all** supplied
+development observations. `forecast()` then starts after their final sample.
+Scaling is learned during each fit; predictions remain in the original units.
+The untouched `test` segment gives a separate final evaluation.
+
+`model.tuning_report.study` is the full Optuna study.
+`model.tuning_report.best_params` includes fixed values returned by your search
+function as well as values sampled by Optuna.
+
+### Choose the amount of work
+
+| Preset | New trial attempts | Initialization seeds | Forecast starting points |
+| --- | ---: | ---: | ---: |
+| `"quick"` | 8 | 1 | 1 |
+| `"balanced"` (default) | 24 | 3 | 3 |
+| `"thorough"` | 80 | 5 | 5 |
+
+Seeds and starting points are reused across configurations. A starting point
+is a later moment in the held-out segment: the model sees observations before
+that moment to synchronize its state, then forecasts without seeing future
+feedback values. Its readout and preprocessing stay fixed during these checks.
+Windows may overlap; they are several checks of one series, not independent
+experiments.
+
+Set `n_trials`, `seeds` and `n_origins` to override those counts. There can be
+fewer starting points when the data cannot support more distinct full windows.
+All use the same `horizon`. Omitting it uses half the available validation span,
+with a minimum of one sample; changing presets does not change that horizon.
+An unsupported explicit horizon raises before any trial starts.
+
+For `rd.ESN`, the default search varies reservoir size, spectral radius, leak
+rate and readout regularization (`alpha`). Custom DAGs have the options below.
+
+## Tune a custom DAG
+
+The functional construction stays the same: connect layers with `layer(x)` and
+wrap named inputs and outputs in `rd.Model`. Here two reservoirs process the
+same signal at different update rates:
+
+```python
+def make_model(width=64, alpha=1e-6, seed=0):
+    x = rd.reservoir_input(1, dtype=torch.float64)
+    slow = rd.ESNLayer(
+        width, feedback_size=1, leak_rate=0.2,
+        spectral_radius=0.9, seed=seed, dtype=torch.float64,
+    )(x)
+    fast = rd.ESNLayer(
+        width, feedback_size=1, leak_rate=1.0,
+        spectral_radius=0.7, seed=seed + 1, dtype=torch.float64,
+    )(x)
+    joined = rd.Concatenate()(slow, fast)
+    y = rd.SVDReadoutLayer(2 * width, 1, alpha=alpha).double()(joined)
+    return rd.Model(inputs={"state": x}, outputs={"next": y}, washout=30)
+
+custom = make_model()
+custom.tune(development, preset="quick", horizon=40, seed=7)
+custom_prediction = custom.forecast(horizon=40)
+assert custom_prediction.shape == (40, 1)
+```
+
+Without a recipe, a custom DAG keeps its wiring and reservoir weights. Its
+default search varies `alpha`; a custom search may vary `alpha` and `washout`.
+Only one initialization seed is evaluated, since copying the same weights
+would not create new initializations. Readouts must support the selected
+settings; supply your own search or recipe for other readout types.
+
+### Change sizes, layers or initializers
+
+Provide an ordinary Python recipe, `factory(params, seed)`, when candidates need
+new structure or weights. It rebuilds the whole candidate, so changing a
+reservoir's width also updates its readout automatically:
+
+```python
 def search_space(trial):
     return {
-        "reservoir_size": trial.suggest_int("reservoir_size", 100, 500, step=100),
-        "spectral_radius": trial.suggest_float("spectral_radius", 0.5, 1.2),
-        "leak_rate": trial.suggest_float("leak_rate", 0.2, 1.0),
-        "alpha": trial.suggest_float("alpha", 1e-8, 1e-2, log=True),
+        "width": trial.suggest_int("width", 32, 96, step=32),
+        "alpha": trial.suggest_float("alpha", 1e-9, 1e-3, log=True),
     }
 
-def data_loader(trial):
-    """Must include these five keys, each (batch, time, features)."""
-    return {"warmup": warmup, "train": train, "target": target,
-            "f_warmup": f_warmup, "val": val}
+def factory(params, seed):
+    return make_model(width=params["width"], alpha=params["alpha"], seed=seed)
 
-study = run_hpo(
-    model_creator=model_creator,
+custom.tune(
+    development,
+    factory=factory,
     search_space=search_space,
-    data_loader=data_loader,
-    n_trials=100,
-    loss="efh",
-    seed=42,
-    storage="study.log",                    # journal file: resumable
+    preset="quick",
+    horizon=40,
+    seed=7,
 )
-print(study.best_params)
+custom_prediction = custom.forecast(horizon=40)
+assert custom_prediction.shape == (40, 1)
 ```
 
-</div>
+Use the recipe to choose any supported layers, topology, registered initializer
+or custom module. Return a built `rd.Model` (or a compatible `rd.ESN`). Candidates
+must preserve the task: input/output names and widths, prediction leads,
+feedback routes/delays, and resampling settings. Their hidden structure,
+preprocessing and trainable settings can differ.
 
-The data contract is validated per trial: the dict must contain
-`"warmup"`, `"train"`, `"target"`, `"f_warmup"`, `"val"`, all 3-D
-tensors. The forecast horizon defaults to `val.shape[1]`. Input-driven
-models add `drivers_keys=["driver"]` and supply `warmup_driver`,
-`train_driver`, `f_warmup_driver`, and `forecast_driver` entries — the
-last one sliced with the [pinned alignment](forecast.md).
+`search_space(trial)` uses standard Optuna suggestions, including conditional
+branches. Return a mapping of finite JSON-compatible settings (tuples are retained). Capture Python
+objects such as custom initializers in the recipe instead. `rd.ESN` rebuilds
+itself and therefore uses its own recipe; use `rd.Model` for a custom factory.
 
-!!! note "Invalid trials and debugging"
-    `catch_exceptions=True` continues after an invalid evaluation, but the
-    default `error_policy="fail"` records it as an Optuna `FAIL` trial so it
-    cannot win. Details remain in the trial's `"error"` attribute. A study
-    with no valid completed evaluation raises clearly. Pass
-    `catch_exceptions=False` to see the original exception immediately.
-    The explicit `error_policy="penalty"` retains legacy numeric penalties;
-    it still cannot return an invalid best model. Low-level `TrialRunner`
-    and `build_objective` keep their old penalty default for compatibility.
+## Tune a TSDynamics trajectory
 
-The actual forwarded model seed is recorded as `trial.user_attrs["model_seed"]`
-when the creator accepts a seed; `"trial_seed"` records the trial RNG seed.
-Use that model seed when reconstructing the winner. Forecast evaluation uses
-temporary evaluation mode, restoring each module's earlier training flag.
-
-`transfer_from` reuses evaluated scores and requires matching objective
-directions. Only use it for the same data, scaling and objective. For a new
-experiment, pass prior configurations through `warm_start` to evaluate them
-again.
-
-### Losses
-
-| Key | Behavior |
-| --- | --- |
-| `"efh"` | Expected forecast horizon — soft survival sum (default, chaotic systems) |
-| `"forecast_horizon"` | Hard count of contiguous below-threshold steps |
-| `"lyapunov"` | Error weighted by $e^{-t/\tau}$ with `lyapunov_t` |
-| `"standard"` | Mean geometric-mean error — stable or periodic signals |
-| `"soft_horizon"` | Hill-gated survival horizon — smoother search landscape |
-| `"attractor_dimension"` | Correlation-dimension mismatch for long-term attractor fidelity |
-
-All are minimized; the horizon losses are negated internally, so lower
-study values mean longer usable forecasts. `loss_params` passes kwargs
-(thresholds, metrics) to the chosen loss; `monitor_losses=["standard"]`
-logs extra metrics on every trial without optimizing on them.
-
-With `torch_scoring=True` (the default), the five horizon/error losses score
-directly on the forecast device; each checkpoint transfers only its final
-scalar. The attractor-dimension loss uses NumPy. Custom losses can accept torch
-tensors for the same device-local path, or use the automatic NumPy fallback.
-Checkpoint pruning currently happens after the full trajectory is generated,
-so it saves remaining scoring work, rather than forecast generation.
-
-### Multi-worker studies
+Install `resdag[hpo,dynamics]` on Python 3.12 or newer. The same tuning call
+accepts a trajectory and returns forecasts with future times and signal names:
 
 ```python
-study = run_hpo(..., n_trials=200, n_workers=8, storage="study.log", seed=42)
+import numpy as np
+import tsdynamics as ts
+
+trajectory = ts.systems.Lorenz().run(final_time=6.0, dt=0.02)
+dynamics_development, dynamics_test = trajectory[:241], trajectory[241:261]
+dynamics_model = rd.ESN(
+    reservoir_size=48, washout=20, readout="svd", dtype=torch.float64,
+)
+dynamics_model.tune(dynamics_development, preset="quick", horizon=20, seed=7)
+trajectory_prediction = dynamics_model.forecast(horizon=len(dynamics_test))
+tensor_prediction = dynamics_model.forecast(horizon=20, return_type="tensor")
+
+assert isinstance(trajectory_prediction, ts.Trajectory)
+assert trajectory_prediction.variables == dynamics_test.variables
+np.testing.assert_allclose(trajectory_prediction.t, dynamics_test.t, atol=1e-12)
+assert tensor_prediction.shape == (20, 3)
 ```
 
-Workers are separate OS processes coordinating through the storage file.
-Journal storage (`"study.log"`) is append-only and handles concurrent
-writers; a `.db` path uses SQLite with WAL mode. BLAS threads are
-throttled to one per worker before forking, and re-running with the same
-storage and study name resumes where the study stopped.
+This is an interface example, not a forecast-quality benchmark. The
+[named trajectory guide](../start/named-trajectories.md) explains multiple
+inputs and targets. Tuning uses the same physical alignment, component names
+and configurable resampling. Raw source observations are split before
+interpolation, so held-out values cannot influence training interpolation.
+Scoring stays in tensors; trajectory output converts to CPU only when requested.
 
-Seed semantics differ by mode. Single-worker runs are fully
-reproducible when the model creator accepts and forwards `seed`, as above:
-`seed` seeds the sampler, and each trial reseeds torch/numpy/Python with
-`seed + trial.number`. Multi-worker runs derive a
-sampler seed per worker (`seed + i·7919`), but trial numbers are claimed
-in arrival order — so per-trial seeds, and hence the exact trial
-sequence, vary run to run even with a fixed `seed`.
-An explicit `sampler=` is preserved in each worker with an independent copy
-and a call to its `reseed_rng()` hook. Custom samplers must be picklable for
-CUDA/spawn studies; their RNG policy determines reproducibility.
+## Supply your own validation segment
 
----
-
-## Reading a study
-
-`run_hpo` returns a plain optuna study, so optuna's visualization module
-works on it directly: `optuna.visualization` for interactive plotly
-figures, `optuna.visualization.matplotlib` for static ones like the four
-below, drawn from a 70-trial study maximizing valid horizon on Lorenz.
+Use `validation=(inputs, targets_or_None)` when a particular held-out segment
+must decide the winner. It is excluded from **both** candidate fits and final
+refitting:
 
 ```python
-from optuna.visualization import plot_optimization_history   # plotly, interactive
-from optuna.visualization.matplotlib import plot_contour     # static
-
-plot_optimization_history(study)
+held_out = rd.ESN(reservoir_size=64, washout=30, readout="svd", dtype=torch.float64)
+held_out.tune(
+    series[:400],
+    validation=(series[400:500], None),
+    preset="quick",
+    horizon=40,
+    seed=7,
+)
+# Use the later observations as history without fitting on them.
+held_out_prediction = held_out.forecast(history=series[400:500], horizon=40)
+assert held_out_prediction.shape == (40, 1)
 ```
 
-<figure markdown>
-![Optimization history of a 70-trial study](../assets/figures/hpo_history.png)
-<figcaption>Per-trial objective with the running best.</figcaption>
-</figure>
+Without that explicit history, this model's cached forecast begins after its
+training segment at sample 399. Tensor validation is treated as the continuation
+of training, with the same batch and feature layout. Explicit trajectory
+validation must occur later in time and preserve component names/order.
 
-<figure markdown>
-![Hyperparameter importances](../assets/figures/hpo_importances.png)
-<figcaption>Relative importance of each hyperparameter for the
-objective.</figcaption>
-</figure>
+For separate input/target tensors, targets are already aligned to each input
+origin, as in `fit(inputs, targets)`. A head with lead three expects target row
+zero to describe the signal three samples after input row zero. Tuning withholds
+labels beyond each observed fit boundary; the shared supervision window stops
+at the largest head lead while retaining the complete observed history.
+Explicit Tensor validation starts scoring after its first `max(prediction_leads)`
+observations, so every head has labels originating within validation.
+Trajectory targets instead supply physical timestamps and are queried directly.
+Actual origins and discarded target rows are recorded in `tuning_report.validation`.
 
-<figure markdown>
-![Per-parameter slice plots of the objective](../assets/figures/hpo_slice.png)
-<figcaption>Slice plots: the objective against each parameter
-individually.</figcaption>
-</figure>
+Named input/target mappings and `(batch, time, features)` tensors work as in
+`fit`. Inputs without a feedback route become known future drivers during
+validation. Future observed feedback signals are withheld from the rollout.
+See [feedback connections](../start/feedback.md) for leads and independent delays.
 
-<figure markdown>
-![Contour of the objective over spectral radius and leak rate](../assets/figures/hpo_contour.png)
-<figcaption>The spectral-radius × leak-rate landscape around the
-optimum.</figcaption>
-</figure>
+## Understand the score
 
-## Next
+The default winner has the longest **contiguous accurate forecast**, measured
+in samples. At each sample, errors are divided by fixed training channel
+scales, then combined with an RMS across features. A sample counts while this
+error is strictly below `threshold=0.2`; counting stops at the first failure.
+Scales come from training labels after the original model's washout, and stay
+fixed across trials, seeds, starting points and forecast prefixes.
 
-- [**Scale & deploy**](deploy.md) — run the best configuration at scale
-- [Reference · HPO](../reference/hpo.md) — every `run_hpo` parameter
+For batches, each output uses the median horizon across batch items. With
+several outputs, the weakest output determines the score: position lasting
+400 samples and velocity lasting 100 gives a score of **100**. Set
+`aggregation="mean"` to average outputs instead. Each trial then takes the
+median score across its initialization seeds and starting points. The winner
+is refitted using the first seed in that fixed bank.
+
+The report also includes full-window normalized error (`nrmse`), per-output
+horizons/errors and fit/forecast timings. These diagnostics do not break ties
+in the default horizon objective. For trajectory data, multiply sample counts
+by the recorded `validation["dt"]` to obtain physical duration.
+
+### Choose an error objective
+
+A callback can replace the ranking while retaining the normal fit, forecast
+and reporting workflow. `ScoreContext` contains named predictions and truth in
+original units, fixed training scales, and the current seed/origin. Truth and
+scales are copied for the callback so it cannot alter later evaluations.
+
+```python
+from resdag.hpo import ScoreContext
+
+def normalized_error(context: ScoreContext):
+    errors = [
+        ((context.predictions[name] - context.truth[name]) / context.scales[name])
+        .square().mean()
+        for name in context.predictions
+    ]
+    return torch.stack(errors).mean().sqrt().item()
+
+error_model = rd.ESN(reservoir_size=64, washout=30, readout="svd", dtype=torch.float64)
+error_model.tune(
+    development, preset="quick", horizon=40, seed=7,
+    objective=normalized_error, direction="minimize",
+)
+```
+
+Return one finite scalar per seed/origin. Scores are aggregated by their median.
+`direction="minimize"` chooses the smallest error; the built-in horizon objective
+requires `"maximize"`. Custom metrics can remain on the tensor device until
+the final scalar conversion.
+
+## Run and resume a study
+
+Optuna provides samplers, queued starting configurations and study inspection.
+For example, enqueue a known configuration before asking for more candidates:
+
+```python
+import optuna
+
+study = optuna.create_study(
+    direction="maximize", sampler=optuna.samplers.TPESampler(seed=7),
+)
+study.enqueue_trial({
+    "reservoir_size": 64, "spectral_radius": 0.9,
+    "leak_rate": 0.5, "alpha": 1e-6,
+})
+resumable = rd.ESN(reservoir_size=64, washout=30, readout="svd", dtype=torch.float64)
+resumable.tune(
+    development, study=study, preset="quick", horizon=40, seed=7,
+    n_trials=4, n_jobs=2,
+)
+resumable.tune(
+    development, study=study, preset="quick", horizon=40, seed=7,
+    n_trials=2, n_jobs=2,
+)
+assert len(study.trials) == 6
+```
+
+`n_trials` counts **new attempts per call**, including failed candidates.
+`catch_exceptions=True` records evaluation failures as `FAIL` trials, with
+messages in trial attributes; they cannot win. Set it to `False` while debugging
+to raise the original error. If no valid candidate completes, tuning raises.
+The source model changes only after a winner refits successfully. Construct
+optimizers after tuning, since the winning configuration can replace parameters.
+
+The default `n_jobs=1` runs in the caller. Other values use joblib process workers
+and its standard worker-count conventions, including `-1` for available CPUs.
+Workers evaluate parent-sampled windows of candidates; `inner_max_num_threads=1`
+limits worker BLAS threads. `timeout` stops dispatching new windows, while an
+in-flight window and the final winner fit finish normally. It is not a hard
+wall-clock deadline. Changing worker count can change an adaptive sampler's
+sequence, even though candidates reuse the same evaluation seeds and origins.
+
+Use `storage="tuning.log", study_name="my-experiment"` for a persistent journal,
+or a `.db` path for SQLite. Pass those options instead of `study=`; a caller-owned
+study also owns its sampler. Resuming checks data, validation, task, seed bank,
+objective and captured configuration against the stored protocol. Keep callback
+configuration stable, and use a fresh study when the experiment changes.
+Unverified prior evaluated scores are rejected; queued trials are supported.
+Caller-owned studies remain usable, and returned owned studies reconnect after
+storage cleanup when needed.
+
+Forecast execution defaults to `execution="auto"`: compatible DAGs use the fast
+step loop, while temporal custom layers use history replay. Force `"fast"` or
+`"history"` to select a mode explicitly. See [forecast capabilities](../advanced/forecast-capabilities.md).
+
+!!! note "Forecast pruning is still pending"
+    The common tuner currently evaluates each full forecast. It does not offer
+    an Optuna pruner or stop forecast generation early. This is a separate
+    roadmap item. The [raw runner](../advanced/raw-hpo.md) has scoring-checkpoint
+    pruning after generation; its multiprocessing and loss protocols are separate.
+
+## Continue
+
+- [HPO reference](../reference/hpo.md) — every option and report field
+- [Common model workflow](../start/model-workflow.md) — build, fit and use a custom network
+- [Raw HPO runner](../advanced/raw-hpo.md) — manually prepared five-array studies

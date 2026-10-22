@@ -9,19 +9,18 @@ architectures (``classic_esn``, ``ott_esn``, ``power_augmented``,
 - whether the raw input is concatenated back in before the readout,
 - whether a readout layer is attached at all,
 - which readout solver the readout uses (a direct Cholesky ridge solve by
-  default, the legacy Conjugate Gradient solver on request).
+  default, automatic selection or an explicit algorithm on request).
 
 Rather than repeat the ``reservoir_input -> ESNLayer -> Concatenate ->
 RidgeReadoutLayer -> ESNModel`` chain in five places, those choices are
 expressed as arguments to :func:`_esn_builder`.
 
 The default readout is :class:`~resdag.layers.RidgeReadoutLayer` with
-``solver='cholesky'``: it solves the ridge normal equations exactly (to
-floating-point) and is faster than :class:`~resdag.layers.CGReadoutLayer`,
-whose iterative solve under-converges at the realistic data scales and
-concatenated-input ill-conditioning these premade architectures produce.  The
-old CG behaviour is still selectable via ``readout="cg"`` (or by passing a
-readout class explicitly).
+``solver='cholesky'``. Normal equations can reduce fitting cost for tall,
+well-conditioned data, but forming a Gram matrix squares the design's
+condition number. Choose ``readout="auto"`` for precision-aware selection
+and structured solve diagnostics, or select an algorithm/class explicitly.
+Measure accuracy and runtime on the actual data, dtype and device.
 
 This module is intentionally private; the public surface is the factory
 functions exported from :mod:`resdag.models`.
@@ -37,6 +36,7 @@ from resdag.core import ESNModel, reservoir_input
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import CGReadoutLayer, Concatenate, ESNLayer, RidgeReadoutLayer
 from resdag.layers.readouts import (
+    AutoReadoutLayer,
     CholeskyReadoutLayer,
     FISTAReadoutLayer,
     IncrementalRidgeReadoutLayer,
@@ -53,9 +53,10 @@ AugmentFactory = Callable[[], nn.Module]
 # :class:`~resdag.layers.readouts.ReadoutLayer` subclass to instantiate.
 ReadoutSpec = str | type[ReadoutLayer]
 
-# Built-in string keys -> readout classes. ``"ridge"`` (the default) is the
-# direct Cholesky ridge solver; ``"cg"`` is the legacy Conjugate Gradient one.
+# Built-in string keys -> readout classes. ``"ridge"`` is the direct Cholesky
+# ridge solver; ``"auto"`` adds conditioning checks and stable alternatives.
 _READOUT_REGISTRY: dict[str, type[ReadoutLayer]] = {
+    "auto": AutoReadoutLayer,
     "ridge": RidgeReadoutLayer,
     "cg": CGReadoutLayer,
     "cholesky": CholeskyReadoutLayer,
@@ -73,7 +74,7 @@ def _resolve_readout_cls(readout: ReadoutSpec) -> type[ReadoutLayer]:
     Parameters
     ----------
     readout : str or type[ReadoutLayer]
-        Either a built-in key (``"ridge"`` or ``"cg"``) or a
+        Either a built-in key (such as ``"auto"``, ``"ridge"`` or ``"svd"``) or a
         :class:`~resdag.layers.readouts.ReadoutLayer` subclass to use directly.
 
     Returns
@@ -173,13 +174,11 @@ def _esn_builder(
     optionally attaches a ridge-regression readout.
 
     The readout defaults to :class:`~resdag.layers.RidgeReadoutLayer` with
-    ``solver='cholesky'`` — a direct, exact (to floating point) ridge solve that
-    is both faster and more accurate than the iterative
-    :class:`~resdag.layers.CGReadoutLayer`, which under-converges at realistic
-    data scales and on the ill-conditioned concatenated-input readouts these
-    architectures produce.  Pass ``readout="cg"`` to restore the legacy CG
-    behaviour, or a :class:`~resdag.layers.readouts.ReadoutLayer` subclass to
-    use a custom readout.
+    ``solver='cholesky'``. This direct normal-equations route suits
+    well-conditioned data. Use ``readout="auto"`` to check conditioning and
+    select stable alternatives without changing the L2 penalty. An explicit
+    key or :class:`~resdag.layers.readouts.ReadoutLayer` subclass selects a
+    custom readout.
 
     Architecture (each optional stage is skipped when not requested)::
 
@@ -242,7 +241,7 @@ def _esn_builder(
     trainable : bool, default=False
         Whether reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
+        A built-in name (``"auto"``, ``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
         ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
         :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
     readout_alpha : float, default=1e-6

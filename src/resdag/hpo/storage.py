@@ -16,6 +16,7 @@ import logging
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from typing import Literal, overload
 
 import optuna
@@ -32,6 +33,62 @@ except ImportError:
 __all__ = ["resolve_storage", "enable_sqlite_wal", "register_temp_storage_cleanup"]
 
 logger = logging.getLogger(__name__)
+
+
+def _close_storage(
+    storage: optuna.storages.BaseStorage | None,
+    *,
+    primary_error: BaseException | None = None,
+    keep_study_usable: bool = False,
+) -> None:
+    """Release the sessions and pool connections of an owned RDB backend.
+
+    Journal/in-memory backends have no matching close operation. Disposing a
+    SQLAlchemy engine releases idle connections without disabling the engine:
+    a returned study can reconnect to a persistent database when next used.
+    Remove the scoped session first so its checked-out connection reaches the
+    pool before disposal. Always attempt disposal even if session cleanup fails.
+    If a returned study owns a SQLite memory database, retain its backing pool:
+    disposing the last connection would erase the study itself.
+    """
+    if isinstance(storage, optuna.storages.RDBStorage):
+        retain_pool = keep_study_usable and _sqlite_memory_database(storage)
+        try:
+            try:
+                storage.remove_session()
+            except BaseException:
+                retain_pool = False
+                raise
+            finally:
+                if not retain_pool:
+                    storage.engine.dispose()
+        except BaseException as cleanup_error:
+            if primary_error is None:
+                raise
+            primary_error.add_note(
+                f"Database cleanup also failed: {type(cleanup_error).__name__}: {cleanup_error}"
+            )
+            logger.warning(
+                "Database cleanup failed while preserving the operation error", exc_info=True
+            )
+
+
+def _sqlite_memory_database(storage: optuna.storages.RDBStorage) -> bool:
+    """Recognize SQLite's connection-owned memory databases from the engine URL."""
+    url = storage.engine.url
+    if url.get_backend_name() != "sqlite":
+        return False
+    database = url.database
+    if database is None or database in ("", ":memory:"):
+        return True
+    if not database.startswith("file:"):
+        return False
+    # Let SQLAlchemy interpret its own URI flag; without URI mode, SQLite
+    # treats "file:..." as an ordinary persistent filename.
+    _, connect_options = storage.engine.dialect.create_connect_args(url)
+    return bool(connect_options.get("uri")) and (
+        database == "file::memory:" or url.query.get("mode") == "memory"
+    )
 
 
 def register_temp_storage_cleanup(path: str) -> None:
@@ -226,8 +283,7 @@ def enable_sqlite_wal(storage_path: str) -> None:
         if storage_path.startswith("sqlite:///")
         else storage_path
     )
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.commit()

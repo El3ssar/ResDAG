@@ -51,9 +51,9 @@ def test_lazy_fit_adopts_input_and_matches_independent_model_preset():
     model = _esn()
     assert not model.is_built and model.input_size is None and list(model.parameters()) == []
     assert model.fit(series) is model
-    reference = rd.Model(graph=classic_esn(9, 2, 2, seed=14, dtype=torch.float64), washout=3).fit(
-        series
-    )
+    reference = rd.Model(
+        graph=classic_esn(9, 2, 2, seed=14, dtype=torch.float64, readout="auto"), washout=3
+    ).fit(series)
     _equal(model.graph.state_dict(), reference.graph.state_dict())
     assert model.is_fitted and next(model.parameters()).dtype == torch.float64
     torch.testing.assert_close(
@@ -280,11 +280,7 @@ def test_forecasting_periodic_signal_keeps_meaningful_accuracy():
 
 @pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS unavailable")
 def test_native_mps_conversion_before_lazy_fit_and_recurrent_gradients():
-    model = (
-        _esn(readout_kwargs={"solver": "solve", "use_float64": False, "gram_dtype": torch.float32})
-        .float()
-        .to("mps")
-    )
+    model = _esn(readout_kwargs={"solve_dtype": torch.float32}).float().to("mps")
     data = _series().float().to("mps")
     model.fit(data)
     assert next(model.parameters()).device.type == "mps"

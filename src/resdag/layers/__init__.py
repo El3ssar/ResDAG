@@ -101,6 +101,7 @@ from .cells import (
     TorchRecurrentCell,
 )
 from .readouts import (
+    AutoReadoutLayer,
     CGReadoutLayer,
     CholeskyReadoutLayer,
     FISTAReadout,
@@ -109,6 +110,7 @@ from .readouts import (
     IncrementalRidgeReadoutLayer,
     PinvReadoutLayer,
     ReadoutLayer,
+    ReadoutSolveReport,
     RidgeReadoutLayer,
     RLSReadout,
     SVDReadoutLayer,
@@ -161,6 +163,8 @@ __all__ = [
     "NGReservoirLayer",
     "NGReservoir",
     # Readouts
+    "AutoReadoutLayer",
+    "ReadoutSolveReport",
     "ReadoutLayer",
     "CGReadoutLayer",
     "RidgeReadoutLayer",

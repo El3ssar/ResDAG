@@ -49,17 +49,19 @@ class RidgeReadoutLayer(ReadoutLayer):
 
     - ``solver='cholesky'`` (default) — ``torch.linalg.cholesky`` followed by
       ``torch.linalg.cholesky_solve``. Exploits the symmetric positive
-      definiteness of ``XᵀX + αI`` (guaranteed for ``alpha > 0``) and is the
-      fastest, most numerically stable option for well-conditioned fits.
-    - ``solver='solve'`` — ``torch.linalg.solve`` (LU). Slightly slower but
-      does not require positive definiteness, so it tolerates ``alpha == 0``
+      definiteness of ``XᵀX + αI`` in exact arithmetic for ``alpha > 0``.
+      Finite-precision Gram formation can still lose positive definiteness.
+    - ``solver='solve'`` — ``torch.linalg.solve`` (LU). It
+      does not require positive definiteness, so it supports ``alpha == 0``
       on a full-rank Gram.
 
     Solver-selection guide
     ----------------------
     - **Default to** ``RidgeReadoutLayer(solver='cholesky')`` for any
-      well-conditioned readout with ``alpha > 0`` and ``F <= 2000``. It is the
-      fastest exact option and matches :class:`CGReadoutLayer` to ``< 1e-8``.
+      well-conditioned readout with ``alpha > 0`` when an explicit
+      normal-equations solve is desired. Runtime and accuracy depend on the
+      workload, precision and hardware. :class:`AutoReadoutLayer` checks
+      numerical safety and can use the original design matrix instead.
     - Use ``solver='solve'`` when you need ``alpha == 0`` (pure least squares)
       and the Gram is full rank but you don't want the SVD machinery.
     - If the Gram is **rank deficient** (high-degree NG-RC feature maps, more

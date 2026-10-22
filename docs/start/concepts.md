@@ -64,10 +64,11 @@ batch-size change initializes a fresh state; a state explicitly restored with
 ## 3 — Readout training is a closed-form solve
 
 Readouts are fitted algebraically on collected states rather than trained
-by gradient descent. The default readout,
-[`RidgeReadoutLayer`](../build/readouts/index.md), is a linear layer
-fitted by ridge regression — a closed-form problem solved directly (a
-Cholesky factorization of the normal equations) in a single pass, with no
+by gradient descent. The friendly `rd.ESN` defaults to
+[`AutoReadoutLayer`](../guides/readout-solvers.md), a linear ridge readout that
+checks numerical safety before choosing Cholesky, augmented QR or SVD. It
+preserves the requested regularization and reports its choices. Lower-level
+factories retain their explicit Ridge/Cholesky default. These solves need no
 learning rate or epoch schedule. Other solvers plug into the same contract:
 `CGReadoutLayer` (iterative conjugate gradient) and SVD/pinv/streaming
 variants (see [Theory · Readout solvers](../theory/readout.md#choosing-a-solver)).

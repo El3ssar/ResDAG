@@ -69,13 +69,16 @@ fix the current placement. Later refits require matching tensors, as ordinary
 PyTorch modules do. `build(width, device=..., dtype=...)` selects placement
 explicitly; use `.to(...)` to move an already-built preset.
 
-`readout="svd"` selects a different readout, while `readout_kwargs` passes solver
-settings such as `solver`, `gram_dtype`, `use_float64` and `trainable`. Other
-reservoir options and registered/custom initializers pass through the preset.
-For native MPS fitting, select `readout_kwargs={"solver": "solve",
-"use_float64": False, "gram_dtype": torch.float32}`; the default float64
-Cholesky solve needs CPU/CUDA support. A CPU-fitted model can also be converted
-with `.float().to("mps")` for predictions and upstream gradients.
+The default `readout="auto"` checks numerical safety and chooses a solve while
+preserving the requested `alpha`. `readout_kwargs` configures it, for example
+`{"solver": "svd"}` or `{"solve_dtype": torch.float32, "cpu_fallback": False}`.
+Its `last_solve` report records the actual solver, working device/precision,
+conditioning and any fallback. Native MPS fits use supported float32 operations;
+an unsafe or unsupported solve warns before using CPU float64 unless fallback
+was disabled. Fitted parameters and predictions remain on the model device.
+See [readout solvers](../guides/readout-solvers.md) for explicit alternatives and
+their own keyword settings. Reservoir options and custom initializers continue
+to pass through the preset.
 
 A matching preset can restore a `state_dict` before its input width is built.
 Checkpoint metadata validates preset architecture settings before weight copies;

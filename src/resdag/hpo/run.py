@@ -27,7 +27,7 @@ from .dispatch import run_multiprocess, run_single
 from .losses import LossProtocol, get_loss
 from .objective import build_objective
 from .pruners import resolve_pruner
-from .storage import enable_sqlite_wal, resolve_storage
+from .storage import _close_storage, enable_sqlite_wal, resolve_storage
 from .transfer import apply_warm_start, transfer_trials
 from .trial_runner import TrialCallback
 from .utils import make_study_name
@@ -396,178 +396,196 @@ def run_hpo(
     # Optuna's private ``_backend._file_path`` attribute.
     resolved_storage, storage_path = resolve_storage(storage, n_workers, return_path=True)
 
-    # ── Resolve loss function ────────────────────────────────────────
-    loss_params = loss_params or {}
-    base_loss = get_loss(loss)
-    resolved_loss = partial(base_loss, **loss_params) if loss_params else base_loss
+    primary_error: BaseException | None = None
+    try:
+        # ── Resolve loss function ────────────────────────────────────────
+        loss_params = loss_params or {}
+        base_loss = get_loss(loss)
+        resolved_loss = partial(base_loss, **loss_params) if loss_params else base_loss
 
-    loss_name = loss if isinstance(loss, str) else getattr(loss, "__name__", "custom")
-    logger.info(f"Using loss function: {loss_name}")
-    if loss_params:
-        logger.info(f"Loss parameters: {loss_params}")
+        loss_name = loss if isinstance(loss, str) else getattr(loss, "__name__", "custom")
+        logger.info(f"Using loss function: {loss_name}")
+        if loss_params:
+            logger.info(f"Loss parameters: {loss_params}")
 
-    # ── Resolve monitor losses ───────────────────────────────────────
-    resolved_monitor_losses = None
-    resolved_monitor_params = monitor_params
-    if monitor_losses:
-        resolved_monitor_losses = [get_loss(m) if isinstance(m, str) else m for m in monitor_losses]
-        monitor_names = [
-            m if isinstance(m, str) else getattr(m, "__name__", "custom") for m in monitor_losses
-        ]
-        logger.info(f"Monitoring additional losses: {monitor_names}")
+        # ── Resolve monitor losses ───────────────────────────────────────
+        resolved_monitor_losses = None
+        resolved_monitor_params = monitor_params
+        if monitor_losses:
+            resolved_monitor_losses = [
+                get_loss(m) if isinstance(m, str) else m for m in monitor_losses
+            ]
+            monitor_names = [
+                m if isinstance(m, str) else getattr(m, "__name__", "custom")
+                for m in monitor_losses
+            ]
+            logger.info(f"Monitoring additional losses: {monitor_names}")
 
-        # Remap monitor_params keys from registry keys (e.g. "efh") to
-        # function names (e.g. "expected_forecast_horizon") so the objective
-        # can look them up by monitor_fn.__name__.
-        if monitor_params:
-            resolved_monitor_params = dict(monitor_params)
-            for user_key, fn in zip(monitor_losses, resolved_monitor_losses):
-                if isinstance(user_key, str):
-                    func_name = getattr(fn, "__name__", user_key)
-                    if user_key != func_name and user_key in resolved_monitor_params:
-                        resolved_monitor_params[func_name] = resolved_monitor_params.pop(user_key)
+            # Remap monitor_params keys from registry keys (e.g. "efh") to
+            # function names (e.g. "expected_forecast_horizon") so the objective
+            # can look them up by monitor_fn.__name__.
+            if monitor_params:
+                resolved_monitor_params = dict(monitor_params)
+                for user_key, fn in zip(monitor_losses, resolved_monitor_losses):
+                    if isinstance(user_key, str):
+                        func_name = getattr(fn, "__name__", user_key)
+                        if user_key != func_name and user_key in resolved_monitor_params:
+                            resolved_monitor_params[func_name] = resolved_monitor_params.pop(
+                                user_key
+                            )
 
-    # ── Configure sampler ────────────────────────────────────────────
-    worker_sampler = sampler
-    if sampler is None:
-        sampler = TPESampler(
-            multivariate=True,
-            warn_independent_sampling=False,
-            seed=seed,
-        )
-        logger.info("Using TPESampler with multivariate optimization")
-
-    # ── Configure pruner ─────────────────────────────────────────────
-    # Resolved once here and threaded into the workers so single- and
-    # multi-process runs share the same early-stopping policy.  Defaults to
-    # ``NopPruner`` (no pruning) when ``pruner is None``.
-    resolved_pruner = resolve_pruner(pruner)
-    logger.info(f"Using pruner: {type(resolved_pruner).__name__}")
-
-    # ── Create or load study ─────────────────────────────────────────
-    if study_name is None:
-        study_name = make_study_name(model_creator)
-        logger.info(f"Auto-generated study name: {study_name}")
-
-    study = optuna.create_study(
-        direction="minimize",
-        study_name=study_name,
-        storage=resolved_storage,
-        load_if_exists=True,
-        sampler=sampler,
-        pruner=resolved_pruner,
-    )
-
-    completed_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
-    if completed_trials > 0:
-        logger.info(f"Loaded existing study with {completed_trials} completed trials")
-        logger.info(f"Best value so far: {study.best_value:.6f}")
-
-    # ── Warm-start and transfer (pre-fork) ───────────────────────────
-    # Both mutate the shared storage in the parent process, before any worker
-    # is forked, so the enqueued / transferred trials are visible to every
-    # worker when ``n_workers > 1``.
-    #
-    # Transferred trials are *seeds* (already evaluated), not budget: they land
-    # in storage as COMPLETE, so the stop target and progress baseline are
-    # offset by their count to keep ``remaining`` = the number of *new* trials
-    # to run.  Warm-start trials, by contrast, are enqueued for evaluation and
-    # consume budget like any sampler-proposed trial.
-    n_transferred = 0
-    if transfer_from is not None:
-        n_transferred = transfer_trials(
-            study, transfer_from, param_names=_discover_param_names(search_space)
-        )
-    if warm_start:
-        apply_warm_start(study, warm_start)
-
-    # Stop target and progress baseline shifted past the transferred seeds.
-    stop_target = n_trials + n_transferred
-    baseline_completed = completed_trials + n_transferred
-
-    # ── Build objective function ─────────────────────────────────────
-    objective = build_objective(
-        model_creator=model_creator,
-        search_space=search_space,
-        data_loader=data_loader,
-        loss_fn=resolved_loss,
-        targets_key=targets_key,
-        drivers_keys=drivers_keys,
-        horizon_key=horizon_key,
-        catch_exceptions=catch_exceptions,
-        penalty_value=penalty_value,
-        monitor_losses=resolved_monitor_losses,
-        monitor_params=resolved_monitor_params,
-        device=device,
-        seed=seed,
-        clip_value=clip_value,
-        prune_on_clip=prune_on_clip,
-        n_checkpoints=n_checkpoints,
-        torch_scoring=torch_scoring,
-        trial_callbacks=trial_callbacks,
-        error_policy=error_policy,
-    )
-
-    # ── Run optimization ─────────────────────────────────────────────
-    remaining = max(0, n_trials - completed_trials)
-    if remaining > 0:
-        logger.info(f"Starting optimization: {remaining} trials remaining")
-
-        if n_workers > 1:
-            study, resolved_storage = _dispatch_multiprocess(
-                study=study,
-                resolved_storage=resolved_storage,
-                storage_path=storage_path,
-                study_name=study_name,
-                objective=objective,
-                n_trials=stop_target,
-                remaining=remaining,
-                completed_trials=baseline_completed,
-                n_workers=n_workers,
+        # ── Configure sampler ────────────────────────────────────────────
+        worker_sampler = sampler
+        if sampler is None:
+            sampler = TPESampler(
+                multivariate=True,
+                warn_independent_sampling=False,
                 seed=seed,
-                pruner=resolved_pruner,
-                verbosity=verbosity,
-                device=device,
-                sampler=worker_sampler,
             )
+            logger.info("Using TPESampler with multivariate optimization")
+
+        # ── Configure pruner ─────────────────────────────────────────────
+        # Resolved once here and threaded into the workers so single- and
+        # multi-process runs share the same early-stopping policy.  Defaults to
+        # ``NopPruner`` (no pruning) when ``pruner is None``.
+        resolved_pruner = resolve_pruner(pruner)
+        logger.info(f"Using pruner: {type(resolved_pruner).__name__}")
+
+        # ── Create or load study ─────────────────────────────────────────
+        if study_name is None:
+            study_name = make_study_name(model_creator)
+            logger.info(f"Auto-generated study name: {study_name}")
+
+        study = optuna.create_study(
+            direction="minimize",
+            study_name=study_name,
+            storage=resolved_storage,
+            load_if_exists=True,
+            sampler=sampler,
+            pruner=resolved_pruner,
+        )
+
+        completed_trials = len(
+            [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        )
+        if completed_trials > 0:
+            logger.info(f"Loaded existing study with {completed_trials} completed trials")
+            logger.info(f"Best value so far: {study.best_value:.6f}")
+
+        # ── Warm-start and transfer (pre-fork) ───────────────────────────
+        # Both mutate the shared storage in the parent process, before any worker
+        # is forked, so the enqueued / transferred trials are visible to every
+        # worker when ``n_workers > 1``.
+        #
+        # Transferred trials are *seeds* (already evaluated), not budget: they land
+        # in storage as COMPLETE, so the stop target and progress baseline are
+        # offset by their count to keep ``remaining`` = the number of *new* trials
+        # to run.  Warm-start trials, by contrast, are enqueued for evaluation and
+        # consume budget like any sampler-proposed trial.
+        n_transferred = 0
+        if transfer_from is not None:
+            n_transferred = transfer_trials(
+                study, transfer_from, param_names=_discover_param_names(search_space)
+            )
+        if warm_start:
+            apply_warm_start(study, warm_start)
+
+        # Stop target and progress baseline shifted past the transferred seeds.
+        stop_target = n_trials + n_transferred
+        baseline_completed = completed_trials + n_transferred
+
+        # ── Build objective function ─────────────────────────────────────
+        objective = build_objective(
+            model_creator=model_creator,
+            search_space=search_space,
+            data_loader=data_loader,
+            loss_fn=resolved_loss,
+            targets_key=targets_key,
+            drivers_keys=drivers_keys,
+            horizon_key=horizon_key,
+            catch_exceptions=catch_exceptions,
+            penalty_value=penalty_value,
+            monitor_losses=resolved_monitor_losses,
+            monitor_params=resolved_monitor_params,
+            device=device,
+            seed=seed,
+            clip_value=clip_value,
+            prune_on_clip=prune_on_clip,
+            n_checkpoints=n_checkpoints,
+            torch_scoring=torch_scoring,
+            trial_callbacks=trial_callbacks,
+            error_policy=error_policy,
+        )
+
+        # ── Run optimization ─────────────────────────────────────────────
+        remaining = max(0, n_trials - completed_trials)
+        if remaining > 0:
+            logger.info(f"Starting optimization: {remaining} trials remaining")
+
+            if n_workers > 1:
+                study, resolved_storage = _dispatch_multiprocess(
+                    study=study,
+                    resolved_storage=resolved_storage,
+                    storage_path=storage_path,
+                    study_name=study_name,
+                    objective=objective,
+                    n_trials=stop_target,
+                    remaining=remaining,
+                    completed_trials=baseline_completed,
+                    n_workers=n_workers,
+                    seed=seed,
+                    pruner=resolved_pruner,
+                    verbosity=verbosity,
+                    device=device,
+                    sampler=worker_sampler,
+                )
+            else:
+                run_single(
+                    study=study,
+                    objective=objective,
+                    remaining=remaining,
+                    n_workers=1,
+                    verbosity=verbosity,
+                )
+
+            # Final summary
+            done = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
+            logger.info(f"Optimization completed: {len(study.trials)} total trials")
+            if done > 0:
+                logger.info(f"Best value: {study.best_value:.6f}")
+                logger.info(f"Best parameters: {study.best_params}")
         else:
-            run_single(
-                study=study,
-                objective=objective,
-                remaining=remaining,
-                n_workers=1,
-                verbosity=verbosity,
+            logger.info(f"All {n_trials} trials already completed")
+
+        completed = study.get_trials(states=(optuna.trial.TrialState.COMPLETE,))
+        valid = [
+            trial
+            for trial in completed
+            if "error" not in trial.user_attrs and not trial.user_attrs.get("nonfinite_loss", False)
+        ]
+        invalid = study.get_trials(states=(optuna.trial.TrialState.FAIL,))
+        if not valid and (invalid or completed):
+            failed = invalid or completed
+            detail = failed[0].user_attrs.get("error", "Non-finite or invalid evaluation")
+            raise RuntimeError(
+                f"No valid HPO trials completed. First evaluation error: {detail}. "
+                "Use catch_exceptions=False to debug the underlying failure."
             )
-
-        # Final summary
-        done = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
-        logger.info(f"Optimization completed: {len(study.trials)} total trials")
-        if done > 0:
-            logger.info(f"Best value: {study.best_value:.6f}")
-            logger.info(f"Best parameters: {study.best_params}")
-    else:
-        logger.info(f"All {n_trials} trials already completed")
-
-    completed = study.get_trials(states=(optuna.trial.TrialState.COMPLETE,))
-    valid = [
-        trial
-        for trial in completed
-        if "error" not in trial.user_attrs and not trial.user_attrs.get("nonfinite_loss", False)
-    ]
-    invalid = study.get_trials(states=(optuna.trial.TrialState.FAIL,))
-    if not valid and (invalid or completed):
-        failed = invalid or completed
-        detail = failed[0].user_attrs.get("error", "Non-finite or invalid evaluation")
-        raise RuntimeError(
-            f"No valid HPO trials completed. First evaluation error: {detail}. "
-            "Use catch_exceptions=False to debug the underlying failure."
+        if completed and study.best_trial not in valid:
+            raise RuntimeError(
+                "The study's best score belongs to an invalid penalty evaluation. "
+                "Use a fresh study with error_policy='fail' to avoid selecting invalid trials."
+            )
+        return study
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        _close_storage(
+            resolved_storage,
+            primary_error=primary_error,
+            keep_study_usable=primary_error is None,
         )
-    if completed and study.best_trial not in valid:
-        raise RuntimeError(
-            "The study's best score belongs to an invalid penalty evaluation. "
-            "Use a fresh study with error_policy='fail' to avoid selecting invalid trials."
-        )
-    return study
 
 
 def _dispatch_multiprocess(
@@ -650,10 +668,9 @@ def _dispatch_multiprocess(
     _ = study.get_trials(deepcopy=False)
 
     # Release the parent's storage resources before forking, using public APIs
-    # only (no private attributes). ``remove_session`` closes the SQLAlchemy
-    # scoped session for RDB storages so children do not inherit live handles.
-    if isinstance(resolved_storage, optuna.storages.RDBStorage):
-        resolved_storage.remove_session()
+    # only (no private attributes). Return checked-out connections to the pool,
+    # then dispose that pool so children cannot inherit its idle connections.
+    _close_storage(resolved_storage)
 
     parent_sampler = study.sampler
     # Drop the parent's storage references before forking
@@ -695,10 +712,14 @@ def _dispatch_multiprocess(
     # non-None here (guarded above), so the resolved backend is never None.
     new_storage = resolve_storage(storage_path, n_workers=1)
     assert new_storage is not None
-    new_study = optuna.load_study(
-        study_name=study_name,
-        storage=new_storage,
-        sampler=parent_sampler,
-        pruner=pruner,
-    )
+    try:
+        new_study = optuna.load_study(
+            study_name=study_name,
+            storage=new_storage,
+            sampler=parent_sampler,
+            pruner=pruner,
+        )
+    except BaseException as error:
+        _close_storage(new_storage, primary_error=error)
+        raise
     return new_study, new_storage

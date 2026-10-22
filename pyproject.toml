@@ -48,7 +48,7 @@ Issues = "https://github.com/El3ssar/ResDAG/issues"
 # self-reference (see `[dependency-groups]`), so pip and uv install identical
 # lint/format/test tool versions.
 [project.optional-dependencies]
-hpo = ["optuna>=3.0.0"]
+hpo = ["optuna>=3.0.0", "joblib>=1.5.3"]
 # Optional dynamical-systems stack: Model accepts/returns named, timestamped
 # TSDynamics trajectories; `resdag.metrics.largest_lyapunov` also uses
 # `tsdynamics` to estimate Lyapunov exponents from a data series or a built-in

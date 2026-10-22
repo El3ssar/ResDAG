@@ -130,6 +130,9 @@ if TYPE_CHECKING:
     from .run import run_hpo as run_hpo
     from .transfer import export_best_config as export_best_config
     from .trial_runner import TrialEvaluationError as TrialEvaluationError
+    from .tuning import ScoreContext as ScoreContext
+    from .tuning import TuningReport as TuningReport
+    from .tuning import tune_model as tune_model
     from .utils import get_best_params as get_best_params
     from .utils import get_study_summary as get_study_summary
     from .utils import make_study_name as make_study_name
@@ -137,6 +140,12 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str) -> Any:
     """Lazy import for optuna-dependent functions."""
+    if name in ("tune_model", "TuningReport", "ScoreContext"):
+        _require_optuna()
+        from . import tuning
+
+        return getattr(tuning, name)
+
     if name == "TrialEvaluationError":
         _require_optuna()
         from .trial_runner import TrialEvaluationError
@@ -191,6 +200,9 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     # Main function
     "run_hpo",
+    "tune_model",
+    "TuningReport",
+    "ScoreContext",
     "TrialEvaluationError",
     # Loss functions (always available)
     "LOSSES",

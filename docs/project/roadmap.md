@@ -4,10 +4,12 @@ description: Delivery tracker for dependable forecasting, functional DAG composi
 
 # Roadmap
 
-Last updated: **22 October 2026**. Audit baseline: **ResDAG 1.1.0**;
+Last updated: **23 October 2026**. Audit baseline: **ResDAG 1.1.0**;
 phase-one corrections released in **1.1.1**, and the initial trajectory
-workflow in **1.2.0**. Phase-two completion is implemented and verified on
-[PR #460](https://github.com/El3ssar/ResDAG/pull/460), awaiting merge and a major release.
+workflow in **1.2.0**. Phase-two completion was merged through
+[PR #460](https://github.com/El3ssar/ResDAG/pull/460) as `4735542`.
+The [2.0.0 release](https://github.com/El3ssar/ResDAG/releases/tag/v2.0.0)
+and its documentation deployment are verified; phase three is in progress.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -55,7 +57,7 @@ after its acceptance checks pass and its public behavior is documented.
 | 0. Baseline audit | Done | Review all 173 runtime modules, 62 documentation pages and 17 examples; reproduce high-impact defects. | Explicit coverage inventory, independent numerical/state probes and chronological HPO pilot recorded. |
 | 1. Correctness and verification | Done | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
 | 2. Unified functional model workflow | Done | One PyTorch model lifecycle for presets and custom graphs. | The same documented fit/forecast/state commands work for both; functional construction and PyTorch semantics are preserved. Tuning and complete artifacts remain phases 3 and 4. |
-| 3. Reliable automatic tuning | Pending | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies reproduce, respect budgets and leave a fitted winner. |
+| 3. Reliable automatic tuning | WIP | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies reproduce, respect budgets and leave a fitted winner. |
 | 4. Model artifacts and diagrams | Pending | Save a complete model, load it without rebuilding its DAG, and export readable graph diagrams. | Fresh-process load/forecast parity and diagram correctness for every supported graph family. |
 | 5. Performance and competitive evidence | Pending | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. |
 | 6. Experiments and release readiness | Pending | Stable experiment recipes, executable documentation and migration guidance. | End-to-end experiments run from published packages with recorded environments and artifacts. |
@@ -236,14 +238,71 @@ tree and run the required PR checks again.
 
 ## Phase 3: tuning and automatic solver policy
 
+Implementation started on **22 October 2026**, from the phase-two merge.
+The new `model.tune(...)` lifecycle uses the common `Model`/`ESN` workflow,
+including preprocessing, named feedback and trajectory clocks. The maintainer
+approved chronological 80/20 validation, refitting the winner on supplied
+development data, Python recipes for structural candidates, the longest accurate
+forecast as the default reward, weakest-output aggregation and joblib/loky
+parallel trials. The initial implementation is verified in
+[PR #461](https://github.com/El3ssar/ResDAG/pull/461). See the
+[phase-three design](phase-three-design.md) for the agreed experience and
+data/timing safeguards.
+
+Independent audits reproduced a finite-input SVD overflow, acceptance of
+non-finite regularization, invalid infinite-score transfer, incorrect
+maximize-study summary ordering, and incomplete process/storage cleanup.
+The correctness fixes, common tuner and automatic solver are implemented with
+independent numerical, time-alignment, ownership and real-worker oracles.
+Pruning during forecast generation and staged resource promotion remain open;
+this is not a claim that the whole phase is complete.
+
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P3-01 | Pending | Unified `model.tune(...)` with quick/balanced/thorough presets. | The model is fitted with the winner and ready to forecast; advanced Optuna study/report access is retained. |
-| P3-02 | Pending | Several seeds/origins with transparent resource budgets. | Screening and robust promotion respect trial/time/memory budgets; untouched final tests remain separate; sampling-time units are explicit. |
-| P3-03 | Pending | Complete trial provenance and safe study transfer/resume. | Persist resolved parameters, actual seeds, preprocessing, split identity, objective units and environment; re-evaluate incompatible prior configurations. |
+| P3-01 | Done | Unified `model.tune(...)` with quick/balanced/thorough presets. | Presets/custom DAGs, named targets and trajectories; original-unit forecasts, transactional winner refit, report/study access and joblib execution pass complete local/package/hosted verification below. |
+| P3-02 | WIP | Several seeds/origins with transparent resource budgets. | Fixed seed banks/origins/scales, shared horizons, attempted-trial budgets and bounded timeout windows implemented. Staged screening/promotion and memory budgets remain pending; final tests stay separate. |
+| P3-03 | WIP | Complete trial provenance and safe study transfer/resume. | Common studies bind prepared data, task timing, recipes/objectives, seed banks and environment; resolved fixed/sampled settings are retained and incompatible scores rejected. External finite-score transfer and maximize summaries repaired. Raw-runner transfer/resume still lacks this full protocol binding. |
 | P3-04 | Pending | Pruning during rollout and device-local scoring. | Stopped trials skip forecast computation; tensor/NumPy metric parity; no hidden device transfers in the supported fast path. |
-| P3-05 | Pending | Stable automatic readout selection with forced overrides. | Standard primal/dual/QR/SVD choices are validated; report solver, working precision, conditioning/residual diagnostics and fallback; never hide changed regularization. |
-| P3-06 | Pending | Tuning process and storage lifecycle on current Python. | Investigate Python 3.14 fork/SQLite resource warnings; close owned resources and use a documented process strategy without unsafe fork assumptions; resume, failures and cancellation clean up reliably. |
+| P3-05 | Done | Stable automatic readout selection with forced overrides. | Auto primal/dual/augmented-QR/SVD with unchanged alpha, guarded precision, structured diagnostics and forced overrides; native MPS or explicit CPU bridge. Independent SVD overflow/subnormal, integration and complete CI checks pass. |
+| P3-06 | WIP | Tuning process and storage lifecycle on current Python. | Common tuning uses joblib/loky, finite windows, real-worker cancellation/error tests and caller-owned studies. Parent/path-transfer RDB cleanup preserves returned memory studies and primary errors. The older raw runner's worker/monitor lifecycle still needs migration. |
+
+### Initial implementation verification
+
+Runtime source: `b9c3fc8`, on **23 October 2026**. Subsequent source edits in
+this increment correct docstrings only; executable ASTs are unchanged.
+Hosted evidence below is pinned to `3cde4ce`; the final follow-up updates this
+record and includes the new trajectory-tuning tests in the optional CI lane.
+Required checks run again on the resulting PR head.
+
+| Check | Evidence |
+| --- | --- |
+| Independent readout checks | **318 passed**, four unavailable-device cases skipped; Decimal and augmented-system oracles, unchanged alpha, precision boundaries and actual MPS native/CPU-bridge paths. |
+| Common workflow integration | **157 passed**, covering presets, custom DAGs, trajectories, refits, PyTorch gradients and report propagation. Additional configuration regressions pass in the **36-test** engine suite. These focused gates overlap. |
+| Joblib and scoring | **85 passed**, including real worker processes, notebook closures, error/cancellation cleanup and actual MPS scoring. All **25 backend tests** also pass with minimum joblib **1.5.3**. |
+| Independent end-to-end review | **Nine passed**, including parallel structural recipes, equivalent-model SQLite resume, changed-objective rejection, inference-mode/autograd and in-place-layer isolation. |
+| Complete local suite | **5,231 passed**, 231 skipped, 13 benchmark cases deselected; **93.15% coverage**. This includes installed dynamics and native MPS correctness checks. |
+| Installed branch artifacts | Wheel and sdist contain all **188 Python modules**, byte-matching runtime source, with local coordination files excluded. Installed-wheel preset/custom tuning, checkpoint parity, gradients and named trajectory clocks pass. These are local builds, not a PyPI release. |
+| Documentation | **Seven tuning examples** pass with exact shipping budgets, plus **six solver examples**, migration checks and native MPS checks. Strict MkDocs and link checks pass. |
+| Complete hosted suites | [Locked CI](https://github.com/El3ssar/ResDAG/actions/runs/39864096488) and [latest compatibility](https://github.com/El3ssar/ResDAG/actions/runs/39864097736) pass all eight Python 3.11–3.14 suites. Each: **5,009 passed**, 453 skipped, 13 deselected; **90.43–90.47% coverage**, with the unchanged 90% floor. |
+| Hosted integration, static checks and docs | All six original dynamics lanes pass **212 checks** each, seven skipped, with locked **TSDynamics 6.0.3** and latest **6.1.0 / Torch 2.14.1**. Strict docs in both modes, Ruff/Black, mypy (**188 modules**) and CPU regression gates pass. |
+
+The optional dynamics lane now also selects the new tuning data/workflow
+modules: their **55 tests** pass locally, including trajectory tuning. The
+complete local suite and installed-wheel checks above also exercise the optional
+integration. See [PR #461](https://github.com/El3ssar/ResDAG/pull/461) for the
+latest checks after this CI-selection update.
+
+The hosted CPU performance gate passes without changing its thresholds. Its
+supplemental report contains ResDAG measurements, but the external comparator
+packages are unavailable: Julia is installed without the required reservoir
+package, and the Python comparator is skipped. That report is not evidence of
+a successful cross-library comparison. Comparative benchmarking remains in
+phase 5; CUDA throughput was not measured.
+
+The conservative test selector now includes common model tests for HPO changes;
+the earlier isolation assertion no longer described the dependency graph after
+models gained `tune()`. All **34 selector regressions** pass with that expectation
+updated; test-selection safety was not weakened.
 
 ## Phase 4: diagrams and complete model artifacts
 
@@ -323,7 +382,8 @@ verify value, state and gradient behavior before replacing it.
 | 2026-10-22 | Phase 1 merge | Done | PR #458 squash-merged into `main` as `41a1744`; phase-two branch starts from that commit. |
 | 2026-10-22 | Phase 1 release | Done | Post-merge full Python 3.11–3.14 matrix, optional dynamics lanes and release job passed; [v1.1.1](https://github.com/El3ssar/ResDAG/releases/tag/v1.1.1) published. Documentation deployment passed. |
 | 2026-10-22 | Phase 2 foundations and trajectory release | Done | PR #459 merged as `d63905d`; v1.2.0 publication, full post-merge tests and documentation deployment passed. |
-| 2026-10-22 | Phase 2 completion | Done | Common native ESN/Model workflow, all graph families, explicit feedback, fast/history execution, reversible per-port transforms, named trajectories and PyTorch composition implemented and documented. Full locked/latest matrices, integration, strict coverage, CPU gates and installed wheels verified on PR #460; awaiting merge and major release. |
+| 2026-10-22 | Phase 2 completion | Done | Common native ESN/Model workflow, all graph families, explicit feedback, fast/history execution, reversible per-port transforms, named trajectories and PyTorch composition implemented and documented. PR #460 merged as `4735542`; v2.0.0 published. Full post-merge tests, actual published-wheel install/smoke and versioned documentation deployment passed. |
+| 2026-10-23 | Phase 3 initial implementation | WIP | Approved common tuner and automatic readout policy implemented and verified in [PR #461](https://github.com/El3ssar/ResDAG/pull/461): 5,231 local tests, 93.15% coverage; all eight locked/latest full hosted suites, optional integrations, strict docs, CPU gates and installed artifacts pass. Rollout pruning, staged promotion, memory budgets and raw-runner migration remain open. |
 
 ## Standard tools to reuse
 

@@ -27,8 +27,8 @@ from resdag.core.model import ESNModel
 from resdag.core.workflow import Model, Preprocessing, Streams, _washout
 from resdag.data._trajectory import is_trajectory, validate_resampling_options
 from resdag.init.utils import InitializerSpec, TopologySpec
-from resdag.models import classic_esn
 from resdag.models._builder import ReadoutSpec
+from resdag.models.classic_esn import classic_esn
 
 if TYPE_CHECKING:
     from tsdynamics.data import Trajectory
@@ -130,7 +130,7 @@ class ESN(nn.Module):
         output_transforms: Mapping[str, nn.Module] | None = None,
         prediction_lead: int | Mapping[str, int] = 1,
         feedback: Sequence[Feedback] | None = None,
-        readout: ReadoutSpec = "ridge",
+        readout: ReadoutSpec = "auto",
         readout_kwargs: dict[str, Any] | None = None,
         topology: TopologySpec = None,
         feedback_initializer: InitializerSpec = None,
@@ -409,6 +409,42 @@ class ESN(nn.Module):
         candidate.fit(training, targets)
         self._attach(candidate, width)
         self._device_pinned = self._dtype_pinned = True
+        return self
+
+    def tune(
+        self,
+        training: Streams | Trajectory | Mapping[str, Trajectory],
+        targets: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
+        *,
+        preset: Literal["quick", "balanced", "thorough"] = "balanced",
+        n_trials: int | None = None,
+        horizon: int | None = None,
+        n_jobs: int = 1,
+        **options: Any,
+    ) -> ESN:
+        """Tune preset settings, refit the winner and return this same ESN.
+
+        Requires ``resdag[hpo]``. Presets automatically rebuild reservoir
+        sizes, initializations and readouts together. ``search_space(trial)``
+        overrides the default Optuna search. See the tuning guide for explicit
+        validation, seeds, objectives, study storage and :attr:`tuning_report`.
+        Failed tuning preserves the current model. Create optimizers afterward.
+        """
+        from resdag.hpo import _require_optuna
+
+        _require_optuna()
+        from resdag.hpo.tuning import tune_model
+
+        tune_model(
+            self,
+            training,
+            targets,
+            preset=preset,
+            n_trials=n_trials,
+            horizon=horizon,
+            n_jobs=n_jobs,
+            **options,
+        )
         return self
 
     def forward(self, inputs: Streams) -> torch.Tensor:

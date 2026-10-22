@@ -128,6 +128,13 @@ Use `esn.graph` for raw graph access, or build custom branches through
 NumPy data converts explicitly with `torch.as_tensor(array)`. Tensor layouts
 are preserved: `(T,D)` returns `(H,D)`; `(B,T,D)` returns `(B,H,D)`.
 
+With `resdag[hpo]`, `esn.tune(series, preset="quick")` compares configurations
+on held-out forecasts and refits the winner on all supplied development data.
+Custom DAGs use the same command with a Python construction recipe.
+Inspect `esn.tuning_report` for settings, errors, timing and the Optuna study;
+keep final test data outside tuning. See the [tuning guide](docs/workflows/tune.md).
+The preset's automatic readout reports its solver, precision and any fallback.
+
 Override units per input/output with [custom preprocessing](docs/advanced/custom-preprocessing.md).
 For several timestamped signals, [named trajectories](docs/start/named-trajectories.md)
 align inputs and targets within their shared observed range. Custom graphs
@@ -177,7 +184,7 @@ model = rd.classic_esn(
 ```
 
 This fits algebraically with `ESNTrainer` and lets an optimizer fine-tune the
-same readout afterwards. Available names are `ridge`, `cholesky`, `cg`, `svd`,
+same readout afterwards. Available names are `auto`, `ridge`, `cholesky`, `cg`, `svd`,
 `pinv`, `incremental`, `rls`, and `fista`. SVD and pseudoinverse fitting operate
 directly on the design matrix without allocating a feature-by-feature Gram.
 

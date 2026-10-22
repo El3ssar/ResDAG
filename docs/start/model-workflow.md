@@ -19,8 +19,9 @@ Ordinary `model(x)` calls retain the tensor interface.
 
 This is part of [phase two](../project/roadmap.md#phase-2-one-functional-workflow).
 The common interface supports the `ESN` preset, symbolic, parallel and coupled
-graphs. Raw `ESNModel` and factories remain useful building blocks. Unified tuning and complete
-model/diagram saves are later roadmap phases.
+graphs. Raw `ESNModel` and factories remain useful building blocks.
+[Unified tuning](../workflows/tune.md) is available for presets and custom DAGs.
+Complete model/diagram saves remain a later roadmap phase.
 
 ## Build, fit and forecast
 
@@ -210,11 +211,10 @@ fitted scaling statistics move with it. Scaling and the graph are included in
 requires a compatible model architecture. Loading a complete model without
 rebuilding its graph remains [phase four](../project/roadmap.md#phase-4-diagrams-and-complete-model-artifacts).
 
-On Apple MPS, float32 fitting with `CGReadoutLayer(..., use_float64=False)` is
-tested. MPS does not support float64 or the direct Cholesky-solve operation
-used by some readouts. You can also fit on CPU, then move the trained model
-with `model.float().to("mps")`. Automatic device-aware solver selection remains
-in [phase three](../project/roadmap.md#phase-3-tuning-and-automatic-solver-policy).
+On Apple MPS, `AutoReadoutLayer` uses supported float32 operations when its
+numerical checks pass. Unsafe or unsupported decompositions use a reported,
+configurable CPU float64 bridge. You can also fit on CPU and move the model
+with `model.float().to("mps")`. See [solver controls](../guides/readout-solvers.md).
 
 ## Capture the surrounding pipeline with FX
 

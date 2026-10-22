@@ -14,10 +14,55 @@ resdag.layers.readouts.RidgeReadoutLayer : Cholesky / solve direct readout.
 resdag.layers.readouts.PinvReadoutLayer : lstsq / pseudo-inverse readout.
 """
 
+import math
+
 import torch
 
 from ._solve_utils import build_least_squares_problem, finalize_fit
 from .base import ReadoutLayer
+
+
+def _validate_regularization(alpha: float, rcond: float) -> None:
+    for name, value in (("alpha", alpha), ("rcond", rcond)):
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"{name} must be non-negative and finite, got {value}.")
+
+
+def _ridge_filter(singular_values: torch.Tensor, alpha: float) -> torch.Tensor:
+    """Evaluate s / (s² + alpha) without squaring large singular values.
+
+    Normalize both denominator terms by max(s, sqrt(alpha)) before combining
+    them. The resulting sum is bounded between one and two. Divide by the
+    scale last so a small numerator can keep the final factor representable.
+    When alpha is a normal working-dtype scalar, divide small singular values
+    by alpha directly: this avoids amplifying intermediate subnormal rounding
+    through two divisions by sqrt(alpha).
+    """
+    root = math.sqrt(alpha)
+    if root > torch.finfo(singular_values.dtype).max:
+        # A finite Python alpha may exceed the working tensor dtype's range.
+        # Its square root dominates every singular value; represent its
+        # reciprocal instead of first casting that root to infinity.
+        reciprocal_root = 1.0 / root
+        scaled = singular_values * reciprocal_root
+        return (scaled / (1.0 + scaled.square())) * reciprocal_root
+
+    root_tensor = singular_values.new_tensor(root)
+    scale = torch.maximum(singular_values, root_tensor)
+    positive = scale > 0
+    safe_scale = torch.where(positive, scale, torch.ones_like(scale))
+    scaled_values = singular_values / safe_scale
+    scaled_root = root_tensor / safe_scale
+    denominator = scaled_values.square() + scaled_root.square()
+    denominator = torch.where(positive, denominator, torch.ones_like(denominator))
+    result = (scaled_values / denominator) / safe_scale
+    info = torch.finfo(singular_values.dtype)
+    if info.tiny <= alpha <= info.max:
+        small = singular_values < root_tensor
+        small_values = torch.where(small, singular_values, torch.zeros_like(singular_values))
+        small_result = (small_values / alpha) / denominator
+        result = torch.where(small, small_result, result)
+    return result
 
 
 class SVDReadoutLayer(ReadoutLayer):
@@ -39,21 +84,24 @@ class SVDReadoutLayer(ReadoutLayer):
     by high-degree NG-RC feature maps) is handled gracefully instead of
     blowing up the way a Cholesky / normal-equations solve would.
 
-    Working from the SVD of ``X`` directly (rather than the Gram ``XᵀX``)
-    squares the effective condition number's *square root* away, so the small
-    singular values that an iterative CG solver under-resolves are recovered
-    faithfully — giving a strictly lower train residual on the ill-conditioned
-    fits where CG stalls.
+    Positive-ridge filter factors are evaluated in scaled form, avoiding
+    overflow from squaring large finite singular values. The requested
+    ``alpha`` is preserved; numerical recovery does not add extra regularization.
+
+    Decomposing ``X`` directly avoids squaring its condition number by forming
+    ``XᵀX``. This is useful for rank-deficient or ill-conditioned features;
+    attainable accuracy still depends on working precision, data scale and
+    regularization.
 
     Solver-selection guide
     ----------------------
     - **Reach for** :class:`SVDReadoutLayer` when the Gram is **rank deficient
       or severely ill-conditioned**: ``alpha == 0`` least squares, high-degree
       NG-RC feature maps, or wide concatenated-input readouts where CG
-      under-converges. It is the most robust of the readouts.
-    - For a **well-conditioned** readout with ``alpha > 0`` and ``F <= 2000``,
-      :class:`RidgeReadoutLayer` (``solver='cholesky'``) is faster and equally
-      accurate — prefer it there.
+      under-converges.
+    - Cholesky-based :class:`RidgeReadoutLayer` can reduce fitting cost when
+      the regularized Gram is well conditioned. Measure accuracy and runtime
+      for the actual matrix shape, dtype and device when choosing a solver.
     - :class:`PinvReadoutLayer` is the closely-related lstsq / pinv route; SVD
       here gives explicit control over the Tikhonov filter and ``rcond``.
 
@@ -73,10 +121,10 @@ class SVDReadoutLayer(ReadoutLayer):
     trainable : bool, default=False
         If ``True``, weights are trainable via backpropagation.
     alpha : float, default=0.0
-        Tikhonov (L2) regularization strength. Must be non-negative. ``0`` is
+        Tikhonov (L2) regularization strength. Must be finite and non-negative. ``0`` is
         fully supported and yields the minimum-norm least-squares solution.
     rcond : float, default=1e-15
-        Relative cutoff for small singular values. Singular values at or below
+        Finite, non-negative relative cutoff for small singular values. Values at or below
         ``rcond * s_max`` are treated as zero (their filter factor is set to
         zero), which is what makes rank-deficient problems well posed. Only
         active for ``alpha == 0``; for ``alpha > 0`` the Tikhonov filter
@@ -132,10 +180,7 @@ class SVDReadoutLayer(ReadoutLayer):
         gram_dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__(in_features, out_features, bias, name, trainable)
-        if alpha < 0:
-            raise ValueError(f"alpha must be non-negative, got {alpha}.")
-        if rcond < 0:
-            raise ValueError(f"rcond must be non-negative, got {rcond}.")
+        _validate_regularization(alpha, rcond)
         self.alpha = alpha
         self.rcond = rcond
         self.use_float64 = use_float64
@@ -163,6 +208,7 @@ class SVDReadoutLayer(ReadoutLayer):
             Intercept vector of shape ``(out_features,)``, or ``None`` when the
             layer was built with ``bias=False``.
         """
+        _validate_regularization(self.alpha, self.rcond)
         problem = build_least_squares_problem(
             states,
             targets,
@@ -188,10 +234,12 @@ class SVDReadoutLayer(ReadoutLayer):
         # 1 / s on the retained singular values and 0 on those at/below the
         # rcond cutoff (the minimum-norm least-squares pseudo-inverse).
         if self.alpha > 0:
-            filt = s / (s * s + self.alpha)
+            filt = _ridge_filter(s, self.alpha)
         else:
             cutoff = self.rcond * s.max() if s.numel() > 0 else s.new_zeros(())
-            inv_s = torch.where(s > cutoff, 1.0 / s, torch.zeros_like(s))
+            retained = s > cutoff
+            safe_s = torch.where(retained, s, torch.ones_like(s))
+            inv_s = torch.where(retained, 1.0 / safe_s, torch.zeros_like(s))
             filt = inv_s
 
         # W = V diag(filt) Uᵀ y  with vh = Vᵀ, so V = vh.T.

@@ -135,8 +135,8 @@ execution paths. Ordinary stateful graph calls remain available.
 | --- | --- | --- | --- |
 | P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | `rd.Model` named functional constructor, original-unit fit/forecast, carried state and named multi-output results implemented for symbolic DAGs and wrapped factory graphs. Remaining: facade migration and other backend families. |
 | P2-02 | WIP | Preserve functional construction while evaluating existing graph tooling. | Existing symbolic construction retained; graph/backend and module-ownership review complete. Compare standard tooling against actual requirements before replacing infrastructure. No private graph API exposed to users. |
-| P2-03 | Pending | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Instantaneous graph is acyclic; delayed loops, several feedback streams and driver alignment have independent timing oracles. |
-| P2-04 | WIP | Coherent cell/state and execution semantics. | Hidden recurrent containers fail before execution; supported pointwise-container state/gradient parity covered. Remaining: public capability protocol, hooks, reset/chunks and output schemas across execution paths. |
+| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named ports, branched/multi-head predictions and driver alignment covered. Remaining: named feedback routes and delayed loops with independent timing oracles. |
+| P2-04 | WIP | Coherent cell/state and execution semantics. | Explicit-state execution rejects hidden recurrent containers before running operations; stateful fitting/forward remain supported. Pointwise-container state/gradient parity covered. Remaining: public capability protocol and parity across execution paths. |
 | P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms and off/method switches; training-window, gradient, MPS and checkpoint oracles pass. Remaining: custom transforms, feedback conversion, other families and complete artifacts. |
 | P2-06 | Pending | First-class TSDynamics trajectories through the optional extra. | Preserve sampling times, component names and provenance; forecasts have correct future times; irregular sampling requires an explicit policy. |
 | P2-07 | Pending | Independent per-node RNG streams and public customization templates. | Reproducible heterogeneous graphs; explicit tied/per-node seeds; tiny custom initializer, cell, transform and solver examples without private APIs. |
@@ -158,6 +158,7 @@ changes.
 | CPU performance gates | **4 passed**, four unavailable-device cases skipped, one deselected; existing thresholds unchanged. |
 | PyTorch and checkpoint behavior | Named mappings, state carry/chunks, hooks, gradient preservation, parameter identity, failed-refit isolation, inference-mode fitting/loading and malformed schema rejection have permanent regression tests. |
 | Package smoke | Wheel/sdist build and isolated installed-wheel fit/forecast/checkpoint/PyTorch smoke pass, including Torch 2.14.1. |
+| Documentation | Strict MkDocs build passes; the common-model guide executes, and rendered guide/roadmap navigation was inspected. |
 
 The first increment deliberately retains the established flat forecast engine
 and its single feedback route. Custom preprocessing, feedback conversion,

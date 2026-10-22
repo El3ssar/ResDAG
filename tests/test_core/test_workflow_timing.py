@@ -137,25 +137,24 @@ def test_scaled_stateful_forward_preserves_hooks_and_gradients_across_chunks() -
         torch.testing.assert_close(state, stored[name], rtol=0, atol=0)
 
 
-def test_different_explicit_target_scaling_rejects_before_state_hooks_or_modes_change() -> None:
+def test_different_target_scaling_bridges_physical_rollout_and_preserves_modes() -> None:
     model, reservoir = _recurrent_model()
     training = torch.arange(8, dtype=torch.float64).reshape(-1, 1)
     model.fit(training, targets={"next": training + 100})
     model(training)
-    stored = model.get_state()
-    assert stored
+    reference = copy.deepcopy(model).eval()
+    with torch.no_grad():
+        warm, final = reference.forward_stateless(training)
+        expected = [warm[-1:]]
+        for _ in range(2):
+            step, final = reference.forward_stateless(expected[-1], states=final)
+            expected.append(step)
     model.train()
     model.graph.eval()
     reservoir.train()
     modes = [module.training for module in model.modules()]
-    calls: list[None] = []
-    handle = reservoir.register_forward_hook(lambda *_: calls.append(None))
-    try:
-        with pytest.raises(ValueError, match="feedback bridge"):
-            model.forecast(history=training, horizon=3)
-    finally:
-        handle.remove()
-    assert calls == []
+    result = model.forecast(history=training, horizon=3)
+    torch.testing.assert_close(result, torch.cat(expected))
     assert [module.training for module in model.modules()] == modes
     for name, state in model.get_state().items():
-        torch.testing.assert_close(state, stored[name], rtol=0, atol=0)
+        torch.testing.assert_close(state, final[name], rtol=0, atol=0)

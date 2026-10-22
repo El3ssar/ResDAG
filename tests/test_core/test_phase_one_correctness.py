@@ -8,6 +8,8 @@ import resdag as rd
 
 
 class PreciseAuxiliary(nn.Module):
+    supports_framewise = True
+
     def forward(self, x):
         return x.double() + 1e-10
 
@@ -30,6 +32,8 @@ def test_forecast_preserves_auxiliary_precision_in_every_slot(alignment, return_
 @pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS unavailable")
 def test_forecast_preserves_auxiliary_output_device():
     class CPUAuxiliary(nn.Module):
+        supports_framewise = True
+
         def forward(self, x):
             return x.cpu()
 
@@ -44,21 +48,21 @@ def test_forecast_preserves_auxiliary_output_device():
 def test_facade_disables_training_noise_only_during_forecasting():
     series = torch.sin(torch.arange(120, dtype=torch.float64) * 0.1).unsqueeze(-1)
     esn = rd.ESN(reservoir_size=10, washout=10, noise=0.02, seed=3).fit(series)
-    assert esn.model.training
-    modes = [module.training for module in esn.model.modules()]
-    first, second = esn.forecast(8), esn.forecast(8)
+    assert esn.graph.training
+    modes = [module.training for module in esn.graph.modules()]
+    first, second = esn.forecast(horizon=8), esn.forecast(horizon=8)
     torch.testing.assert_close(first, second, rtol=0, atol=0)
-    assert [module.training for module in esn.model.modules()] == modes
+    assert [module.training for module in esn.graph.modules()] == modes
 
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_facade_restores_mixed_module_modes_even_after_error(monkeypatch, fail):
     series = torch.arange(30, dtype=torch.float64).sin().unsqueeze(-1)
     esn = rd.ESN(reservoir_size=5, washout=3, seed=1).fit(series)
-    reservoir = next(module for module in esn.model.modules() if isinstance(module, rd.ESNLayer))
+    reservoir = next(module for module in esn.graph.modules() if isinstance(module, rd.ESNLayer))
     reservoir.eval()
-    modes = [(module, module.training) for module in esn.model.modules()]
-    original = esn.model.forecast
+    modes = [(module, module.training) for module in esn.graph.modules()]
+    original = esn.graph.forecast
 
     def checking_forecast(*args, **kwargs):
         assert all(not module.training for module, _ in modes)
@@ -66,12 +70,12 @@ def test_facade_restores_mixed_module_modes_even_after_error(monkeypatch, fail):
             raise RuntimeError("intentional forecast failure")
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(esn.model, "forecast", checking_forecast)
+    monkeypatch.setattr(esn.graph, "forecast", checking_forecast)
     if fail:
         with pytest.raises(RuntimeError, match="intentional forecast failure"):
-            esn.forecast(3)
+            esn.forecast(horizon=3)
     else:
-        esn.forecast(3)
+        esn.forecast(horizon=3)
     assert all(module.training == training for module, training in modes)
 
 

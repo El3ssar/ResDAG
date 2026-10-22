@@ -146,3 +146,5 @@ jobs:
           tests/test_data/test_trajectory_adapter.py
           tests/test_core/test_workflow_trajectory.py
           tests/test_core/test_workflow_metadata.py tests/test_trajectory_guide.py
+          tests/test_core/test_workflow_backends.py
+          tests/test_core/test_workflow_backend_trajectories.py

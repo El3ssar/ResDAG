@@ -1,5 +1,5 @@
 ---
-description: Family-agnostic trainable maps — the name contract, ridge regression by conjugate gradient, bias and precision semantics, and the _fit_impl hook for custom solvers.
+description: Family-agnostic trainable maps — the name contract, ridge regression by conjugate gradient, bias and precision semantics, and the solve hook for custom solvers.
 ---
 
 <span class="nb-kicker">Build · Readouts</span>
@@ -71,14 +71,14 @@ covered in [Readout solvers](../../theory/readout.md).
 
 `fit()` owns the bookkeeping — flattening, sample-count and shape
 validation, copy-back into the `nn.Linear` parameters — and delegates the
-algebra to `_fit_impl`. A new solver overrides one method:
+algebra to `solve`. A new solver overrides one method:
 
 ```python
 import torch
 from resdag import ReadoutLayer
 
 class LstsqReadout(ReadoutLayer):
-    def _fit_impl(self, states, targets):
+    def solve(self, states, targets):
         # already flattened: states (N, in_features), targets (N, out_features)
         if self.bias is None:
             return torch.linalg.lstsq(states, targets).solution, None

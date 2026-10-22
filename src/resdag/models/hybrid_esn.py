@@ -121,6 +121,10 @@ class KnowledgeModel(nn.Module):
     hybrid_esn : The factory that wires this expert into a hybrid ESN.
     """
 
+    # Wrapping an expert declares the documented per-frame broadcasting
+    # contract; a temporal sequence function belongs in history execution.
+    supports_framewise = True
+
     def __init__(self, fn: KnowledgeFn | nn.Module, model_out_size: int) -> None:
         """Store the callable and its declared output dimension.
 

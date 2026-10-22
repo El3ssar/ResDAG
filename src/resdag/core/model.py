@@ -66,6 +66,7 @@ from resdag.core._flat_inference import (
     rollout,
 )
 from resdag.core._forecast import ForecastAlignment, positive_step_count, prepare_forecast_inputs
+from resdag.core._forecast_capabilities import validate_fast_plan
 from resdag.core._persistence import (
     load_checkpoint,
     load_full_model,
@@ -1062,7 +1063,7 @@ class ESNModel(ps.SymbolicModel):
         ``self.outputs`` so it is transparently rebuilt if the graph's outputs
         change (e.g. via :meth:`add_output`).
         """
-        self._get_execution_plan()
+        validate_fast_plan(self._get_execution_plan())
         cache: tuple[tuple[SymbolicData, ...], FlatStep] | None = getattr(
             self, "_flat_step_cache", None
         )
@@ -1157,13 +1158,16 @@ class ESNModel(ps.SymbolicModel):
 
         Autoregressive steps use a cached flat execution plan. Module forward
         hooks run during warmup but do not fire for these flat steps.
+        Custom non-reservoir operations must declare ``supports_framewise=True``.
+        Whole-sequence custom operations can use the common ``Model`` wrapper's
+        ``forecast(execution="history")`` instead.
 
         Examples
         --------
         >>> predictions = model.forecast(observed, horizon=100)
         >>> # predictions[:, 0] estimates the sample immediately after observed.
         """
-        self._get_execution_plan()
+        validate_fast_plan(self._get_execution_plan())
         warmup_inputs, drivers, horizon, boundary = prepare_forecast_inputs(
             warmup_inputs,
             forecast_inputs,

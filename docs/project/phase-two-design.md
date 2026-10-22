@@ -5,10 +5,9 @@ description: Agreed behavior, construction proposal and implementation boundarie
 # Phase two: the common model workflow
 
 **Status: WIP.** Track delivery in the [roadmap](roadmap.md#phase-2-one-functional-workflow).
-This page records design decisions and implementation boundaries. The first
-symbolic-DAG increment is implemented; see the runnable
-[common model guide](../start/model-workflow.md). The
-[established end-to-end guide](../start/end-to-end.md) covers existing APIs.
+This page records current decisions and implementation boundaries. Start with
+the runnable [common model guide](../start/model-workflow.md) or the shorter
+[end-to-end guide](../start/end-to-end.md).
 
 ## Agreed behavior
 
@@ -32,9 +31,9 @@ The common model will be a PyTorch `nn.Module`:
   and checkpoints include them. Each input and target will have its own
   preprocessing where their units or dimensions differ.
 
-These decisions apply to the new common workflow. Existing graph classes,
-`as_module()` defaults, forecast alignment and checkpoint meanings remain the
-documented legacy interfaces during migration.
+These decisions apply directly to the new major API. The maintainer chose
+no legacy wrapper or compatibility layer. Raw graph classes and trainers
+remain useful public building blocks for advanced workflows.
 
 ## Approved construction
 
@@ -54,30 +53,67 @@ model.fit(train)
 prediction = model.forecast(history=observed, horizon=500)
 ```
 
-An explicit `graph=` form will wrap an existing factory-built graph. Factory
-return types and the low-level `ESNModel` class would remain available during
-migration. A preset would construct the same common model without requiring
-users to wire its layers.
+The `graph=` form wraps an existing factory-built graph. The PyTorch `ESN`
+preset constructs one common workflow without requiring users to wire layers.
+Use `input_size=` or `build()` before attaching optimizers; an untouched lazy
+preset can instead infer width, dtype and device on its first fit.
 
-This composition avoids changing the inheritance of existing saved graph
-objects. A graph must be registered once; compatibility accessors must refer
-to the same object without duplicating parameters or checkpoint entries.
+Each graph is registered once, preserving parameter identities and avoiding
+duplicate checkpoint entries. See [the ESN API changes](esn-migration.md).
 
-## The first increment
+## Current workflow
 
-`rd.Model` now accepts named symbolic inputs/outputs or an existing `ESNModel`
-through `graph=`. It supports fitting terminal readout heads, original-unit
-forward/forecast operations, named multi-head targets and explicit recurrent
-state. Ordinary calls carry state by default and retain upstream gradients.
-Its state dictionary includes named-port metadata, fitted scaling and the
-observed history tail. Loading validates their consistency before using them.
+`rd.Model` accepts named symbolic inputs/outputs or an existing graph through
+`graph=`. It fits declared readout heads, returns original-unit forward and
+forecast predictions, and supports named targets and explicit recurrent state.
+Its state dictionary includes named-port/feedback metadata, fitted scaling and
+observed history. Loading validates their consistency before using them.
 
-This increment retains the existing first-input/first-output forecast route.
-Implicit next-step targets share their input's training statistics, so feedback
-units agree. Explicit targets receive separate statistics; autonomous
-forecasting rejects differing feedback scales until a conversion bridge is
-implemented. Parallel/coupled adapters, the `ESN` facade migration and arbitrary
-feedback routes remain unfinished.
+Declare every algebraically fitted readout as a named output and supply its
+target. An intermediate head can also feed a downstream reservoir; staged
+training fits it before collecting that reservoir's features. Unexposed
+internal fitted heads require the lower-level trainer's explicit targets.
+
+`Feedback` connects named output/input ports with an explicit graph-step delay.
+`prediction_lead` separately records each head's target distance. Default
+self-feedback uses matching lead/delay, and forecasts always start at the first
+unseen physical sample. Pending warmup outputs prevent gaps for multi-step
+heads. Differing output/input scales are bridged through original units on the
+model device. See [feedback and timing](../start/feedback.md).
+
+Custom framewise modules can declare `supports_framewise=True`. Pure temporal
+sequence operations can use `execution="history"`: fitting and forecasting
+preserve the complete prefix. Fast models retain the optimized existing
+backend and compact warmup tail. Delayed rollout queues are reconstructed from
+history; reservoir state alone cannot resume such a rollout. See
+[execution capabilities](../advanced/forecast-capabilities.md).
+
+## Existing backend families
+
+`Model(graph=...)` now also wraps `ParallelESNModel` and
+`CoupledEnsembleESNModel`. Small private adapters reuse their existing
+execution paths; the raw graph remains the sole registered graph child.
+Parallel ports represent full fields, and scaling precedes patch gathering.
+Coupled ports represent the shared member inputs and single aggregate output;
+each member's terminal readout name is resolved independently during fitting.
+
+State, gradients, training-only scaling, checkpoint metadata and trajectory
+conversion use the same workflow. Parallel/coupled compiled forecasting is
+rejected before state changes because those raw forecast paths do not support
+the compile option. Their explicit-state paths keep their existing support.
+A reservoir hidden inside a custom coupled aggregator cannot participate in
+explicit-state or forecast execution; it is rejected before operations run.
+Ordinary stateful calls remain available.
+
+Non-symbolic checkpoint schemas include patch geometry or ordered member
+interfaces, the aggregate selector/class, and persistent tensor name/shape
+signatures. They reject structural mismatches before copying tensors. Custom
+Python settings still belong to the compatible architecture supplied by the
+caller. Generic architecture reconstruction remains phase four.
+
+The [graph-tooling review](graph-tooling.md) records the evaluated standard
+tools. Functional construction stays in place; FX can capture a surrounding
+PyTorch pipeline using the documented leaf-module hook.
 
 ## Trajectory integration
 
@@ -98,21 +134,21 @@ they carry no absolute clock.
 Clock, component and primitive source metadata survive state-dictionary
 checkpoints without requiring TSDynamics at load time. Live producing-system
 objects remain transient. This integration currently covers single-input,
-single-output next-step fitting; named trajectory mappings and custom target
+single-output lead-aware fitting; named trajectory mappings and custom target
 semantics remain open. See the [trajectory guide](../start/trajectory-workflow.md).
 
-The first increment packages the existing four normalization methods in an
+The common workflow packages the existing four normalization methods in an
 internal fitted PyTorch module. Statistics are learned only by an explicit
 fit operation, remain detached from training gradients, and do not update
 during inference. Transform and inverse operations preserve upstream gradients.
 Tests cover constant channels, refitting, checkpoint restoration, invalid data,
 and device/dtype behavior, including native MPS. The module is used internally
-by `Model`; a custom-transform extension contract and integration into the
-remaining model families are still pending. Existing data-preparation defaults
+by every supported `Model` family; custom-transform support is still pending
+its agreed public contract. Existing data-preparation defaults
 are unchanged. Minmax scaling now divides before multiplying, avoiding an
 intermediate overflow for large finite training ranges.
 
-The first increment also guards explicit-state execution against reservoirs
+The workflow also guards explicit-state execution against reservoirs
 hidden inside containers or custom modules. Previously, such a call could
 change stored state and omit it from the returned state dictionary. The guard
 checks the entire execution plan before running any operation and provides a
@@ -120,18 +156,18 @@ remedy: expose each reservoir as a separate functional graph node. Ordinary
 stateful graph calls and supported pointwise containers remain usable. See
 [state management](../start/concepts.md#2-reservoir-layers-are-stateful).
 
-## Decisions before the next implementation increments
+## Remaining design approvals
 
-- Define a clear way to build lazy presets before attaching an optimizer.
-- Define what a feedback delay counts in physical sample time. A one-step
-  prediction cannot simply be fed through a longer queue without defining how
-  training targets, history and external drivers align.
-- Define a small capability interface for custom temporal modules, including
-  explicit state, causal stepping and compilation support. A module accepting
-  a sequence does not establish that it can process one time step at a time.
-- Define trajectory mappings and custom-target time/label semantics for
-  multi-input and multi-head models.
+- Confirm the custom preprocessing boundary: reversible changes of units that
+  preserve signals, with temporal/feature-adding operations placed in the DAG.
+- Confirm automatic shared-time-range alignment for named TSDynamics inputs,
+  including explicit-target clocks and per-head labels.
 
-Tuning presets remain in phase three. Complete model loading and diagram
-exports remain in phase four. They will use the agreed common interface, with
-separate acceptance tests rather than placeholder methods.
+The [public component recipes](../advanced/custom-components.md) cover stable
+named seeds, registered initializers, recurrent cells, framewise transforms and
+the public `ReadoutLayer.solve` hook. User modules remain ordinary PyTorch
+components.
+
+Tuning remains phase three. Complete model loading and diagram exports remain
+phase four. They will use the agreed common interface, with separate acceptance
+tests rather than placeholder methods.

@@ -609,11 +609,13 @@ def _normal_equations_residual(
     rhs: torch.Tensor,
     alpha: float,
 ) -> float:
-    """Relative residual ``||(gram + αI) W - rhs|| / ||rhs||`` in ``float64``.
+    """Relative residual ``||(gram + αI) W - rhs|| / ||rhs||`` on the solve device.
 
     A cheap post-solve accuracy check: it is one ``(F, F) @ (F, T)`` matmul,
-    negligible next to the factorisation itself, and computed in ``float64`` so
-    it exposes precision lost when the Gram was formed in ``float32``.
+    negligible next to the factorisation itself. CPU/CUDA use ``float64``;
+    MPS uses its supported ``float32`` without transferring a Gram matrix to
+    the CPU. The latter detects gross solve errors but cannot provide an
+    independent float64 precision check.
 
     Parameters
     ----------
@@ -629,16 +631,29 @@ def _normal_equations_residual(
     Returns
     -------
     float
-        The relative residual, or ``0.0`` when ``rhs`` is all zeros.
+        The relative residual; ``0.0`` for an exact zero-RHS solution or
+        infinity when the RHS is zero but the residual is not.
     """
-    g = gram.to(torch.float64)
-    w = coefs.to(torch.float64)
-    r = rhs.to(torch.float64)
+    dtype = torch.float32 if gram.device.type == "mps" else torch.float64
+    g = gram.to(dtype)
+    w = coefs.to(dtype)
+    r = rhs.to(dtype)
     resid = g @ w + alpha * w - r
-    rhs_norm = torch.linalg.norm(r)
-    if rhs_norm == 0:
+    # Scaled norms avoid overflowing the sum of squares on either device.
+    # An overflowing residual must not become inf/inf -> NaN and silently
+    # suppress the accuracy warning.
+    if not bool(torch.isfinite(resid).all()):
+        return float("inf")
+    rhs_scale = r.abs().amax()
+    resid_scale = resid.abs().amax()
+    if rhs_scale == 0:
+        return 0.0 if resid_scale == 0 else float("inf")
+    if resid_scale == 0:
         return 0.0
-    return float((torch.linalg.norm(resid) / rhs_norm).item())
+    ratio = (resid_scale / rhs_scale) * (
+        torch.linalg.vector_norm(resid / resid_scale) / torch.linalg.vector_norm(r / rhs_scale)
+    )
+    return float(ratio.item())
 
 
 def solve_ridge(
@@ -683,7 +698,8 @@ def solve_ridge(
       entry error past unity) — and a ``float64`` solve cannot recover
       precision destroyed at Gram formation.
     - a **normal-equations residual** ``‖(gram+αI)W − rhs‖ / ‖rhs‖`` in
-      ``float64`` (one ``(F, F) @ (F, T)`` matmul), which catches a genuinely
+      ``float64`` (``float32`` on MPS, which does not support float64;
+      one ``(F, F) @ (F, T)`` matmul), which catches a genuinely
       under-satisfied solve (a ``float32`` *solve* dtype, or a heavily clamped
       eigh fallback).
 
@@ -856,13 +872,18 @@ def _warn_on_precision_loss(
         detail = f"residual={residual:.2e}"
         if est_error is not None:
             detail = f"est. precision loss={est_error:.2e}, {detail}"
+        remedy = (
+            "Fit on CPU with float64 statistics/solving, then move the fitted readout "
+            "to MPS for inference. The MPS residual is evaluated in float32."
+            if gram.device.type == "mps"
+            else "Pass gram_dtype=torch.float64 for an accurate readout, or use SVDReadoutLayer."
+        )
         warnings.warn(
             f"{layer_name}: the ridge solve is losing accuracy ({detail} > "
             f"{_RESIDUAL_WARN_TOL:g}). The Gram matrix is ill-conditioned and "
             f"forming it in {gram_dtype} (the default is float64 on every device) destroys "
             f"precision the solve cannot recover — the fitted readout will "
-            f"differ from the float64 result. Pass gram_dtype=torch.float64 "
-            f"for an accurate readout, or use SVDReadoutLayer.",
+            f"differ from the float64 result. {remedy}",
             RuntimeWarning,
             stacklevel=3,
         )

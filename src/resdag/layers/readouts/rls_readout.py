@@ -526,7 +526,7 @@ class RLSReadout(ReadoutLayer):
         """
         return self._prepare_fit_inputs(states, targets, method)
 
-    def _fit_impl(
+    def solve(
         self,
         states: torch.Tensor,
         targets: torch.Tensor,

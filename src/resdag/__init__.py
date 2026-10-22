@@ -37,11 +37,11 @@ Examples
 --------
 Easiest API — train and forecast a series in a few lines:
 
->>> import numpy as np
+>>> import torch
 >>> from resdag import ESN
->>> series = np.cumsum(np.random.randn(2000, 3), axis=0)  # (time, features)
+>>> series = torch.randn(2000, 3).cumsum(0)  # (time, features)
 >>> esn = ESN(reservoir_size=300, spectral_radius=0.9).fit(series)
->>> prediction = esn.forecast(horizon=200)  # (200, 3), numpy in -> numpy out
+>>> prediction = esn.forecast(horizon=200)  # (200, 3), original-unit Torch tensor
 
 Basic reservoir usage:
 
@@ -90,6 +90,7 @@ from . import core, data, datasets, ensemble, init, layers, metrics, models, tra
 # Convenience imports for common use cases
 from .core import (
     ESNModel,
+    Feedback,
     Input,
     Model,
     ReservoirFeatureExtractor,
@@ -194,6 +195,7 @@ from .training import (
     calibrate_flow_control,
     calibrate_intrinsic_plasticity,
 )
+from .utils.seeds import SeedStreams
 
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
@@ -212,6 +214,7 @@ __all__ = [
     "models",
     "training",
     "utils",
+    "SeedStreams",
     "__version__",
     # Convenience submodules
     "graphs",
@@ -222,6 +225,7 @@ __all__ = [
     # Composition helpers
     "Input",
     "Model",
+    "Feedback",
     "ESNModel",
     "ReservoirFeatureExtractor",
     "ReservoirModelModule",

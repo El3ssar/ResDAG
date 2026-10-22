@@ -249,7 +249,7 @@ class FISTAReadoutLayer(ReadoutLayer):
         self.gram_dtype = gram_dtype
         self.power_iters = power_iters
         self.power_iter_margin = power_iter_margin
-        # Diagnostics populated by _fit_impl.
+        # Diagnostics populated by solve.
         self.n_iter_: int = 0
         self.converged_: bool = False
 
@@ -293,7 +293,7 @@ class FISTAReadoutLayer(ReadoutLayer):
         # Inflate to guard against a low estimate (few iterations under-shoot).
         return eig * (1.0 + self.power_iter_margin)
 
-    def _fit_impl(
+    def solve(
         self,
         states: torch.Tensor,
         targets: torch.Tensor,

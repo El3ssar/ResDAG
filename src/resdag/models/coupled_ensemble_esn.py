@@ -15,6 +15,7 @@ resdag.models.classic_esn : Alternative sub-model factory.
 
 import inspect
 from collections.abc import Callable
+from contextlib import ExitStack
 from typing import Any
 
 import torch
@@ -76,11 +77,11 @@ def coupled_ensemble_esn(
         ``seed + i`` is also forwarded as that argument so initialisers that
         take an explicit seed (e.g. graph topologies) become reproducible.
 
-        The process-global default RNG is **not** clobbered: its state is
-        captured before the construction loop and restored on exit (even if a
-        factory raises), so building a seeded ensemble does not perturb a
-        subsequent global ``torch.randn`` draw.  Ensemble construction is
-        therefore composable inside an otherwise-reproducible pipeline.
+        CPU, available MPS and initialized/requested CUDA RNG states are restored
+        on exit, even if a factory raises. MPS isolation may materialize its
+        host-side generator, but does not create MPS tensors or streams for a
+        CPU factory. Unavailable accelerators and unused CUDA runtimes are not
+        initialized. Subsequent random draws in a larger pipeline are preserved.
 
     **model_kwargs
         All remaining keyword arguments are forwarded verbatim to each
@@ -171,21 +172,32 @@ def coupled_ensemble_esn(
             models.append(model_factory(**model_kwargs))
         return CoupledEnsembleESNModel(models, aggregator=aggregate)
 
-    # Seeded path. Most reservoir/feedback initialisers draw from PyTorch's
-    # process-global default generator, so we still seed it per sub-model with
-    # ``seed + i``. To keep ensemble construction composable inside a larger
-    # reproducible pipeline we snapshot the global RNG state up front and
-    # restore it in ``finally`` — building the ensemble leaves the global
-    # generator exactly where it was, even if a factory call raises.
-    global_rng_state = torch.get_rng_state()
-    try:
+    # Do not broadcast torch.manual_seed to unused accelerator generators.
+    # Seed exactly the same CPU stream as before and isolate active/requested
+    # accelerator streams with PyTorch's standard context manager.
+    target = torch.device(model_kwargs.get("device") or torch.get_default_device())
+    cuda_devices = list(range(torch.cuda.device_count())) if torch.cuda.is_initialized() else []
+    if target.type == "cuda" and torch.cuda.is_available():
+        index = target.index if target.index is not None else torch.cuda.current_device()
+        if index not in cuda_devices:
+            cuda_devices.append(index)
+    # MPS exposes no reliable initialized-state query: native random operations
+    # need not populate Python's generator cache. Fork its available generator
+    # using the public API; snapshotting that state is host-side bookkeeping.
+    isolate_mps = torch.backends.mps.is_available()
+    with ExitStack() as isolation:
+        isolation.enter_context(torch.random.fork_rng(devices=cuda_devices))
+        if isolate_mps:
+            isolation.enter_context(torch.random.fork_rng(devices=[0], device_type="mps"))
         for i in range(n_models):
             sub_seed = seed + i
-            torch.manual_seed(sub_seed)
+            torch.default_generator.manual_seed(sub_seed)
+            for index in cuda_devices:
+                torch.cuda.default_generators[index].manual_seed(sub_seed)
+            if isolate_mps:
+                torch.mps.manual_seed(sub_seed)
             kwargs = dict(model_kwargs)
             if factory_accepts_seed:
                 kwargs.setdefault("seed", sub_seed)
             models.append(model_factory(**kwargs))
-    finally:
-        torch.set_rng_state(global_rng_state)
     return CoupledEnsembleESNModel(models, aggregator=aggregate)

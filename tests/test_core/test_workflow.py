@@ -78,10 +78,13 @@ def test_named_multihead_targets_do_not_need_internal_readout_names():
     for name, expected in targets.items():
         torch.testing.assert_close(output[name], expected, rtol=1e-12, atol=1e-12)
     assert not torch.equal(model.input_scalers[0]._stat0, model.output_scalers[0]._stat0)
-    before = model.get_state()
-    with pytest.raises(ValueError, match="feedback bridge"):
-        model.forecast(series[-2:], horizon=3)
-    _assert_state_equal(model.get_state(), before)
+    predicted = model.forecast(series[-2:], horizon=3)
+    torch.testing.assert_close(
+        predicted["position"], torch.tensor([[13.0], [31.0], [85.0]]).double()
+    )
+    torch.testing.assert_close(
+        predicted["velocity"], torch.tensor([[-9.0], [-21.0], [-57.0]]).double()
+    )
 
 
 def test_stateless_outputs_keep_original_units_states_and_upstream_gradients():

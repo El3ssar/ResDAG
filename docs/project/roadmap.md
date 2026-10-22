@@ -133,14 +133,14 @@ execution paths. Ordinary stateful graph calls remain available.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | `rd.Model` named functional constructor, original-unit fit/forecast, carried state and named multi-output results implemented for symbolic DAGs and wrapped factory graphs. Remaining: facade migration and other backend families. |
-| P2-02 | WIP | Preserve functional construction while evaluating existing graph tooling. | Existing symbolic construction retained; graph/backend and module-ownership review complete. Compare standard tooling against actual requirements before replacing infrastructure. No private graph API exposed to users. |
-| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named ports, branched/multi-head predictions and driver alignment covered. Remaining: named feedback routes and delayed loops with independent timing oracles. |
-| P2-04 | WIP | Coherent cell/state and execution semantics. | Explicit-state execution rejects hidden recurrent containers before running operations; stateful fitting/forward remain supported. Pointwise-container state/gradient parity covered. Remaining: public capability protocol and parity across execution paths. |
-| P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms and off/method switches; training-window, gradient, MPS and checkpoint oracles pass. Remaining: custom transforms, feedback conversion, other families and complete artifacts. |
+| P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | `rd.Model` named functional constructor, original-unit fit/forecast, carried state and named multi-output results implemented for symbolic DAGs, parallel local-state graphs and coupled ensembles. Remaining: facade migration and public capability contract. |
+| P2-02 | WIP | Preserve functional construction while evaluating existing graph tooling. | Functional construction retained; [standard-tooling review](graph-tooling.md) records FX/export/module/Graphviz boundaries. Executable FX leaf tracing preserves ownership, state, values and upstream gradients for tensor and named multi-head pipelines. Required hosted checks pending. No private graph API exposed to users. |
+| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named feedback, fanout, delays and separate per-head prediction leads implemented with independent physical-time and driver-count oracles. Includes lead-aware targets, scaling bridges and metadata. Required full/hosted verification pending. |
+| P2-04 | WIP | Coherent cell/state and execution semantics. | Public framewise declaration and explicit full-history execution implemented. Temporal fitting preserves the complete prefix; default fast path remains. Explicit-state visibility, final state, batch switching, hooks and gradients covered across model families. Required full/hosted verification pending. |
+| P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms and off/method switches across symbolic/parallel/coupled families. Independent training-window, gradient, native MPS and checkpoint oracles pass. Public `Standardize.fit` adopts native precision/device. Remaining: custom transforms, feedback conversion and complete artifacts. |
 | P2-06 | WIP | First-class TSDynamics trajectories through the optional extra. | Bare trajectory fitting/forecasting preserves component names, future times and checkpoint-safe provenance. Configurable automatic resampling, fitted-step history alignment and tensor-return option implemented. Remaining: named trajectory mappings and custom-target timing. |
-| P2-07 | Pending | Independent per-node RNG streams and public customization templates. | Reproducible heterogeneous graphs; explicit tied/per-node seeds; tiny custom initializer, cell, transform and solver examples without private APIs. |
-| P2-08 | WIP | Standard PyTorch composition and migration. | Executable symbolic-wrapper pipeline passes upstream gradients and preserves one registered graph; state/schema/checkpoint and native MPS paths covered. Remaining: all backend families and lazy preset migration. |
+| P2-07 | WIP | Independent per-node RNG streams and public customization templates. | Public `SeedStreams` gives stable named initialization seeds; executable initializer/cell/transform/solver recipes use public APIs, including `ReadoutLayer.solve`. Seeded presets/ensembles preserve caller RNG streams; fresh-process MPS and CPU bit-pattern oracles pass. Required full/hosted verification pending. |
+| P2-08 | WIP | Standard PyTorch composition and migration. | Direct new `ESN` module uses the common workflow, eager/build/lazy construction and raw `.graph`; no legacy wrapper. Symbolic/parallel/coupled state, gradients/checkpoints and native MPS covered; FX leaf composition supports presets/custom models. Required full/hosted verification pending. |
 
 ### First-increment verification record
 
@@ -186,7 +186,24 @@ installed wheel against the minimum supported **TSDynamics 6.0.2**, and with
 the locked **6.0.3** locally. Native MPS fitting, device-local tensor forecasts,
 portable metadata, bfloat16 output conversion and strict documentation builds
 are covered. Complete-suite and hosted verification are tracked on
-[PR #459](https://github.com/El3ssar/ResDAG/pull/459).
+[PR #459](https://github.com/El3ssar/ResDAG/pull/459), merged as `d63905d`.
+The post-merge [release workflow](https://github.com/El3ssar/ResDAG/actions/runs/39826799461)
+passed the full Python 3.11–3.14 test matrix, installed dynamics lanes,
+lint/types and package publication. The initial post-merge
+[documentation run](https://github.com/El3ssar/ResDAG/actions/runs/39826799223)
+also passed. This increment is released in
+[1.2.0](https://github.com/El3ssar/ResDAG/releases/tag/v1.2.0).
+
+### Completion increment in progress
+
+The completion increment adds parallel/coupled adapters, direct PyTorch `ESN`,
+named delayed feedback and independent prediction leads, full-history temporal
+execution/fitting, stable named seeds and public customization recipes. It also
+repairs `Standardize` precision/device construction and fitting, scripted inverse,
+accelerator RNG isolation, and MPS solve diagnostics. These public changes target
+the next **major release**: the maintainer approved the new API directly, without
+legacy wrappers or compatibility constraints. Custom preprocessing and named
+trajectory alignment still await the corresponding design approvals.
 
 ## Phase 3: tuning and automatic solver policy
 

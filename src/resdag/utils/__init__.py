@@ -24,6 +24,8 @@ create_torch_generator
     Create a torch ``Generator`` for reproducible weight/bias draws.
 coerce_seed_to_int
     Reduce an int/``torch.Generator``/None seed to a plain int (or None).
+SeedStreams
+    Derive stable seeds for explicitly named model components.
 SeedLike
     Type alias for accepted seed inputs (``int | torch.Generator | None``).
 DeviceLike
@@ -86,11 +88,13 @@ from .general import (
     resolve_device,
     seed_everything,
 )
+from .seeds import SeedStreams
 from .states import esp_index
 
 __all__ = [
     "DeviceLike",
     "SeedLike",
+    "SeedStreams",
     "coerce_seed_to_int",
     "create_rng",
     "create_torch_generator",

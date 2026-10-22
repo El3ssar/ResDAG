@@ -10,15 +10,15 @@ initializers and the readout solver.
 
 Inputs are floating Torch tensors shaped `(time, features)` or
 `(batch, time, features)`, on the same device and dtype as the graph. Named
-multi-input data uses a dictionary of those tensors. The existing `ESN` facade
-continues to accept NumPy arrays. For single-input/output forecasting,
+multi-input data uses a dictionary of those tensors. `rd.ESN` provides the same
+Torch workflow for a ready-made classic reservoir. Convert NumPy arrays with
+`torch.as_tensor` at the boundary. For single-input/output forecasting,
 `fit` and `forecast` also accept [TSDynamics trajectories](trajectory-workflow.md).
 Ordinary `model(x)` calls retain the tensor interface.
 
-This is the first increment of [phase two](../project/roadmap.md#phase-2-one-functional-workflow).
-The existing `ESN`, `ESNModel` and factory interfaces remain available. The
-common interface is still being extended to parallel/coupled models and explicit
-feedback routes. Unified tuning and complete
+This is part of [phase two](../project/roadmap.md#phase-2-one-functional-workflow).
+The common interface supports the `ESN` preset, symbolic, parallel and coupled
+graphs. Raw `ESNModel` and factories remain useful building blocks. Unified tuning and complete
 model/diagram saves are later roadmap phases.
 
 ## Build, fit and forecast
@@ -81,6 +81,56 @@ assert preset_prediction.shape == truth.shape
 It works in the graph's raw, preprocessed units. Use `model(...)` when your
 pipeline supplies and expects the original units.
 
+## Parallel and coupled models
+
+The same wrapper works for a spatial field split into overlapping patches:
+
+```python
+parallel = rd.Model(
+    graph=rd.parallel_esn(
+        input_dim=2, core_width=1, halo=1, reservoir_size=32,
+        readout="svd", seed=7, dtype=torch.float64,
+    ),
+    washout=30,
+)
+parallel.fit(train)
+parallel_prediction = parallel.forecast(history=train[-60:], horizon=40)
+assert parallel_prediction.shape == truth.shape
+```
+
+Inputs and returned predictions use the full field width. Scaling is learned
+per field component, before the backend gathers local patches. Each patch
+keeps its own recurrent state; reservoir and readout weights remain shared.
+
+For an ensemble whose members share one aggregate feedback signal:
+
+```python
+coupled = rd.Model(
+    graph=rd.coupled_ensemble_esn(
+        n_models=3, model_factory=rd.classic_esn,
+        reservoir_size=32, feedback_size=2, output_size=2,
+        readout="svd", seed=7, dtype=torch.float64,
+    ),
+    washout=30,
+)
+coupled.fit(train)
+coupled_prediction = coupled.forecast(history=train[-60:], horizon=40)
+assert coupled_prediction.shape == truth.shape
+```
+
+The coupled backend retains its existing single aggregate output. Each
+member fits its own head, even when internal readout names differ. Inspect
+individual member forecasts through `coupled.graph`; the common workflow
+returns the aggregate. Parallel and coupled `forecast` currently require
+`compile=False`. Unsupported compiled forecasts fail before running the graph.
+
+Both families use the same original-unit forward calls, carried state,
+explicit-state calls, dtype/device moves and state dictionaries as symbolic
+graphs. Rebuild the same architecture before loading a state dictionary,
+including custom aggregator settings. Its schema checks structural facts,
+not arbitrary Python configuration. Complete architecture reconstruction
+from one saved file remains phase four.
+
 ## Give several heads explicit targets
 
 Name each output and pass matching targets. Explicit targets line up with the
@@ -111,9 +161,10 @@ assert named["energy"].shape == (20, 1)
 ```
 
 Each target gets its own training-only scaling. The user-facing output names
-do not need to match the graph's generated readout names. This example covers
-supervised predictions; autonomous multi-head forecasting still has the
-feedback/scaling limitation listed below.
+do not need to match the graph's generated readout names. Feedback converts
+the selected prediction through original units before applying the receiving
+input's scaling. See [feedback and timing](feedback.md) for named connections,
+delays and predicting several samples ahead.
 
 ## Put the trained model inside PyTorch
 
@@ -155,22 +206,52 @@ used by some readouts. You can also fit on CPU, then move the trained model
 with `model.float().to("mps")`. Automatic device-aware solver selection remains
 in [phase three](../project/roadmap.md#phase-3-tuning-and-automatic-solver-policy).
 
+## Capture the surrounding pipeline with FX
+
+If a larger pipeline uses PyTorch FX, keep the reservoir as one module call.
+Use FX's standard leaf-module hook:
+
+```python
+from torch import fx
+
+class ReservoirTracer(fx.Tracer):
+    def is_leaf_module(self, module, qualified_name):
+        return isinstance(module, (rd.Model, rd.ESN)) or super().is_leaf_module(
+            module, qualified_name
+        )
+
+captured = fx.GraphModule(pipeline, ReservoirTracer().trace(pipeline))
+assert captured.get_submodule("1") is model
+model.reset_state()
+expected = pipeline(batch.detach())
+model.reset_state()
+actual = captured(batch.detach())
+torch.testing.assert_close(actual, expected)
+```
+
+Capture preserves the same model, parameters and carried state. It does not
+execute the reservoir during tracing. Direct tracing through `rd.Model` and
+general deployment export are not supported; see the
+[graph-tooling review](../project/graph-tooling.md) for the evaluated boundaries.
+
 ## Current boundaries
 
-- The common wrapper currently supports `ESNModel` symbolic DAGs. The separate
-  parallel and coupled workflows remain available through their existing APIs.
+- The common wrapper supports symbolic `ESNModel`, `ParallelESNModel` and
+  `CoupledEnsembleESNModel` graphs. Their original low-level APIs remain available.
 - Automatic next-sample targets require one unambiguous input/output pair.
   Several heads need explicit named targets; their predictions are returned
   as a dictionary. Algebraic fitting currently requires terminal readout heads.
-- Autonomous feedback currently follows the existing first-input/first-output
-  route. Explicit-target models whose input and output scaling differ require
-  a feedback conversion, which is not yet implemented in this increment.
-  The method raises before changing state rather than mixing normalized units.
-  Named routes and delays remain a separate phase-two task.
+- Default feedback connects the first output to the first input. Custom
+  [named routes](feedback.md) support fanout and explicit delays. Inputs
+  without a feedback route need future driver values.
 - Reservoirs must be separate functional nodes for explicit-state and forecast
   execution. See [state management](concepts.md#2-reservoir-layers-are-stateful).
 - Ordinary forward calls run module hooks. Forecasting retains the backend's
   flat loop: hooks run during history warmup, but not for generated steps.
+- Fast forecasting requires framewise operations or explicit reservoir nodes.
+  Custom sequence operations can use [history execution](../advanced/forecast-capabilities.md),
+  which replays their full growing prefix. Delayed/named feedback uses explicit
+  state; reservoir state alone cannot resume an in-progress delayed rollout.
 - Fitting stages a copy of the graph before committing trained weights. This
   preserves the existing model after a failed fit and keeps parameter objects
   intact, but requires memory for that temporary copy and the solver workspace.

@@ -103,21 +103,26 @@ Branches, feature augmentations, and multiple readout heads compose the same way
 
 All heads fit in a single pass, in dependency order. The [composition handbook](https://el3ssar.github.io/ResDAG/build/) covers the patterns.
 
-## Coming from scikit-learn?
+## Fit and forecast with one object
 
-The whole `fit` → `predict` loop fits in one object. `ESN.fit(series)` slices the warmup window, builds the one-step-ahead target, and runs the algebraic solve; `forecast(horizon=...)` re-synchronizes and rolls out — numpy in, numpy out:
+`ESN.fit(series)` learns training-only scaling and the next-sample readout.
+`forecast(horizon=...)` synchronizes and predicts future samples in original
+units. The same object is an ordinary PyTorch module:
 
 ```python
-import numpy as np
-from resdag import ESN
+import torch
+import resdag as rd
 
-series = np.cumsum(np.random.randn(2000, 3), axis=0)   # (time, features)
+series = rd.lorenz(2000, seed=0).squeeze(0)           # (time, features)
 
-esn = ESN(reservoir_size=300, spectral_radius=0.9).fit(series)
+esn = rd.ESN(reservoir_size=300, spectral_radius=0.9).fit(series)
 prediction = esn.forecast(horizon=200)                 # (200, 3)
 ```
 
-`esn.model` drops you back into the full composable graph whenever you outgrow the facade. The [mental model](https://el3ssar.github.io/ResDAG/start/concepts/) maps `fit`/`predict` onto ResDAG's `warmup` + `ESNTrainer.fit` / `forecast` flow.
+Use `esn.graph` for raw graph access, or build custom branches through
+[`rd.Model`](https://el3ssar.github.io/ResDAG/start/model-workflow/).
+NumPy data converts explicitly with `torch.as_tensor(array)`. Tensor layouts
+are preserved: `(T,D)` returns `(H,D)`; `(B,T,D)` returns `(B,H,D)`.
 
 ## Train through it with SGD
 
@@ -149,8 +154,8 @@ This is the pure-PyTorch path: gradient heads, full BPTT through the recurrence 
 For independent minibatches, `stateful=False` starts from zeros on each call.
 The default carries state across calls for streaming. Frozen weights still
 allow gradients to flow to an upstream neural encoder. Keep the complete
-trained `esn.model` inside a larger `nn.Module` when you need its readout and
-all DAG branches; reset its reservoirs between independent sequences.
+trained `esn` or custom `rd.Model` inside a larger `nn.Module` when you need its
+readout and DAG branches; call `reset_state()` between independent sequences.
 
 Premade factories accept a readout name or class, plus separate solver options:
 

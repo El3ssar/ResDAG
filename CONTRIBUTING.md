@@ -190,7 +190,7 @@ Every component type is an open set with one extension point:
 | Topology (graph) | `@register_graph_topology("name", **defaults)` on a NetworkX generator | generated automatically from the registry |
 | Topology (matrix) | `@register_matrix_topology("name", **defaults)` on an `fn(n) -> matrix` | generated automatically |
 | Input/feedback initializer | `@register_input_feedback("name")` on a function or `InputFeedbackInitializer` subclass | generated automatically |
-| Readout | subclass `ReadoutLayer`, implement `_fit_impl(states, targets)` | one file in `docs/build/readouts/` |
+| Readout | subclass `ReadoutLayer`, implement public `solve(states, targets)` | one file in `docs/build/readouts/` |
 | Reservoir family | implement the `ReservoirCell` contract, wrap in a `BaseReservoirLayer` subclass | one file in `docs/build/layers/` |
 | Premade architecture | factory function returning a model, in `src/resdag/models/` | one file in `docs/build/architectures/` |
 

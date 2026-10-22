@@ -204,7 +204,7 @@ def test_failed_refit_preserves_graph_weights_scalers_history_and_carried_state(
         def failing_solver(*args, **kwargs):
             raise RuntimeError("deliberate solve failure")
 
-        monkeypatch.setattr(RidgeReadoutLayer, "_fit_impl", failing_solver)
+        monkeypatch.setattr(RidgeReadoutLayer, "solve", failing_solver)
         with pytest.raises(RuntimeError, match="deliberate solve failure"):
             model.fit(_series() + 10)
     assert model.is_fitted

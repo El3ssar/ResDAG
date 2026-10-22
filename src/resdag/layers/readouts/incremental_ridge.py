@@ -447,7 +447,7 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
 
         self._set_fitted(True)
 
-    def _fit_impl(
+    def solve(
         self,
         states: torch.Tensor,
         targets: torch.Tensor,

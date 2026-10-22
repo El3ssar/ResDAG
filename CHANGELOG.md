@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-10-22)
+
+### Features
+
+- **core**: Add named PyTorch model workflow ([#459](https://github.com/El3ssar/ResDAG/pull/459),
+  [`d63905d`](https://github.com/El3ssar/ResDAG/commit/d63905d9a05f825465a5b1d00b45b5bf5f8954f0))
+
+
 ## v1.1.1 (2026-10-22)
 
 ### Bug Fixes

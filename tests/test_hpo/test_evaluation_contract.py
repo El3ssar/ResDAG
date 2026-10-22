@@ -112,8 +112,10 @@ def test_transfer_rejects_different_directions_before_mutation():
         )
     )
     destination = optuna.create_study(direction="minimize")
-    with pytest.raises(ValueError, match="different objective directions"):
-        transfer_trials(destination, source)
+    for study in (source, destination):
+        study.set_user_attr("resdag_tuning_protocol_v1", "identical")
+    with pytest.raises(ValueError, match="matching objective directions"):
+        transfer_trials(destination, source, mode="scores", protocol_hash="identical")
     assert destination.trials == []
 
 
@@ -142,16 +144,24 @@ def test_explicit_model_seed_is_recorded_instead_of_trial_rng_seed():
 
 
 def test_hpo_forecast_uses_eval_and_restores_mode(monkeypatch):
-    from resdag.core import ESNModel
+    from contextlib import contextmanager
 
-    original = ESNModel.forecast
+    import resdag.core._forecast_stream as streaming
+
+    original = streaming.raw_forecast_stream
     observed = []
 
+    @contextmanager
     def forecast(model, *args, **kwargs):
-        observed.append(model.training)
-        assert not any(module.training for module in model.modules())
-        return original(model, *args, **kwargs)
+        def observe(chunks):
+            for chunk in chunks:
+                observed.append(model.training)
+                assert not any(module.training for module in model.modules())
+                yield chunk
 
-    monkeypatch.setattr(ESNModel, "forecast", forecast)
+        with original(model, *args, **kwargs) as chunks:
+            yield observe(chunks)
+
+    monkeypatch.setattr(streaming, "raw_forecast_stream", forecast)
     run_hpo(_creator, _space, _data, n_trials=1, seed=9, verbosity=0)
-    assert observed == [False]
+    assert observed and not any(observed)

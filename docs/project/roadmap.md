@@ -249,22 +249,32 @@ parallel trials. The initial implementation is verified in
 [phase-three design](phase-three-design.md) for the agreed experience and
 data/timing safeguards.
 
+PR #461 merged as `ad0f8c9` and was published as
+[2.1.0](https://github.com/El3ssar/ResDAG/releases/tag/v2.1.0).
+The [post-merge release run](https://github.com/El3ssar/ResDAG/actions/runs/39867667829)
+passed its full test matrix, installed dynamics checks and package publication.
+The [release-version documentation deployment](https://github.com/El3ssar/ResDAG/actions/runs/39868993286)
+also passed. Published wheel/sdist digests match the release, all 188 Python
+modules match the pinned release source, and an isolated published-wheel smoke
+verified tuning, reload/forecast parity, PyTorch gradients and trajectory clocks.
+
 Independent audits reproduced a finite-input SVD overflow, acceptance of
 non-finite regularization, invalid infinite-score transfer, incorrect
 maximize-study summary ordering, and incomplete process/storage cleanup.
 The correctness fixes, common tuner and automatic solver are implemented with
 independent numerical, time-alignment, ownership and real-worker oracles.
-Pruning during forecast generation and staged resource promotion remain open;
-this is not a claim that the whole phase is complete.
+The continuation implements pruning during forecast generation, optional staged
+screening, memory planning and migration of the raw runner. Consolidated
+verification is in progress; this is not yet a completion or release claim.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
 | P3-01 | Done | Unified `model.tune(...)` with quick/balanced/thorough presets. | Presets/custom DAGs, named targets and trajectories; original-unit forecasts, transactional winner refit, report/study access and joblib execution pass complete local/package/hosted verification below. |
-| P3-02 | WIP | Several seeds/origins with transparent resource budgets. | Fixed seed banks/origins/scales, shared horizons, attempted-trial budgets and bounded timeout windows implemented. Staged screening/promotion and memory budgets remain pending; final tests stay separate. |
-| P3-03 | WIP | Complete trial provenance and safe study transfer/resume. | Common studies bind prepared data, task timing, recipes/objectives, seed banks and environment; resolved fixed/sampled settings are retained and incompatible scores rejected. External finite-score transfer and maximize summaries repaired. Raw-runner transfer/resume still lacks this full protocol binding. |
-| P3-04 | Pending | Pruning during rollout and device-local scoring. | Stopped trials skip forecast computation; tensor/NumPy metric parity; no hidden device transfers in the supported fast path. |
+| P3-02 | WIP | Several seeds/origins with transparent resource budgets. | Full evaluation remains the default. Opt-in screening promotes candidates to a complete reevaluation; memory estimates reduce concurrency and skip oversized candidates before construction. Fixed seed banks/origins/scales, new-attempt budgets and timeout windows are covered by focused tests; consolidated gates remain in progress. |
+| P3-03 | WIP | Complete trial provenance and safe study transfer/resume. | Common and raw studies bind task/data, timing, recipes/objectives, custom Python implementations and complete resolved settings. Cross-task reuse retests settings; score imports require an exact protocol. Raw resume rechecks materialized historical data. Consolidated verification remains in progress. |
+| P3-04 | WIP | Pruning during rollout and device-local scoring. | Chunked rollout retains feedback queues and stops before further computation when pruned. Device-local cumulative scoring has independent NumPy and native MPS oracles. Whole-forecast custom objectives keep their complete-data contract; explicit prefix callbacks enable earlier pruning. Consolidated gates remain in progress. |
 | P3-05 | Done | Stable automatic readout selection with forced overrides. | Auto primal/dual/augmented-QR/SVD with unchanged alpha, guarded precision, structured diagnostics and forced overrides; native MPS or explicit CPU bridge. Independent SVD overflow/subnormal, integration and complete CI checks pass. |
-| P3-06 | WIP | Tuning process and storage lifecycle on current Python. | Common tuning uses joblib/loky, finite windows, real-worker cancellation/error tests and caller-owned studies. Parent/path-transfer RDB cleanup preserves returned memory studies and primary errors. The older raw runner's worker/monitor lifecycle still needs migration. |
+| P3-06 | WIP | Tuning process and storage lifecycle on current Python. | Both workflows now use joblib/loky finite windows and parent-owned sampling, pruning and storage. Real-process interruption, worker failure, callback cleanup, usable returned studies and primary-error preservation have focused regression tests; complete gates remain in progress. |
 
 ### Initial implementation verification
 

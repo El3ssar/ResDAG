@@ -70,7 +70,11 @@ def test_run_hpo_releases_pool_after_success_or_trial_failure(tmp_path, monkeypa
             raise ArithmeticError("trial failed")
         return 3.0
 
-    monkeypatch.setattr(run, "build_objective", lambda **kwargs: objective)
+    monkeypatch.setattr(
+        run,
+        "run_trials",
+        lambda study, runner, **kwargs: study.optimize(objective, n_trials=kwargs["n_trials"]),
+    )
     try:
         if trial_fails:
             with pytest.raises(ArithmeticError, match="trial failed"):
@@ -128,7 +132,7 @@ def test_wal_connection_closes_even_if_setup_or_commit_fails(monkeypatch, fail_a
         def close(self):
             calls.append("close")
 
-    monkeypatch.setattr(storage.sqlite3, "connect", lambda path: Connection())
+    monkeypatch.setattr(storage.sqlite3, "connect", lambda *args, **kwargs: Connection())
     if fail_at is None:
         enable_sqlite_wal("study.db")
     else:
@@ -161,14 +165,23 @@ def test_path_transfer_releases_owned_pool_on_success_or_direction_error(
         )
     )
     destination = optuna.create_study(direction=destination_direction)
+    source.set_user_attr("resdag_tuning_protocol_v1", "same-task")
+    destination.set_user_attr("resdag_tuning_protocol_v1", "same-task")
     monkeypatch.setattr(transfer, "resolve_storage", lambda *args, **kwargs: storage)
     try:
         if destination_direction == "minimize":
-            assert transfer.transfer_trials(destination, "study.db") == 1
+            assert (
+                transfer.transfer_trials(
+                    destination, "study.db", mode="scores", protocol_hash="same-task"
+                )
+                == 1
+            )
             assert destination.best_value == 2
         else:
-            with pytest.raises(ValueError, match="different objective directions"):
-                transfer.transfer_trials(destination, "study.db")
+            with pytest.raises(ValueError, match="matching objective directions"):
+                transfer.transfer_trials(
+                    destination, "study.db", mode="scores", protocol_hash="same-task"
+                )
         assert closed
         assert source.best_value == 2  # a closed engine can reconnect
     finally:
@@ -185,7 +198,9 @@ def test_ambiguous_path_transfer_releases_its_pool(tmp_path, monkeypatch, study_
     monkeypatch.setattr(transfer, "resolve_storage", lambda *args, **kwargs: storage)
     try:
         with pytest.raises(ValueError, match="pass an explicit optuna.Study"):
-            transfer.transfer_trials(destination, "study.db")
+            transfer.transfer_trials(
+                destination, "study.db", mode="scores", protocol_hash="same-task"
+            )
         assert closed
         assert destination.trials == []
     finally:
@@ -232,11 +247,15 @@ def test_cleanup_failure_preserves_primary_error_with_a_note(tmp_path, monkeypat
             assert caught.value is primary
         else:
             transfer = importlib.import_module("resdag.hpo.transfer")
-            optuna.create_study(storage=storage, direction="minimize")
+            source = optuna.create_study(storage=storage, direction="minimize")
+            source.set_user_attr("resdag_tuning_protocol_v1", "same-task")
             destination = optuna.create_study(direction="maximize")
+            destination.set_user_attr("resdag_tuning_protocol_v1", "same-task")
             monkeypatch.setattr(transfer, "resolve_storage", lambda *args, **kwargs: storage)
-            with pytest.raises(ValueError, match="different objective directions") as caught:
-                transfer.transfer_trials(destination, "db")
+            with pytest.raises(ValueError, match="matching objective directions") as caught:
+                transfer.transfer_trials(
+                    destination, "db", mode="scores", protocol_hash="same-task"
+                )
         assert any("RuntimeError: cleanup failed" in note for note in caught.value.__notes__)
         assert closed
     finally:
@@ -259,7 +278,13 @@ def test_returned_sqlite_memory_study_keeps_its_database(url, monkeypatch):
     closed = []
     sqlalchemy.event.listen(storage.engine, "close", lambda conn, record: closed.append(conn))
     monkeypatch.setattr(run, "resolve_storage", lambda *args, **kwargs: (storage, url))
-    monkeypatch.setattr(run, "build_objective", lambda **kwargs: lambda trial: 2.0)
+    monkeypatch.setattr(
+        run,
+        "run_trials",
+        lambda study, runner, **kwargs: study.optimize(
+            lambda trial: 2.0, n_trials=kwargs["n_trials"]
+        ),
+    )
     pool = storage.engine.pool
     try:
         study = run.run_hpo(lambda: None, lambda trial: {}, lambda trial: {}, n_trials=1)
@@ -268,7 +293,7 @@ def test_returned_sqlite_memory_study_keeps_its_database(url, monkeypatch):
         assert study.best_value == 2.0
         assert len(study.trials) == 1
         study.set_user_attr("still_usable", True)
-        assert study.user_attrs == {"still_usable": True}
+        assert study.user_attrs["still_usable"] is True
     finally:
         _close_storage(storage)
     assert closed  # Explicit teardown can release the backing memory database.
@@ -301,7 +326,13 @@ def test_file_uri_without_enabled_uri_mode_releases_persistent_pool(
     closed = []
     sqlalchemy.event.listen(storage.engine, "close", lambda conn, record: closed.append(conn))
     monkeypatch.setattr(run, "resolve_storage", lambda *args, **kwargs: (storage, url))
-    monkeypatch.setattr(run, "build_objective", lambda **kwargs: lambda trial: 2.0)
+    monkeypatch.setattr(
+        run,
+        "run_trials",
+        lambda study, runner, **kwargs: study.optimize(
+            lambda trial: 2.0, n_trials=kwargs["n_trials"]
+        ),
+    )
     try:
         study = run.run_hpo(lambda: None, lambda trial: {}, lambda trial: {}, n_trials=1)
         assert closed
@@ -317,7 +348,13 @@ def test_sqlite_memory_cleanup_failure_raises_and_disposes_pool(monkeypatch):
     closed = []
     sqlalchemy.event.listen(storage.engine, "close", lambda conn, record: closed.append(conn))
     monkeypatch.setattr(run, "resolve_storage", lambda *args, **kwargs: (storage, ":memory:"))
-    monkeypatch.setattr(run, "build_objective", lambda **kwargs: lambda trial: 2.0)
+    monkeypatch.setattr(
+        run,
+        "run_trials",
+        lambda study, runner, **kwargs: study.optimize(
+            lambda trial: 2.0, n_trials=kwargs["n_trials"]
+        ),
+    )
     original_remove = storage.remove_session
 
     def broken_remove():
@@ -330,58 +367,8 @@ def test_sqlite_memory_cleanup_failure_raises_and_disposes_pool(monkeypatch):
     assert closed
 
 
-@pytest.mark.parametrize("cleanup_fails", [False, True])
-def test_failed_worker_reload_closes_new_pool_and_preserves_reload_error(
-    tmp_path, monkeypatch, cleanup_fails
-):
-    run = importlib.import_module("resdag.hpo.run")
-    parent, parent_closed = _owned_database(tmp_path)
-    study = optuna.create_study(storage=parent)
-    reopened = optuna.storages.RDBStorage(f"sqlite:///{tmp_path / 'reopened.db'}")
-    reopened_closed = []
-    sqlalchemy.event.listen(
-        reopened.engine, "close", lambda conn, record: reopened_closed.append(conn)
-    )
-    monkeypatch.setattr(run, "run_multiprocess", lambda **kwargs: None)
-    monkeypatch.setattr(run, "enable_sqlite_wal", lambda path: None)
-    monkeypatch.setattr(run, "resolve_storage", lambda *args, **kwargs: reopened)
-    primary = OSError("study reload failed")
-
-    def fail_load(**kwargs):
-        raise primary
-
-    monkeypatch.setattr(run.optuna, "load_study", fail_load)
-    original_remove = reopened.remove_session
-    if cleanup_fails:
-
-        def fail_remove():
-            original_remove()
-            raise RuntimeError("reopened cleanup failed")
-
-        monkeypatch.setattr(reopened, "remove_session", fail_remove)
-    try:
-        with pytest.raises(OSError, match="study reload failed") as caught:
-            run._dispatch_multiprocess(
-                study=study,
-                resolved_storage=parent,
-                storage_path="study.db",
-                study_name=study.study_name,
-                objective=lambda trial: 1.0,
-                n_trials=1,
-                remaining=1,
-                completed_trials=0,
-                n_workers=2,
-                seed=1,
-                pruner=optuna.pruners.NopPruner(),
-                verbosity=0,
-                device=None,
-            )
-        assert caught.value is primary
-        assert parent_closed
-        assert reopened_closed
-        if cleanup_fails:
-            assert any("reopened cleanup failed" in note for note in primary.__notes__)
-    finally:
-        _close_storage(parent)
-        original_remove()
-        reopened.engine.dispose()
+def test_sqlalchemy_url_wal_does_not_create_literal_query_file(tmp_path):
+    path = tmp_path / "query.db"
+    enable_sqlite_wal(f"sqlite:///{path}?timeout=2")
+    assert path.is_file()
+    assert not (tmp_path / "query.db?timeout=2").exists()

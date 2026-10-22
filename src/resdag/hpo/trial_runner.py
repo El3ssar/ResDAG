@@ -1,30 +1,21 @@
-"""Picklable per-trial runner for Optuna optimization.
+"""Numerical raw-model evaluation with parent-owned Optuna bookkeeping.
 
-This module hosts :class:`TrialRunner`, a **top-level, picklable** object that
-encapsulates the full per-trial lifecycle: per-trial seeding, model creation,
-training, a *single* forecast, horizon-checkpoint reporting/pruning, and loss
-evaluation (on-device when possible, with a NumPy fallback).
-
-Historically all of this logic lived in a closure built inside
-:func:`resdag.hpo.objective.build_objective`.  A closure cannot be pickled,
-which forced ``fork``-only multiprocessing and made pruners impossible to wire
-up (the single ``model.forecast`` call returned a scalar, so
-``trial.report`` / ``trial.should_prune`` never fired).  ``TrialRunner`` lifts
-that logic into a real class so it can be pickled and shipped to ``spawn``-ed
-workers, and it forecasts **once** then slices the result at growing horizon
-checkpoints to drive intermediate reporting and pruning.
-
-See Also
---------
-resdag.hpo.objective : Thin :func:`build_objective` wrapper around this class.
-resdag.hpo.run : High-level orchestrator that builds the objective.
-resdag.hpo.losses : Loss functions evaluated by the runner.
+The parent prepares settings/data and invokes user Trial callbacks. Managed
+joblib workers fit, stream forecasts, and return ordinary numerical metadata;
+they never receive a Study or open its storage. Checkpoint pruning stops future
+forecast generation. Raw/custom losses may retain the growing prediction prefix
+for their existing normalization and monitor semantics.
 """
 
 import gc
 import inspect
+import json
 import logging
 import random
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Callable, Literal
 
 import numpy as np
@@ -35,6 +26,7 @@ from resdag.core import ESNModel
 from resdag.core._modes import evaluating
 from resdag.training import ESNTrainer
 
+from ._provenance import RESOLVED_SETTINGS_KEY, fingerprint, resolve_trial_settings
 from ._torch_losses import score_builtin_tensor_loss
 from .losses import LossProtocol
 
@@ -53,7 +45,7 @@ class TrialEvaluationError(RuntimeError):
 # would burn the whole study budget producing ``penalty_value`` for every trial
 # and return nonsense best_params. When a caught exception carries this marker
 # we re-raise instead of penalising, so the study aborts loudly. The matched
-# start-method fix lives in ``resdag.hpo.dispatch.select_start_method``.
+# managed joblib backend avoids fork-based numerical workers.
 _CUDA_FORK_REINIT_MARKER = "Cannot re-initialize CUDA in forked subprocess"
 
 
@@ -88,6 +80,109 @@ def _accepts_seed(func: Callable[..., Any]) -> bool:
 # ``trial.report``/``trial.should_prune`` (acting as a pruning signal) but its
 # own exceptions are always swallowed so it can never fail a trial.
 TrialCallback = Callable[[optuna.Trial, dict[str, Any]], None]
+
+
+@dataclass
+class PreparedTrial:
+    """Parent-prepared data/settings; contains no Trial or storage object."""
+
+    number: int
+    params: dict[str, Any]
+    data: dict[str, Any]
+    seed: int | None
+    direction: optuna.study.StudyDirection
+    rng: dict[str, Any]
+    attrs: dict[str, Any]
+
+
+@dataclass
+class TrialResult:
+    """Worker-owned numerical outcome and metadata for the parent to persist."""
+
+    number: int
+    params: dict[str, Any]
+    state: Literal["complete", "pruned", "fail"]
+    value: float | None
+    attrs: dict[str, Any]
+    error: str | None = None
+    intermediate_values: dict[int, float] = field(default_factory=dict)
+    reported_live: bool = False
+
+
+@dataclass
+class _EvaluationTrace:
+    """Internal numeric trace; user Trial callbacks never receive this object."""
+
+    number: int
+    direction: optuna.study.StudyDirection
+    progress: Callable[[float, int], None] | None
+    user_attrs: dict[str, Any] = field(default_factory=dict)
+    intermediate_values: dict[int, float] = field(default_factory=dict)
+
+    @property
+    def study(self) -> Any:
+        return SimpleNamespace(direction=self.direction)
+
+    def set_user_attr(self, key: str, value: Any) -> None:
+        self.user_attrs[key] = value
+
+    def report(self, value: float, step: int) -> None:
+        self.intermediate_values[step] = value
+        if self.progress is not None:
+            self.progress(value, step)
+
+    def should_prune(self) -> bool:
+        # The parent progress callback already reports and checks its real Trial.
+        return False
+
+
+@contextmanager
+def _rng_scope(device: torch.device | None) -> Iterator[None]:
+    """Use standard Torch RNG guards and restore the caller's Python/NumPy state."""
+    python_state, numpy_state = random.getstate(), np.random.get_state()
+    cuda_devices = list(range(torch.cuda.device_count())) if torch.cuda.is_initialized() else []
+    if device is not None and device.type == "cuda" and torch.cuda.is_available():
+        index = device.index if device.index is not None else torch.cuda.current_device()
+        if index not in cuda_devices:
+            cuda_devices.append(index)
+    try:
+        with ExitStack() as stack:
+            stack.enter_context(torch.random.fork_rng(devices=cuda_devices))
+            if torch.backends.mps.is_available():
+                stack.enter_context(torch.random.fork_rng(devices=[0], device_type="mps"))
+            yield
+    finally:
+        random.setstate(python_state)
+        np.random.set_state(numpy_state)
+
+
+def _capture_rng() -> dict[str, Any]:
+    return {
+        "torch": torch.random.get_rng_state(),
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else [],
+        "mps": torch.mps.get_rng_state() if torch.backends.mps.is_available() else None,
+    }
+
+
+def _restore_rng(state: dict[str, Any]) -> None:
+    torch.random.set_rng_state(state["torch"])
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    if state["cuda"]:
+        torch.cuda.set_rng_state_all(state["cuda"])
+    if state["mps"] is not None and torch.backends.mps.is_available():
+        torch.mps.set_rng_state(state["mps"])
+
+
+def _unused_search_space(trial: Any) -> dict[str, Any]:
+    raise RuntimeError("Search space is parent-owned and must not run in a worker")
+
+
+def _unused_data_loader(trial: Any) -> dict[str, torch.Tensor]:
+    raise RuntimeError("Data loading is parent-owned and must not run in a worker")
+
 
 _REQUIRED_DATA_KEYS = ("warmup", "train", "target", "f_warmup", "val")
 
@@ -154,10 +249,10 @@ class TrialRunner:
     An instance of this class behaves exactly like the objective closure that
     :func:`resdag.hpo.objective.build_objective` used to return: call it with an
     :class:`optuna.Trial` and it returns the (possibly clipped) loss to
-    minimize.  Unlike a closure, it can be pickled and shipped to ``spawn``-ed
-    worker processes.
+    minimize. Managed joblib serializes only its numerical callbacks and
+    prepared jobs; parent-only study/data callbacks remain in the caller.
 
-    The runner forecasts **once** and slices the result at growing horizon
+    The runner generates forecast chunks up to growing horizon
     checkpoints, calling :meth:`optuna.Trial.report` and
     :meth:`optuna.Trial.should_prune` at each checkpoint so configured pruners
     can terminate diverging trials early.  Scoring stays on the forecast's
@@ -168,8 +263,8 @@ class TrialRunner:
     ----------
     model_creator : Callable[..., ESNModel]
         Function that creates a fresh model given hyperparameters.  Must accept
-        all hyperparameters from ``search_space`` as keyword arguments.  Must be
-        picklable (e.g. a module-level function) for the runner to be picklable.
+        all resolved model settings as keyword arguments. Joblib supports notebook
+        factories and closures; parent-only callbacks are excluded from jobs.
     search_space : Callable[[Trial], dict[str, Any]]
         Function that defines the hyperparameter search space using Optuna's
         ``trial.suggest_*`` methods.  Returns a dict of hyperparameters.
@@ -241,7 +336,7 @@ class TrialRunner:
     on its user-supplied callables (``model_creator``, ``search_space``,
     ``data_loader``, ``loss_fn``, monitor losses, trial callbacks).  Use
     module-level functions rather than lambdas/closures for those to keep the
-    instance picklable for ``spawn``-based distribution.
+    instance serializable for managed joblib distribution.
     """
 
     def __init__(
@@ -322,25 +417,11 @@ class TrialRunner:
             # Pruning must propagate so Optuna records the trial as pruned.
             raise
         except Exception as e:  # noqa: BLE001 - intentional broad catch
-            # Systematic failure: a forked worker cannot touch CUDA once the
-            # parent has initialised it. This recurs on *every* trial, so
-            # penalising it would silently burn the whole budget on
-            # ``penalty_value`` and hand back nonsense best_params. Re-raise
-            # (bypassing ``catch_exceptions``) so the failure surfaces instead:
-            # single-process runs raise; under multiprocessing the worker exits
-            # and the study returns zero completed trials rather than a bogus
-            # best_params (``best_value`` is guarded on ``completed > 0``). The
-            # dispatcher should have picked ``spawn`` for CUDA studies anyway. The
-            # match is narrow so genuine per-trial failures are still penalised.
+            # Preserve a clear failure if external code invokes this runner in
+            # an unsafe fork context. The managed joblib backend avoids it.
             if _CUDA_FORK_REINIT_MARKER in str(e):
                 logger.error(
-                    "Trial %s hit the fork/CUDA re-initialisation error — this is "
-                    "a systematic failure that would recur on every trial in every "
-                    "forked worker. Re-raising to abort the study instead of "
-                    "penalising. Use the 'spawn' start method for CUDA studies "
-                    "(run_hpo selects it automatically when device is CUDA or CUDA "
-                    "is already initialised in the parent).",
-                    trial.number,
+                    "Trial %s cannot initialize CUDA in this process context", trial.number
                 )
                 raise
             if self.catch_exceptions:
@@ -350,52 +431,220 @@ class TrialRunner:
                     raise TrialEvaluationError(str(e)) from e
                 return self._directional_penalty(trial)
             raise
-        finally:
-            _cleanup()
 
     # ── Per-trial lifecycle ──────────────────────────────────────────────
     def _run(self, trial: optuna.Trial) -> float:
-        """Run the full per-trial pipeline (seed → train → forecast → score)."""
-        trial_seed = self._seed_trial(trial)
-        if trial_seed is not None:
-            trial.set_user_attr("trial_seed", trial_seed)
+        prepared = self.prepare(trial)
 
-        params = self.search_space(trial)
-        if _accepts_seed(self.model_creator):
-            model_seed = params.get("seed", trial_seed)
-            if isinstance(model_seed, int):
-                trial.set_user_attr("model_seed", model_seed)
+        def report(value: float, step: int) -> None:
+            trial.report(value, step)
+            if trial.should_prune():
+                raise optuna.TrialPruned(f"pruned at checkpoint {step}")
 
-        data = self.data_loader(trial)
-        _validate_data_keys(data, drivers_keys=self.drivers_keys)
-        data = self._to_device(data)
+        return self.finalize(trial, self.evaluate(prepared, report))
 
-        model = self._create_model(params, trial_seed)
-        if self.device is not None:
-            model = model.to(self.device)
+    def prepare(self, trial: optuna.Trial) -> PreparedTrial:
+        """Resolve settings/data once in the parent using the actual Optuna Trial."""
+        with _rng_scope(self.device):
+            trial_seed = self._seed_trial(trial)
+            sampled_model_settings = self.search_space(trial)
+            params = resolve_trial_settings(trial, sampled_model_settings)
+            data = self.data_loader(trial)
+            _validate_data_keys(data, drivers_keys=self.drivers_keys)
+            # Suggestions made only by the data callback configure its slices,
+            # not model_creator(**params). Keep them in Trial.params/provenance
+            # while routing only declared model settings to the constructor.
+            data_parameters = set(trial.params) - set(sampled_model_settings)
+            params = {name: value for name, value in params.items() if name not in data_parameters}
+            # Neither an in-place layer nor a failed sequential trial may alter
+            # the caller's shared training/validation observations.
+            data = {
+                key: value.detach().clone() if isinstance(value, torch.Tensor) else value
+                for key, value in data.items()
+            }
+            attrs: dict[str, Any] = {
+                RESOLVED_SETTINGS_KEY: repr(params),
+                "resolved_params": json.loads(json.dumps(params)),
+                "resdag_raw_data_hash": fingerprint(data),
+                "resdag_raw_evaluation_number": trial.number,
+                "resdag_raw_data_params": {name: trial.params[name] for name in data_parameters},
+            }
+            if trial_seed is not None:
+                attrs["trial_seed"] = trial_seed
+            if _accepts_seed(self.model_creator):
+                model_seed = params.get("seed", trial_seed)
+                if isinstance(model_seed, int):
+                    attrs["model_seed"] = model_seed
+            for key, value in attrs.items():
+                trial.set_user_attr(key, value)
+            return PreparedTrial(
+                trial.number, params, data, trial_seed, trial.study.direction, _capture_rng(), attrs
+            )
 
-        warmup_inputs, train_inputs = self._build_train_inputs(data)
-
-        trainer = ESNTrainer(model)
-        trainer.fit(
-            warmup_inputs=warmup_inputs,
-            train_inputs=train_inputs,
-            targets={self.targets_key: data["target"]},
+    def for_worker(self) -> "TrialRunner":
+        """Exclude parent-only closures/resources from joblib serialization."""
+        return TrialRunner(
+            self.model_creator,
+            _unused_search_space,
+            _unused_data_loader,
+            self.loss_fn,
+            targets_key=self.targets_key,
+            drivers_keys=self.drivers_keys,
+            horizon_key=self.horizon_key,
+            catch_exceptions=self.catch_exceptions,
+            penalty_value=self.penalty_value,
+            monitor_losses=self.monitor_losses,
+            monitor_params=self.monitor_params,
+            device=self.device,
+            seed=self.seed,
+            clip_value=self.clip_value,
+            prune_on_clip=self.prune_on_clip,
+            n_checkpoints=self.n_checkpoints,
+            torch_scoring=self.torch_scoring,
+            trial_callbacks=None,
+            error_policy=self.error_policy,
         )
 
-        preds, val = self._forecast(model, data)
+    def evaluate_job(
+        self, job: tuple[PreparedTrial, Callable[[float, int], None] | None]
+    ) -> TrialResult:
+        return self.evaluate(*job)
 
-        raw_loss = self._evaluate_with_checkpoints(trial, preds, val)
-        raw_loss = self._penalize_nonfinite(trial, raw_loss)
+    def evaluate(
+        self,
+        prepared: PreparedTrial,
+        progress: Callable[[float, int], None] | None = None,
+    ) -> TrialResult:
+        """Fit/forecast/score without opening a study or touching its storage."""
+        trace = _EvaluationTrace(
+            prepared.number, prepared.direction, progress, dict(prepared.attrs)
+        )
+        primary_error: BaseException | None = None
 
-        trial.set_user_attr("raw_loss", raw_loss)
-        loss = self._apply_clipping(trial, raw_loss)
-        trial.set_user_attr("loss", loss)
+        def outcome(
+            state: Literal["complete", "pruned", "fail"],
+            value: float | None,
+            error: str | None = None,
+        ) -> TrialResult:
+            return TrialResult(
+                prepared.number,
+                prepared.params,
+                state,
+                value,
+                trace.user_attrs,
+                error,
+                dict(trace.intermediate_values),
+                progress is not None,
+            )
 
-        self._log_monitor_losses(trial, preds, val)
-        self._invoke_callbacks(trial, params=params, raw_loss=raw_loss, loss=loss)
+        try:
+            with _rng_scope(self.device):
+                _restore_rng(prepared.rng)
+                data = self._to_device(prepared.data)
+                model = self._create_model(prepared.params, prepared.seed)
+                if self.device is not None:
+                    model = model.to(self.device)
+                warmup, train = self._build_train_inputs(data)
+                ESNTrainer(model).fit(
+                    warmup_inputs=warmup,
+                    train_inputs=train,
+                    targets={self.targets_key: data["target"]},
+                )
+                raw_loss, predictions, truth = self._stream_forecast_score(model, data, trace)
+                raw_loss = self._penalize_nonfinite(trace, raw_loss)
+                trace.set_user_attr("raw_loss", raw_loss)
+                loss = self._apply_clipping(trace, raw_loss)
+                trace.set_user_attr("loss", loss)
+                self._log_monitor_losses(trace, predictions, truth)
+            return outcome("complete", loss)
+        except optuna.TrialPruned as error:
+            primary_error = error
+            return outcome("pruned", None, str(error))
+        except Exception as error:
+            primary_error = error
+            if not self.catch_exceptions or _CUDA_FORK_REINIT_MARKER in str(error):
+                raise
+            trace.set_user_attr("error", str(error))
+            if self.error_policy == "penalty":
+                return outcome("complete", self._directional_penalty(trace), str(error))
+            return outcome("fail", None, str(error))
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            try:
+                _cleanup()
+            except BaseException as cleanup_error:
+                if primary_error is None:
+                    raise
+                primary_error.add_note(f"Numerical cleanup also failed: {cleanup_error}")
+                trace.set_user_attr("cleanup_error", str(cleanup_error))
 
-        return loss
+    def finalize(self, trial: optuna.Trial, result: TrialResult) -> float:
+        """Publish worker metadata and run user callbacks in the parent only."""
+        for key, value in result.attrs.items():
+            trial.set_user_attr(key, value)
+        if not result.reported_live:
+            for step, value in result.intermediate_values.items():
+                trial.report(value, step)
+        if result.state == "pruned":
+            raise optuna.TrialPruned(result.error)
+        if result.state == "fail":
+            raise TrialEvaluationError(result.error)
+        assert result.value is not None
+        self._invoke_callbacks(
+            trial,
+            params=result.params,
+            raw_loss=result.attrs.get("raw_loss", result.value),
+            loss=result.value,
+        )
+        return result.value
+
+    def _stream_forecast_score(
+        self,
+        model: ESNModel,
+        data: dict[str, Any],
+        trial: Any,
+    ) -> tuple[float, torch.Tensor, torch.Tensor]:
+        from resdag.core._forecast_stream import raw_forecast_stream
+
+        horizon = (
+            int(data[self.horizon_key])
+            if self.horizon_key and self.horizon_key in data
+            else int(data["val"].shape[1])
+        )
+        if horizon < 1:
+            raise ValueError("Forecast horizon must be positive")
+        if horizon > data["val"].shape[1]:
+            raise ValueError("Forecast horizon exceeds available validation truth")
+        checkpoints = _checkpoint_horizons(horizon, self.n_checkpoints)
+        warmup = (data["f_warmup"],) + tuple(
+            data[f"f_warmup_{key}"] for key in self.drivers_keys or ()
+        )
+        drivers = tuple(data[f"forecast_{key}"] for key in self.drivers_keys or ()) or None
+        pieces = []
+        raw_loss = self.penalty_value
+        checkpoint = 0
+        with raw_forecast_stream(
+            model, warmup, drivers, horizon=horizon, chunk_size=64, checkpoints=checkpoints
+        ) as chunks:
+            for chunk in chunks:
+                prediction = chunk.outputs[0]
+                if not torch.isfinite(prediction).all():
+                    raise ValueError("Forecast contains non-finite values; the trial is invalid")
+                pieces.append(prediction)
+                if chunk.stop != checkpoints[checkpoint]:
+                    continue
+                predictions = torch.cat(pieces, dim=1)
+                truth = data["val"][:, : chunk.stop]
+                raw_loss = self._score(truth, predictions)
+                raw_loss = self._penalize_nonfinite(trial, raw_loss)
+                checkpoint += 1
+                trial.set_user_attr(f"horizon@{checkpoint}", chunk.stop)
+                trial.report(raw_loss, step=checkpoint)
+                if trial.should_prune():
+                    raise optuna.TrialPruned(f"pruned at checkpoint {checkpoint}")
+        return raw_loss, torch.cat(pieces, dim=1), data["val"][:, :horizon]
 
     def _seed_trial(self, trial: optuna.Trial) -> int | None:
         """Seed the global RNGs for a trial and return the per-trial seed.
@@ -582,7 +831,7 @@ class TrialRunner:
                 )
         return raw_loss
 
-    def _penalize_nonfinite(self, trial: optuna.Trial, raw_loss: float) -> float:
+    def _penalize_nonfinite(self, trial: Any, raw_loss: float) -> float:
         """Reject a non-finite loss, or apply an explicitly chosen legacy penalty.
 
         Always retain the ``nonfinite_loss`` diagnostic. High-level studies use
@@ -617,13 +866,13 @@ class TrialRunner:
         )
         return penalty
 
-    def _directional_penalty(self, trial: optuna.Trial) -> float:
+    def _directional_penalty(self, trial: Any) -> float:
         """Keep an explicit legacy penalty unfavorable in either direction."""
         if trial.study.direction == optuna.study.StudyDirection.MAXIMIZE:
             return -self.penalty_value
         return self.penalty_value
 
-    def _apply_clipping(self, trial: optuna.Trial, raw_loss: float) -> float:
+    def _apply_clipping(self, trial: Any, raw_loss: float) -> float:
         """Clamp or prune based on ``clip_value`` / ``prune_on_clip``."""
         if self.clip_value is not None and raw_loss > self.clip_value:
             if self.prune_on_clip:
@@ -633,9 +882,7 @@ class TrialRunner:
             return self.clip_value
         return raw_loss
 
-    def _log_monitor_losses(
-        self, trial: optuna.Trial, preds: torch.Tensor, val: torch.Tensor
-    ) -> None:
+    def _log_monitor_losses(self, trial: Any, preds: torch.Tensor, val: torch.Tensor) -> None:
         """Compute monitor losses on the full horizon and log them."""
         if not self.monitor_losses:
             return

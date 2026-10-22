@@ -278,12 +278,15 @@ def enable_sqlite_wal(storage_path: str) -> None:
     if not (storage_path.endswith(".db") or storage_path.startswith("sqlite:///")):
         return
 
-    db_path = (
-        storage_path.removeprefix("sqlite:///")
-        if storage_path.startswith("sqlite:///")
-        else storage_path
+    from sqlalchemy.engine import make_url
+
+    url = make_url(
+        storage_path if storage_path.startswith("sqlite:") else f"sqlite:///{storage_path}"
     )
-    with closing(sqlite3.connect(db_path)) as conn:
+    # SQLAlchemy handles URL query options and SQLite URI filenames. Stripping
+    # sqlite:/// would create a different literal filename containing ?query.
+    args, options = url.get_dialect()().create_connect_args(url)
+    with closing(sqlite3.connect(args[0], **options)) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.commit()

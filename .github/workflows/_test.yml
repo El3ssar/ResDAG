@@ -155,3 +155,6 @@ jobs:
           tests/test_named_trajectory_guide.py
           tests/test_hpo/test_tuning_data.py
           tests/test_hpo/test_tuning_workflow.py
+          tests/test_hpo/test_tuning_completion.py
+          tests/test_hpo/test_tuning_completion_review.py
+          tests/test_hpo/test_tuning_guides.py

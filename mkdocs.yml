@@ -204,6 +204,7 @@ nav:
       - Lyapunov time: workflows/lyapunov.md
       - NG-RC: workflows/ngrc.md
       - Tune: workflows/tune.md
+      - Tuning resources: advanced/tuning-resources.md
       - Raw HPO runner: advanced/raw-hpo.md
       - Streaming & DataLoaders: workflows/streaming.md
       - Scale & deploy: workflows/deploy.md

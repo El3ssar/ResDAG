@@ -11,7 +11,8 @@ forecast tensor yourself and build raw `ESNModel` graphs. The usual
 [`model.tune(...)` workflow](../workflows/tune.md) handles chronological
 validation, preprocessing, named ports and installing a fitted winner.
 `run_hpo` returns an Optuna study and leaves winner reconstruction to you.
-Its worker and scoring protocols are separate from the common tuner.
+Both workflows use the same managed joblib executor and parent-owned Optuna
+bookkeeping. This raw entry point keeps its explicit data and loss contracts.
 
 ## Parameters to explore
 
@@ -60,10 +61,13 @@ over the validation window, and scores it.
 <div class="nb-specimen" data-label="study.py" markdown>
 
 ```python
+import torch
 import resdag as rd
 from resdag.hpo import run_hpo
 
-data = ...                                  # (1, 2300, 3) — (batch, time, features)
+t = torch.arange(2300, dtype=torch.float32) / 20
+data = torch.sin(t[:, None] * torch.tensor([0.7, 1.0, 1.3]))[None]
+# data has shape (1, 2300, 3): batch, time, features
 warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
     data, warmup_steps=200, train_steps=1600, val_steps=300
 )
@@ -116,19 +120,64 @@ last one sliced with the [pinned alignment](../workflows/forecast.md).
     cannot win. Details remain in the trial's `"error"` attribute. A study
     with no valid completed evaluation raises clearly. Pass
     `catch_exceptions=False` to see the original exception immediately.
-    The explicit `error_policy="penalty"` retains legacy numeric penalties;
-    it still cannot return an invalid best model. Low-level `TrialRunner`
-    and `build_objective` keep their old penalty default for compatibility.
+    The explicit `error_policy="penalty"` records numeric penalties;
+    it still cannot return an invalid winner. Low-level `TrialRunner` and
+    `build_objective` have a penalty default: pass `error_policy="fail"` when
+    driving those helpers directly. If every attempt is pruned, the returned
+    study has no best trial.
 
 The actual forwarded model seed is recorded as `trial.user_attrs["model_seed"]`
 when the creator accepts a seed; `"trial_seed"` records the trial RNG seed.
 Use that model seed when reconstructing the winner. Forecast evaluation uses
 temporary evaluation mode, restoring each module's earlier training flag.
 
-`transfer_from` reuses evaluated scores and requires matching objective
-directions. Only use it for the same data, scaling and objective. For a new
-experiment, pass prior configurations through `warm_start` to evaluate them
-again.
+### Resume and reuse settings
+
+`n_trials` is the number of **new attempts in this call**. Failed and pruned
+attempts count too. Running with the same storage and study name adds that
+many attempts; it does not mean a target total study length. For example,
+`n_trials=10` followed by `n_trials=5` creates 15 attempts.
+
+Use prior results as starting settings for a new experiment:
+
+```python
+from resdag.hpo import export_best_config
+
+best = export_best_config(study)
+next_study = run_hpo(
+    model_creator, search_space, data_loader, n_trials=10,
+    transfer_from=study, seed=42, verbosity=0,
+)
+```
+
+`transfer_from` queues complete settings for **re-evaluation** by default.
+Single-objective sources are queued best-first, with trial number breaking
+ties. Multi-objective sources retain their source order. Suggestions used
+only by `data_loader` and fixed model values are preserved; nothing is
+silently dropped to make an old score fit a different model. Queued
+configurations consume new attempts when evaluated. Remaining configurations
+stay `WAITING` if the new budget is smaller than the queue.
+
+`warm_start=[best]` queues specific settings. `export_best_config` includes
+fixed model settings alongside suggestions. The destination factory must
+accept its model settings; adapt a configuration explicitly if changing
+architectures. Trial attributes record full resolved settings and source
+study/trial provenance under `"resdag_transfer"`.
+
+Copying old scores requires the explicit `transfer_mode="scores"` and an
+identical bound task protocol, including data, validation, objective and
+settings. Raw resume and score import replay each historical configuration's
+data preparation with Optuna's `FixedTrial` and compare the actual prepared
+tensor contents. A changed file loaded by the same callback/path is rejected
+before its old scores can compete. Use a fresh study with settings reuse for
+changed tasks.
+
+If a data callback needs live-study resources that `FixedTrial` cannot replay,
+supply `task_context="my-dataset-v3"` (or a portable metadata mapping). This is
+an explicit assertion of the external resources' identity; change it whenever
+those resources change. A successful replay still checks tensor contents.
+Callbacks may run again for historical validation on resume, so keep data
+preparation free of side effects. New attempts receive a real Optuna `Trial`.
 
 ### Losses
 
@@ -150,8 +199,12 @@ With `torch_scoring=True` (the default), the five horizon/error losses score
 directly on the forecast device; each checkpoint transfers only its final
 scalar. The attractor-dimension loss uses NumPy. Custom losses can accept torch
 tensors for the same device-local path, or use the automatic NumPy fallback.
-Checkpoint pruning currently happens after the full trajectory is generated,
-so it saves remaining scoring work, rather than forecast generation.
+Forecasts are generated in chunks. Checkpoint pruning stops future generation
+as soon as the parent pruner rejects a growing prefix. Reports use 1-based
+checkpoint indices, not physical sample counts. Raw losses retain their existing
+prefix-dependent normalization, so raw scoring can keep a complete prediction
+prefix in memory: **O(horizon)** storage. Custom/monitor losses receive the
+same full-horizon tensors when an evaluation completes.
 
 ### Multi-worker studies
 
@@ -159,22 +212,68 @@ so it saves remaining scoring work, rather than forecast generation.
 study = run_hpo(..., n_trials=200, n_workers=8, storage="study.log", seed=42)
 ```
 
-Workers are separate OS processes coordinating through the storage file.
-Journal storage (`"study.log"`) is append-only and handles concurrent
-writers; a `.db` path uses SQLite with WAL mode. BLAS threads are
-throttled to one per worker before forking, and re-running with the same
-storage and study name resumes where the study stopped.
+One worker runs in the caller; multiple workers use managed joblib/loky
+processes. Notebook factories and loss closures work through joblib's standard
+serialization. Search-space functions, data loaders, user trial callbacks,
+samplers, pruners and storage all remain in the parent. Numerical workers
+receive prepared data and return scores/diagnostics, with no study connection.
+In-memory studies therefore also work with multiple workers.
 
-Seed semantics differ by mode. Single-worker runs are fully
-reproducible when the model creator accepts and forwards `seed`, as above:
-`seed` seeds the sampler, and each trial reseeds torch/numpy/Python with
-`seed + trial.number`. Multi-worker runs derive a
-sampler seed per worker (`seed + i·7919`), but trial numbers are claimed
-in arrival order — so per-trial seeds, and hence the exact trial
-sequence, vary run to run even with a fixed `seed`.
-An explicit `sampler=` is preserved in each worker with an independent copy
-and a call to its `reseed_rng()` hook. Custom samplers must be picklable for
-CUDA/spawn studies; their RNG policy determines reproducibility.
+Submission uses finite windows, so failures and pruning cannot overshoot the
+new-attempt budget. On errors or interruption, outstanding work is canceled
+through joblib and this call's unfinished reservations are marked `FAIL`.
+Successfully completed pools follow joblib's normal reuse policy. Journal and
+SQLite storage are optional persistence choices; SQLite URLs use normal
+SQLAlchemy parsing, including query options.
+
+`inner_max_num_threads=1` limits native library threads inside worker processes.
+The parent thread settings, environment variables, logging levels and RNG
+streams are restored/preserved. `seed` initializes the parent sampler; each
+new trial uses `seed + trial.number`. Data preparation's RNG consumption is
+preserved before model initialization in the worker. An explicit model seed in
+the resolved settings takes precedence. Adaptive suggestions can differ when
+you change worker count because the sampler sees different completed windows;
+concurrency is not a reproducibility guarantee across schedules/devices.
+
+### Optional memory planning
+
+Arbitrary raw factories require a custom estimate when a budget is supplied:
+
+```python
+from resdag.hpo import MemoryBudget, MemoryEstimate
+
+def memory_estimator(params, context):
+    # Complete peak estimate for this particular factory, not just weights.
+    n = params["reservoir_size"]
+    state_bytes = context.refit_samples * n * 8
+    solver_bytes = 4 * n * n * 8
+    return MemoryEstimate(
+        host_bytes=context.dataset_host_bytes + state_bytes + solver_bytes
+        + context.retained_forecast_bytes,
+        details={"solver": "factory-specific estimate"},
+    )
+
+planned = run_hpo(
+    model_creator, search_space, data_loader, n_trials=10, n_workers=2,
+    memory_budget=MemoryBudget("2GiB", worker_overhead="256MiB"),
+    memory_estimator=memory_estimator, seed=42, verbosity=0,
+)
+```
+
+`context` contains immutable shape/dtype/device/storage metadata, never live
+model or data objects. The estimate is a complete host/device peak for your
+factory; known resident data, device copies and retained forecast storage set
+a minimum. Include custom layers, solver workspaces and other temporary
+allocations in your estimate. The example above illustrates a CPU estimate;
+adapt host/device accounting to your chosen factory and accelerator.
+
+An oversized candidate becomes `PRUNED` before model construction; candidates
+that fit individually run with reduced numerical concurrency when necessary.
+`trial.user_attrs["memory_estimate"]` records requested/known-minimum accounting.
+Preparation itself still occurs in the parent before estimation, and a pending
+configuration may be retained while an admitted window runs. These are planning
+estimates, **not process, RSS or accelerator allocation limits**. The default
+without `memory_budget` imposes no memory admission policy.
 
 ---
 

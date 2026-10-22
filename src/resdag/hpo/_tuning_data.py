@@ -10,7 +10,8 @@ from __future__ import annotations
 import copy
 import math
 import operator
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -31,6 +32,7 @@ from resdag.data._trajectory_ports import (
 )
 
 if TYPE_CHECKING:
+    from resdag.core._forecast_stream import ForecastChunk
     from resdag.core.workflow import Model, Streams
 
 TensorPorts = dict[str, torch.Tensor]
@@ -142,6 +144,34 @@ class ForecastOrigin:
             name: cast(torch.Tensor, values[name])[..., self.skip :, :]
             for name in model.output_names
         }
+
+    @contextmanager
+    def stream(self, model: Model, **kwargs: Any) -> Iterator[Iterator[ForecastChunk]]:
+        """Emit scored chunks after physical-clock preroll, in original units."""
+        from resdag.core._forecast_stream import ForecastChunk, forecast_stream
+
+        def scored(chunks: Iterator[ForecastChunk]) -> Iterator[ForecastChunk]:
+            for chunk in chunks:
+                if chunk.stop <= self.skip:
+                    continue
+                first = max(chunk.start, self.skip)
+                offset = first - chunk.start
+                yield ForecastChunk(
+                    first - self.skip,
+                    tuple(value[..., offset:, :] for value in chunk.outputs),
+                    model.output_names,
+                )
+
+        with forecast_stream(
+            model,
+            _on_model(self.history, model),
+            horizon=self.horizon,
+            future_inputs=(
+                None if self.future_inputs is None else _on_model(self.future_inputs, model)
+            ),
+            **kwargs,
+        ) as chunks:
+            yield scored(chunks)
 
 
 @dataclass(frozen=True)

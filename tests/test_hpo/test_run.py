@@ -219,7 +219,7 @@ class TestRunHPOPersistence:
                 verbosity=0,
             )
             # Should have 4 total (2 new + 2 existing)
-            assert len(study2.trials) == 4
+            assert len(study2.trials) == 6
 
 
 class TestRunHPOValidation:

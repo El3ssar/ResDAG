@@ -21,6 +21,7 @@ TSDynamics trajectories on Python 3.12 or newer.
       members:
         - tune_model
         - ScoreContext
+        - PrefixScoreContext
         - TuningReport
 
 ### Data and validation
@@ -69,7 +70,7 @@ skip count. Forecasts still receive only declared non-feedback future drivers.
 | Argument | Default | Contract |
 | --- | --- | --- |
 | `preset` | `"balanced"` | `quick`: 8 trials/1 seed/1 origin; `balanced`: 24/3/3; `thorough`: 80/5/5. |
-| `n_trials` | preset | Positive number of **new attempts in this call**; failures count. A resumed study adds this many attempts. |
+| `n_trials` | preset | Positive budget of **new attempts in this call**; failures, pruning, memory rejection and screening rejection count. Timeout can stop early. |
 | `search_space` | built-in | `search_space(optuna_trial) -> mapping`; ordinary Optuna suggestions and conditional branches. Return fixed settings alongside sampled settings. |
 | `factory` | built-in | `factory(params, seed) -> Model or ESN`, rebuilding custom candidates. Accepted on a `Model`; the ESN preset rebuilds itself. |
 | `seed` | `0` | Sampler seed and start of the default initialization seed bank. |
@@ -100,6 +101,7 @@ them as trial parameters. Forward the supplied seed when constructing reservoirs
 | `threshold` | `0.2` | Positive threshold for the RMS of per-feature normalized errors. Accuracy requires error **strictly below** this value. |
 | `aggregation` | `"weakest"` | Minimum head horizon; `"mean"` averages head horizons. |
 | `objective` | `None` | `objective(ScoreContext) -> finite scalar` replaces the ranking. |
+| `pruning_objective` | `None` | Optional `pruning_objective(PrefixScoreContext) -> finite scalar` enables custom within-forecast pruning while preserving the complete final objective. |
 | `direction` | `"maximize"` | Built-in horizon uses maximize. Set `"minimize"` for a custom error objective. |
 
 The default counts each batch item's contiguous accurate prefix, stopping at
@@ -122,6 +124,13 @@ one full seed/origin forecast and returns one finite scalar; the tuner takes
 its median across runs. Built-in diagnostics remain available with a custom
 objective. Nonfinite forecasts, scales or objective values fail the evaluation.
 
+`PrefixScoreContext` adds `completed_steps` and the complete requested `horizon`.
+Its prediction/truth tensors contain only the completed prefix. A prefix callback
+controls pruning, not final ranking, and must return comparable finite values
+at matching resource steps with the study's direction. Without this explicit
+callback, a custom complete objective is evaluated only on full forecasts;
+pruning can then skip later origins/seeds but not shorten the current forecast.
+
 `nrmse` is a diagnostic: each head's full-window RMS normalized error, averaged
 across heads with feature-count weights, then aggregated by the median across
 runs. It does not break ties in the default horizon objective. Trajectory
@@ -136,12 +145,23 @@ reports include `dt`; multiply a horizon by it for physical duration.
 | `timeout` | `None` | Stops dispatching new windows after elapsed seconds; preparation counts toward this time. Running windows and final refitting finish. |
 | `catch_exceptions` | `True` | Failed candidate evaluations become Optuna `FAIL` trials; `False` raises the original exception. Setup/search errors still raise. |
 | `execution` | `"auto"` | Select fast step execution when supported, history replay for temporal DAGs; `"fast"` and `"history"` force a mode. |
+| `pruner` | `None` | Registry key or configured Optuna pruner; the parent owns pruning decisions. A supplied `study` owns its pruner instead. |
+| `checkpoint_interval` | `64` | Positive scored-sample chunk length. Rejection at a checkpoint prevents later forecast chunks/evaluations. |
+| `screening` | `False` | `True` uses `Screening()`; a policy customizes cheap repetition counts, promotion fraction and cohort size. Full evaluation remains the default. |
+| `memory_budget` | `None` | Integer bytes, a size string or `MemoryBudget`; estimated admission/concurrency policy, never a process/RSS/GPU allocator cap. |
+| `memory_estimator` | `None` | `estimator(params, MemoryContext) -> MemoryEstimate or int`; required with a custom factory and budget. Returns complete totals, floored by known resident requirements. |
 
 The parent samples a finite candidate window before workers evaluate it. Failed
 candidates consume attempts, and no window dispatches beyond the remaining
 trial budget. A timeout is a dispatch boundary, not cancellation of an ongoing
 fit/forecast and not a hard total deadline. Preparation and bookkeeping also
 consume elapsed time. A run with no valid completed candidate raises.
+
+Workers receive prepared numerical jobs, without a study or storage connection.
+The parent owns sampling, real Optuna trial reports and pruning. Joblib/loky
+owns process creation, cancellation and reuse; there is no fork-based worker
+launcher. Errors/interruptions cancel outstanding work and finalize this call's
+unfinished reservations without replacing the original model.
 
 All candidates use the same fixed data/seed protocol, but an adaptive sampler
 can propose a different sequence at a different worker count. Caller Python,
@@ -152,9 +172,32 @@ zero fit time. Outer module identity, mode and hooks survive successful tuning;
 parameters can be replaced. Create optimizers afterward. A failed final refit
 or owned-storage cleanup leaves the original model unchanged.
 
-**Forecast-generation pruning is not implemented in this common tuner.** It
-does not accept `pruner=` and evaluates complete forecasts. The raw runner's
-scoring-checkpoint pruning below is a different protocol.
+Built-in scoring accumulates fixed-scale statistics while forecasts stream.
+Resource steps are `completed_seed_origin_count * horizon + completed_prefix`,
+so intermediate values from matching resources are comparable across trials.
+The reported intermediate value is the median of completed evaluations and the
+current prefix score. No pruner is used during the optional screening stage.
+
+The common `pruner="threshold"` preset uses `ThresholdPruner(lower=0.1,
+n_warmup_steps=2 * checkpoint_interval)` for positive horizon scores. It rejects
+that string preset with a custom objective; pass a configured Optuna instance
+with appropriate bounds instead. Other shared keys are `"none"`, `"median"`,
+`"asha"` and `"hyperband"`. The sample-accuracy `threshold=0.2` is a separate setting.
+
+Screening uses the same complete horizon with fewer seeds/origins, then ranks
+each cohort and fully evaluates the promoted configurations. With balanced
+defaults, all 24 candidates use one seed/origin first; the best eight receive
+all three seeds and three origins. Only full evaluations become eligible
+`COMPLETE` winners. Nonpromoted, oversized and timeout-unsubmitted candidates
+are recorded as `PRUNED`, with reasons. A later full evaluation can still be
+pruned by Optuna. See [tuning resources](../advanced/tuning-resources.md).
+
+Memory admission accounts for complete winner refits, known long warmup traces,
+retained custom-objective predictions and history replay. A custom factory
+changing execution capabilities must estimate its own temporary/replay needs.
+Individually oversized candidates are skipped before construction; estimated
+concurrency is reduced for candidates that fit individually. The source model's
+architecture and precision are never silently changed to satisfy a budget.
 
 ### Optuna studies and resumption
 
@@ -164,9 +207,11 @@ scoring-checkpoint pruning below is a different protocol.
 | `sampler` | seeded `TPESampler` | Used when ResDAG creates the study. |
 | `storage` | memory | Journal path, SQLite `.db` path or supported storage URL. |
 | `study_name` | generated | Persistent study name; provide it with storage to resume a named study. |
+| `warm_start` | `None` | Source Optuna study whose complete configurations are queued for reevaluation by default. |
+| `transfer_mode` | `"reevaluate"` | `"scores"` explicitly imports evaluated values only for identical bound protocols and objective directions. |
 
-Pass `study=` **or** storage/study-name/sampler settings. A supplied study owns
-its sampler and connections. An unbound study may contain queued `WAITING`
+Pass `study=` **or** storage/study-name/sampler/pruner settings. A supplied study owns
+its sampler, pruner and connections. An unbound study may contain queued `WAITING`
 configurations; unverified evaluated scores cannot enter the new protocol.
 
 The protocol binds prepared data, splits/origins/scales, task timing, seed bank,
@@ -176,6 +221,12 @@ study. Keep callbacks deterministic from their arguments and captured settings.
 The common tuner checks protocol compatibility before appending attempts.
 Resuming the same fitted model reuses its original candidate template, rather
 than treating the fitted winner as a new starting experiment.
+
+Settings transfer preserves fixed returned values, suggestions and source
+study/trial provenance. Reevaluation queues single-objective results best-first
+(trial number breaks ties). Queued configurations consume attempts when run;
+those beyond this call's budget remain `WAITING`. Imported scores do not consume
+new attempts, but only exact matching protocols/directions allow them to compete.
 
 Owned RDB sessions/pools are released before installing the winner. Returned
 studies remain usable and reconnect when required; SQLite memory pools remain
@@ -194,9 +245,13 @@ alive while needed to retain the study. Caller-owned studies retain ownership.
 | `attempts` | New attempts made by this call. |
 | `elapsed_seconds`, `refit_seconds` | Total elapsed time and final fitting time. |
 | `runs` | Winning configuration's per-seed/origin scores, head metrics and timings. |
+| `resources` | Requested/effective jobs, maximum running jobs, screening/promotion counts, memory skips, pruning and timeout outcome. |
 
 Optuna trial attributes also retain resolved parameters, seeds, run diagnostics
-and evaluation error messages. Optuna's ordinary `best_params` contains sampled
+and evaluation error messages. `screening_runs`/`screening_score` describe cheap
+evaluations; partial pruned runs identify `complete=False` and completed steps.
+`memory_estimate` records totals and any requested-versus-known-minimum floor.
+Optuna's ordinary `best_params` contains sampled
 parameters; use the report's `best_params` when fixed returned settings matter.
 
 ---
@@ -204,143 +259,127 @@ parameters; use the report's `best_params` when fixed returned settings matter.
 ## Advanced raw runner
 
 `run_hpo` consumes manually prepared five-array data loaders and raw `ESNModel`
-creators. It returns a study rather than installing a ready common-workflow
-model. Its default losses are minimized (horizon losses are negated), unlike
-the positive maximized horizon of `model.tune`. Its manual multiprocessing,
-seed and checkpoint-scoring behavior are unchanged by the common tuner.
-See the [raw HPO guide](../advanced/raw-hpo.md) for its complete workflow.
+creators. It returns a study; callers reconstruct the winner themselves. See the
+[raw HPO guide](../advanced/raw-hpo.md) for an end-to-end example.
+
+| Contract | Common `model.tune` | Raw `run_hpo` |
+| --- | --- | --- |
+| Data | Chronological/named/trajectory preparation | Explicit five-array loader and driver companions |
+| Result | Same module with a refitted winner | Optuna study |
+| Parallel count | `n_jobs`, joblib conventions | Positive `n_workers` |
+| Default objective | Positive accurate horizon, maximized | Negated expected horizon, minimized |
+| Checkpoint step | Cumulative scored samples across seed/origin cases | 1-based checkpoint index; actual prefix length is recorded |
+| Prefix normalization | Fixed training scales | Existing raw loss normalization, potentially prefix-dependent |
+| Threshold-pruner preset | `lower=0.1`, warmup `2 * checkpoint_interval` | `upper=-0.1`, two checkpoint-index warmup steps |
+
+Both use parent-owned Optuna bookkeeping and managed joblib/loky numerical
+workers. Search/data callbacks, sampler, pruner, user trial callbacks and storage
+stay in the parent. In-memory studies work with multiple workers. Finite windows
+respect the number of **new attempts** requested, including `FAIL` and `PRUNED`.
+Queued transfer configurations count when evaluated; imported old scores do not.
 
 ::: resdag.hpo
     options:
       members:
         - run_hpo
 
+### Raw execution and pruning
+
+Raw forecasts are generated in chunks. Each growing-prefix report reaches the
+parent pruner before later chunks are generated. A rejection stops future
+forecast generation. `n_checkpoints=5` requests five checkpoints by default;
+short horizons can yield fewer distinct checkpoints.
+
+The raw losses retain their existing prefix-dependent normalization, so raw
+scoring can retain a complete prediction prefix: **O(horizon)** storage. Custom
+and monitor losses receive full-horizon tensors when an evaluation completes.
+With `torch_scoring=True`, supported losses stay on the tensor device until their
+final scalar; custom losses may use the NumPy fallback. Attractor-dimension
+scoring uses NumPy.
+
+Registry keys are `"none"`, `"median"`, `"asha"`, `"hyperband"` and `"threshold"`.
+Raw defaults are minimization losses; choose a configured pruner with suitable
+bounds for a custom metric. `clip_value`/`prune_on_clip` is a separate raw-loss
+ceiling and can be combined with a pruner. The common tuner's positive threshold
+preset is not the raw preset.
+
+`memory_budget` accepts the same `MemoryBudget`, size string or byte count.
+An arbitrary raw factory requires `memory_estimator(params, context)` when a
+budget is set. Known prepared data, transfers and retained output storage form
+a minimum; oversized candidates are `PRUNED` before factory construction.
+Parent data preparation happens before estimation, and a pending configuration
+may remain resident while an admitted window runs. This is planning, not a hard
+process/RSS/device limit. See [tuning resources](../advanced/tuning-resources.md).
+
+`inner_max_num_threads=1` limits native threads in numerical worker processes.
+The parent environment, thread settings, logging and Python/NumPy/Torch RNG
+streams are preserved/restored. `seed` initializes the sampler and each trial's
+`seed + trial.number` RNG scope. Make the factory accept and forward a `seed`
+keyword; an explicit model seed in resolved settings takes precedence. Forwarding
+it also controls initializers with their own local generators. Adaptive proposals
+can change with worker count and scheduling; exact reproducibility is not a
+cross-device or cross-schedule guarantee.
+
+### Reuse and transfer
+
+`run_hpo(..., warm_start=[config])` queues explicit settings.
+`run_hpo(..., transfer_from=source)` queues complete valid settings from a study
+or storage path for **reevaluation** by default. Data-only suggestions and fixed
+model values are preserved. Single-objective configurations are ordered best
+first, then by trial number; multi-objective sources retain source order.
+
+Use `export_best_config(study)` when fixed returned values matter;
+`study.best_params` contains only Optuna suggestions. Incompatible model settings
+must be adapted explicitly. Source study/trial/protocol provenance is retained
+under the trial's `resdag_transfer` attribute.
+
+`transfer_mode="scores"` requires exactly matching bound task protocols and
+objective directions. Raw resumption and score import replay historical data
+preparation with Optuna `FixedTrial` and check the actual prepared tensor
+contents. A file changed at the same path is therefore a changed task. Callbacks
+can run again during validation; keep preparation free of side effects.
+
+When historical preparation cannot run without live-study resources, supply
+`task_context="dataset-v3"` or portable metadata. This explicitly asserts the
+identity of opaque resources, so update it when they change. Successful replay
+still checks tensor contents. New attempts receive a real Optuna trial.
+Use settings reevaluation for changed experiments rather than copying scores.
+
+::: resdag.hpo.transfer
+    options:
+      members:
+        - transfer_trials
+        - apply_warm_start
+        - export_best_config
+
 ### Study ownership and inspection
 
-`run_hpo` releases the RDB sessions and persistent-database connection pools
-it opens after optimization or a failure, including errors during setup.
-A returned Optuna study remains usable: later reads or writes reconnect as
-needed. SQLite memory studies retain their backing pool while the returned
-study owns it, because closing the last connection would erase their data.
-If cleanup also fails during an existing error, the original error is raised
-with a note describing the cleanup failure. Cleanup errors after otherwise
-successful work are raised normally.
+Owned RDB sessions and persistent connection pools are released after success
+or failure, including setup failures. Returned studies remain usable and
+reconnect when needed. SQLite memory pools remain alive while their returned
+study needs them. Caller-owned studies retain their connections/ownership.
+Cleanup errors preserve an already-active original error and add a note;
+otherwise the cleanup error is raised.
 
-Passing an existing `optuna.Study` to `transfer_trials` retains caller ownership.
-Passing a storage path lets ResDAG open and release the source connections for
-that transfer. A path must contain exactly one study; pass an explicit study
-when choosing between several.
+A source storage path must contain exactly one study; pass an explicit source
+study to choose among several. Transfer excludes incomplete, invalid and
+nonfinite evaluations; exact-score imports preserve matching finite objective
+vectors. `get_study_summary` orders valid results according to study direction.
 
-Transfer ignores completed trials with missing or non-finite objective values,
-even when an external producer did not attach an error flag. Matching
-multi-objective studies preserve the complete vector of finite values.
-Previously evaluated scores are meaningful only for the same data,
-preprocessing and objective; use `warm_start` to re-evaluate configurations
-for a different experiment.
+## Resource policies and helpers
 
-`get_study_summary` orders its top trials according to the study direction:
-lower scores first for minimization and higher scores first for maximization.
+::: resdag.hpo.resources
+    options:
+      members:
+        - Screening
+        - MemoryBudget
+        - MemoryEstimate
+        - MemoryContext
+        - memory_context
+        - raw_memory_context
+        - estimate_memory
 
----
-
-### Raw-runner reproducibility
-
-Pass `seed=` to `run_hpo` to make a study reproducible end to end. The seed is
-applied in two places:
-
-1. **The Optuna sampler** — so the *sequence of sampled hyperparameters* is
-   identical across runs.
-2. **Each trial**, where the per-trial seed `seed + trial.number` seeds PyTorch,
-   NumPy, and Python's `random`, *and* is threaded into your `model_creator`.
-
-That last step is the one that matters for the reservoir. The recurrent
-**topology** and the **input/feedback initializers** build their own RNGs
-(`np.random.default_rng(...)` / `torch.Generator`) and do **not** read NumPy's
-legacy global state — so seeding `np.random` alone leaves the reservoir weights
-varying run-to-run. To close the gap, make your creator accept a `seed` keyword
-and forward it to the reservoir (the premade factories forward `**kwargs`
-straight to `ESNLayer`, which fixes the whole reservoir):
-
-```python
-from resdag.models import ott_esn
-
-def model_creator(reservoir_size, spectral_radius, seed=None):
-    # `seed` reaches ESNLayer/ESNCell, fixing the topology, the
-    # feedback/input initializers, and the random bias.
-    return ott_esn(
-        reservoir_size=reservoir_size,
-        feedback_size=3,
-        output_size=3,
-        spectral_radius=spectral_radius,
-        seed=seed,
-    )
-
-study_a = run_hpo(model_creator, search_space, data_loader, n_trials=20, seed=42)
-study_b = run_hpo(model_creator, search_space, data_loader, n_trials=20, seed=42)
-assert study_a.best_value == study_b.best_value  # identical
-```
-
-`run_hpo` only injects `seed` when `model_creator` declares a `seed` parameter
-(or `**kwargs`); creators without one are called unchanged, and an explicit
-`seed` returned by `search_space` always wins. Reproducibility is exact for
-single-worker (`n_workers=1`) studies; with `n_workers > 1`, trial *scheduling*
-across processes is non-deterministic, so both the sampled configurations and
-`best_value` may differ across runs.
-
----
-
-### Raw-runner scoring-checkpoint pruning
-
-Each trial forecasts **once** and is scored at a handful of growing
-forecast-horizon checkpoints, reporting the prefix loss at every one. A diverging
-configuration already shows a large loss at an early checkpoint — so an Optuna
-**pruner** can skip its remaining scoring checkpoints. The full trajectory has
-already been generated, so pruning does not currently reduce forecast-generation
-work. Pass `pruner=` to turn this on:
-
-```python
-from resdag.hpo import run_hpo
-
-study = run_hpo(
-    model_creator, search_space, data_loader,
-    n_trials=100,
-    pruner="median",   # stop trials worse than the running median at each checkpoint
-)
-
-# Pruned trials are recorded but excluded from `best_value`:
-print(get_study_summary(study))   # the summary lists the Pruned count
-```
-
-`pruner` accepts a registry key, a fully-configured
-[`optuna.pruners.BasePruner`](https://optuna.readthedocs.io/en/stable/reference/pruners.html)
-instance, or `None`:
-
-| Key | Pruner | When to reach for it |
-|---|---|---|
-| `"none"` (default) | `NopPruner` | No pruning. |
-| `"median"` | `MedianPruner` | Good default — prunes trials worse than the running median. |
-| `"asha"` | `SuccessiveHalvingPruner` (ASHA) | Aggressive, scales well with many parallel workers. |
-| `"hyperband"` | `HyperbandPruner` | ASHA across several budgets; strong when the right budget is unknown. |
-| `"threshold"` | `ThresholdPruner` | Prune collapsed negated-horizon losses (`upper=-0.1`, two warmup checkpoints); pass a configured instance for positive error losses or another bound. |
-
-Need to tune a pruner's knobs? Build the instance and pass it in:
-
-```python
-import optuna
-
-study = run_hpo(
-    model_creator, search_space, data_loader, n_trials=100,
-    pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=2),
-)
-```
-
-Pruning is honored in both single- and multi-process (`n_workers > 1`) runs — the
-resolved pruner is attached to every worker's study. It also composes with the
-`clip_value` / `prune_on_clip` bound: the clip path prunes on the *raw*
-loss exceeding a ceiling, while the pruner reacts to the *intermediate* horizon
-reports; both can be active at once.
-
----
+## Raw losses
 
 ::: resdag.hpo.losses
     options:
@@ -355,7 +394,7 @@ reports; both can be active at once.
         - soft_valid_horizon
         - attractor_dimension_error
 
----
+## Study utilities
 
 ::: resdag.hpo.utils
     options:

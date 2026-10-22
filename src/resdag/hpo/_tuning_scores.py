@@ -6,7 +6,7 @@ from typing import Literal
 
 import torch
 
-__all__ = ["ScoreResult", "score_forecast"]
+__all__ = ["ScoreResult", "score_forecast", "StreamingForecastScore"]
 
 
 @dataclass(frozen=True)
@@ -190,3 +190,179 @@ def score_forecast(
         head_horizons={name: float(value.item()) for name, value in head_horizons.items()},
         head_errors={name: float(value.item()) for name, value in head_errors.items()},
     )
+
+
+@dataclass
+class _HeadScore:
+    horizons: torch.Tensor
+    alive: torch.Tensor
+    maximum: torch.Tensor
+    squares: torch.Tensor
+    count: int
+    layout: tuple[int, int, int]
+    invalid: torch.Tensor
+
+
+class StreamingForecastScore:
+    """Bounded device-local score state for successive aligned forecast chunks.
+
+    ``update`` performs tensor operations only: finite-value checks accumulate
+    on-device flags. ``summary`` checks those flags and converts final scalars.
+    Its NRMSE always describes exactly the prefix admitted so far, using the
+    original fixed training scales. No predictions or truth rows are retained.
+    """
+
+    def __init__(
+        self,
+        scales: dict[str, torch.Tensor],
+        *,
+        threshold: float = 0.2,
+        aggregation: Literal["weakest", "mean"] = "weakest",
+    ) -> None:
+        if not isinstance(scales, dict) or not scales:
+            raise ValueError("At least one named output scale is required")
+        if not all(isinstance(name, str) and name for name in scales):
+            raise ValueError("Output names must be nonempty strings")
+        if not all(isinstance(value, torch.Tensor) for value in scales.values()):
+            raise TypeError("Scales must be tensors keyed by output name")
+        if not math.isfinite(threshold) or threshold <= 0:
+            raise ValueError("threshold must be positive and finite")
+        if aggregation not in ("weakest", "mean"):
+            raise ValueError("aggregation must be 'weakest' or 'mean'")
+        self.scales = {name: value.detach().clone() for name, value in scales.items()}
+        self.threshold = threshold
+        self.aggregation = aggregation
+        self.steps = 0
+        self._heads: dict[str, _HeadScore] = {}
+        self._device: torch.device | None = None
+        self._batch_layout: tuple[int, int] | None = None
+
+    @torch.no_grad()
+    def update(self, predictions: dict[str, torch.Tensor], truth: dict[str, torch.Tensor]) -> None:
+        """Admit one nonempty chunk without synchronizing tensor values to CPU."""
+        if not isinstance(predictions, dict) or not isinstance(truth, dict):
+            raise TypeError("predictions and truth must be named dictionaries")
+        if predictions.keys() != self.scales.keys() or truth.keys() != self.scales.keys():
+            raise ValueError(
+                "predictions, truth and scales must have exactly the same output names"
+            )
+        chunk_length = None
+        for name, scale in self.scales.items():
+            predicted, target = predictions[name], truth[name]
+            if not all(isinstance(value, torch.Tensor) for value in (predicted, target)):
+                raise TypeError("Predictions and truth must be tensors")
+            if predicted.ndim not in (2, 3) or predicted.shape != target.shape:
+                raise ValueError(
+                    "Forecast chunks need matching 2-D/3-D prediction and truth layouts"
+                )
+            if any(size == 0 for size in predicted.shape):
+                raise ValueError("Forecast chunks cannot have empty batch, time or feature axes")
+            if not all(value.is_floating_point() for value in (predicted, target, scale)):
+                raise TypeError("Predictions, truth and scales must be floating tensors")
+            if predicted.device != target.device or predicted.device != scale.device:
+                raise ValueError("Predictions, truth and scales must share a device")
+            width = predicted.shape[-1]
+            if scale.ndim and (
+                scale.ndim > 3
+                or scale.shape[-1] != width
+                or any(size != 1 for size in scale.shape[:-1])
+            ):
+                raise ValueError("Scales must be a scalar or a fixed feature vector")
+            batch = predicted.shape[0] if predicted.ndim == 3 else 1
+            layout = (predicted.ndim, batch)
+            if self._batch_layout is not None and layout != self._batch_layout:
+                raise ValueError("All chunks and heads must share their original batch layout")
+            if self._device is not None and predicted.device != self._device:
+                raise ValueError("All forecast chunks must share a device")
+            if chunk_length is not None and predicted.shape[-2] != chunk_length:
+                raise ValueError("All heads must share chunk time axes")
+            self._device, self._batch_layout = predicted.device, layout
+            chunk_length = predicted.shape[-2]
+            dtype = torch.promote_types(
+                torch.promote_types(predicted.dtype, target.dtype), scale.dtype
+            )
+            if dtype in (torch.float16, torch.bfloat16):
+                dtype = torch.float32
+            predicted, target, scale = (
+                predicted.to(dtype),
+                target.to(dtype),
+                scale.to(dtype).reshape(-1),
+            )
+            if predicted.ndim == 2:
+                predicted, target = predicted.unsqueeze(0), target.unsqueeze(0)
+            difference = predicted - target
+            normalized = torch.where(
+                torch.isfinite(difference), difference / scale, predicted / scale - target / scale
+            )
+            invalid = ~(
+                torch.isfinite(predicted).all()
+                & torch.isfinite(target).all()
+                & torch.isfinite(scale).all()
+                & (scale > 0).all()
+                & torch.isfinite(normalized).all()
+            )
+            # Keep accumulators well-defined until summary raises the stored
+            # error; replacement values never turn invalid data into a score.
+            normalized = torch.where(
+                torch.isfinite(normalized), normalized, torch.zeros_like(normalized)
+            )
+            if name not in self._heads:
+                self._heads[name] = _HeadScore(
+                    torch.zeros(batch, dtype=torch.int64, device=predicted.device),
+                    torch.ones(batch, dtype=torch.bool, device=predicted.device),
+                    predicted.new_zeros(()),
+                    predicted.new_zeros(()),
+                    0,
+                    (*layout, width),
+                    invalid,
+                )
+            head = self._heads[name]
+            if head.layout != (*layout, width) or head.maximum.dtype != dtype:
+                raise ValueError("Forecast chunk widths and working dtypes must remain unchanged")
+            head.invalid = head.invalid | invalid
+            good = _stable_rms(normalized, dim=2) < self.threshold
+            contiguous = good.to(torch.int64).cumprod(dim=1)
+            head.horizons = head.horizons + (contiguous * head.alive[:, None]).sum(dim=1)
+            head.alive = head.alive & good.all(dim=1)
+            maximum = torch.maximum(head.maximum, normalized.abs().amax())
+            safe = torch.where(maximum > 0, maximum, torch.ones_like(maximum))
+            # Scaled sum of squares (the same idea as BLAS LASSQ) avoids
+            # overflow even when finite normalized errors approach dtype max.
+            head.squares = (
+                head.squares * (head.maximum / safe).square() + (normalized / safe).square().sum()
+            )
+            head.maximum = maximum
+            head.count += normalized.numel()
+        assert chunk_length is not None
+        self.steps += chunk_length
+
+    @torch.no_grad()
+    def summary(self) -> ScoreResult:
+        """Return the current prefix's score; only summaries scalarize tensors."""
+        if not self.steps:
+            raise ValueError("At least one forecast chunk is required before scoring")
+        head_horizons, head_errors, widths = {}, {}, []
+        for name, head in self._heads.items():
+            if bool(head.invalid):
+                raise ValueError(f"Output {name!r} requires finite data and positive finite scales")
+            ordered = head.horizons.sort().values.to(head.maximum.dtype)
+            middle = len(ordered) // 2
+            median = (
+                ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+            )
+            head_horizons[name] = median
+            head_errors[name] = (head.squares / head.count).clamp(max=1).sqrt() * head.maximum
+            widths.append(head.layout[-1])
+        horizons = torch.stack(list(head_horizons.values()))
+        score = horizons.amin() if self.aggregation == "weakest" else horizons.mean()
+        errors = torch.stack(list(head_errors.values()))
+        weights = errors.new_tensor(widths) / sum(widths)
+        maximum_error = errors.amax()
+        safe_maximum = torch.where(maximum_error > 0, maximum_error, torch.ones_like(maximum_error))
+        nrmse = ((errors / safe_maximum) * weights).sum().clamp(max=1) * maximum_error
+        return ScoreResult(
+            float(score.item()),
+            float(nrmse.item()),
+            {name: float(value.item()) for name, value in head_horizons.items()},
+            {name: float(value.item()) for name, value in head_errors.items()},
+        )

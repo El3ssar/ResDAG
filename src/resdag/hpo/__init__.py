@@ -127,9 +127,15 @@ def _require_optuna() -> None:
 if TYPE_CHECKING:
     from .pruners import PRUNERS as PRUNERS
     from .pruners import resolve_pruner as resolve_pruner
+    from .resources import MemoryBudget as MemoryBudget
+    from .resources import MemoryContext as MemoryContext
+    from .resources import MemoryEstimate as MemoryEstimate
+    from .resources import Screening as Screening
     from .run import run_hpo as run_hpo
     from .transfer import export_best_config as export_best_config
+    from .transfer import transfer_trials as transfer_trials
     from .trial_runner import TrialEvaluationError as TrialEvaluationError
+    from .tuning import PrefixScoreContext as PrefixScoreContext
     from .tuning import ScoreContext as ScoreContext
     from .tuning import TuningReport as TuningReport
     from .tuning import tune_model as tune_model
@@ -140,7 +146,12 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str) -> Any:
     """Lazy import for optuna-dependent functions."""
-    if name in ("tune_model", "TuningReport", "ScoreContext"):
+    if name in ("Screening", "MemoryBudget", "MemoryContext", "MemoryEstimate"):
+        from . import resources
+
+        return getattr(resources, name)
+
+    if name in ("tune_model", "TuningReport", "ScoreContext", "PrefixScoreContext"):
         _require_optuna()
         from . import tuning
 
@@ -182,6 +193,12 @@ def __getattr__(name: str) -> Any:
 
         return export_best_config
 
+    if name == "transfer_trials":
+        _require_optuna()
+        from .transfer import transfer_trials
+
+        return transfer_trials
+
     if name == "resolve_pruner":
         _require_optuna()
         from .pruners import resolve_pruner
@@ -203,6 +220,11 @@ __all__ = [
     "tune_model",
     "TuningReport",
     "ScoreContext",
+    "PrefixScoreContext",
+    "Screening",
+    "MemoryBudget",
+    "MemoryEstimate",
+    "MemoryContext",
     "TrialEvaluationError",
     # Loss functions (always available)
     "LOSSES",
@@ -220,6 +242,7 @@ __all__ = [
     "make_study_name",
     # Warm-start / transfer (require optuna)
     "export_best_config",
+    "transfer_trials",
     # Pruners (require optuna)
     "PRUNERS",
     "resolve_pruner",

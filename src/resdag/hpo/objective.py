@@ -1,24 +1,10 @@
-"""Objective function builder for Optuna optimization.
+"""Construct the numerical runner for raw Optuna model studies.
 
-This module exposes :func:`build_objective`, a thin wrapper that constructs a
-:class:`resdag.hpo.trial_runner.TrialRunner` and returns it as the per-trial
-objective.  ``TrialRunner`` carries the full per-trial lifecycle (seeding, model
-creation, training, a single forecast with horizon-checkpoint pruning, and loss
-evaluation).  Keeping ``build_objective`` as a wrapper preserves backward
-compatibility for existing callers while the picklable runner powers
-``spawn``-based distribution and Optuna pruners.
-
-For multi-output models, :meth:`~resdag.core.ESNModel.forecast` returns a *tuple*
-of tensors (the first being the autoregression feedback output).  The runner
-normalizes that tuple to its first element before indexing the forecast, so a
-multi-output ``model_creator`` produces ``COMPLETE`` trials scored on the
-feedback output rather than crashing on ``preds.shape``.
-
-See Also
---------
-resdag.hpo.trial_runner : The picklable :class:`TrialRunner` doing the real work.
-resdag.hpo.run : High-level orchestrator that calls :func:`build_objective`.
-resdag.hpo.losses : Loss functions available for evaluation.
+``build_objective`` returns a callable ``TrialRunner`` for direct Optuna use.
+``run_hpo`` splits its preparation, numerical evaluation and finalization so
+managed joblib workers never receive a Trial or storage object. Forecast chunks
+reach growing checkpoints before reporting, allowing pruning to stop generation.
+Raw multi-output graphs are scored on their first feedback output.
 """
 
 from typing import Any, Callable, Literal
@@ -63,10 +49,9 @@ def build_objective(
     """Build an Optuna objective from user-defined callbacks.
 
     Thin wrapper around :class:`resdag.hpo.trial_runner.TrialRunner`.  The returned
-    object is a *picklable* callable: invoke it with an :class:`optuna.Trial`
-    and it returns the (possibly clipped) loss to minimize.  Because it is a
-    real object rather than a closure, it can be shipped to ``spawn``-ed worker
-    processes and drives Optuna pruners via per-checkpoint reporting.
+    object is callable: invoke it with an :class:`optuna.Trial` to return
+    the (possibly clipped) loss. ``run_hpo`` uses its split lifecycle with
+    managed joblib serialization and parent-owned checkpoint pruning.
 
     Parameters
     ----------

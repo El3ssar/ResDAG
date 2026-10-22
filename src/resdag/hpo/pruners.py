@@ -6,15 +6,11 @@ concrete :class:`optuna.pruners.BasePruner`.  A small registry maps short keys
 factory callables, so a study can be early-stopped without the caller importing
 Optuna's pruner classes by hand.
 
-Pruning is driven by the intermediate ``trial.report`` calls that
-:class:`resdag.hpo.trial_runner.TrialRunner` emits at growing forecast-horizon
-checkpoints: a configuration whose forecast has already diverged at an early
-checkpoint reports a large loss, and the pruner can skip later scoring
-checkpoints. The full trajectory is generated before scoring; pruning does not
-currently save forecast generation. Resolution is identical in single- and multi-process
-mode — the resolved pruner is passed to :func:`optuna.create_study` in the
-parent **and** passed unchanged to each worker's
-:func:`optuna.load_study`, so workers prune with the same policy.
+Pruning is driven by intermediate ``trial.report`` calls at growing
+forecast prefixes. Forecast chunks stop being generated as soon as the pruner
+rejects a prefix. Both single- and multi-worker studies report/check the real
+Optuna Trial in the parent; numerical workers receive only a progress callback
+and never open storage or own a separate study/pruner.
 
 See Also
 --------

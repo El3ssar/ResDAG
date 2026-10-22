@@ -27,6 +27,28 @@ with the existing ones.
 
 <!-- nb-cards: build/layers -->
 
+## Changing a built layer
+
+Live settings are forwarded to the cell: changing `layer.leak_rate` or
+`layer.noise` changes the next update. EuSN exposes its integration interval
+through both `layer.epsilon` and `layer.dt`. For LIF, changing `layer.dt`,
+`layer.tau_mem` or `layer.tau_syn` recomputes both exponential decays; changing
+`layer.v_threshold` changes the firing threshold. Time intervals/constants must
+be positive and finite. A failed assignment leaves the old settings intact.
+An explicit LIF `alpha`/`beta` override remains possible; another time-setting
+assignment recomputes them from the time constants.
+
+Sizes, spectral radius and discretized Legendre settings are fixed when the
+weights are built. Rebuild the layer to change those settings. A rejected
+assignment raises instead of silently creating an ineffective attribute.
+
+To edit frozen recurrent weights, use ordinary PyTorch updates such as
+`with torch.no_grad(): cell.weight_hh.copy_(new_weights)`. The sparse CSR cache
+refreshes before the next recurrent operation, including parameter replacement.
+Weights that require gradients use the dense path. Avoid `.data` edits: they
+bypass PyTorch's mutation tracking. CSR is a derived operator; the dense weights
+remain the canonical serialized representation.
+
 ## Adding a layer
 
 A new reservoir family is one `ReservoirCell` implementation wrapped in a

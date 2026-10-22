@@ -458,6 +458,7 @@ class ESNCell(ReservoirCell):
         # form so introspection and save/load are unchanged.
         self._sparse_requested: SparseSpec = sparse
         self._sparse_active: bool = False
+        self._sparse_weight_key: tuple[int, int | None] | None = None
         self.register_buffer("_weight_hh_csr", None, persistent=False)
         self._weight_hh_csr: torch.Tensor | None
         self.seed = seed
@@ -928,6 +929,14 @@ class ESNCell(ReservoirCell):
             The recurrent contribution, shape ``(batch, reservoir_size)``.
         """
         if self._sparse_active:
+            current_key = self._current_sparse_weight_key()
+            if (
+                self.weight_hh.requires_grad
+                or current_key[1] is None
+                or getattr(self, "_sparse_weight_key", None) != current_key
+            ):
+                self._maybe_build_sparse_weight()
+        if self._sparse_active:
             csr = self._weight_hh_csr
             assert csr is not None  # invariant when the sparse flag is set
             # ``state @ W.T == (W @ state.T).T``; ``.contiguous()`` on the
@@ -991,7 +1000,7 @@ class ESNCell(ReservoirCell):
         reservoir is always dense (the constructor rejects ``sparse=True`` +
         ``trainable``; ``"auto"`` and a live re-freeze route here).
         """
-        if self._trainable or self.weight_hh.device.type == "mps":
+        if self._trainable or self.weight_hh.requires_grad or self.weight_hh.device.type == "mps":
             return False
         if self._sparse_requested is True:
             return True
@@ -1015,8 +1024,23 @@ class ESNCell(ReservoirCell):
         self._sparse_active = self._should_use_sparse()
         if self._sparse_active:
             self._weight_hh_csr = self.weight_hh.data.to_sparse_csr()
+            self._sparse_weight_key = self._current_sparse_weight_key()
         else:
             self._weight_hh_csr = None
+            self._sparse_weight_key = None
+
+    def _current_sparse_weight_key(self) -> tuple[int, int | None]:
+        """Track ordinary in-place parameter edits and parameter replacement.
+
+        Inference tensors have no mutation counter. They conservatively
+        refresh before each sparse operation. Unsafe edits through ``.data``
+        bypass PyTorch version tracking and are not a supported update API.
+        """
+        try:
+            version = self.weight_hh._version
+        except RuntimeError:
+            version = None
+        return id(self.weight_hh), version
 
     def _apply(self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True) -> "ESNCell":
         """Rebuild the derived CSR operator after a device/dtype move.
@@ -1040,7 +1064,7 @@ class ESNCell(ReservoirCell):
             # Re-decide against the *new* device's gate, rebuilding/dropping CSR.
             self._maybe_build_sparse_weight()
         elif getattr(self, "_sparse_active", False):
-            self._weight_hh_csr = self.weight_hh.data.to_sparse_csr()
+            self._maybe_build_sparse_weight()
         return self
 
     def _load_from_state_dict(  # type: ignore[override]

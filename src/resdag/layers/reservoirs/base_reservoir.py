@@ -54,7 +54,21 @@ _ChunkScanFn = Callable[
 # ``hasattr(cell, name)`` guard in ``__setattr__`` skips names the cell does not
 # carry).
 _FORWARDABLE_CELL_ATTRS = frozenset(
-    {"trainable", "leak_rate", "noise", "beta", "alpha", "gamma", "surrogate_beta", "trace_decay"}
+    {
+        "trainable",
+        "leak_rate",
+        "noise",
+        "beta",
+        "alpha",
+        "gamma",
+        "surrogate_beta",
+        "trace_decay",
+        "dt",
+        "epsilon",
+        "tau_mem",
+        "tau_syn",
+        "v_threshold",
+    }
 )
 
 # Cell configuration attributes that are *structurally baked* into the weights at
@@ -316,6 +330,13 @@ class BaseReservoirLayer(nn.Module, ABC):
                     f"weight-matrix shape). Rebuild the layer with the new {name} instead."
                 )
             if name in _FORWARDABLE_CELL_ATTRS:
+                if name in {"dt", "epsilon", "tau_mem", "tau_syn"}:
+                    descriptor = getattr(type(cell), name, None)
+                    if not isinstance(descriptor, property) or descriptor.fset is None:
+                        raise AttributeError(
+                            f"{type(self).__name__}.{name} has no validated live setter. "
+                            f"Rebuild the layer with the new {name} instead."
+                        )
                 setattr(cell, name, value)
                 return
 

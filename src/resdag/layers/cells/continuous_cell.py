@@ -53,6 +53,7 @@ resdag.layers.cells.eusn_cell.EuSNCell : The first concrete continuous cell.
 resdag.init.matrices.antisymmetric : Antisymmetric matrix init (EuSN recurrence).
 """
 
+import math
 from abc import abstractmethod
 
 import torch
@@ -224,6 +225,25 @@ topology, seed
             device=device,
             dtype=dtype,
         )
+
+    # ------------------------------------------------------------------
+    # Live integration interval
+    # ------------------------------------------------------------------
+
+    @property
+    def dt(self) -> float:
+        """Positive, finite integration interval; changes apply to the next step."""
+        # Old full-model pickles stored this as a plain attribute.
+        if "_dt" in self.__dict__:
+            return float(self.__dict__["_dt"])
+        return float(self.__dict__["dt"])
+
+    @dt.setter
+    def dt(self, value: float) -> None:
+        scalar = float(value)
+        if not math.isfinite(scalar) or scalar <= 0.0:
+            raise ValueError(f"dt must be positive and finite, got {value}")
+        self._dt = scalar
 
     # ------------------------------------------------------------------
     # Subclass contract

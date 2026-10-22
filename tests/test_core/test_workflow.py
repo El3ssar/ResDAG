@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from resdag import ESNModel, RidgeReadoutLayer, reservoir_input
+from resdag import ESNLayer, ESNModel, RidgeReadoutLayer, reservoir_input
 from resdag.core.workflow import Model
 from resdag.layers import Concatenate
 from resdag.models import classic_esn
@@ -109,6 +109,55 @@ def test_internal_readouts_are_rejected_before_mutation():
     with pytest.raises(ValueError, match="no internal fitted readouts"):
         model.fit(torch.arange(10, dtype=torch.float64)[:, None])
     _assert_state_equal(model.state_dict(), before)
+
+
+def test_hidden_sequential_reservoir_supports_stateful_fit_and_checkpoint_restore():
+    def build():
+        x = reservoir_input(1, dtype=torch.float64)
+        before = nn.Identity()
+        hidden = nn.Sequential(
+            nn.Identity(),
+            ESNLayer(4, feedback_size=1, seed=7, dtype=torch.float64),
+        )(before(x))
+        y = RidgeReadoutLayer(4, 1, alpha=1e-5).double()(hidden)
+        return Model(inputs={"state": x}, outputs={"prediction": y}, washout=2), before
+
+    series = torch.sin(torch.arange(24, dtype=torch.float64) / 4).reshape(-1, 1)
+    model, before = build()
+    assert model.fit(series) is model
+    assert model.is_fitted
+    model.eval()
+    output = model(series[:5])
+    assert output.shape == (5, 1) and bool(torch.isfinite(output).all())
+    carried = model.get_state()
+    assert carried
+    expected = model(series[5:9])
+    model.reset_state()
+    assert model.get_state() == {}
+    model.set_state(carried)
+    torch.testing.assert_close(model(series[5:9]), expected, rtol=0, atol=0)
+
+    restored, _ = build()
+    restored.load_state_dict(copy.deepcopy(model.state_dict()))
+    restored.eval()
+    assert restored.is_fitted
+    restored.set_state(model.get_state())
+    torch.testing.assert_close(restored(series[9:12]), model(series[9:12]), rtol=0, atol=0)
+
+    stored = model.get_state()
+    calls = []
+    handle = before.register_forward_hook(lambda *_: calls.append(None))
+    try:
+        for execute in (
+            lambda: model.forward_stateless(series[:5]),
+            lambda: model.forecast(horizon=2),
+        ):
+            with pytest.raises(ValueError, match="hidden inside.*functional graph node"):
+                execute()
+            assert calls == []
+            _assert_state_equal(model.get_state(), stored)
+    finally:
+        handle.remove()
 
 
 def test_dtype_conversion_moves_statistics_cached_history_and_forecasts():

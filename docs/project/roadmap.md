@@ -152,7 +152,7 @@ changes.
 
 | Check | Evidence |
 | --- | --- |
-| Complete local suite | **4,263 passed**, 234 skipped, 13 benchmark cases deselected; **93.03% coverage**. Existing staged-fitting and forecast golden tests pass unchanged. |
+| Complete local suite | **4,264 passed**, 234 skipped, 13 benchmark cases deselected; **93.04% coverage**. Existing staged-fitting and forecast golden tests pass unchanged. |
 | Independent compatibility probe | **120/120** CPU float64 combinations: 12 reservoir configurations, including delayed and GRU/LSTM states, across ten readout/solver configurations. Forecasts agree with manually normalized training; deepcopy and checkpoint parity pass, without convergence warnings in the final configuration. |
 | Native MPS | Recurrent float32 fitting with a compatible CG solver, original-unit forecasting, CPU/checkpoint transfer and upstream gradients pass; CPU-fit-then-MPS inference also passes. This is correctness evidence, not a GPU throughput claim. |
 | CPU performance gates | **4 passed**, four unavailable-device cases skipped, one deselected; existing thresholds unchanged. |

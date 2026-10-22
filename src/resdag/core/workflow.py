@@ -300,7 +300,7 @@ class Model(nn.Module):
 
     def _terminal_readouts(self) -> tuple[str, ...]:
         self._validate_ports()
-        self.graph._get_execution_plan()
+        self.graph._get_execution_plan(require_explicit_state=False)
         terminals = [node.layer for node in self.graph.outputs]
         all_readouts = [
             (path, layer)

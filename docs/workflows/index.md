@@ -14,6 +14,10 @@ quality, then scale the result with larger reservoirs, ensembles, GPU
 execution, and model persistence. The guides below cover that cycle. Optional calibration adapts reservoir
 activity on training data before fitting the readout.
 
+For the new named-graph interface, start with the
+[common model workflow](../start/model-workflow.md). Its supported scope and
+remaining phase-two work are listed in that guide.
+
 <div class="grid cards" markdown>
 
 - **[Train](train.md)**

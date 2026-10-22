@@ -41,4 +41,18 @@ other sections.
     Prepare your own data, train and evaluate, save the model, and reuse it
     inside a larger PyTorch pipeline.
 
+- **[Common model workflow](model-workflow.md)**
+
+    ---
+
+    Named custom graphs with training-only scaling, original-unit predictions
+    and ordinary PyTorch composition. The first phase-two increment.
+
+- **[TSDynamics trajectories](trajectory-workflow.md)**
+
+    ---
+
+    Fit a dynamical-system run directly and forecast with its timestamps,
+    component names and configurable sampling.
+
 </div>

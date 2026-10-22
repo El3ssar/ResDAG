@@ -1,18 +1,21 @@
 ---
-description: API reference for resdag.core — ESNModel, ReservoirFeatureExtractor, the Input alias, and the reservoir_input helper.
+description: API reference for resdag.core — Model, ESNModel, ReservoirFeatureExtractor, and symbolic input helpers.
 ---
 
 <span class="nb-kicker">Reference</span>
 
 # Core
 
-The model class that turns a `pytorch_symbolic` graph into a stateful,
-forecast-capable reservoir computer, plus the symbolic-input helpers used to
-declare its entry points.
+`Model` adds named inputs/outputs, fitted scaling and fit/forecast operations
+around a functional graph. Start with the
+[common model guide](../start/model-workflow.md). `ESNModel` remains the
+underlying symbolic graph with lower-level training and state interfaces.
+For timestamped runs, see [TSDynamics trajectories](../start/trajectory-workflow.md).
 
 ::: resdag.core
     options:
       members:
+        - Model
         - ESNModel
         - ReservoirFeatureExtractor
         - Input

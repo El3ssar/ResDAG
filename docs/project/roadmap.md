@@ -4,7 +4,8 @@ description: Delivery tracker for dependable forecasting, functional DAG composi
 
 # Roadmap
 
-Last updated: **22 October 2026**. Baseline: **ResDAG 1.1.0**.
+Last updated: **22 October 2026**. Audit baseline: **ResDAG 1.1.0**;
+phase-one corrections released in **1.1.1**.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -32,6 +33,10 @@ after its acceptance checks pass and its public behavior is documented.
   precision, device, preprocessing and execution choices.
 - Learn preprocessing from training data and return forecasts in original
   units. Keep preprocessing configurable and optional.
+- The common PyTorch workflow applies fitted preprocessing in `model(x)` and
+  returns original units; `model.graph(x)` exposes the raw graph. Calls carry
+  reservoir state by default. One output returns a tensor; several outputs
+  return a dictionary keyed by their declared names.
 - Provide explicit delayed feedback connections and named inputs/outputs.
 - Keep TSDynamics optional, with first-class trajectory input/output.
 - Tuning has quick, balanced and thorough presets. Balanced is the default;
@@ -47,7 +52,7 @@ after its acceptance checks pass and its public behavior is documented.
 | --- | --- | --- | --- |
 | 0. Baseline audit | Done | Review all 173 runtime modules, 62 documentation pages and 17 examples; reproduce high-impact defects. | Explicit coverage inventory, independent numerical/state probes and chronological HPO pilot recorded. |
 | 1. Correctness and verification | Done | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
-| 2. Unified functional model workflow | Pending | One PyTorch model lifecycle for presets and custom graphs. | The same documented commands work for both; functional construction and PyTorch semantics are preserved. |
+| 2. Unified functional model workflow | WIP | One PyTorch model lifecycle for presets and custom graphs. | The same documented commands work for both; functional construction and PyTorch semantics are preserved. |
 | 3. Reliable automatic tuning | Pending | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies reproduce, respect budgets and leave a fitted winner. |
 | 4. Model artifacts and diagrams | Pending | Save a complete model, load it without rebuilding its DAG, and export readable graph diagrams. | Fresh-process load/forecast parity and diagram correctness for every supported graph family. |
 | 5. Performance and competitive evidence | Pending | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. |
@@ -92,7 +97,8 @@ Those require the documented major-release migration below.
 
 Verified **22 October 2026**, runtime source commit `453f34a` in
 [PR #458](https://github.com/El3ssar/ResDAG/pull/458). The final tracker update
-changes documentation only.
+changes documentation only. Merged into `main` on 22 October 2026 as
+`41a1744`.
 
 | Check | Result |
 | --- | --- |
@@ -113,22 +119,74 @@ speed–accuracy study remains in phase 5. For a runnable workflow today, see
 
 ## Phase 2: one functional workflow
 
+The [phase-two design note](phase-two-design.md) distinguishes agreed behavior,
+the agreed construction API, and implementation progress. The maintainer has
+approved `rd.Model(inputs={...}, outputs={...})`; later major choices still
+require consultation before implementation.
+
 Current boundary: phase 1 orders algebraic fitting inside standard
-`nn.Sequential`, but does not extend the explicit-state or compiled backend to
-reservoirs hidden inside arbitrary containers. Expose reservoirs as separate
-functional graph nodes for those execution paths. The capability and state
-contracts below address that remaining limitation.
+`nn.Sequential`, but the explicit-state and compiled backends cannot thread
+state through reservoirs hidden inside containers. Phase two rejects that case
+before running the graph, rather than changing stored state during a supposedly
+stateless call. Expose reservoirs as separate functional graph nodes for those
+execution paths. Ordinary stateful graph calls remain available.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P2-01 | Pending | Agree a minimal common model lifecycle and capability contract. | Preset, branched DAG, parallel and coupled examples use the same lifecycle; clear unsupported-operation errors. |
-| P2-02 | Pending | Preserve functional construction while evaluating existing graph tooling. | Compare `pytorch_symbolic`, standard PyTorch graph/shape tooling and a minimal adapter against actual requirements before replacing infrastructure. No private graph API exposed to users. |
-| P2-03 | Pending | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Instantaneous graph is acyclic; delayed loops, several feedback streams and driver alignment have independent timing oracles. |
-| P2-04 | Pending | Coherent cell/state and execution semantics. | Pointwise, stateful and sequence-only capabilities are explicit; gradients/hooks, reset/chunks and output schemas agree across ordinary and accelerated paths. |
-| P2-05 | Pending | Training-only preprocessing owned by the convenient workflow. | Automatic original-unit forecasts; custom/off switches; no validation leakage; preprocessing is included in model artifacts. |
-| P2-06 | Pending | First-class TSDynamics trajectories through the optional extra. | Preserve sampling times, component names and provenance; forecasts have correct future times; irregular sampling requires an explicit policy. |
+| P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | `rd.Model` named functional constructor, original-unit fit/forecast, carried state and named multi-output results implemented for symbolic DAGs and wrapped factory graphs. Remaining: facade migration and other backend families. |
+| P2-02 | WIP | Preserve functional construction while evaluating existing graph tooling. | Existing symbolic construction retained; graph/backend and module-ownership review complete. Compare standard tooling against actual requirements before replacing infrastructure. No private graph API exposed to users. |
+| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named ports, branched/multi-head predictions and driver alignment covered. Remaining: named feedback routes and delayed loops with independent timing oracles. |
+| P2-04 | WIP | Coherent cell/state and execution semantics. | Explicit-state execution rejects hidden recurrent containers before running operations; stateful fitting/forward remain supported. Pointwise-container state/gradient parity covered. Remaining: public capability protocol and parity across execution paths. |
+| P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms and off/method switches; training-window, gradient, MPS and checkpoint oracles pass. Remaining: custom transforms, feedback conversion, other families and complete artifacts. |
+| P2-06 | WIP | First-class TSDynamics trajectories through the optional extra. | Bare trajectory fitting/forecasting preserves component names, future times and checkpoint-safe provenance. Configurable automatic resampling, fitted-step history alignment and tensor-return option implemented. Remaining: named trajectory mappings and custom-target timing. |
 | P2-07 | Pending | Independent per-node RNG streams and public customization templates. | Reproducible heterogeneous graphs; explicit tied/per-node seeds; tiny custom initializer, cell, transform and solver examples without private APIs. |
-| P2-08 | Pending | Standard PyTorch composition and migration. | Single-output models fit ordinary neural pipelines; frozen reservoirs pass upstream gradients; train/eval, devices, parameter registration and checkpoints behave conventionally. |
+| P2-08 | WIP | Standard PyTorch composition and migration. | Executable symbolic-wrapper pipeline passes upstream gradients and preserves one registered graph; state/schema/checkpoint and native MPS paths covered. Remaining: all backend families and lazy preset migration. |
+
+### First-increment verification record
+
+Local verification on **22 October 2026**, commit `665b04a`, covers the symbolic-DAG increment,
+not completion of phase two. The [runnable guide](../start/model-workflow.md)
+shows functional construction, factory wrapping, named targets and PyTorch
+composition; its Python examples execute in CI, including on later docs-only
+changes.
+
+| Check | Evidence |
+| --- | --- |
+| Complete local suite | **4,264 passed**, 234 skipped, 13 benchmark cases deselected; **93.04% coverage**. Existing staged-fitting and forecast golden tests pass unchanged. |
+| Independent compatibility probe | **120/120** CPU float64 combinations: 12 reservoir configurations, including delayed and GRU/LSTM states, across ten readout/solver configurations. Forecasts agree with manually normalized training; deepcopy and checkpoint parity pass, without convergence warnings in the final configuration. |
+| Native MPS | Recurrent float32 fitting with a compatible CG solver, original-unit forecasting, CPU/checkpoint transfer and upstream gradients pass; CPU-fit-then-MPS inference also passes. This is correctness evidence, not a GPU throughput claim. |
+| CPU performance gates | **4 passed**, four unavailable-device cases skipped, one deselected; existing thresholds unchanged. |
+| PyTorch and checkpoint behavior | Named mappings, state carry/chunks, hooks, gradient preservation, parameter identity, failed-refit isolation, inference-mode fitting/loading and malformed schema rejection have permanent regression tests. |
+| Package smoke | Wheel/sdist build and isolated installed-wheel fit/forecast/checkpoint/PyTorch smoke pass, including Torch 2.14.1. |
+| Documentation | Strict MkDocs build passes; the common-model guide executes, and rendered guide/roadmap navigation was inspected. |
+
+The first increment deliberately retains the established flat forecast engine
+and its single feedback route. Custom preprocessing, feedback conversion,
+named delayed routes, trajectory mappings, other backend families and preset
+migration remain open. Required hosted CI and strict documentation checks must
+pass on the implementation PR before merge.
+
+### Trajectory increment
+
+The [trajectory guide](../start/trajectory-workflow.md) covers direct
+`fit(trajectory)`, default trajectory forecasts, the explicit tensor option,
+configurable resampling and portable checkpoints. Uniform time axes are the
+normal case; irregular axes are resampled automatically with linear, PCHIP or
+cubic interpolation. Explicit sampling intervals preserve the last observed
+time and never extrapolate. Future histories use the fitted interval.
+
+The integration adds independent physical-time oracles, source/clock/schema
+validation, real TSDynamics simulation, failed-refit isolation, legacy
+checkpoint and optional-dependency tests. Its runnable guide is included in
+the installed-dynamics CI lanes on Python 3.12–3.14, so missing optional
+packages cannot silently skip integration verification. Phase two remains WIP.
+
+The adapter, workflow and guide comprise **81 checks**, verified from a clean
+installed wheel against the minimum supported **TSDynamics 6.0.2**, and with
+the locked **6.0.3** locally. Native MPS fitting, device-local tensor forecasts,
+portable metadata, bfloat16 output conversion and strict documentation builds
+are covered. Complete-suite and hosted verification are tracked on
+[PR #459](https://github.com/El3ssar/ResDAG/pull/459).
 
 ## Phase 3: tuning and automatic solver policy
 
@@ -189,6 +247,9 @@ complete-artifact format and extension policy before changing legacy saves.
 | 2026-10-22 | Baseline audit | Done | 173 runtime modules reviewed; standard suite 3,809 passed, 91.63% coverage; optional TSDynamics and catalog failures independently reproduced. |
 | 2026-10-22 | Roadmap and maintainer decisions | Done | Canonical tracker is in the documentation navigation; strict MkDocs build and links pass. |
 | 2026-10-22 | Phase 1 implementation | Done | 4,084 local tests pass at 93.06% coverage; all supported locked/latest CI lanes, strict docs, optional integration, CPU gates and wheel checks pass. See the phase 1 verification record above. |
+| 2026-10-22 | Phase 1 merge | Done | PR #458 squash-merged into `main` as `41a1744`; phase-two branch starts from that commit. |
+| 2026-10-22 | Phase 1 release | Done | Post-merge full Python 3.11–3.14 matrix, optional dynamics lanes and release job passed; [v1.1.1](https://github.com/El3ssar/ResDAG/releases/tag/v1.1.1) published. Documentation deployment passed. |
+| 2026-10-22 | Phase 2 foundations | WIP | Approved `rd.Model` constructor implemented for symbolic DAGs; fitted Torch preprocessing, safe explicit-state validation and executable guide added. Complete common lifecycle is not yet delivered; see the first-increment verification record. |
 
 ## Standard tools to reuse
 

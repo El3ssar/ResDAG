@@ -208,6 +208,43 @@ def test_minmax_reference_values() -> None:
     assert torch.allclose(normalized.amax(dim=(0, 1)), torch.full((2,), 1.0, dtype=torch.float64))
 
 
+@pytest.mark.parametrize("dtype,bound", [(torch.float16, 20_000.0), (torch.float32, 1e38)])
+def test_minmax_extreme_finite_range_preserves_values_inverse_and_gradients(
+    dtype: torch.dtype,
+    bound: float,
+) -> None:
+    """A representable span must not overflow when mapping its upper half to [-1, 1]."""
+    training = torch.tensor([[[-bound], [bound]]], dtype=dtype)
+    normalized_training, stats = normalize_data(training, method="minmax")
+    assert all(torch.isfinite(value).all() for value in stats.values())
+    torch.testing.assert_close(
+        normalized_training, torch.tensor([[[-1.0], [1.0]]], dtype=dtype), rtol=0, atol=0
+    )
+
+    probe = torch.tensor(
+        [[[-bound], [-bound / 2], [0.0], [bound / 2], [bound]]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    normalized, reused = normalize_data(probe, method="minmax", stats=stats)
+    expected = torch.tensor([[[-1.0], [-0.5], [0.0], [0.5], [1.0]]], dtype=dtype)
+    assert reused is stats
+    assert normalized.dtype == dtype
+    torch.testing.assert_close(normalized, expected, rtol=0, atol=0)
+    restored = denormalize_data(normalized, "minmax", stats)
+    assert restored.dtype == dtype
+    torch.testing.assert_close(restored, probe, rtol=2 * torch.finfo(dtype).eps, atol=0)
+
+    (slope,) = torch.autograd.grad(normalized.sum(), probe, retain_graph=True)
+    expected_slope = torch.full_like(probe, 2.0 / float(stats["range"].item()))
+    assert torch.isfinite(slope).all() and torch.all(slope > 0)
+    torch.testing.assert_close(slope, expected_slope, rtol=2 * torch.finfo(dtype).eps, atol=0)
+    (roundtrip_gradient,) = torch.autograd.grad(restored.sum(), probe)
+    torch.testing.assert_close(
+        roundtrip_gradient, torch.ones_like(probe), rtol=2 * torch.finfo(dtype).eps, atol=0
+    )
+
+
 def test_standard_reference_values() -> None:
     """``standard`` subtracts the mean and divides by the (unbiased) std."""
     data = _reference_data()

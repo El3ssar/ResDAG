@@ -49,7 +49,8 @@ Issues = "https://github.com/El3ssar/ResDAG/issues"
 # lint/format/test tool versions.
 [project.optional-dependencies]
 hpo = ["optuna>=3.0.0"]
-# Optional dynamical-systems stack: `resdag.metrics.largest_lyapunov` uses
+# Optional dynamical-systems stack: Model accepts/returns named, timestamped
+# TSDynamics trajectories; `resdag.metrics.largest_lyapunov` also uses
 # `tsdynamics` to estimate Lyapunov exponents from a data series or a built-in
 # System. The env marker means pip skips it on Python < 3.12 (tsdynamics needs
 # >=3.12) rather than failing to resolve; the pure-math conversions and the
@@ -146,6 +147,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+
+# ResDAG supports Python 3.11, while this optional third-party package uses
+# Python 3.12+ syntax. Check all first-party code without parsing its sources.
+[[tool.mypy.overrides]]
+module = ["tsdynamics", "tsdynamics.*"]
+follow_imports = "skip"
 
 # The whole package is type-checked in CI with `mypy src/resdag/` and is
 # expected to stay at zero errors — there is intentionally no per-module

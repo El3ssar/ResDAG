@@ -141,4 +141,8 @@ jobs:
           dependency-mode: ${{ inputs.dependency-mode }}
           extras: dev,hpo,dynamics
       - name: Optional dynamics integration
-        run: pytest --no-cov -q tests/test_metrics/test_lyapunov.py
+        run: >-
+          pytest --no-cov -q tests/test_metrics/test_lyapunov.py
+          tests/test_data/test_trajectory_adapter.py
+          tests/test_core/test_workflow_trajectory.py
+          tests/test_core/test_workflow_metadata.py tests/test_trajectory_guide.py

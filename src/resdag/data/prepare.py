@@ -206,7 +206,7 @@ def _apply_norm(
         for key, value in stats.items()
     }
     if method == "minmax":
-        return 2 * (data - stats["min"]) / stats["range"] - 1
+        return 2 * ((data - stats["min"]) / stats["range"]) - 1
     elif method == "standard":
         return (data - stats["mean"]) / stats["std"]
     elif method == "noncentered":

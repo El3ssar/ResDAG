@@ -12,8 +12,8 @@ These checks lock in adoption-critical, easy-to-drift facts:
   HTTP 404 and must never reappear;
 * the package ships a PEP 561 ``py.typed`` marker so downstream type checkers
   honour ``resdag``'s inline annotations instead of treating it as untyped;
-* the tracked mypy baseline in ``pyproject.toml`` only references modules that
-  still exist, so it cannot rot into silently-dead exemptions.
+* mypy checks all first-party source; import-skipping rules can target only
+  explicit third-party namespaces, including optional newer-Python packages.
 
 The repository-layout checks are skipped gracefully when the tests run outside
 a source checkout (e.g. against an installed wheel), where the root metadata
@@ -110,13 +110,12 @@ def test_py_typed_marker_is_empty() -> None:
     assert marker.read_text(encoding="utf-8") == ""
 
 
-def test_mypy_baseline_overrides_reference_real_modules() -> None:
-    """The tracked mypy baseline only exempts modules that still exist.
+def test_mypy_overrides_cannot_skip_or_suppress_first_party_checking() -> None:
+    """Only explicitly named third-party import trees can be skipped.
 
-    The whole-package lane (``mypy src/resdag/``) holds pre-existing violations
-    in per-module ``[[tool.mypy.overrides]]`` entries. If a module is renamed or
-    deleted, its stale entry would silently linger; this guards the baseline's
-    integrity and enforces the "drop the block once its list is empty" rule.
+    Optional dependencies may require a newer Python parser than ResDAG's
+    minimum version. Skipping those sources must never exempt ResDAG itself
+    or introduce error suppressions into its whole-package type check.
     """
     pyproject = _require_root_file("pyproject.toml")
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -124,26 +123,19 @@ def test_mypy_baseline_overrides_reference_real_modules() -> None:
     if not overrides:
         pytest.skip("no mypy overrides defined")
 
-    src = ROOT / "src"
-    missing: list[str] = []
     for entry in overrides:
+        assert entry.get("follow_imports") == "skip"
+        assert not entry.get("ignore_errors")
+        assert "disable_error_code" not in entry
         modules = entry["module"]
         if isinstance(modules, str):
             modules = [modules]
+        assert modules
         for module in modules:
-            rel = Path(*module.split("."))
-            if not (
-                (src / rel).with_suffix(".py").is_file() or (src / rel / "__init__.py").is_file()
-            ):
-                missing.append(module)
-    assert not missing, f"mypy baseline references missing modules: {missing}"
-
-    empty = [
-        entry.get("module")
-        for entry in overrides
-        if "disable_error_code" in entry and not entry["disable_error_code"]
-    ]
-    assert not empty, f"remove emptied mypy baseline entries: {empty}"
+            namespace = module.partition(".")[0]
+            assert (
+                namespace.isidentifier() and namespace != "resdag"
+            ), f"Import policy must name an external namespace, not {module!r}"
 
 
 def test_no_lowercase_pages_url_in_tracked_files() -> None:

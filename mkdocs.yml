@@ -174,10 +174,12 @@ nav:
       - Common model workflow: start/model-workflow.md
       - Feedback and timing: start/feedback.md
       - TSDynamics trajectories: start/trajectory-workflow.md
+      - Named trajectories: start/named-trajectories.md
       - The mental model: start/concepts.md
   - Build:
       - build/index.md
       - Custom components: advanced/custom-components.md
+      - Custom preprocessing: advanced/custom-preprocessing.md
       - Layers:
           - build/layers/index.md
       - Readouts:

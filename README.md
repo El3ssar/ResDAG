@@ -30,6 +30,7 @@ with Pending, WIP and Done statuses.
 ```bash
 pip install resdag            # core
 pip install "resdag[hpo]"     # + Optuna hyperparameter optimization
+pip install "resdag[dynamics]" # + TSDynamics trajectory integration
 ```
 
 Python ≥ 3.11, PyTorch ≥ 2.10.
@@ -81,14 +82,17 @@ Start with [recurrent weights](docs/build/initialization/recurrent.md),
 Architectures are DAGs you wire, not options you toggle. Two reservoirs on different timescales, read out together:
 
 ```python
-from resdag import CGReadoutLayer, Concatenate, ESNModel, reservoir_input
+from resdag import CGReadoutLayer, Concatenate, Model, reservoir_input
 from resdag.layers import ESNLayer
 
 inp    = reservoir_input(3)
 fast   = ESNLayer(64, feedback_size=3, leak_rate=1.0, spectral_radius=0.9)(inp)
 slow   = ESNLayer(64, feedback_size=3, leak_rate=0.2, spectral_radius=0.9)(inp)
 merged = Concatenate()(fast, slow)
-model  = ESNModel(inp, CGReadoutLayer(128, 3, name="output")(merged))
+model = Model(
+    inputs={"state": inp},
+    outputs={"prediction": CGReadoutLayer(128, 3, name="output")(merged)},
+)
 ```
 
 <p align="center">
@@ -123,6 +127,11 @@ Use `esn.graph` for raw graph access, or build custom branches through
 [`rd.Model`](https://el3ssar.github.io/ResDAG/start/model-workflow/).
 NumPy data converts explicitly with `torch.as_tensor(array)`. Tensor layouts
 are preserved: `(T,D)` returns `(H,D)`; `(B,T,D)` returns `(B,H,D)`.
+
+Override units per input/output with [custom preprocessing](docs/advanced/custom-preprocessing.md).
+For several timestamped signals, [named trajectories](docs/start/named-trajectories.md)
+align inputs and targets within their shared observed range. Custom graphs
+use the same `fit`, `forecast` and PyTorch state commands as the preset.
 
 ## Train through it with SGD
 

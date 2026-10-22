@@ -148,3 +148,8 @@ jobs:
           tests/test_core/test_workflow_metadata.py tests/test_trajectory_guide.py
           tests/test_core/test_workflow_backends.py
           tests/test_core/test_workflow_backend_trajectories.py
+          tests/test_data/test_trajectory_ports.py
+          tests/test_core/test_workflow_trajectory_ports.py
+          tests/test_core/test_workflow_clocked_custom.py
+          tests/test_core/test_facade_transforms.py
+          tests/test_named_trajectory_guide.py

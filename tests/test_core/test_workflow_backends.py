@@ -97,7 +97,7 @@ def test_scaled_fit_and_forecast_match_raw_backend_oracle(family, return_warmup)
             ESNTrainer(member).fit((scaled[:, :3],), (scaled[:, 3:-1],), {key: scaled[:, 4:]})
     _equal(model.graph.state_dict(), raw.state_dict())
     assert identities == [id(parameter) for parameter in model.graph.parameters()]
-    assert model.graph is graph and model.model is graph
+    assert model.graph is graph and not hasattr(model, "model")
     assert set(model._modules) == {"graph", "input_scalers", "output_scalers"}
     assert not any(key.startswith("model.") for key in model.state_dict())
     raw.eval()
@@ -344,14 +344,17 @@ def test_checkpoint_backend_schema_mismatch_is_preflighted(mismatch):
     _equal(destination.state_dict(), before)
 
 
-def test_original_symbolic_v1_checkpoint_without_backend_metadata_still_loads():
+@pytest.mark.parametrize("missing", ["backend", "prediction_lead", "feedback", "transforms"])
+def test_missing_current_checkpoint_schema_rejects_before_copy(missing):
     model = Model(graph=classic_esn(5, 1, 1, seed=19, dtype=torch.float64), washout=2)
     model.fit(_series(1))
     checkpoint = copy.deepcopy(model.state_dict())
-    del checkpoint["_extra_state"]["backend"]
+    del checkpoint["_extra_state"][missing]
     restored = Model(graph=classic_esn(5, 1, 1, seed=19, dtype=torch.float64))
-    restored.load_state_dict(checkpoint)
-    torch.testing.assert_close(restored.forecast(horizon=3), model.forecast(horizon=3))
+    before = copy.deepcopy(restored.state_dict())
+    with pytest.raises(RuntimeError, match="metadata fields"):
+        restored.load_state_dict(checkpoint)
+    _equal(restored.state_dict(), before)
 
 
 class _WeightedAggregate(nn.Module):

@@ -144,7 +144,12 @@ def test_state_carry_explicit_state_and_chunk_gradients():
     p, middle = model.forward_stateless(data[:3])
     q, chunk_final = model.forward_stateless(data[3:], states=middle)
     torch.testing.assert_close(torch.cat((p, q)), explicit, rtol=1e-12, atol=1e-12)
-    _equal(final, chunk_final)
+    # Different projection batch shapes can change BLAS rounding across chunks.
+    # Use the same float64 tolerance as the output/gradient comparisons above;
+    # the stored-state immutability assertion below remains bit-exact.
+    assert final.keys() == chunk_final.keys()
+    for name in final:
+        torch.testing.assert_close(final[name], chunk_final[name], rtol=1e-12, atol=1e-12)
     _equal(model.get_state(), before)
 
 

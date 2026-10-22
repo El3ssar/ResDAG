@@ -181,12 +181,16 @@ scaling; physical timestamps retain float64 precision.
 Source arrays become plain lists in checkpoint metadata. Opaque Python
 metadata values are represented by type markers instead of serialized objects.
 
-Direct trajectory fitting currently covers one input and one terminal output
-of equal width. Targets default to the next sample; `prediction_lead` can
-select a larger distance. Warmup outputs then start at that lead's historical
-timestamp, while future predictions still begin at the first unseen sample.
-Use the existing named tensor-target workflow for other supervised graphs.
-Named trajectory mappings and explicit trajectory targets remain pending.
-Ordinary tensor forward
-and explicit-state calls retain the PyTorch behavior described in the
-[common model guide](model-workflow.md).
+Bare trajectory fitting infers shifted targets for one input/output of equal
+width. `prediction_lead` can select a larger distance. Warmup outputs then
+start at that lead's historical timestamp, while future predictions still
+begin at the first unseen sample. Named inputs and explicit trajectory
+targets are supported by the [named trajectory workflow](named-trajectories.md),
+which aligns all ports on a shared observed range and applies per-head leads
+to physical target timestamps. Tensor targets remain caller-aligned.
+
+Both bare and named trajectory checkpoints use the current version 2 clock
+envelope. Older common-workflow trajectory metadata is rejected; reconstruct
+and refit those models to save a current checkpoint. There is no automatic
+converter. Ordinary tensor forward and explicit-state calls retain the
+PyTorch behavior described in the [common model guide](model-workflow.md).

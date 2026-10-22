@@ -71,3 +71,15 @@ architecture/settings before loading; device and dtype may differ. Metadata
 checks cannot verify the full behavior of arbitrary custom Python functions.
 Complete artifact loading without reconstructing the architecture belongs to
 the artifact roadmap phase.
+
+The current `ESN` and `Model` checkpoint metadata version is 2. Custom
+preprocessing and named trajectory clocks are explicit parts of that schema.
+Older common-workflow checkpoints are rejected with a reconstruction/refit
+message; no compatibility loader or automatic converter is provided.
+
+Custom `input_transforms={"input": module}` and
+`output_transforms={"output": module}` follow the same reversible preprocessing
+protocol as `Model`. Their original modules remain registered before a lazy
+build and remain the fitted workflow's modules afterward. See
+[custom preprocessing](../advanced/custom-preprocessing.md) and
+[named trajectories](../start/named-trajectories.md).

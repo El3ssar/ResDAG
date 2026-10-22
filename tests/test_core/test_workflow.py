@@ -50,7 +50,7 @@ def test_manual_scaled_training_and_forecast_match_without_leakage():
     _assert_state_equal(graph.state_dict(), manual.state_dict())
     assert parameter_ids == [id(value) for value in model.graph.parameters()]
     assert set(model._modules) == {"graph", "input_scalers", "output_scalers"}
-    assert model.model is graph
+    assert not hasattr(model, "model")
     assert not any(key.startswith("model.") for key in model.state_dict())
     torch.testing.assert_close(model.input_scalers[0]._stat0, mean, rtol=0, atol=0)
     torch.testing.assert_close(model.output_scalers[0]._stat0, mean, rtol=0, atol=0)

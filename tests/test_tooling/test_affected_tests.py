@@ -73,6 +73,7 @@ def test_docs_only_change_runs_executable_documentation_checks() -> None:
     assert "tests/test_workflow_guide.py" in sel.tests
     assert "tests/test_documented_workflows.py" in sel.tests
     assert "tests/test_trajectory_guide.py" in sel.tests
+    assert "tests/test_named_trajectory_guide.py" in sel.tests
     assert "tests/test_custom_components_guide.py" in sel.tests
 
 

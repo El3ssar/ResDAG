@@ -119,6 +119,10 @@ For branches, drivers, multiple outputs or a different recurrent cell, build
 forward, state and checkpoint commands. Start with the
 [common model guide](model-workflow.md), then the
 [public component recipes](../advanced/custom-components.md).
+Use [custom preprocessing](../advanced/custom-preprocessing.md) to change the
+units of individual inputs or outputs while retaining automatic inverse
+conversion. [Named trajectories](named-trajectories.md) align several
+timestamped inputs and targets for a custom graph.
 
 ## 6. Choose device and precision explicitly
 

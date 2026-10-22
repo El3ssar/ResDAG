@@ -17,6 +17,12 @@ from torch import nn
 from resdag._contracts import module_reference
 from resdag.core._execution import ReservoirStates
 from resdag.core._feedback import Feedback, feedback_specs, prediction_leads
+from resdag.core._workflow_transforms import (
+    commit_transform_state,
+    transform_schema,
+    validate_custom_transform,
+    validate_transform_ownership,
+)
 from resdag.core.model import ESNModel
 from resdag.core.workflow import Model, Preprocessing, Streams, _washout
 from resdag.data._trajectory import is_trajectory, validate_resampling_options
@@ -120,6 +126,8 @@ class ESN(nn.Module):
         washout: int = 100,
         alpha: float = 1e-6,
         preprocessing: Preprocessing = "standard",
+        input_transforms: Mapping[str, nn.Module] | None = None,
+        output_transforms: Mapping[str, nn.Module] | None = None,
         prediction_lead: int | Mapping[str, int] = 1,
         feedback: Sequence[Feedback] | None = None,
         readout: ReadoutSpec = "ridge",
@@ -164,6 +172,25 @@ class ESN(nn.Module):
         self.add_module("workflow", None)
         self._input_size: int | None = None
         self._device_pinned, self._dtype_pinned = device is not None, dtype is not None
+        overrides = []
+        for mapping, name in ((input_transforms, "input"), (output_transforms, "output")):
+            if mapping is not None and (not isinstance(mapping, Mapping) or set(mapping) - {name}):
+                raise ValueError(
+                    f"ESN transform override keys must be declared port names: [{name!r}]"
+                )
+            overrides.append(dict(mapping or {}))
+        originals = tuple(module for mapping in overrides for module in mapping.values())
+        if any(not isinstance(module, nn.Module) for module in originals):
+            raise TypeError("Transform overrides must be torch.nn.Module instances")
+        validate_transform_ownership(nn.Identity(), originals)
+        # Originals remain ordinary registered modules while the lazy graph is
+        # absent. A staged first fit only transfers them after it succeeds.
+        self._pending_input_transforms: nn.ModuleDict | None = (
+            nn.ModuleDict(overrides[0]) if overrides[0] else None
+        )
+        self._pending_output_transforms: nn.ModuleDict | None = (
+            nn.ModuleDict(overrides[1]) if overrides[1] else None
+        )
         self._workflow_options: dict[str, Any] = {
             "washout": washout,
             "preprocessing": preprocessing,
@@ -171,6 +198,8 @@ class ESN(nn.Module):
             "feedback": connections,
             "resample_dt": resample_dt,
             "resample_method": validated_method,
+            "input_transforms": overrides[0] or None,
+            "output_transforms": overrides[1] or None,
         }
         self._factory_options = {
             "reservoir_size": reservoir_size,
@@ -188,7 +217,13 @@ class ESN(nn.Module):
             "seed": seed,
             **reservoir_kwargs,
         }
-        self._architecture = _configuration(self._factory_options)
+        self._architecture = (
+            _configuration(self._factory_options),
+            tuple(
+                tuple((name, transform_schema(module, 0)) for name, module in mapping.items())
+                for mapping in overrides
+            ),
+        )
         if input_size is not None:
             self.build(input_size)
 
@@ -248,6 +283,14 @@ class ESN(nn.Module):
         return self.workflow
 
     def _new_workflow(self, width: int, device: torch.device, dtype: torch.dtype) -> Model:
+        originals = tuple(
+            module
+            for key in ("input_transforms", "output_transforms")
+            for module in (self._workflow_options[key] or {}).values()
+        )
+        validate_transform_ownership(nn.Identity(), originals)
+        for module in originals:
+            validate_custom_transform(module, width)
         seed = self._factory_options["seed"]
         with ExitStack() as isolation:
             if seed is not None:
@@ -276,16 +319,31 @@ class ESN(nn.Module):
                 dtype=dtype,
                 **self._factory_options,
             )
-            workflow = Model(graph=graph, **self._workflow_options)
+            options = dict(self._workflow_options)
+            incoming, outgoing = copy.deepcopy(
+                (options["input_transforms"], options["output_transforms"])
+            )
+            options.update(input_transforms=incoming, output_transforms=outgoing)
+            workflow = Model(graph=graph, **options)
             workflow.train(self.training)
             return workflow
 
     def _attach(self, workflow: Model, width: int) -> None:
-        self.workflow = workflow
-        self._input_size = width
         reference = module_reference(workflow.graph)
         assert reference is not None
         with torch.inference_mode(False):
+            for pending, scalers in (
+                (self._pending_input_transforms, workflow.input_scalers),
+                (self._pending_output_transforms, workflow.output_scalers),
+            ):
+                if pending:
+                    original = next(iter(pending.values()))
+                    original.to(device=reference.device, dtype=reference.dtype)
+                    commit_transform_state(original, scalers[0])
+                    scalers[0] = original
+            self._pending_input_transforms = self._pending_output_transforms = None
+            self.workflow = workflow
+            self._input_size = width
             self._reference = torch.empty(0, device=reference.device, dtype=reference.dtype)
 
     def build(
@@ -319,18 +377,22 @@ class ESN(nn.Module):
         self._device_pinned = self._dtype_pinned = True
         return self
 
-    def fit(self, training: Streams | Trajectory, targets: Streams | None = None) -> ESN:
+    def fit(
+        self,
+        training: Streams | Trajectory | Mapping[str, Trajectory],
+        targets: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
+    ) -> ESN:
         """Fit with Model's train-only scaling, explicit targets and transactional refitting."""
         if self.workflow is not None:
             self.workflow.fit(training, targets)
             return self
         data: Any = training
-        if is_trajectory(training):
-            data = torch.as_tensor(cast(Any, training).y)
-        elif isinstance(training, Mapping):
+        if isinstance(training, Mapping):
             if set(training) != {"input"}:
                 raise ValueError("ESN training mapping must contain exactly the key 'input'")
             data = training["input"]
+        if is_trajectory(data):
+            data = torch.as_tensor(cast(Any, data).y)
         if not isinstance(data, torch.Tensor):
             raise TypeError(
                 "ESN training requires a floating torch.Tensor or a TSDynamics trajectory"
@@ -367,10 +429,10 @@ class ESN(nn.Module):
 
     def forecast(
         self,
-        history: Streams | Trajectory | None = None,
+        history: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
         *,
         horizon: int,
-        future_inputs: Streams | None = None,
+        future_inputs: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
         return_warmup: bool = False,
         compile: bool = False,
         execution: Literal["fast", "history"] = "fast",
@@ -400,14 +462,21 @@ class ESN(nn.Module):
 
     def get_extra_state(self) -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": 2,
             "input_size": self.input_size,
             "architecture": copy.deepcopy(self._architecture),
         }
 
     def _validate_metadata(self, state: Any) -> int | None:
-        if not isinstance(state, dict) or state.get("version") != 1:
-            raise RuntimeError("Invalid ESN checkpoint metadata/version")
+        if (
+            not isinstance(state, dict)
+            or type(state.get("version")) is not int
+            or state["version"] != 2
+        ):
+            raise RuntimeError(
+                "ESN checkpoint requires current metadata version 2; "
+                "reconstruct and refit models saved with older metadata"
+            )
         if "input_size" not in state:
             raise RuntimeError("Invalid ESN checkpoint: missing input_size")
         if state.get("architecture") != self._architecture:

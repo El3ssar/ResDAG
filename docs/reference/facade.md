@@ -53,6 +53,14 @@ The single registered `esn.workflow` child is a `Model`; `.graph` gives the raw
 symbolic graph. Refitting preserves the existing parameter objects. Use
 `Model(inputs=..., outputs=...)` for custom branches, drivers and multiple heads.
 
+`input_transforms={"input": module}` and `output_transforms={"output": module}`
+override the preset's preprocessing per port. Supplied modules remain
+registered while the preset is lazy, and successful building/fitting keeps
+the original module and Parameter objects. A failed first fit leaves them
+registered without attaching an incomplete workflow. Build before collecting
+all model parameters for an optimizer. Custom modules use the reversible
+protocol described in [custom preprocessing](../advanced/custom-preprocessing.md).
+
 ## Placement, solvers and checkpoints
 
 An untouched lazy preset adopts the first floating tensor's device and dtype.
@@ -75,9 +83,13 @@ scaling, observed history and trajectory sampling are restored by `Model`.
 Custom Python callables and initializer implementations must remain available
 with matching configuration. This is standard checkpoint loading; complete
 self-describing model artifacts remain a separate roadmap item.
+The current `ESN` and `Model` metadata version is 2. Older metadata is rejected;
+reconstruct and refit those models before saving a current checkpoint.
 
 With the optional `dynamics` extra, `fit(trajectory)` and timestamped forecasts
 work exactly as in the [trajectory guide](../start/trajectory-workflow.md).
+The named single-port spelling `fit({"input": trajectory})` also works, with
+explicit trajectory targets under `{"output": target}` when needed.
 Ordinary calls always return Torch tensors; `forecast(return_type="tensor")`
 keeps trajectory-trained predictions on the model device.
 

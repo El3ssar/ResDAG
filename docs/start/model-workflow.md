@@ -12,8 +12,9 @@ Inputs are floating Torch tensors shaped `(time, features)` or
 `(batch, time, features)`, on the same device and dtype as the graph. Named
 multi-input data uses a dictionary of those tensors. `rd.ESN` provides the same
 Torch workflow for a ready-made classic reservoir. Convert NumPy arrays with
-`torch.as_tensor` at the boundary. For single-input/output forecasting,
-`fit` and `forecast` also accept [TSDynamics trajectories](trajectory-workflow.md).
+`torch.as_tensor` at the boundary. `fit` and `forecast` also accept
+[TSDynamics trajectories](trajectory-workflow.md), including
+[named trajectories for several ports](named-trajectories.md).
 Ordinary `model(x)` calls retain the tensor interface.
 
 This is part of [phase two](../project/roadmap.md#phase-2-one-functional-workflow).
@@ -61,6 +62,15 @@ history resynchronizes the reservoir on that history before forecasting.
 Choose `preprocessing=None` to handle scaling yourself, or choose an existing
 normalization method: `"standard"`, `"minmax"`, `"noncentered"` or
 `"meanpreserving"`.
+
+Override individual ports with `input_transforms={"state": your_module}` and
+`output_transforms={"prediction": your_module}`. Each module preserves the
+signals and provides a reversible change of units. Use a distinct instance
+for each port; `torch.nn.Identity()` disables preprocessing on one port.
+Explicit overrides still apply when the global policy is off. See
+[custom preprocessing](../advanced/custom-preprocessing.md) for a complete
+example, fitting rules and checkpoints. Operations that add features or memory
+belong inside the DAG as ordinary layers.
 
 ## Use a preset graph
 

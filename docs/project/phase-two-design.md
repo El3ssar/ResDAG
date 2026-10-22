@@ -132,11 +132,21 @@ at the immediate unseen time; optional warmup predictions start at
 physical timeline. New tensor histories require tensor output because
 they carry no absolute clock.
 
-Clock, component and primitive source metadata survive state-dictionary
-checkpoints without requiring TSDynamics at load time. Live producing-system
-objects remain transient. This integration currently covers single-input,
-single-output lead-aware fitting; named trajectory mappings and custom target
-semantics remain open. See the [trajectory guide](../start/trajectory-workflow.md).
+Named trajectory inputs align once on a shared grid inside their common
+observed range. The first declared model input supplies the default interval;
+`resample_dt` overrides it. Per-head trajectory targets are physical signals:
+an origin at `t` uses that head's label at `t + prediction_lead * dt`. Labels
+beyond the common observed endpoint are held out before interpolation.
+Fitting preserves the full input prefix and uses only jointly valid supervised
+rows after washout. Fast models retain a compact tail ending at the common
+observed endpoint; temporal models retain the full prefix.
+
+Clock, per-port components and primitive source metadata survive current
+state-dictionary checkpoints without requiring TSDynamics at load time. Live
+producing-system objects remain transient. One output returns a trajectory;
+several return a dictionary with each target's own signal names and one shared
+future timeline. See the [trajectory guide](../start/trajectory-workflow.md)
+and [named trajectories](../start/named-trajectories.md).
 
 The common workflow packages the existing four normalization methods in an
 internal fitted PyTorch module. Statistics are learned only by an explicit
@@ -144,8 +154,12 @@ fit operation, remain detached from training gradients, and do not update
 during inference. Transform and inverse operations preserve upstream gradients.
 Tests cover constant channels, refitting, checkpoint restoration, invalid data,
 and device/dtype behavior, including native MPS. The module is used internally
-by every supported `Model` family; custom-transform support is still pending
-its agreed public contract. Existing data-preparation defaults
+by every supported `Model` family. Named `input_transforms` and
+`output_transforms` override individual ports with reversible Torch modules,
+including `Standardize` and `nn.Identity`. Fitting stages independent copies
+and preserves the original modules and parameters on successful commit.
+See [custom preprocessing](../advanced/custom-preprocessing.md).
+Existing data-preparation defaults
 are unchanged. Minmax scaling now divides before multiplying, avoiding an
 intermediate overflow for large finite training ranges.
 
@@ -157,12 +171,20 @@ remedy: expose each reservoir as a separate functional graph node. Ordinary
 stateful graph calls and supported pointwise containers remain usable. See
 [state management](../start/concepts.md#2-reservoir-layers-are-stateful).
 
-## Remaining design approvals
+## Approved extensions
 
-- Confirm the custom preprocessing boundary: reversible changes of units that
-  preserve signals, with temporal/feature-adding operations placed in the DAG.
-- Confirm automatic shared-time-range alignment for named TSDynamics inputs,
-  including explicit-target clocks and per-head labels.
+The maintainer approved these choices on 22 October 2026:
+
+- Custom preprocessing uses reversible changes of units that preserve signals.
+  Temporal operations and transforms that add features belong inside the DAG.
+- Named TSDynamics inputs align automatically to a common sampling grid within
+  their shared observed range. Resampling never extrapolates beyond observations.
+  Targets use physical timestamps and each head's declared prediction lead.
+
+Both extensions are implemented. Complete integrated and hosted verification
+is in progress. The new major API uses current version-2 workflow/preset
+checkpoint metadata. Older common-workflow checkpoints require reconstruction
+and refitting; no compatibility converter is provided.
 
 The [public component recipes](../advanced/custom-components.md) cover stable
 named seeds, registered initializers, recurrent cells, framewise transforms and

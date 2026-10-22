@@ -246,8 +246,10 @@ general deployment export are not supported; see the
   without a feedback route need future driver values.
 - Reservoirs must be separate functional nodes for explicit-state and forecast
   execution. See [state management](concepts.md#2-reservoir-layers-are-stateful).
-- Ordinary forward calls run module hooks. Forecasting retains the backend's
-  flat loop: hooks run during history warmup, but not for generated steps.
+- Ordinary forward calls run module hooks. The native flat fast forecast path
+  runs hooks during history warmup and bypasses them for generated steps.
+  Named/delayed feedback and full-history execution use the graph executor;
+  operation hooks also run when that executor evaluates generated steps.
 - Fast forecasting requires framewise operations or explicit reservoir nodes.
   Custom sequence operations can use [history execution](../advanced/forecast-capabilities.md),
   which replays their full growing prefix. Delayed/named feedback uses explicit

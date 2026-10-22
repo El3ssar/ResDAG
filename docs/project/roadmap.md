@@ -56,7 +56,7 @@ after its acceptance checks pass and its public behavior is documented.
 | 3. Reliable automatic tuning | Pending | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies reproduce, respect budgets and leave a fitted winner. |
 | 4. Model artifacts and diagrams | Pending | Save a complete model, load it without rebuilding its DAG, and export readable graph diagrams. | Fresh-process load/forecast parity and diagram correctness for every supported graph family. |
 | 5. Performance and competitive evidence | Pending | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. |
-| 6. Experiments and release readiness | Pending | Stable experiment recipes, executable documentation and migration tools. | End-to-end experiments run from published packages with recorded environments and artifacts. |
+| 6. Experiments and release readiness | Pending | Stable experiment recipes, executable documentation and migration guidance. | End-to-end experiments run from published packages with recorded environments and artifacts. |
 
 Phase 4 can begin once the graph/state artifact contract in phase 2 is agreed;
 it does not wait for every tuning or performance feature. Documentation and CI
@@ -133,14 +133,14 @@ execution paths. Ordinary stateful graph calls remain available.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | `rd.Model` named functional constructor, original-unit fit/forecast, carried state and named multi-output results implemented for symbolic DAGs, parallel local-state graphs and coupled ensembles. Remaining: facade migration and public capability contract. |
+| P2-01 | WIP | Agree a minimal common model lifecycle and capability contract. | Native `rd.ESN` and named `rd.Model` share original-unit fit/forecast, carried state and named results across symbolic DAGs, parallel local-state graphs and coupled ensembles. Public fast/history capability contract implemented. Required hosted verification pending; tuning and complete artifacts remain phases 3 and 4. |
 | P2-02 | WIP | Preserve functional construction while evaluating existing graph tooling. | Functional construction retained; [standard-tooling review](graph-tooling.md) records FX/export/module/Graphviz boundaries. Executable FX leaf tracing preserves ownership, state, values and upstream gradients for tensor and named multi-head pipelines. Required hosted checks pending. No private graph API exposed to users. |
-| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named feedback, fanout, delays and separate per-head prediction leads implemented with independent physical-time and driver-count oracles. Includes lead-aware targets, scaling bridges and metadata. Required full/hosted verification pending. |
-| P2-04 | WIP | Coherent cell/state and execution semantics. | Public framewise declaration and explicit full-history execution implemented. Temporal fitting preserves the complete prefix; default fast path remains. Explicit-state visibility, final state, batch switching, hooks and gradients covered across model families. Required full/hosted verification pending. |
-| P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms and off/method switches across symbolic/parallel/coupled families. Independent training-window, gradient, native MPS and checkpoint oracles pass. Public `Standardize.fit` adopts native precision/device. Remaining: custom transforms, feedback conversion and complete artifacts. |
+| P2-03 | WIP | Named ports, branches/merges, multiple heads and explicit delayed feedback. | Named feedback, fanout, delays and separate per-head prediction leads implemented with independent physical-time and driver-count oracles. Includes lead-aware targets, scaling bridges and metadata. Full local suite passes; required hosted verification pending. |
+| P2-04 | WIP | Coherent cell/state and execution semantics. | Public framewise declaration and explicit full-history execution implemented. Temporal fitting preserves the complete prefix; default fast path remains. Explicit-state visibility, final state, batch switching, hooks and gradients covered across model families. Full local suite passes; required hosted verification pending. |
+| P2-05 | WIP | Training-only preprocessing owned by the convenient workflow. | `Model` owns fitted Torch statistics, inverse transforms, feedback unit conversion and off/method switches across symbolic/parallel/coupled families. Independent training-window, gradient, native MPS and checkpoint oracles pass. Public `Standardize.fit` adopts native precision/device. Remaining: custom transforms, pending the maintainer's boundary decision. Complete artifacts belong to phase 4. |
 | P2-06 | WIP | First-class TSDynamics trajectories through the optional extra. | Bare trajectory fitting/forecasting preserves component names, future times and checkpoint-safe provenance. Configurable automatic resampling, fitted-step history alignment and tensor-return option implemented. Remaining: named trajectory mappings and custom-target timing. |
-| P2-07 | WIP | Independent per-node RNG streams and public customization templates. | Public `SeedStreams` gives stable named initialization seeds; executable initializer/cell/transform/solver recipes use public APIs, including `ReadoutLayer.solve`. Seeded presets/ensembles preserve caller RNG streams; fresh-process MPS and CPU bit-pattern oracles pass. Required full/hosted verification pending. |
-| P2-08 | WIP | Standard PyTorch composition and migration. | Direct new `ESN` module uses the common workflow, eager/build/lazy construction and raw `.graph`; no legacy wrapper. Symbolic/parallel/coupled state, gradients/checkpoints and native MPS covered; FX leaf composition supports presets/custom models. Required full/hosted verification pending. |
+| P2-07 | WIP | Independent per-node RNG streams and public customization templates. | Public `SeedStreams` gives stable named initialization seeds; executable initializer/cell/transform/solver recipes use public APIs, including `ReadoutLayer.solve`. Seeded presets/ensembles preserve caller RNG streams; fresh-process MPS and CPU bit-pattern oracles pass. Full local suite passes; required hosted verification pending. |
+| P2-08 | WIP | Standard PyTorch composition and migration. | Direct new `ESN` module uses the common workflow, eager/build/lazy construction and raw `.graph`; no legacy wrapper. Symbolic/parallel/coupled state, gradients/checkpoints and native MPS covered; FX leaf composition supports presets/custom models. Full local suite passes; required hosted verification pending. |
 
 ### First-increment verification record
 
@@ -205,6 +205,18 @@ the next **major release**: the maintainer approved the new API directly, withou
 legacy wrappers or compatibility constraints. Custom preprocessing and named
 trajectory alignment still await the corresponding design approvals.
 
+Local verification of runtime commit `104cd4695d9f6493a97f4f798834d0fa1be10fcc`:
+
+| Check | Evidence |
+| --- | --- |
+| Complete local suite | **4,634 passed**, 231 skipped, 13 benchmark cases deselected; **92.94% coverage**. |
+| Installed branch wheel | **329 passed**, three skipped, including native MPS correctness. All **181 Python modules** match the runtime source byte-for-byte. This is an unreleased branch build, not the published 1.2.0 package. |
+| Minimum optional dependency and newer Torch | **158 passed** from the installed branch wheel with **TSDynamics 6.0.2** and **Torch 2.14.1**. |
+| CPU performance gates | **Four passed**, four unavailable-device cases skipped, one deselected; thresholds unchanged. CUDA throughput was not measured. |
+| Static and package checks | Ruff, Black, whole-package mypy, lock validation, actionlint and wheel/sdist builds pass. |
+| Documentation | Strict MkDocs build and executable workflow/customization guides pass. Rendered desktop guide navigation and feedback layout inspected. |
+| Hosted CI | Required full Python 3.11–3.14, installed-dynamics, benchmark and documentation checks tracked on [PR #460](https://github.com/El3ssar/ResDAG/pull/460); pending. |
+
 ## Phase 3: tuning and automatic solver policy
 
 | ID | Status | Work | Acceptance checks |
@@ -228,15 +240,15 @@ model.save("experiment.png")
 
 A diagram is a visualization, not a reloadable model. Preserve explicit
 low-level weights/state checkpoint operations for PyTorch users. Resolve the
-complete-artifact format and extension policy before changing legacy saves.
+complete-artifact format and extension policy before introducing the new save API.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
 | P4-01 | Pending | Versioned complete artifact: graph, component configuration, weights, preprocessing, metadata and optional streaming state. | Use standard PyTorch serialization and existing schema/packaging conventions where suitable; load in a fresh process without a manually built DAG. |
-| P4-02 | Pending | Generic `rd.load(...)`, version migration and custom-component reconstruction. | Presets, heterogeneous custom DAGs and registered components round-trip; custom Python code requirements are explicit; unknown versions/components fail with useful remedies. |
+| P4-02 | Pending | Generic `rd.load(...)`, version validation and custom-component reconstruction. | Presets, heterogeneous custom DAGs and registered components round-trip; custom Python code requirements are explicit; unknown versions/components fail with useful remedies. |
 | P4-03 | Pending | Save diagram as SVG, PNG, PDF or DOT with clear labels and shapes. | Reuse existing Graphviz/DOT rendering; show branches, merges, named ports and delayed feedback; export does not mutate model state/modes or open a viewer unexpectedly. |
 | P4-04 | Pending | Unified save dispatch and user documentation. | Supported suffixes are discoverable; unsupported formats fail clearly; diagram exports and model artifacts cannot be confused. |
-| P4-05 | Pending | Fresh-process, cross-device and legacy artifact verification. | Forecast and preprocessing parity after reload; CPU map-location works; documented legacy files remain loadable or have a tested converter. |
+| P4-05 | Pending | Fresh-process and cross-device artifact verification. | Forecast and preprocessing parity after reload; CPU map-location works; unsupported artifact versions fail clearly. |
 
 ## Phase 5: speed, memory and comparisons
 

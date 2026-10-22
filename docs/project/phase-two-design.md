@@ -127,8 +127,9 @@ The trajectory's time axis defines sampling. Default interpolation preserves
 both endpoints and sample count; an explicit `resample_dt` creates an
 in-support grid ending at the latest observation. Later trajectory histories
 use the fitted interval and the same component names/order. Predictions begin
-at the immediate unseen time; optional warmup predictions use the next
-historical sample's time. New tensor histories require tensor output because
+at the immediate unseen time; optional warmup predictions start at
+`history[max(prediction_leads.values()):]`, so every head shares the same
+physical timeline. New tensor histories require tensor output because
 they carry no absolute clock.
 
 Clock, component and primitive source metadata survive state-dictionary

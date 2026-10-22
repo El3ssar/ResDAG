@@ -10,6 +10,13 @@ A next-step readout consumes feedback $x_t$ and an optional driver $d_t$ and
 predicts $x_{t+1}$. This same rule applies to training, teacher-forced evaluation,
 and autonomous forecasting.
 
+The examples below describe default next-sample timing and the explicit
+low-level `ESNModel`/ensemble APIs. The common `rd.Model` and `rd.ESN` share
+that default; their optional prediction leads and named delayed connections
+are explained in [feedback and timing](../start/feedback.md). Their future
+drivers use `future_inputs`, and each forecast reconstructs its rollout from
+history; the raw continuation arguments below do not apply to that interface.
+
 ## Training and validation
 
 After discarding any initial transient, let `W = warmup_steps` and
@@ -68,10 +75,15 @@ Longer driver windows are accepted; only the required prefix is consumed.
 With `return_warmup=True`, historical predictions are prepended. The final
 warmup prediction is already slot zero, so it appears once: total length is
 `W-1+H`. Core, coupled ensemble, and parallel models share these semantics.
-The `ESN` facade retains `washout+1` observations and therefore returns
-`washout+H` values when including historical predictions.
+With the default lead/delay of one, the `ESN` preset retains `washout+1`
+observations and therefore returns `washout+H` values when including historical
+predictions. Larger leads/delays can require a longer cached history. The common
+workflow's general length is `W - max(model.prediction_leads.values()) + H`,
+where `W` is the history actually supplied or cached.
 
 ## Explicit seeds and continuation
+
+This section uses the raw graph APIs, not `rd.Model` or the `rd.ESN` preset.
 
 `initial_feedback` is a distinct extra input consumed *after* the complete
 warmup. Slot zero predicts the sample after that seed. Do not repeat the last

@@ -101,6 +101,9 @@ dev = ["resdag[dev]"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/resdag"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["/.herdr-synapse"]
+
 [tool.hatch.version]
 path = "src/resdag/__init__.py"
 
@@ -168,6 +171,8 @@ omit = ["tests/*", "**/__pycache__/*"]
 # measured total so noise across the Python 3.11-3.14 matrix can't trip it;
 # raise it as coverage climbs.
 fail_under = 90
+# Match pytest-cov's displayed total: integer rounding can otherwise accept 89.8%.
+precision = 2
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

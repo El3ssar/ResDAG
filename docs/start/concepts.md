@@ -113,20 +113,20 @@ for the forecast window start exactly where the warmup drivers ended.
     | `est.fit(X, y)` | synchronize the state on a warmup window, then `ESNTrainer.fit(...)` solves the readout in one algebraic pass |
     | `est.predict(X)` | `model.forecast(warmup, horizon=...)` re-synchronizes, then rolls the prediction back in as the next input |
 
-    The `ESN` facade collapses both phases into one object —
-    `ESN(...).fit(series).forecast(horizon=...)`, numpy in and numpy out —
-    for when you want the estimator shape without wiring the graph yourself:
+    The `ESN` preset handles both phases in one PyTorch module:
+    `ESN(...).fit(series).forecast(horizon=...)`. It learns scaling only from
+    training data and returns original-unit tensors:
 
     ```python
-    import numpy as np
+    import torch
     from resdag import ESN
 
-    series = np.cumsum(np.random.randn(2000, 3), axis=0)   # (time, features)
+    series = torch.randn(2000, 3).cumsum(0)              # (time, features)
     prediction = ESN(reservoir_size=300).fit(series).forecast(horizon=200)
     ```
 
-    `esn.model` exposes the full composable graph the moment you outgrow
-    the facade.
+    `esn.graph` exposes the raw graph. Build custom branches with the same
+    workflow through `rd.Model`; put either directly inside `nn.Sequential`.
 
 ---
 

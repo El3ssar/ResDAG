@@ -136,7 +136,7 @@ prior. Existing saved RLS weights and inverse-correlation state remain loadable.
 ## Fitting, gradients and customization
 
 `ReadoutLayer.fit` flattens sequence inputs, validates shapes and finite values,
-asks `_fit_impl` for coefficients and intercept, then copies them into standard
+asks `solve` for coefficients and intercept, then copies them into standard
 `nn.Linear` parameters. The fitted layer remains an ordinary PyTorch module.
 Set `trainable=True` to refine its parameters with a gradient optimizer.
 

@@ -398,12 +398,12 @@ class TestFitBookkeeping:
         """bias=False fits no intercept."""
         x, y, _, _ = _linear_problem(n=500, f=8, o=2, bias=False, seed=12)
         readout = RLSReadout(8, 2, bias=False)
-        coefs, intercept = readout._fit_impl(x, y)
+        coefs, intercept = readout.solve(x, y)
         assert intercept is None
         assert torch.isfinite(coefs).all()
 
-    def test_fit_impl_resets_between_calls(self) -> None:
-        """_fit_impl restarts the recursion, so batch fit is order-independent."""
+    def testsolve_resets_between_calls(self) -> None:
+        """solve restarts the recursion, so batch fit is order-independent."""
         x, y, _, _ = _linear_problem(n=1000, f=8, o=2, bias=False, seed=13)
         readout = RLSReadout(8, 2, bias=False, delta=1e-2)
         readout.fit(x, y)

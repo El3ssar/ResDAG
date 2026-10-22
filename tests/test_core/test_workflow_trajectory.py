@@ -180,18 +180,24 @@ def test_checkpoint_roundtrip_restores_time_names_and_resampling_options_with_ma
     np.testing.assert_array_equal(converted.t, expected.t)
 
 
-def test_legacy_v1_checkpoint_clears_previous_trajectory_context(ts):
+def test_unsupported_old_checkpoint_metadata_rejects_before_loading(ts):
     source = _affine_model().fit(torch.arange(12, dtype=torch.float64).reshape(-1, 1))
     legacy = copy.deepcopy(source.state_dict())
     for key in ("resample_dt", "resample_method", "trajectory"):
         legacy["_extra_state"].pop(key)
     for restored in (_affine_model(), _affine_model(resample_method="pchip").fit(_ramp(ts))):
-        restored.load_state_dict(legacy)
-        prediction = restored.forecast(horizon=3)
-        assert isinstance(prediction, torch.Tensor)
-        torch.testing.assert_close(prediction, source.forecast(horizon=3), rtol=0, atol=0)
-        with pytest.raises(ValueError, match="[Tt]ime|[Tt]rajectory"):
-            restored.forecast(horizon=1, return_type="trajectory")
+        before = copy.deepcopy(restored.state_dict())
+        with pytest.raises(RuntimeError, match="unsupported older.*reconstruct and refit"):
+            restored.load_state_dict(legacy)
+        _assert_state_equal(restored.state_dict(), before)
+    old_context = copy.deepcopy(_affine_model().fit(_ramp(ts)).state_dict())
+    old_outer = copy.deepcopy(old_context)
+    old_outer["_extra_state"]["version"] = 1
+    with pytest.raises(RuntimeError, match="current metadata version 2.*reconstruct and refit"):
+        _affine_model().load_state_dict(old_outer)
+    old_context["_extra_state"]["trajectory"]["version"] = 1
+    with pytest.raises(RuntimeError, match="version 2"):
+        _affine_model().load_state_dict(old_context)
 
 
 @pytest.mark.parametrize(

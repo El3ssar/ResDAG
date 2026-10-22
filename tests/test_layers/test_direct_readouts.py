@@ -191,7 +191,7 @@ class TestRidgeMatchesCG:
         alpha = 1e-3
 
         readout = RidgeReadoutLayer(20, 5, alpha=alpha, solver=solver)
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         coefs_cf, intercept_cf = closed_form_ridge(X, y, alpha)
         assert torch.allclose(coefs, coefs_cf, atol=1e-8, rtol=1e-7)
@@ -206,7 +206,7 @@ class TestRidgeMatchesCG:
         alpha = 1e-4
 
         ridge = RidgeReadoutLayer(30, 4, alpha=alpha, solver="cholesky")
-        coefs_r, intercept_r = ridge._fit_impl(X, y)
+        coefs_r, intercept_r = ridge.solve(X, y)
 
         cg = CGReadoutLayer(30, 4, alpha=alpha, max_iter=5000, tol=1e-14)
         coefs_cg, intercept_cg = cg._solve_ridge_cg(X, y, alpha)
@@ -223,7 +223,7 @@ class TestRidgeMatchesCG:
         y = torch.randn(300, 4, dtype=torch.float64)
 
         readout = RidgeReadoutLayer(10, 4, bias=False, alpha=alpha, solver="solve")
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         assert intercept is None
         gram = X.T @ X + alpha * torch.eye(10, dtype=torch.float64)
@@ -277,7 +277,7 @@ class TestSVDRankDeficient:
         X, y = self._exactly_rank_deficient()
 
         readout = SVDReadoutLayer(X.shape[1], 2, bias=False, alpha=0.0)
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         assert intercept is None
         assert torch.isfinite(coefs).all()
@@ -290,7 +290,7 @@ class TestSVDRankDeficient:
         X, y = self._ill_conditioned_ngrc()
 
         svd = SVDReadoutLayer(X.shape[1], 2, bias=False, alpha=0.0)
-        coefs_svd, _ = svd._fit_impl(X, y)
+        coefs_svd, _ = svd.solve(X, y)
         res_svd = ((X @ coefs_svd - y) ** 2).sum()
 
         # CG on the catastrophically ill-conditioned normal equations stalls
@@ -310,7 +310,7 @@ class TestSVDRankDeficient:
         alpha = 1e-2
 
         readout = SVDReadoutLayer(15, 3, alpha=alpha)
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         coefs_cf, intercept_cf = closed_form_ridge(X, y, alpha)
         assert torch.allclose(coefs, coefs_cf, atol=1e-8, rtol=1e-7)
@@ -341,7 +341,7 @@ class TestPinvReadout:
         y = X @ true_w + true_b
 
         readout = PinvReadoutLayer(12, 4, solver=solver)
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         assert intercept is not None
         assert torch.allclose(X @ coefs + intercept, y, atol=1e-7)
@@ -356,7 +356,7 @@ class TestPinvReadout:
         y = X @ true_w
 
         readout = PinvReadoutLayer(X.shape[1], 3, bias=False, solver=solver)
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         assert intercept is None
         assert torch.isfinite(coefs).all()

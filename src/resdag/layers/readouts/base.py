@@ -252,7 +252,7 @@ class ReadoutLayer(nn.Linear):
         This base implementation handles the bookkeeping that every readout
         needs: shape normalisation from ``(B, T, F)`` → ``(B*T, F)`` plus
         sample-count and out-features validation.  The actual algebraic
-        solve is delegated to :meth:`_fit_impl`, which subclasses override.
+        solve is delegated to :meth:`solve`, which subclasses override.
 
         Parameters
         ----------
@@ -283,7 +283,7 @@ class ReadoutLayer(nn.Linear):
         """
         states, targets = self._prepare_fit_inputs(states, targets, "fit")
 
-        coefs, intercept = self._fit_impl(states, targets)
+        coefs, intercept = self.solve(states, targets)
 
         self._copy_coefficients(coefs, intercept)
         self._set_fitted(True)
@@ -317,7 +317,7 @@ class ReadoutLayer(nn.Linear):
             label=f"{type(self).__name__}.{method}({self.name!r})",
         )
 
-    def _fit_impl(
+    def solve(
         self,
         states: torch.Tensor,
         targets: torch.Tensor,
@@ -328,6 +328,10 @@ class ReadoutLayer(nn.Linear):
         Subclasses override this hook instead of :meth:`fit` so they don't
         need to re-implement shape normalisation, validation, or parameter
         copy-back.
+
+        This is a fitting extension hook, not a pure analysis operation.
+        Online variants may update accumulated/recursive statistics and
+        installed coefficients. Use :meth:`fit` as the training entrypoint.
 
         Parameters
         ----------
@@ -352,9 +356,9 @@ class ReadoutLayer(nn.Linear):
             The base class does not implement an algebraic solve.
         """
         raise NotImplementedError(
-            "ReadoutLayer._fit_impl() is not implemented in the base class. "
+            "ReadoutLayer.solve() is not implemented in the base class. "
             "Use CGReadoutLayer for ridge regression fitting, or subclass "
-            "ReadoutLayer and override _fit_impl()."
+            "ReadoutLayer and override solve()."
         )
 
     def __repr__(self) -> str:

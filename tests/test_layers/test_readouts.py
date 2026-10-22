@@ -1346,7 +1346,7 @@ class TestCholeskyMatchesCG:
         alpha = 1e-4
 
         chol = CholeskyReadoutLayer(30, 4, alpha=alpha)
-        coefs_c, intercept_c = chol._fit_impl(X, y)
+        coefs_c, intercept_c = chol.solve(X, y)
 
         cg = CGReadoutLayer(30, 4, alpha=alpha, max_iter=5000, tol=1e-14)
         coefs_cg, intercept_cg = cg._solve_ridge_cg(X, y, alpha)
@@ -1363,7 +1363,7 @@ class TestCholeskyMatchesCG:
         alpha = 1e-3
 
         chol = CholeskyReadoutLayer(20, 5, alpha=alpha)
-        coefs, intercept = chol._fit_impl(X, y)
+        coefs, intercept = chol.solve(X, y)
 
         coefs_cf, intercept_cf = solve_ridge_closed_form(X, y, alpha)
         assert torch.allclose(coefs, coefs_cf, atol=1e-8, rtol=1e-7)
@@ -1378,7 +1378,7 @@ class TestCholeskyMatchesCG:
         y = torch.randn(300, 4, dtype=torch.float64)
 
         chol = CholeskyReadoutLayer(10, 4, bias=False, alpha=alpha)
-        coefs, intercept = chol._fit_impl(X, y)
+        coefs, intercept = chol.solve(X, y)
 
         assert intercept is None
         gram = X.T @ X + alpha * torch.eye(10, dtype=torch.float64)
@@ -1521,7 +1521,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         alpha = 1e-4
 
         full = CholeskyReadoutLayer(30, 4, alpha=alpha)
-        coefs_full, intercept_full = full._fit_impl(X, y)
+        coefs_full, intercept_full = full.solve(X, y)
 
         inc = IncrementalRidgeReadoutLayer(30, 4, alpha=alpha)
         for chunk in torch.chunk(torch.arange(600), 7):
@@ -1597,7 +1597,7 @@ class TestIncrementalPartialFitMatchesFullBatch:
         assert inc.n_seen == 2 * 50
 
         full = CholeskyReadoutLayer(8, 3, alpha=1e-4)
-        coefs_full, _ = full._fit_impl(X3.reshape(-1, 8), y3.reshape(-1, 3))
+        coefs_full, _ = full.solve(X3.reshape(-1, 8), y3.reshape(-1, 3))
         assert torch.allclose(inc.weight.T.double(), coefs_full, atol=1e-5, rtol=1e-5)
 
 
@@ -1667,7 +1667,7 @@ class TestIncrementalLifecycle:
         assert inc.n_seen == 120
 
         full = CholeskyReadoutLayer(10, 3, alpha=1e-4)
-        coefs_full, _ = full._fit_impl(X, y)
+        coefs_full, _ = full.solve(X, y)
         assert torch.allclose(inc.weight.T.double(), coefs_full, atol=1e-5, rtol=1e-5)
 
 
@@ -2167,7 +2167,7 @@ class TestCholeskyRobustSolve:
         readout = CholeskyReadoutLayer(30, 4, alpha=alpha, gram_dtype=torch.float32)
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # any warning fails the test
-            coefs, _ = readout._fit_impl(X.float(), y.float())
+            coefs, _ = readout.solve(X.float(), y.float())
 
         coefs_cf, _ = solve_ridge_closed_form(X, y, alpha)
         assert torch.allclose(coefs.double(), coefs_cf, atol=1e-4, rtol=1e-3)

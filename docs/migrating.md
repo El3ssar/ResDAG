@@ -20,12 +20,12 @@ a ridge readout, a warmup, a forecast. What differs is the *mental model*:
   with `>>` and RC.jl wires fixed `ESN` slots, ResDAG builds an arbitrary DAG
   with the `pytorch_symbolic` functional API. State augmentation, parallel
   reservoirs, and multiple readout heads are a few lines of composition.
-- **Tensors are batch-first 3-D.** Every signal is `(batch, time, features)`.
-  Both libraries above are largely `(time, features)` single-trajectory; add a
-  leading batch axis on the way in (`series.unsqueeze(0)`).
-- **The readout is solved, not a node you `fit`.** `ESNTrainer.fit` warms the
-  reservoir and solves every readout in one pass; the readout's `alpha` (ridge
-  λ) lives on the layer, not the trainer.
+- **The common workflow accepts 2-D or batch-first 3-D tensors.** Use
+  `(time, features)` for one trajectory or `(batch, time, features)` for a batch.
+  Raw graph APIs use the 3-D layout.
+- **Start with `model.fit(data)`.** `rd.ESN` handles shifted targets, washout and
+  training-only scaling. A custom `rd.Model` uses the same commands. Raw
+  `ESNTrainer` and graph factories remain available for explicit data windows.
 
 The rest of this page maps concepts and API surface side by side, then walks
 the same Lorenz forecast through all three libraries.
@@ -33,7 +33,7 @@ the same Lorenz forecast through all three libraries.
 ## Forecast timing after v0.11
 
 The default low-level forecast now starts at the **immediate unseen sample**
-after all observations. It agrees with the `ESN` facade and with next-sample
+after all observations. It agrees with the common workflow and with next-sample
 training. Previously, core and coupled forecasts skipped that first prediction.
 
 ```python
@@ -80,20 +80,21 @@ continuation.
 
 reservoirpy composes `Node`s — `Reservoir`, `Ridge`, `Input` — with the `>>`
 pipe operator, or wraps the common case in the `ESN` class. ResDAG composes
-layers with the functional API and wraps the model in `ESNModel`.
+layers with the functional API and wraps them in named `rd.Model` inputs and
+outputs. Use `rd.ESN` for a preset with the same fitting/forecasting interface.
 
 ### Concept mapping
 
 | reservoirpy | ResDAG | Notes |
 | --- | --- | --- |
 | `Node` (`Reservoir`, `Ridge`, …) | `nn.Module` layer (`ESNLayer`, `CGReadoutLayer`, …) | ResDAG layers are plain PyTorch modules. |
-| `reservoir >> readout` | `readout_layer(reservoir_layer(inp))` | Functional wiring; the model is then `ESNModel(inp, out)`. |
-| `Model` | `ESNModel` | Wraps a `pytorch_symbolic` graph; `nn.Module` subclass. |
-| `ESN(...)` convenience class | a premade model, e.g. [`classic_esn(...)`](build/architectures/classic-esn.md) / [`ott_esn(...)`](build/architectures/ott-esn.md) | One-call factories returning a ready `ESNModel`. |
-| `node.fit(X, Y, warmup=…)` | `ESNTrainer(model).fit(warmup_inputs=…, train_inputs=…, targets=…)` | Warmup is a separate tensor, not a step count. |
+| `reservoir >> readout` | `readout_layer(reservoir_layer(inp))` | Functional wiring; wrap with `rd.Model(inputs={"state": inp}, outputs={"prediction": out})`. |
+| `Model` | `rd.Model` | Named functional graph with the common PyTorch workflow. |
+| `ESN(...)` convenience class | `rd.ESN(...)` | PyTorch preset with training-only scaling and `fit`/`forecast`. |
+| `node.fit(X, Y, warmup=…)` | `model.fit(X, targets=Y)` with constructor `washout=…` | Explicit targets are already aligned; omit them for automatic shifted targets. |
 | `model.run(X)` | `model(X)` (one-step) / `model.forecast(...)` (autoregressive) | `run` is teacher-forced; `forecast` is the closed-loop rollout. |
 | `readout.Wout`, `readout.bias` | `readout.weight`, `readout.bias` | Standard `nn.Linear`-style parameters. |
-| `to_forecasting(X, forecast=1)` | `rd.utils.prepare_esn_data(data, …)` | Cuts warmup/train/target/val with the +1 shift built in. |
+| `to_forecasting(X, forecast=1)` | `model.fit(observed)` or `rd.prepare_esn_data(data, …)` | Automatic shifted targets in the common workflow; explicit windows for raw trainers. |
 
 ### Parameter mapping
 
@@ -106,11 +107,13 @@ layers with the functional API and wraps the model in `ESNModel`.
 | `rc_connectivity=0.1` | `topology=("erdos_renyi", {"p": 0.1})` |
 | `seed=1234` | `seed=1234` |
 | `Ridge(ridge=1e-7)` | `CGReadoutLayer(..., alpha=1e-7)` |
-| `warmup=100` (a step count) | a warmup *tensor* passed to `fit`/`forecast` |
+| `warmup=100` (a step count) | `washout=100` on `rd.ESN`/`rd.Model`; separate warmup tensors for raw trainers |
 
 ### Side by side
 
-The same Lorenz one-step forecast. **reservoirpy:**
+The following examples show the two APIs. The reservoirpy example evaluates
+teacher-forced predictions; the ResDAG example rolls forward autonomously.
+They illustrate usage, not an accuracy comparison. **reservoirpy:**
 
 ```python
 from reservoirpy.nodes import Reservoir, Ridge
@@ -127,40 +130,30 @@ esn.fit(x_train, y_train, warmup=100)
 predictions = esn.run(x_test)
 ```
 
-**ResDAG** — note the leading batch axis and the warmup *tensor*:
+**ResDAG** — fitting prepares the targets and scaling automatically:
 
 <div class="nb-specimen" data-label="from_reservoirpy.py" markdown>
 
 ```python
 import torch
 import resdag as rd
-from resdag import ESNLayer, ESNModel, reservoir_input, lorenz
-from resdag.layers import CGReadoutLayer
 
-data = lorenz(5000, seed=42)               # (1, 5000, 3) — batch-first, already 3-D
-warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
-    data, warmup_steps=100, train_steps=3000, val_steps=1000, normalize=True
+data = rd.lorenz(5000, seed=42).double()  # (1, 5000, 3)
+model = rd.ESN(
+    reservoir_size=300, input_size=3, washout=100,
+    spectral_radius=0.9, leak_rate=0.3, alpha=1e-6,
+    seed=42, dtype=torch.float64,
 )
-
-inp = reservoir_input(3)
-states = ESNLayer(300, feedback_size=3, spectral_radius=0.9, leak_rate=0.3, seed=42)(inp)
-out = CGReadoutLayer(300, 3, name="output", alpha=1e-6)(states)
-model = ESNModel(inp, out)
-
-rd.ESNTrainer(model).fit(
-    warmup_inputs=(warmup,),               # a tensor, not a step count
-    train_inputs=(train,),
-    targets={"output": target},            # keyed by the readout's name
-)
-forecast = model.forecast(f_warmup, horizon=200)   # closed-loop autoregression
+model.fit(data[:, :4000])
+forecast = model.forecast(horizon=200)    # estimates data[:, 4000:4200]
 ```
 
 </div>
 
-The closest one-call analogue to reservoirpy's `ESN` wrapper is a
-[premade model](build/architectures/index.md): `rd.classic_esn(reservoir_size=300,
-feedback_size=3, output_size=3)` returns a wired `ESNModel`, leaving only the
-`fit` / `forecast` calls.
+The closest one-call analogue to reservoirpy's `ESN` is `rd.ESN`. Build custom
+branches and heads with [the same common model workflow](start/model-workflow.md).
+For explicit low-level training, the [graph factories](build/architectures/index.md)
+return raw `ESNModel` instances that work with `ESNTrainer`.
 
 ## Coming from ReservoirComputing.jl
 

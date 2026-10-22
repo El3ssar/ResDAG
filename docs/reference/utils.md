@@ -6,6 +6,10 @@ description: API reference for resdag.utils — data loading and splitting, rand
 
 # Utilities
 
+Use `rd.SeedStreams(master_seed)["branch_name"]` for stable, independent
+initialization seeds. Adding or reordering named branches leaves their existing
+seeds unchanged. See the [public component recipes](../advanced/custom-components.md).
+
 Data loading and ESN-shaped splitting, seeded RNG construction, and the
 echo-state-property diagnostic. `load_file` and `prepare_esn_data` are
 re-exported at `resdag.utils` for convenience; their canonical home is
@@ -22,6 +26,7 @@ from resdag.utils.states import esp_index  # canonical home
 ::: resdag.utils
     options:
       members:
+        - SeedStreams
         - create_rng
         - create_torch_generator
         - coerce_seed_to_int

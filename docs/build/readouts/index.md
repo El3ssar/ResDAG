@@ -13,7 +13,7 @@ any readout, and both training paths remain available: a one-pass algebraic
 solve, or gradient descent with any PyTorch optimizer.
 
 The solver is a pluggable contract: a new readout implements
-`_fit_impl(states, targets)` and inherits shape handling, validation, and
+`solve(states, targets)` and inherits shape handling, validation, and
 parameter copy-back from the `ReadoutLayer` base class. Several solvers ship
 with the library — the default, `RidgeReadoutLayer`, fits ridge regression with
 a direct Cholesky solve; `CGReadoutLayer` solves the same problem iteratively by

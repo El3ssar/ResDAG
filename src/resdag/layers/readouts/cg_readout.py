@@ -142,7 +142,7 @@ class CGReadoutLayer(ReadoutLayer):
         self.use_float64 = use_float64
         self.gram_dtype = gram_dtype
 
-    def _fit_impl(
+    def solve(
         self,
         states: torch.Tensor,
         targets: torch.Tensor,

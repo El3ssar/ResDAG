@@ -339,6 +339,8 @@ def test_coupled_canonical_state_does_not_change_legacy_state_layout() -> None:
 
 def test_symbolic_tuple_unpack_and_multiple_input_streams_share_one_plan() -> None:
     class Split(nn.Module):
+        supports_framewise = True
+
         def forward(self, value):
             return value.chunk(2, dim=-1)
 

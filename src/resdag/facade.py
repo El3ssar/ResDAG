@@ -1,454 +1,520 @@
-"""High-level, opinionated ESN facade — train + forecast in ~10 lines.
-
-This module provides :class:`ESN`, a single object that owns the end-to-end
-reservoir-computing workflow.  It hides the symbolic-graph plumbing
-(:func:`~resdag.models.classic_esn`), data slicing, and the
-:class:`~resdag.training.ESNTrainer` ↔ :meth:`~resdag.core.ESNModel.forecast`
-hand-off behind two chainable methods::
-
-    from resdag import ESN
-
-    esn = ESN(reservoir_size=400, spectral_radius=0.9).fit(series)
-    prediction = esn.forecast(horizon=500)
-
-It is the friendly front door, *not* a replacement for the composable
-``pytorch_symbolic`` path.  The underlying :class:`~resdag.core.ESNModel` is
-always reachable via :attr:`ESN.model`, so advanced users can drop down to the
-full building-block API at any time without rebuilding anything.
-
-See Also
---------
-resdag.models.classic_esn : The builder this facade wraps.
-resdag.training.ESNTrainer : The trainer this facade drives.
-resdag.core.ESNModel.forecast : The autoregressive forecaster this facade calls.
-"""
+"""A standard PyTorch ESN preset using the common :class:`resdag.Model` workflow."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+import copy
+import hashlib
+import operator
+from collections.abc import Mapping, Sequence
+from contextlib import ExitStack
+from functools import partial
+from numbers import Integral, Real
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-import numpy as np
 import torch
+from torch import nn
 
-from resdag.core import ESNModel
-from resdag.core._modes import evaluating
+from resdag._contracts import module_reference
+from resdag.core._execution import ReservoirStates
+from resdag.core._feedback import Feedback, feedback_specs, prediction_leads
+from resdag.core._workflow_transforms import (
+    commit_transform_state,
+    transform_schema,
+    validate_custom_transform,
+    validate_transform_ownership,
+)
+from resdag.core.model import ESNModel
+from resdag.core.workflow import Model, Preprocessing, Streams, _washout
+from resdag.data._trajectory import is_trajectory, validate_resampling_options
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.models import classic_esn
-from resdag.training import ESNTrainer
+from resdag.models._builder import ReadoutSpec
+
+if TYPE_CHECKING:
+    from tsdynamics.data import Trajectory
 
 
-class ESN:
-    """Opinionated, end-to-end Echo State Network — ``fit().forecast()``.
+def _positive_width(value: int, name: str) -> int:
+    try:
+        width = operator.index(value)
+    except TypeError:
+        raise ValueError(f"{name} must be a positive integer") from None
+    if isinstance(value, bool) or width < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return width
 
-    A thin, friendly wrapper that owns the whole reservoir-computing workflow so
-    a researcher can train on a time series and roll out an autoregressive
-    forecast of a chaotic system in roughly ten lines, without touching the
-    ``pytorch_symbolic`` graph, data slicing, or the trainer/forecast hand-off
-    by hand.
 
-    Hyperparameters are stored at construction; the underlying
-    :class:`~resdag.core.ESNModel` is built lazily on the first :meth:`fit` call
-    (once the feature dimension is known from the data).  :meth:`fit` slices off
-    the first ``washout`` steps for state synchronisation, builds the
-    one-step-ahead training target internally, and drives
-    :class:`~resdag.training.ESNTrainer`.  :meth:`forecast` resets the reservoir,
-    re-synchronises on the tail of the training series, and runs
-    :meth:`~resdag.core.ESNModel.forecast`.
+def _configuration(value: Any, seen: set[int] | None = None) -> Any:
+    """A portable configuration fingerprint, never a generic object serializer."""
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return str(value)
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        return float(value)
+    if isinstance(value, (torch.dtype, torch.device)):
+        return str(value)
+    if isinstance(value, torch.Tensor):
+        raw = value.detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+        return ("tensor", str(value.dtype), tuple(value.shape), hashlib.sha256(raw).hexdigest())
+    stack = set() if seen is None else seen
+    kind = f"{type(value).__module__}.{type(value).__qualname__}"
+    if id(value) in stack:
+        return ("recursive", kind)
+    stack.add(id(value))
+    try:
+        if isinstance(value, Mapping):
+            return tuple(
+                (_configuration(key, stack), _configuration(item, stack))
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            )
+        if isinstance(value, (tuple, list)):
+            return tuple(_configuration(item, stack) for item in value)
+        if isinstance(value, partial):
+            return (
+                "partial",
+                _configuration(value.func, stack),
+                _configuration(value.args, stack),
+                _configuration(value.keywords, stack),
+            )
+        if isinstance(value, type) or hasattr(value, "__qualname__"):
+            return ("callable", value.__module__, value.__qualname__)
+        return (kind, _configuration(vars(value), stack) if hasattr(value, "__dict__") else None)
+    finally:
+        stack.remove(id(value))
 
-    The wrapper is deliberately non-hiding: the composed model is exposed as
-    :attr:`model`, so the full building-block API (custom transforms, multiple
-    readouts, :meth:`~resdag.core.ESNModel.save_full`, ...) remains available.
 
-    Parameters
-    ----------
-    reservoir_size : int, default=500
-        Number of reservoir units.
-    spectral_radius : float, default=0.9
-        Target spectral radius of the recurrent weights (memory / stability).
-    leak_rate : float, default=1.0
-        Leaky-integration rate (``1.0`` = no leak, the standard ESN).
-    washout : int, default=100
-        Number of initial steps used to synchronise the reservoir (the "warmup"
-        window).  These steps teacher-force the state and are *not* used as
-        training targets.  Also the length of the re-synchronisation window
-        used at the start of :meth:`forecast`.
-    alpha : float, default=1e-6
-        Ridge-regression (L2) regularisation strength for the readout.
-    topology : TopologySpec, optional
-        Recurrent-weight topology.  Accepts a registry name (``"erdos_renyi"``),
-        a ``(name, params)`` tuple, a pre-built
-        :class:`~resdag.init.topology.TopologyInitializer`, or ``None`` for the
-        :func:`~resdag.models.classic_esn` default.
-    feedback_initializer : InitializerSpec, optional
-        Initializer for the feedback (input) weights.  Same three-way spec as
-        ``topology``.
-    activation : str, default="tanh"
-        Reservoir activation: ``"tanh"``, ``"relu"``, ``"sigmoid"`` or
-        ``"identity"``.
-    bias : bool, default=True
-        Whether the reservoir uses a bias term.
-    readout_bias : bool, default=True
-        Whether the readout uses a bias term.
-    seed : int, optional
-        If given, seeds ``torch`` before the model is built so the random
-        reservoir weights are reproducible.
-    device : torch.device or str, optional
-        Device the model and data live on.  If ``None``, the device of the
-        series passed to the first :meth:`fit` is adopted (CPU for numpy input),
-        so a CUDA tensor "just works" without passing ``device`` explicitly.
-    dtype : torch.dtype, optional
-        Floating dtype for the model and data.  If ``None``, a floating-point
-        series keeps its own dtype (a ``float64`` series is **not** silently
-        downcast); an integer/bool series is promoted to
-        ``torch.get_default_dtype()``.
-    **reservoir_kwargs : Any
-        Extra keyword arguments forwarded to
-        :class:`~resdag.layers.ESNLayer` via
-        :func:`~resdag.models.classic_esn`.
+class ESN(nn.Module):
+    """A classic ESN preset with the same original-unit workflow as :class:`Model`.
 
-    Attributes
-    ----------
-    model : resdag.core.ESNModel or None
-        The composed model, available after :meth:`fit`.  ``None`` beforehand.
-    feature_size : int or None
-        Number of features ``D`` inferred from the training series.
-    readout_name : str
-        Name of the internal readout layer (matches the trainer's targets key).
+    ``ESN(input_size=3)`` builds eagerly, making all parameters available before
+    attaching an optimizer. Without ``input_size``, :meth:`fit` infers the width
+    and attaches a successfully fitted workflow. Call :meth:`build` explicitly
+    when constructing a larger PyTorch pipeline before its first fit.
 
-    Examples
-    --------
-    Train and forecast a chaotic system in ~10 lines:
+    ``fit`` accepts floating Torch tensors or a TSDynamics trajectory. Ordinary
+    ``forward`` returns Torch tensors, carries recurrent state, preserves layout
+    and gradients, and uses fitted training-only scaling. ``forecast`` has the
+    same keyword-only horizon and return conventions as :class:`Model`.
 
-    >>> import numpy as np
-    >>> from resdag import ESN
-    >>> rng = np.random.default_rng(0)
-    >>> series = np.cumsum(rng.standard_normal((2000, 3)), axis=0)  # (T, D)
-    >>> esn = ESN(reservoir_size=300, spectral_radius=0.9, washout=100)
-    >>> prediction = esn.fit(series).forecast(horizon=200)
-    >>> prediction.shape  # numpy in -> numpy out, shape (horizon, D)
-    (200, 3)
+    The single registered :attr:`workflow` child is a :class:`Model`; its raw
+    symbolic graph is exposed by :attr:`graph`. Custom DAGs, drivers and multiple
+    outputs use ``Model`` directly. ``readout``/``readout_kwargs`` expose solver
+    choices; additional reservoir settings and custom initializers pass through
+    to :func:`resdag.models.classic_esn`.
 
-    Drop down to the composed model for advanced use:
-
-    >>> esn.model.summary()                 # doctest: +SKIP
-    >>> states = esn.model.get_reservoir_states()   # doctest: +SKIP
-
-    See Also
-    --------
-    resdag.models.classic_esn : Lower-level builder this facade composes.
-    resdag.training.ESNTrainer : Trainer this facade drives.
-    resdag.core.ESNModel.forecast : Autoregressive forecaster this facade calls.
-
-    Notes
-    -----
-    - **Stateful reset.** :meth:`forecast` always resets the reservoir and
-      re-synchronises on the training tail, so back-to-back forecasts are
-      independent and reproducible — no manual ``reset_reservoirs()`` needed.
-      It temporarily enters evaluation mode so training-only state noise is
-      disabled, then restores every module's previous training/evaluation flag.
-    - **Readout name.** The internal readout is named consistently and the
-      trainer is fed a matching ``{name: target}`` dict, so the
-      "readout name must match the targets key" footgun is handled for you.
-    - **Slot-0 forecast.** The first output dimension equals the feedback
-      dimension by construction, so :meth:`forecast` is genuinely
-      autoregressive from its first emitted step.
+    An untouched lazy preset adopts the first floating tensor's device/dtype.
+    Explicit constructor placement or a pre-build ``to``/``double`` conversion
+    fixes placement; later fitting follows ordinary Torch placement validation.
+    ``build`` uses the current placement unless explicitly overridden. Checkpoints
+    record width and preset configuration, allowing a matching unbuilt preset to
+    load; arbitrary custom Python configurations must still be reconstructed.
     """
+
+    workflow: Model | None
+    _reference: torch.Tensor
 
     def __init__(
         self,
         reservoir_size: int = 500,
         *,
+        input_size: int | None = None,
         spectral_radius: float = 0.9,
         leak_rate: float = 1.0,
         washout: int = 100,
         alpha: float = 1e-6,
+        preprocessing: Preprocessing = "standard",
+        input_transforms: Mapping[str, nn.Module] | None = None,
+        output_transforms: Mapping[str, nn.Module] | None = None,
+        prediction_lead: int | Mapping[str, int] = 1,
+        feedback: Sequence[Feedback] | None = None,
+        readout: ReadoutSpec = "ridge",
+        readout_kwargs: dict[str, Any] | None = None,
         topology: TopologySpec = None,
         feedback_initializer: InitializerSpec = None,
         activation: str = "tanh",
         bias: bool = True,
         readout_bias: bool = True,
+        trainable: bool = False,
         seed: int | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
+        resample_dt: float | None = None,
+        resample_method: Literal["linear", "pchip", "cubic"] = "linear",
         **reservoir_kwargs: Any,
     ) -> None:
-        if reservoir_size < 1:
-            raise ValueError(f"reservoir_size must be >= 1, got {reservoir_size}")
-        if washout < 1:
-            raise ValueError(f"washout must be >= 1, got {washout}")
-
-        self.reservoir_size = reservoir_size
-        self.spectral_radius = spectral_radius
-        self.leak_rate = leak_rate
-        self.washout = washout
-        self.alpha = alpha
-        self.topology = topology
-        self.feedback_initializer = feedback_initializer
-        self.activation = activation
-        self.bias = bias
-        self.readout_bias = readout_bias
-        self.seed = seed
-        self.device = torch.device(device) if device is not None else None
-        self.dtype = dtype
-        self.reservoir_kwargs = reservoir_kwargs
-
-        # Fixed internal readout name so the trainer's targets key always
-        # matches — the caller never has to reason about it.
-        self.readout_name = "output"
-
-        # Built lazily on first fit(), once the feature dimension is known.
-        self.model: ESNModel | None = None
-        self.feature_size: int | None = None
-
-        # Remembered across fit -> forecast: the synchronisation tail and the
-        # original input type, so forecast() can re-sync the state and return
-        # the same array type the caller fitted with.
-        self._sync_tail: torch.Tensor | None = None
-        self._returns_numpy: bool = False
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-    def fit(self, series: Any) -> "ESN":
-        """Build the model (if needed) and fit the readout on ``series``.
-
-        The series is split into a ``washout`` synchronisation prefix and a
-        training window; the one-step-ahead target is built internally
-        (``x[t] -> x[t + 1]``) and :class:`~resdag.training.ESNTrainer` fits the
-        readout in a single forward pass.
-
-        Parameters
-        ----------
-        series : torch.Tensor or numpy.ndarray
-            Time series of shape ``(time, features)`` or
-            ``(batch, time, features)``.  A 2-D array is treated as a single
-            batch.  Must contain at least ``washout + 2`` timesteps (one
-            washout window plus one input/target pair).  numpy input is
-            converted to torch and the original type is remembered so
-            :meth:`forecast` returns numpy as well.
-
-        Returns
-        -------
-        ESN
-            ``self``, to allow ``ESN(...).fit(series).forecast(...)`` chaining.
-
-        Raises
-        ------
-        ValueError
-            If ``series`` is not 2-D/3-D, or is too short for the configured
-            ``washout``, or its feature dimension changes between successive
-            :meth:`fit` calls.
-
-        Examples
-        --------
-        >>> esn = ESN(reservoir_size=200).fit(series)   # doctest: +SKIP
-        """
-        data, returns_numpy = self._to_3d_tensor(series)
-        self._returns_numpy = returns_numpy
-
-        batch, timesteps, feature_size = data.shape
-        # Need: washout warmup + at least one (input, shifted-target) pair.
-        if timesteps < self.washout + 2:
+        super().__init__()
+        reservoir_size = _positive_width(reservoir_size, "reservoir_size")
+        washout = _washout(washout)
+        lead = prediction_leads(prediction_lead, ("output",))[0]
+        connections = feedback_specs(feedback)
+        resample_dt, validated_method = validate_resampling_options(resample_dt, resample_method)
+        if preprocessing not in (
+            None,
+            "off",
+            "standard",
+            "minmax",
+            "noncentered",
+            "meanpreserving",
+        ):
+            raise ValueError("preprocessing must be a known normalization method, 'off', or None")
+        reference = torch.empty(0, device=device, dtype=dtype)
+        if not reference.is_floating_point():
+            raise ValueError("dtype must be a real floating Torch dtype")
+        reserved = {"feedback_size", "output_size", "readout_alpha"}.intersection(reservoir_kwargs)
+        if reserved:
             raise ValueError(
-                f"series has {timesteps} timesteps but at least washout + 2 = "
-                f"{self.washout + 2} are required (a {self.washout}-step washout "
-                f"plus one input/target step). Lower `washout` or pass a longer series."
+                f"Preset dimensions/readout settings cannot be overridden: {sorted(reserved)}"
             )
+        self.register_buffer("_reference", reference, persistent=False)
+        self.add_module("workflow", None)
+        self._input_size: int | None = None
+        self._device_pinned, self._dtype_pinned = device is not None, dtype is not None
+        overrides = []
+        for mapping, name in ((input_transforms, "input"), (output_transforms, "output")):
+            if mapping is not None and (not isinstance(mapping, Mapping) or set(mapping) - {name}):
+                raise ValueError(
+                    f"ESN transform override keys must be declared port names: [{name!r}]"
+                )
+            overrides.append(dict(mapping or {}))
+        originals = tuple(module for mapping in overrides for module in mapping.values())
+        if any(not isinstance(module, nn.Module) for module in originals):
+            raise TypeError("Transform overrides must be torch.nn.Module instances")
+        validate_transform_ownership(nn.Identity(), originals)
+        # Originals remain ordinary registered modules while the lazy graph is
+        # absent. A staged first fit only transfers them after it succeeds.
+        self._pending_input_transforms: nn.ModuleDict | None = (
+            nn.ModuleDict(overrides[0]) if overrides[0] else None
+        )
+        self._pending_output_transforms: nn.ModuleDict | None = (
+            nn.ModuleDict(overrides[1]) if overrides[1] else None
+        )
+        self._workflow_options: dict[str, Any] = {
+            "washout": washout,
+            "preprocessing": preprocessing,
+            "prediction_lead": lead,
+            "feedback": connections,
+            "resample_dt": resample_dt,
+            "resample_method": validated_method,
+            "input_transforms": overrides[0] or None,
+            "output_transforms": overrides[1] or None,
+        }
+        self._factory_options = {
+            "reservoir_size": reservoir_size,
+            "spectral_radius": spectral_radius,
+            "leak_rate": leak_rate,
+            "readout_alpha": alpha,
+            "readout": readout,
+            "readout_kwargs": dict(readout_kwargs or {}),
+            "topology": topology,
+            "feedback_initializer": feedback_initializer,
+            "activation": activation,
+            "bias": bias,
+            "readout_bias": readout_bias,
+            "trainable": trainable,
+            "seed": seed,
+            **reservoir_kwargs,
+        }
+        self._architecture = (
+            _configuration(self._factory_options),
+            tuple(
+                tuple((name, transform_schema(module, 0)) for name, module in mapping.items())
+                for mapping in overrides
+            ),
+        )
+        if input_size is not None:
+            self.build(input_size)
 
-        # Lazily build the model on the first fit; reuse it on refits as long as
-        # the feature dimension is unchanged (refitting overwrites the readout).
-        if self.model is None:
-            self.feature_size = feature_size
-            self.model = self._build_model(feature_size)
-        elif feature_size != self.feature_size:
-            raise ValueError(
-                f"This ESN was fit on {self.feature_size}-feature data; got "
-                f"{feature_size}-feature data. Create a new ESN for a different "
-                f"feature dimension."
-            )
+    def _apply(self, fn: Any, recurse: bool = True) -> ESN:
+        result = super()._apply(fn, recurse=recurse)
+        self._device_pinned = self._dtype_pinned = True
+        return cast(ESN, result)
 
-        # Split into warmup + autoregressive (input, one-step-ahead target).
-        #   warmup : [0,             washout)
-        #   train  : [washout,       T - 1)   -> predicts...
-        #   target : [washout + 1,   T)
-        warmup = data[:, : self.washout, :]
-        train = data[:, self.washout : timesteps - 1, :]
-        target = data[:, self.washout + 1 :, :]
+    @property
+    def input_size(self) -> int | None:
+        """Observed feature width, available after eager construction/build/fit."""
+        return self._input_size
 
-        trainer = ESNTrainer(self.model)
-        trainer.fit(
-            warmup_inputs=(warmup,),
-            train_inputs=(train,),
-            targets={self.readout_name: target},
+    @property
+    def is_built(self) -> bool:
+        return self.workflow is not None
+
+    @property
+    def is_fitted(self) -> bool:
+        return self.workflow is not None and self.workflow.is_fitted
+
+    @property
+    def graph(self) -> ESNModel:
+        """The original raw symbolic graph; call build() or fit() before access."""
+        return cast(ESNModel, self._require_workflow().graph)
+
+    @property
+    def washout(self) -> int:
+        return (
+            self.workflow.washout
+            if self.workflow is not None
+            else cast(int, self._workflow_options["washout"])
         )
 
-        # Remember the tail of the *training* series so forecast() can
-        # re-synchronise the reservoir from a known, teacher-forced window.
-        # Keep washout history samples plus the last observed sample. The
-        # final readout predicts the first unseen timestep. The low-level
-        # forecast method uses this same next-sample convention.
-        self._sync_tail = data[:, timesteps - self.washout - 1 :, :].detach().clone()
+    @property
+    def preprocessing(self) -> str | None:
+        if self.workflow is not None:
+            return self.workflow.preprocessing
+        value = self._workflow_options["preprocessing"]
+        return None if value in (None, "off") else cast(str, value)
+
+    @property
+    def prediction_leads(self) -> dict[str, int]:
+        if self.workflow is not None:
+            return self.workflow.prediction_leads
+        return {"output": self._workflow_options["prediction_lead"]}
+
+    @property
+    def feedback(self) -> tuple[Feedback, ...] | None:
+        if self.workflow is not None:
+            return self.workflow.feedback
+        return cast(tuple[Feedback, ...] | None, self._workflow_options["feedback"])
+
+    def _require_workflow(self) -> Model:
+        if self.workflow is None:
+            raise RuntimeError("ESN is not built; call build(input_size) or fit(training) first")
+        return self.workflow
+
+    def _new_workflow(self, width: int, device: torch.device, dtype: torch.dtype) -> Model:
+        originals = tuple(
+            module
+            for key in ("input_transforms", "output_transforms")
+            for module in (self._workflow_options[key] or {}).values()
+        )
+        validate_transform_ownership(nn.Identity(), originals)
+        for module in originals:
+            validate_custom_transform(module, width)
+        seed = self._factory_options["seed"]
+        with ExitStack() as isolation:
+            if seed is not None:
+                cuda_devices = (
+                    list(range(torch.cuda.device_count())) if torch.cuda.is_initialized() else []
+                )
+                if device.type == "cuda" and torch.cuda.is_available():
+                    index = (
+                        device.index if device.index is not None else torch.cuda.current_device()
+                    )
+                    if index not in cuda_devices:
+                        cuda_devices.append(index)
+                isolation.enter_context(torch.random.fork_rng(devices=cuda_devices))
+                isolate_mps = torch.backends.mps.is_available()
+                if isolate_mps:
+                    isolation.enter_context(torch.random.fork_rng(devices=[0], device_type="mps"))
+                torch.default_generator.manual_seed(seed)
+                for index in cuda_devices:
+                    torch.cuda.default_generators[index].manual_seed(seed)
+                if isolate_mps:
+                    torch.mps.manual_seed(seed)
+            graph = classic_esn(
+                feedback_size=width,
+                output_size=width,
+                device=device,
+                dtype=dtype,
+                **self._factory_options,
+            )
+            options = dict(self._workflow_options)
+            incoming, outgoing = copy.deepcopy(
+                (options["input_transforms"], options["output_transforms"])
+            )
+            options.update(input_transforms=incoming, output_transforms=outgoing)
+            workflow = Model(graph=graph, **options)
+            workflow.train(self.training)
+            return workflow
+
+    def _attach(self, workflow: Model, width: int) -> None:
+        reference = module_reference(workflow.graph)
+        assert reference is not None
+        with torch.inference_mode(False):
+            for pending, scalers in (
+                (self._pending_input_transforms, workflow.input_scalers),
+                (self._pending_output_transforms, workflow.output_scalers),
+            ):
+                if pending:
+                    original = next(iter(pending.values()))
+                    original.to(device=reference.device, dtype=reference.dtype)
+                    commit_transform_state(original, scalers[0])
+                    scalers[0] = original
+            self._pending_input_transforms = self._pending_output_transforms = None
+            self.workflow = workflow
+            self._input_size = width
+            self._reference = torch.empty(0, device=reference.device, dtype=reference.dtype)
+
+    def build(
+        self,
+        input_size: int,
+        *,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> ESN:
+        """Materialize parameters before attaching optimizers; same-width calls are idempotent."""
+        width = _positive_width(input_size, "input_size")
+        placement = self._reference.device if device is None else torch.device(device)
+        precision = self._reference.dtype if dtype is None else dtype
+        if self.workflow is not None:
+            reference = module_reference(self.graph)
+            assert reference is not None
+            if width != self.input_size:
+                raise ValueError(
+                    "ESN input_size is fixed after build; construct a new preset for another width"
+                )
+            if (device is not None and placement != reference.device) or (
+                dtype is not None and precision != reference.dtype
+            ):
+                raise ValueError("ESN is already built; use .to() to change its device/dtype")
+            return self
+        if not torch.empty(0, dtype=precision).is_floating_point():
+            raise ValueError("dtype must be a real floating Torch dtype")
+        with torch.inference_mode(False):
+            candidate = self._new_workflow(width, placement, precision)
+        self._attach(candidate, width)
+        self._device_pinned = self._dtype_pinned = True
         return self
+
+    def fit(
+        self,
+        training: Streams | Trajectory | Mapping[str, Trajectory],
+        targets: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
+    ) -> ESN:
+        """Fit with Model's train-only scaling, explicit targets and transactional refitting."""
+        if self.workflow is not None:
+            self.workflow.fit(training, targets)
+            return self
+        data: Any = training
+        if isinstance(training, Mapping):
+            if set(training) != {"input"}:
+                raise ValueError("ESN training mapping must contain exactly the key 'input'")
+            data = training["input"]
+        if is_trajectory(data):
+            data = torch.as_tensor(cast(Any, data).y)
+        if not isinstance(data, torch.Tensor):
+            raise TypeError(
+                "ESN training requires a floating torch.Tensor or a TSDynamics trajectory"
+            )
+        if data.ndim not in (2, 3):
+            raise ValueError("ESN training requires 2-D or 3-D time-series tensors")
+        if not data.is_floating_point():
+            raise TypeError("ESN training requires a real floating tensor")
+        width = _positive_width(data.shape[-1], "input_size")
+        placement = self._reference.device if self._device_pinned else data.device
+        precision = self._reference.dtype if self._dtype_pinned else data.dtype
+        with torch.inference_mode(False):
+            candidate = self._new_workflow(width, placement, precision)
+        candidate.fit(training, targets)
+        self._attach(candidate, width)
+        self._device_pinned = self._dtype_pinned = True
+        return self
+
+    def forward(self, inputs: Streams) -> torch.Tensor:
+        """Predict original units with carried state and ordinary Torch autograd/hooks."""
+        return cast(torch.Tensor, self._require_workflow()(inputs))
+
+    def forward_stateless(
+        self,
+        inputs: Streams,
+        *,
+        states: Mapping[str, torch.Tensor] | None = None,
+        compile: bool = False,
+    ) -> tuple[torch.Tensor, ReservoirStates]:
+        output, final = self._require_workflow().forward_stateless(
+            inputs, states=states, compile=compile
+        )
+        return cast(torch.Tensor, output), final
 
     def forecast(
         self,
-        horizon: int,
+        history: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
         *,
+        horizon: int,
+        future_inputs: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
         return_warmup: bool = False,
-    ) -> Any:
-        """Roll out an autoregressive forecast continuing the fitted series.
-
-        Resets the reservoir, re-synchronises it on the final ``washout + 1`` steps
-        of the training series, then autoregressively generates ``horizon``
-        steps via :meth:`~resdag.core.ESNModel.forecast`.  Because the state is
-        always reset first, successive calls are independent.
-        Training-only noise is disabled during forecasting. Every module's
-        previous training/evaluation flag is restored, including on failure.
-
-        Parameters
-        ----------
-        horizon : int
-            Number of future steps to generate. Must be ``>= 1``.
-        return_warmup : bool, default=False
-            If ``True``, prepend the (teacher-forced) re-synchronisation outputs
-            to the result, giving ``(washout + horizon, features)`` per batch.
-
-        Returns
-        -------
-        torch.Tensor or numpy.ndarray
-            Forecast of shape ``(horizon, features)`` for a single-batch fit, or
-            ``(batch, horizon, features)`` when fit on batched data.  The array
-            type matches what was passed to :meth:`fit` (numpy in → numpy out).
-
-        Raises
-        ------
-        RuntimeError
-            If called before :meth:`fit`.
-        ValueError
-            If ``horizon < 1``.
-
-        Examples
-        --------
-        >>> prediction = esn.fit(series).forecast(horizon=500)   # doctest: +SKIP
-        """
-        if self.model is None or self._sync_tail is None:
-            raise RuntimeError("forecast() called before fit(). Call fit(series) first.")
-        # forecast() resets the reservoir internally (reset=True), so two
-        # successive forecasts are independent — no manual reset needed.
-        with evaluating(self.model):
-            prediction = self.model.forecast(
-                self._sync_tail,
+        compile: bool = False,
+        execution: Literal["fast", "history"] = "fast",
+        return_type: Literal["auto", "tensor", "trajectory"] = "auto",
+    ) -> torch.Tensor | Trajectory:
+        return cast(
+            "torch.Tensor | Trajectory",
+            self._require_workflow().forecast(
+                history,
                 horizon=horizon,
+                future_inputs=future_inputs,
                 return_warmup=return_warmup,
-            )
-        # classic_esn is single-output, so forecast returns a single tensor.
-        assert isinstance(prediction, torch.Tensor)
-        return self._from_tensor(prediction)
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-    def _build_model(self, feature_size: int) -> ESNModel:
-        """Compose the underlying :class:`~resdag.core.ESNModel`.
-
-        Output size is pinned to ``feature_size`` so the first (only) output can
-        seed the autoregressive forecast loop — the slot-0 forecast contract.
-        The model is moved onto the working ``dtype``/``device`` (resolved from
-        the first fitted series) so its weights match the data exactly — e.g. a
-        ``float64`` series gets a ``float64`` reservoir, avoiding a downstream
-        "expected Float but found Double" mismatch.
-        """
-        if self.seed is not None:
-            torch.manual_seed(self.seed)
-
-        model = classic_esn(
-            reservoir_size=self.reservoir_size,
-            feedback_size=feature_size,
-            output_size=feature_size,
-            topology=self.topology,
-            spectral_radius=self.spectral_radius,
-            leak_rate=self.leak_rate,
-            feedback_initializer=self.feedback_initializer,
-            activation=self.activation,
-            bias=self.bias,
-            readout_alpha=self.alpha,
-            readout_bias=self.readout_bias,
-            readout_name=self.readout_name,
-            device=self.device,
-            dtype=self.dtype,
-            **self.reservoir_kwargs,
+                compile=compile,
+                return_type=return_type,
+                execution=execution,
+            ),
         )
-        # ``nn.Module.to`` is annotated to return ``Any`` in the torch stubs;
-        # it returns ``self`` in practice, so the cast is purely for mypy.
-        return cast(ESNModel, model.to(device=self.device, dtype=self.dtype))
 
-    def _to_3d_tensor(self, series: Any) -> tuple[torch.Tensor, bool]:
-        """Coerce numpy/torch input to a ``(batch, time, features)`` tensor.
+    def reset_state(self) -> None:
+        self._require_workflow().reset_state()
 
-        Resolves dtype and device once (on the first fit), preserving a
-        floating input's own dtype unless the caller pinned one — so a
-        ``float64`` chaotic series is not silently downcast — and adopting the
-        input's device when none was given.  Returns the tensor together with a
-        flag recording whether the caller passed numpy, so :meth:`forecast` can
-        mirror the input type.
-        """
-        returns_numpy = isinstance(series, np.ndarray)
-        if returns_numpy:
-            tensor = torch.as_tensor(series)
-        elif isinstance(series, torch.Tensor):
-            tensor = series
-        else:
-            raise TypeError(
-                f"series must be a torch.Tensor or numpy.ndarray, got {type(series).__name__}."
+    def get_state(self) -> ReservoirStates:
+        return self._require_workflow().get_state()
+
+    def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        self._require_workflow().set_state(states, strict=strict)
+
+    def get_extra_state(self) -> dict[str, Any]:
+        return {
+            "version": 2,
+            "input_size": self.input_size,
+            "architecture": copy.deepcopy(self._architecture),
+        }
+
+    def _validate_metadata(self, state: Any) -> int | None:
+        if (
+            not isinstance(state, dict)
+            or type(state.get("version")) is not int
+            or state["version"] != 2
+        ):
+            raise RuntimeError(
+                "ESN checkpoint requires current metadata version 2; "
+                "reconstruct and refit models saved with older metadata"
             )
-
-        # Resolve the working dtype/device on the first fit so the model is
-        # built to match and later refits stay consistent. Preserve a floating
-        # input's own dtype (no silent float64 -> float32 downcast); only an
-        # integer/bool series is promoted to a default float, since the
-        # reservoir math is float-only.
-        if self.dtype is None:
-            self.dtype = tensor.dtype if tensor.is_floating_point() else torch.get_default_dtype()
-        if self.device is None:
-            self.device = tensor.device
-
-        tensor = tensor.to(dtype=self.dtype, device=self.device)
-
-        if tensor.dim() == 2:
-            tensor = tensor.unsqueeze(0)  # (T, D) -> (1, T, D)
-        elif tensor.dim() != 3:
-            raise ValueError(
-                f"series must be 2-D (time, features) or 3-D (batch, time, features); "
-                f"got a {tensor.dim()}-D array with shape {tuple(tensor.shape)}."
+        if "input_size" not in state:
+            raise RuntimeError("Invalid ESN checkpoint: missing input_size")
+        if state.get("architecture") != self._architecture:
+            raise RuntimeError(
+                "ESN checkpoint architecture differs; reconstruct the same preset settings"
             )
-        if not torch.isfinite(tensor).all():
-            raise ValueError(
-                "series contains NaN or infinite values; clean the data before "
-                "fitting (the ridge-regression readout would otherwise produce an "
-                "all-NaN forecast)."
-            )
-        return tensor, returns_numpy
+        width = state.get("input_size")
+        if width is not None:
+            try:
+                width = _positive_width(width, "input_size")
+            except ValueError as error:
+                raise RuntimeError("Invalid ESN checkpoint input_size") from error
+        if self.is_built and width != self.input_size:
+            raise RuntimeError("ESN checkpoint input_size differs from this built preset")
+        return cast(int | None, width)
 
-    def _from_tensor(self, prediction: torch.Tensor) -> Any:
-        """Mirror the caller's input: squeeze single batch, numpy if asked.
+    def set_extra_state(self, state: Any) -> None:
+        self._validate_metadata(state)
 
-        A single-batch fit yields ``(1, horizon, D)``; the leading axis is
-        squeezed so the common case returns the intuitive ``(horizon, D)``.
-        numpy input round-trips back to numpy.
-        """
-        if prediction.shape[0] == 1:
-            prediction = prediction.squeeze(0)
-        if self._returns_numpy:
-            return prediction.detach().cpu().numpy()
-        return prediction
-
-    def __repr__(self) -> str:
-        fitted = self.model is not None
-        return (
-            f"ESN(reservoir_size={self.reservoir_size}, "
-            f"spectral_radius={self.spectral_radius}, leak_rate={self.leak_rate}, "
-            f"washout={self.washout}, alpha={self.alpha}, fitted={fitted})"
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        local_metadata: dict[str, Any],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        width = self._validate_metadata(state_dict.get(prefix + "_extra_state"))
+        if width is not None and not self.is_built:
+            self.build(width)
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
+
+    def extra_repr(self) -> str:
+        return f"reservoir_size={self._factory_options['reservoir_size']}, input_size={self.input_size}, fitted={self.is_fitted}"
 
 
 __all__ = ["ESN"]

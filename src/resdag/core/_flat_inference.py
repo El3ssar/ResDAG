@@ -23,12 +23,11 @@ transparent eager fallback when compilation is unavailable or fails.
 
 Notes
 -----
-The engine feeds every non-reservoir layer the same 3-D ``(batch, 1, features)``
-slice the graph path would, so the result is identical for *any* layer — including
-ones that inspect input rank or operate along the time axis — not just feature-wise
-transforms.  (The built-in transforms are additionally rank-agnostic, so they would
-also work on a squeezed 2-D slice; keeping the engine 3-D makes that independent of
-the layer.)  Only the reservoir update is special-cased: its parents are squeezed to
+The engine feeds every non-reservoir layer a 3-D ``(batch, 1, features)``
+slice. Such layers must be framewise: splitting a sequence along time must
+preserve their behavior. Whole-sequence custom transforms require the common
+Model's explicit history replay mode instead. Only the reservoir update is
+special-cased: its parents are squeezed to
 2-D for the single-step
 :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
 and the output is unsqueezed back.  Reservoir *states* are threaded separately and
@@ -42,6 +41,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import torch
 
+from resdag.core._forecast_capabilities import validate_fast_plan
 from resdag.layers.reservoirs import BaseReservoirLayer
 
 if TYPE_CHECKING:
@@ -140,6 +140,7 @@ def build_flat_step(model: ESNModel) -> FlatStep:
     detects via the identity of ``model.outputs``.
     """
     plan = model._get_execution_plan()
+    validate_fast_plan(plan)
     callables: list[Any] = []
     lines = [f"    v{i} = _in[{i}]" for i in range(len(plan.input_features))]
     lines += [f"    r{i} = _st[{i}]" for i in range(len(plan.reservoirs))]

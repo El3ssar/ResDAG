@@ -58,6 +58,7 @@ import torch
 from pytorch_symbolic.symbolic_data import SymbolicData
 
 from ._execution import ReservoirStates
+from ._feedback import Feedback
 from .feature_extractor import ReservoirFeatureExtractor
 from .model import ESNModel, Input, ReservoirModelModule
 from .workflow import Model
@@ -109,6 +110,7 @@ def reservoir_input(
 # public surface — see ``__dir__`` below.
 __all__ = [
     "Model",
+    "Feedback",
     "ESNModel",
     "Input",
     "ReservoirFeatureExtractor",

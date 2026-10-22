@@ -131,7 +131,7 @@ class TestMatchesSklearn:
             max_iter=50000,
             tol=1e-11,
         )
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
 
         assert intercept is not None
         assert torch.allclose(coefs, sk_coef, atol=1e-6)
@@ -165,7 +165,7 @@ class TestMatchesSklearn:
             max_iter=100000,
             tol=1e-11,
         )
-        coefs, _ = readout._fit_impl(X, y)
+        coefs, _ = readout.solve(X, y)
         assert torch.allclose(coefs, en_coef, atol=1e-6)
 
 
@@ -192,7 +192,7 @@ class TestSparsity:
                 max_iter=20000,
                 tol=1e-9,
             )
-            coefs, _ = readout._fit_impl(X, y)
+            coefs, _ = readout.solve(X, y)
             fracs.append(float((coefs == 0).float().mean()))
 
         # Monotone non-decreasing sparsity, and the strongest penalty is
@@ -216,7 +216,7 @@ class TestSparsity:
         readout = FISTAReadoutLayer(
             f, t, alpha=2 * n * 0.05, l1_ratio=1.0, max_iter=20000, tol=1e-10
         )
-        coefs, _ = readout._fit_impl(X, y)
+        coefs, _ = readout.solve(X, y)
         # Substantial sparsity: most of the noise coefficients are zeroed.
         assert float((coefs == 0).float().mean()) > 0.5
         # The active columns keep a non-trivial coefficient.
@@ -242,7 +242,7 @@ class TestRidgeLimit:
         alpha_ridge = 1.0
 
         ridge = RidgeReadoutLayer(X.shape[1], y.shape[1], alpha=alpha_ridge)
-        rc, ri = ridge._fit_impl(X, y)
+        rc, ri = ridge.solve(X, y)
 
         fista = FISTAReadoutLayer(
             X.shape[1],
@@ -252,7 +252,7 @@ class TestRidgeLimit:
             max_iter=50000,
             tol=1e-12,
         )
-        fc, fi = fista._fit_impl(X, y)
+        fc, fi = fista.solve(X, y)
 
         assert ri is not None and fi is not None
         assert torch.allclose(fc, rc, atol=1e-6)
@@ -272,7 +272,7 @@ class TestConvergence:
         """A well-posed fit converges and records n_iter_ / converged_."""
         X, y = _sparse_problem()
         readout = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=10000, tol=1e-8)
-        readout._fit_impl(X, y)
+        readout.solve(X, y)
         assert readout.converged_
         assert 0 < readout.n_iter_ < 10000
 
@@ -281,7 +281,7 @@ class TestConvergence:
         X, y = _sparse_problem()
         readout = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=2, tol=1e-15)
         with pytest.warns(RuntimeWarning, match="did not converge"):
-            readout._fit_impl(X, y)
+            readout.solve(X, y)
         assert not readout.converged_
         assert readout.n_iter_ == 2
 
@@ -297,7 +297,7 @@ class TestConvergence:
         exact = FISTAReadoutLayer(
             X.shape[1], y.shape[1], alpha=2 * n * 1e-2, l1_ratio=1.0, max_iter=50000, tol=1e-11
         )
-        ce, _ = exact._fit_impl(X, y)
+        ce, _ = exact.solve(X, y)
 
         power = FISTAReadoutLayer(
             X.shape[1],
@@ -308,7 +308,7 @@ class TestConvergence:
             tol=1e-11,
             power_iters=30,
         )
-        cp, _ = power._fit_impl(X, y)
+        cp, _ = power.solve(X, y)
         assert torch.isfinite(cp).all()
         assert torch.allclose(cp, ce, atol=1e-5)
 
@@ -341,7 +341,7 @@ class TestFitBookkeeping:
         """bias=False fits no intercept and does not center."""
         X, y = _sparse_problem()
         readout = FISTAReadoutLayer(X.shape[1], y.shape[1], bias=False, alpha=1.0)
-        coefs, intercept = readout._fit_impl(X, y)
+        coefs, intercept = readout.solve(X, y)
         assert intercept is None
         assert torch.isfinite(coefs).all()
 
@@ -410,8 +410,8 @@ class TestDevice:
         X, y = _sparse_problem()
         r1 = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=5000, tol=1e-9)
         r2 = FISTAReadoutLayer(X.shape[1], y.shape[1], alpha=1.0, max_iter=5000, tol=1e-9)
-        c1, _ = r1._fit_impl(X, y)
-        c2, _ = r2._fit_impl(X, y)
+        c1, _ = r1.solve(X, y)
+        c2, _ = r2.solve(X, y)
         assert torch.equal(c1, c2)
 
     @pytest.mark.gpu
@@ -428,7 +428,7 @@ class TestDevice:
             max_iter=50000,
             tol=1e-11,
         )
-        cc, _ = cpu._fit_impl(X, y)
+        cc, _ = cpu.solve(X, y)
         gpu = FISTAReadoutLayer(
             X.shape[1],
             y.shape[1],
@@ -437,5 +437,5 @@ class TestDevice:
             max_iter=50000,
             tol=1e-11,
         )
-        gc, _ = gpu._fit_impl(X.cuda(), y.cuda())
+        gc, _ = gpu.solve(X.cuda(), y.cuda())
         assert torch.allclose(cc, gc.cpu(), atol=1e-6)

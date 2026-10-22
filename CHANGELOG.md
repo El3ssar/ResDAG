@@ -2,6 +2,59 @@
 
 <!-- version list -->
 
+## v1.1.1 (2026-10-22)
+
+### Bug Fixes
+
+- Apply live cell settings and refresh sparse weight caches
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Complete phase-one correctness work and track roadmap
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Correct initializer mathematics and reservoir diagnostics
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Exclude failed tuning trials from successful results
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Fit recurrent DAG stages and preserve inference contracts
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Harden capacity scoring and qualify benchmark reports
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Honor sequential execution order in staged fitting
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Stabilize readout fitting and preserve solver precision
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+### Continuous Integration
+
+- Refresh documentation after successful releases
+  ([#457](https://github.com/El3ssar/ResDAG/pull/457),
+  [`58c06e1`](https://github.com/El3ssar/ResDAG/commit/58c06e1d0cdab0831fed3c15c90c5468ef820433))
+
+### Documentation
+
+- Mark phase one verified and record CI evidence
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+- Track delivery roadmap and strengthen phase-one verification
+  ([#458](https://github.com/El3ssar/ResDAG/pull/458),
+  [`41a1744`](https://github.com/El3ssar/ResDAG/commit/41a174491ce9f97d5e5ab8da277ba6a982800133))
+
+
 ## v1.1.0 (2026-10-21)
 
 ### Features

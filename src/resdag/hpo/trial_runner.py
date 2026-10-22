@@ -208,10 +208,10 @@ def _cleanup() -> None:
 def _checkpoint_horizons(horizon: int, n_checkpoints: int) -> list[int]:
     """Build growing horizon checkpoints up to and including ``horizon``.
 
-    The checkpoints are evenly spaced cut-off lengths used to slice a single
-    forecast for intermediate ``trial.report`` calls.  The final checkpoint is
-    always the full ``horizon`` so the reported value at the last checkpoint
-    matches the returned objective.
+    The checkpoints are evenly spaced emission boundaries in the forecast
+    stream. Each prefix is reported before later predictions are generated.
+    The final checkpoint is always the full ``horizon``, so its reported
+    loss matches the returned objective.
 
     Parameters
     ----------

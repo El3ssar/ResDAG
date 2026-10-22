@@ -51,9 +51,9 @@ function as well as values sampled by Optuna.
 
 | Preset | New trial attempts | Initialization seeds | Forecast starting points |
 | --- | ---: | ---: | ---: |
-| `"quick"` | 8 | 1 | 1 |
-| `"balanced"` (default) | 24 | 3 | 3 |
-| `"thorough"` | 80 | 5 | 5 |
+| <code style="white-space: nowrap">"quick"</code> | 8 | 1 | 1 |
+| <code style="white-space: nowrap">"balanced"</code> (default) | 24 | 3 | 3 |
+| <code style="white-space: nowrap">"thorough"</code> | 80 | 5 | 5 |
 
 Seeds and starting points are reused across configurations. A starting point
 is a later moment in the held-out segment: the model sees observations before

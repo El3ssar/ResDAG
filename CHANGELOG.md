@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.1.0 (2026-10-22)
+
+### Features
+
+- **hpo**: Add common model tuning and automatic readout solves
+  ([#461](https://github.com/El3ssar/ResDAG/pull/461),
+  [`ad0f8c9`](https://github.com/El3ssar/ResDAG/commit/ad0f8c90d30621fa85aabf030075e42e2ea7d4e7))
+
+
 ## v2.0.0 (2026-10-22)
 
 ### Features

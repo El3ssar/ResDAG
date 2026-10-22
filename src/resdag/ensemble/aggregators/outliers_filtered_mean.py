@@ -141,16 +141,28 @@ class OutliersFilteredMean(nn.Module):
             )
 
         norms = torch.norm(input, p=2, dim=-1)
+        finite = torch.isfinite(input).all(dim=-1) & torch.isfinite(norms)
+        invalid_positions = ~finite.any(dim=0)
+        if invalid_positions.any():
+            positions = invalid_positions.nonzero().detach().cpu().tolist()
+            raise ValueError(
+                f"All {input.shape[0]} ensemble members have non-finite predictions or "
+                f"prediction norms at (batch, timestep) positions {positions[:5]}. "
+                "Check the member forecasts before continuing coupled feedback."
+            )
 
         if self.method == "z_score":
-            mask = self._mask_modified_z_score(norms)
+            mask = self._mask_modified_z_score(norms, finite)
         else:
-            mask = self._mask_iqr(norms)
+            mask = self._mask_iqr(norms, finite)
 
-        mask_expanded = mask.unsqueeze(-1)
-        plain_mean = input.mean(dim=0)
-
-        masked_input = input * mask_expanded
+        # Multiplication cannot remove NaN/Inf (Inf * 0 is NaN). Exclude
+        # invalid members before any arithmetic, including the fallback mean.
+        work = input.float() if input.dtype in (torch.float16, torch.bfloat16) else input
+        safe_input = torch.where(finite.unsqueeze(-1), work, 0)
+        plain_mean = safe_input.sum(dim=0) / finite.sum(dim=0).unsqueeze(-1)
+        mask_expanded = (mask & finite).unsqueeze(-1)
+        masked_input = torch.where(mask_expanded, work, 0)
         sum_inliers = masked_input.sum(dim=0)
         count_inliers = mask_expanded.sum(dim=0).expand_as(sum_inliers)
 
@@ -160,9 +172,30 @@ class OutliersFilteredMean(nn.Module):
             plain_mean,
         )
 
-        return mean_result
+        return mean_result.to(dtype=input.dtype)
 
-    def _mask_modified_z_score(self, norms: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _masked_quantile(
+        values: torch.Tensor, finite: torch.Tensor, q: float, *, lower: bool = False
+    ) -> torch.Tensor:
+        """Quantiles over finite members, preserving the lower-median rule.
+
+        Sorting masked values keeps this vectorized across batch/time and
+        works on devices without nanquantile support. Every position has at
+        least one valid member, checked by ``forward`` before entering here.
+        """
+        ordered = torch.where(finite, values, torch.inf).sort(dim=0).values
+        counts = finite.sum(dim=0)
+        position = (counts - 1).float() * q
+        lo = position.floor().long()
+        low = ordered.gather(0, lo.unsqueeze(0)).squeeze(0)
+        if lower:
+            return low
+        hi = position.ceil().long()
+        high = ordered.gather(0, hi.unsqueeze(0)).squeeze(0)
+        return torch.lerp(low, high, (position - lo).to(dtype=values.dtype))
+
+    def _mask_modified_z_score(self, norms: torch.Tensor, finite: torch.Tensor) -> torch.Tensor:
         """Flag inliers via the robust modified (median/MAD) Z-score.
 
         Parameters
@@ -176,9 +209,9 @@ class OutliersFilteredMean(nn.Module):
             Boolean mask of shape ``(samples, batch, timesteps)`` that is
             ``True`` for inlier members.
         """
-        median = norms.median(dim=0, keepdim=True).values
+        median = self._masked_quantile(norms, finite, 0.5, lower=True).unsqueeze(0)
         abs_dev = torch.abs(norms - median)
-        mad = abs_dev.median(dim=0, keepdim=True).values
+        mad = self._masked_quantile(abs_dev, finite, 0.5, lower=True).unsqueeze(0)
 
         # Normal case: rescale the deviation by the (robust) MAD-based scale and
         # compare to the modified-Z-score cutoff.
@@ -195,7 +228,7 @@ class OutliersFilteredMean(nn.Module):
         mask = torch.where(mad_zero, abs_dev <= 0, mask)
         return mask
 
-    def _mask_iqr(self, norms: torch.Tensor) -> torch.Tensor:
+    def _mask_iqr(self, norms: torch.Tensor, finite: torch.Tensor) -> torch.Tensor:
         """Flag inliers via the Tukey IQR fence.
 
         Parameters
@@ -212,8 +245,8 @@ class OutliersFilteredMean(nn.Module):
         # quantile supports float32/float64; keep low-precision ensemble
         # predictions in their native dtype while computing fences in float32.
         work = norms.float() if norms.dtype in (torch.float16, torch.bfloat16) else norms
-        q1 = torch.quantile(work, 0.25, dim=0)
-        q3 = torch.quantile(work, 0.75, dim=0)
+        q1 = self._masked_quantile(work, finite, 0.25)
+        q3 = self._masked_quantile(work, finite, 0.75)
         iqr = q3 - q1
         lower_bound = q1 - self.threshold * iqr
         upper_bound = q3 + self.threshold * iqr

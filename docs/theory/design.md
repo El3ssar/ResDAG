@@ -76,16 +76,24 @@ buffers? Three reasons:
 
 ## The trainer is a hook
 
-`ESNTrainer.fit` does three things: reset, teacher-forced warmup, one
-forward pass over the training inputs. Notably, it never computes a
-topological order. Each readout gets a `forward_pre_hook` that fits it
-on the exact tensor about to enter its `forward`; since the symbolic
-model executes the DAG in dependency order, every readout is fitted at
-the point where its input states become available, and downstream
-layers consume already-fitted outputs. Multi-readout DAGs, including
-readouts feeding other readouts, train correctly without explicit
-graph analysis. The mechanism applies to any readout type that
-implements `fit(states, targets)`.
+For terminal heads, `ESNTrainer.fit` resets the reservoirs, runs a
+teacher-forced warmup, and fits the readouts during one training pass.
+Each readout gets a `forward_pre_hook` that fits it on the tensor about to
+enter its `forward`. Direct readout-to-readout chains also fit in this
+single pass because the symbolic graph calls them in dependency order.
+
+When a readout feeds another reservoir, that reservoir must warm up using
+the **fitted** upstream mapping. The trainer therefore splits fitting into
+stages at these recurrent dependencies. Each stage resets and replays the
+warmup, then fits only its readouts; previously fitted readouts keep their
+weights. This avoids fitting downstream heads on states synchronized by
+random, unfitted upstream weights. The final stored states correspond to
+the last stage's training pass. Multiple stages cost additional forward
+passes; ordinary single-stage graphs retain their original execution path.
+
+Declare recurrent dependencies as functional graph nodes so the trainer
+can inspect them. `fit_stream` still requires independent incremental
+readouts; it cannot replay a consumed stream for staged fitting.
 
 ## Registries, but callables first
 
@@ -110,12 +118,11 @@ only a function definition; `register_matrix_topology` /
 
 ## Future directions
 
-These are under consideration, not commitments: an `integrations` namespace
-for third-party couplings; per-layer seeding so a single model can pin
-each reservoir's randomness independently; a public `step()` streaming
-API for online/real-time inference without sequence tensors; and
-additional readout solvers (direct Cholesky, randomized sketching)
-behind the same `_fit_impl` contract.
+These are under consideration, not commitments: a consistent high-level
+workflow for custom graphs and presets; explicit feedback routing and delays;
+per-layer seed streams; and a public streaming API without sequence tensors.
+Direct Cholesky, SVD, conjugate-gradient, incremental, online and sparse
+readouts are already available through the same fitting contract.
 
 ## See also
 

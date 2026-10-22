@@ -3,8 +3,8 @@ ESN Trainer
 ===========
 
 This module provides :class:`ESNTrainer`, which trains ESN models by
-fitting readout layers algebraically in topological order using a
-single forward pass.
+fitting readout layers algebraically in dependency order. Terminal readouts
+fit in one forward pass; recurrent dependencies require separate stages.
 
 The trainer uses PyTorch forward hooks to fit each readout layer just
 before its forward method executes, ensuring downstream layers receive
@@ -33,6 +33,7 @@ import torch
 from resdag._contracts import module_reference, validate_sequence_inputs
 from resdag.core import ESNModel
 from resdag.layers import IncrementalRidgeReadoutLayer, ReadoutLayer, RLSReadout
+from resdag.layers.reservoirs import BaseReservoirLayer
 
 # A streaming chunk: a tuple of contiguous input tensors (feedback, driver1,
 # ...) paired with a dict mapping each readout name to its target tensor for
@@ -48,15 +49,16 @@ class ESNTrainer:
 
     This trainer fits all :class:`ReadoutLayer` instances in an ESN model
     using algebraic methods (e.g., ridge regression) rather than gradient
-    descent. The fitting is performed efficiently in a single forward pass
-    using pre-hooks that intercept inputs to each readout.
+    descent. Pre-hooks intercept the inputs to each readout. Ordinary terminal
+    heads fit in one pass. When a fitted readout drives another reservoir,
+    the trainer replays warmup and training in dependency stages.
 
     The training process:
 
     1. Reset reservoir states
     2. Warmup phase: synchronize reservoir states with input dynamics
-    3. Single forward pass with pre-hooks that fit each readout in
-       topological order before it processes its input
+    3. Forward pass with pre-hooks that fit each readout in graph order
+    4. Repeat reset/warmup for later recurrent fitting stages, when needed
 
     Each readout handles its own fitting hyperparameters (e.g., ``alpha``
     for ridge regression is set during layer construction).
@@ -131,11 +133,17 @@ class ESNTrainer:
         noise_seed: int | None = None,
     ) -> None:
         r"""
-        Fit all readout layers in a single forward pass.
+        Fit readouts in dependency order, replaying recurrent stages when needed.
 
         Uses pre-hooks to fit each readout layer just before its forward
         method executes. This ensures downstream layers receive outputs
         from already-fitted readouts.
+
+        A readout feeding another reservoir is fitted in an earlier stage.
+        Later stages reset and replay warmup using the fitted upstream mapping
+        before fitting their own readouts. Terminal heads and purely algebraic
+        readout chains retain a single warmup and training pass. Declare
+        recurrent dependencies as separate functional graph nodes.
 
         Parameters
         ----------
@@ -259,45 +267,79 @@ class ESNTrainer:
                     f"but train_inputs has {train_steps} timesteps. Must match."
                 )
 
-        # Single warmup to sync reservoir states (warmup resets by default).
-        # Readouts are unfitted during warmup, so let any guarded readout (e.g.
-        # IncrementalRidgeReadoutLayer) flow a value while the reservoir synchronises.
-        with self._allow_unfitted_warmup(readouts):
-            self.model.warmup(*warmup_inputs)
+        stages = self._fit_stages(readouts)
+        with self._state_noise_override(readouts, state_noise, noise_draws, noise_seed):
+            for stage in stages:
+                # A reservoir downstream of a fitted readout must synchronize
+                # using that readout's fitted mapping, not its initial weights.
+                # Ordinary terminal-head graphs still need exactly one warmup
+                # and one training pass. Only recurrent dependencies add stages.
+                with self._allow_unfitted_warmup(readouts):
+                    self.model.warmup(*warmup_inputs)
 
-        # Register pre-hooks that fit each readout when its forward fires.
-        # We don't need explicit topological order: ``self.model(*train_inputs)``
-        # walks the graph in execution order, so each hook runs exactly when
-        # its readout would naturally execute.
-        hooks = []
-        for name, readout in readouts:
-            target = targets[name]
+                hooks = []
+                for name, readout in stage:
 
-            def make_fit_hook(
-                layer: ReadoutLayer, tgt: torch.Tensor
-            ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], None]:
-                def hook(module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
-                    layer.fit(args[0], tgt)
+                    def make_fit_hook(
+                        layer: ReadoutLayer, tgt: torch.Tensor
+                    ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], None]:
+                        def hook(module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
+                            layer.fit(args[0], tgt)
 
-                return hook
+                        return hook
 
-            handle = readout.register_forward_pre_hook(make_fit_hook(readout, target))
-            hooks.append(handle)
+                    hooks.append(
+                        readout.register_forward_pre_hook(make_fit_hook(readout, targets[name]))
+                    )
 
-        try:
-            # Single forward pass - hooks fit each readout as it executes. The
-            # state-noise override (a no-op when state_noise == 0) is applied
-            # around the pass so the readouts fit with the closed-loop-stability
-            # regulariser and are restored to their configured values afterwards.
-            with (
-                self._state_noise_override(readouts, state_noise, noise_draws, noise_seed),
-                torch.no_grad(),
-            ):
-                self.model(*train_inputs)
-        finally:
-            # Always remove hooks
-            for h in hooks:
-                h.remove()
+                try:
+                    # Later-stage guarded readouts may be visited before they
+                    # are fitted. Their provisional outputs are discarded;
+                    # their reservoir history is reset at their own stage.
+                    guarded = readouts if len(stages) > 1 else []
+                    with self._allow_unfitted_warmup(guarded), torch.no_grad():
+                        self.model(*train_inputs)
+                finally:
+                    for handle in hooks:
+                        handle.remove()
+
+    def _fit_stages(
+        self, readouts: list[tuple[str, ReadoutLayer]]
+    ) -> list[list[tuple[str, ReadoutLayer]]]:
+        """Separate fitting only when a readout feeds a recurrent dependency.
+
+        Readout-to-readout algebraic chains remain in one pass: their hooks
+        already run in graph order. Crossing a reservoir instead requires a
+        new reset/warmup after the upstream readouts have been fitted.
+        """
+        plan = self.model._get_execution_plan()
+        dependencies: list[tuple[set[int], int]] = [(set(), 0) for _ in range(plan.n_values)]
+        readout_stages: dict[int, int] = {}
+        for op in plan.operations:
+            ancestors: set[int] = set()
+            stage = 0
+            for parent in op.parents:
+                parent_readouts, parent_stage = dependencies[parent]
+                ancestors.update(parent_readouts)
+                stage = max(stage, parent_stage)
+            if any(isinstance(layer, BaseReservoirLayer) for layer in op.layer.modules()):
+                stage = max(stage, max((readout_stages[key] + 1 for key in ancestors), default=0))
+            for layer in op.layer.modules():
+                if isinstance(layer, ReadoutLayer):
+                    key = id(layer)
+                    if key in readout_stages and readout_stages[key] != stage:
+                        raise ValueError(
+                            "A readout instance is shared across different recurrent fitting "
+                            "stages. Use a distinct readout instance at each graph position."
+                        )
+                    readout_stages[key] = stage
+                    ancestors.add(key)
+            for output in op.outputs:
+                dependencies[output] = (ancestors, stage)
+        groups: dict[int, list[tuple[str, ReadoutLayer]]] = {}
+        for item in readouts:
+            groups.setdefault(readout_stages.get(id(item[1]), 0), []).append(item)
+        return [groups[index] for index in sorted(groups)]
 
     def fit_stream(
         self,

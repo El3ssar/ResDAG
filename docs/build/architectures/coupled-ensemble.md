@@ -48,7 +48,7 @@ ensemble = rd.coupled_ensemble_esn(
 ensemble.fit(
     (series[:, :200],), (series[:, 200:1200],),
     {"output": series[:, 201:1201]},
-    n_workers=4,                       # thread-pooled CG solves, one per sub-model
+    n_workers=4,                       # independent readout fits, one per sub-model
 )
 preds = ensemble.forecast(series[:, 1200:1400], horizon=100)   # (1, 100, 3)
 
@@ -76,6 +76,16 @@ ensemble = rd.coupled_ensemble_esn(
     aggregate=rd.OutliersFilteredMean(method="z_score", threshold=2.0),
 )
 ```
+
+Non-finite predictions are excluded from both robust statistics and the
+average. If every member is invalid at a batch/timestep position, the
+aggregator raises `ValueError` identifying that position instead of feeding
+an invalid or fabricated value back into the models. If finite members all
+fail the outlier threshold, their finite-only mean is the fallback.
+
+Members must have the same input widths, device and precision. These are
+checked at construction. A custom aggregator must return a tensor with the
+same `(batch, time, features)` shape as one member's output.
 
 ## Parameters
 

@@ -54,7 +54,7 @@ from typing import Any, TypeVar, cast
 import numpy as np
 import torch
 
-from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
+from resdag.utils.general import SeedLike, coerce_seed_to_int, create_rng, create_torch_generator
 
 # ``_apply_scaling`` / ``_apply_connectivity`` are dtype-preserving on the two
 # array kinds initializers build with: ``numpy.ndarray`` and ``torch.Tensor``.
@@ -323,7 +323,7 @@ class InputFeedbackInitializer(ABC):
         if rng is None:
             # Reduce a torch.Generator/int/None seed to the int/None NumPy
             # default_rng accepts, so a generator seed still masks reproducibly.
-            rng = np.random.default_rng(coerce_seed_to_int(self.seed))
+            rng = create_rng(coerce_seed_to_int(self.seed))
 
         n_rows = int(values.shape[0])
         n_cols = int(values.shape[1])

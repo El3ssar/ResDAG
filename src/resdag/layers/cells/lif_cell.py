@@ -231,13 +231,6 @@ class LIFCell(SpikingReservoirCell):
             output=output,
         )
 
-        if tau_mem <= 0.0:
-            raise ValueError(f"tau_mem must be positive, got {tau_mem}")
-        if tau_syn <= 0.0:
-            raise ValueError(f"tau_syn must be positive, got {tau_syn}")
-        if dt <= 0.0:
-            raise ValueError(f"dt must be positive, got {dt}")
-
         self.feedback_size = feedback_size
         # Treat input_size == 0 the same as None (no driving-input weights),
         # matching ESNCell and the premade factories.
@@ -245,10 +238,6 @@ class LIFCell(SpikingReservoirCell):
         self.tau_mem = float(tau_mem)
         self.tau_syn = float(tau_syn)
         self.dt = float(dt)
-        # Membrane / synaptic decays derived from the time constants.  Exact
-        # exponential integration of the leaky ODE over one dt (zero-order hold).
-        self.beta = math.exp(-self.dt / self.tau_mem)
-        self.alpha = math.exp(-self.dt / self.tau_syn)
 
         self.topology = select_recurrent_spec(
             topology=topology, recurrent_initializer=recurrent_initializer
@@ -289,6 +278,49 @@ class LIFCell(SpikingReservoirCell):
         self.trainable = trainable
         if target_device is not None and target_device.type == "mps":
             self.to(target_device)
+
+    def _time_value(self, name: str) -> float:
+        # Legacy full-model pickles stored plain attributes rather than backing
+        # fields. Keep those readable without changing their learned weights.
+        key = f"_{name}" if f"_{name}" in self.__dict__ else name
+        return float(self.__dict__[key])
+
+    def _set_time_value(self, name: str, value: float) -> None:
+        scalar = float(value)
+        if not math.isfinite(scalar) or scalar <= 0.0:
+            raise ValueError(f"{name} must be positive and finite, got {value}")
+        setattr(self, f"_{name}", scalar)
+        names = ("dt", "tau_mem", "tau_syn")
+        if all(f"_{key}" in self.__dict__ or key in self.__dict__ for key in names):
+            self.beta = math.exp(-self.dt / self.tau_mem)
+            self.alpha = math.exp(-self.dt / self.tau_syn)
+
+    @property
+    def dt(self) -> float:
+        """Live integration interval; updating it recomputes both decays."""
+        return self._time_value("dt")
+
+    @dt.setter
+    def dt(self, value: float) -> None:
+        self._set_time_value("dt", value)
+
+    @property
+    def tau_mem(self) -> float:
+        """Live membrane time constant; updates recompute both decays."""
+        return self._time_value("tau_mem")
+
+    @tau_mem.setter
+    def tau_mem(self, value: float) -> None:
+        self._set_time_value("tau_mem", value)
+
+    @property
+    def tau_syn(self) -> float:
+        """Live synaptic time constant; updates recompute both decays."""
+        return self._time_value("tau_syn")
+
+    @tau_syn.setter
+    def tau_syn(self, value: float) -> None:
+        self._set_time_value("tau_syn", value)
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore optional reset-state support in historical full-model pickles."""

@@ -40,10 +40,17 @@ layer.set_random_state(batch_size=4)
 model.reset_reservoirs()       # all reservoirs in a model at once
 ```
 
-Two contracts: the state silently re-initializes when the incoming batch
-size, device, or dtype changes; and gradients never cross `forward`-call
-boundaries, because the stored state is detached — gradient training over
-consecutive batches does not accumulate graph history across calls.
+By default, stored state is detached at `forward`-call boundaries, so
+consecutive batches do not accumulate autograd history. Set
+`detach_state_between_calls=False` deliberately, or use
+`model.forward_stateless(..., states=...)` to carry attached state explicitly.
+`model.as_module()` processes independent batches without changing stored
+states. A configured reset initializer supplies the starting state; otherwise
+it is zero.
+
+Moving a model with `.to(...)` preserves its stored state values. An ordinary
+batch-size change initializes a fresh state; a state explicitly restored with
+`set_state` instead raises on a mismatched batch size to avoid discarding it.
 
 ## 3 — Readout training is a closed-form solve
 
@@ -55,9 +62,13 @@ Cholesky factorization of the normal equations) in a single pass, with no
 learning rate or epoch schedule. Other solvers plug into the same contract:
 `CGReadoutLayer` (iterative conjugate gradient) and SVD/pinv/streaming
 variants (see [Theory · Readout solvers](../theory/readout.md#choosing-a-solver)).
-`ESNTrainer.fit` does exactly three things: reset, teacher-forced warmup,
-and one forward pass during which each readout fits itself at the moment
-it executes, so multi-readout DAGs fit in dependency order.
+`ESNTrainer.fit` resets, runs teacher-forced warmup, and fits readouts in
+dependency order. Ordinary terminal heads need one training pass. When a
+readout feeds a later reservoir, fitting uses separate stages with fresh
+warmup so that the later reservoir sees the fitted upstream mapping.
+Expose these dependencies as separate functional graph nodes or standard
+`torch.nn.Sequential` containers. A custom module that hides both readouts
+and reservoirs must expose that order before algebraic fitting.
 
 Because every readout is an ordinary `nn.Linear` underneath,
 gradient-based training remains available: freeze the reservoir and train

@@ -226,24 +226,27 @@ class TestReservoirLyapunov:
 # tsdynamics cross-checks (skipped when the optional dep is unavailable).
 # --------------------------------------------------------------------------- #
 
-tsdynamics = pytest.importorskip("tsdynamics")
+
+@pytest.fixture
+def tsdynamics():
+    return pytest.importorskip("tsdynamics")
 
 
 class TestTsdynamicsCrossCheck:
-    def test_lorenz_canonical_matches_spectrum(self) -> None:
-        lam = largest_lyapunov(tsdynamics.Lorenz(), final_time=2000)
+    def test_lorenz_canonical_matches_spectrum(self, tsdynamics) -> None:
+        lam = largest_lyapunov(tsdynamics.systems.Lorenz(), final_time=2000)
         assert lam == pytest.approx(CANONICAL_LAMBDA_MAX["lorenz"], abs=1e-2)
 
-    def test_rossler_canonical_matches_spectrum(self) -> None:
-        lam = largest_lyapunov(tsdynamics.Rossler(), final_time=2000)
+    def test_rossler_canonical_matches_spectrum(self, tsdynamics) -> None:
+        lam = largest_lyapunov(tsdynamics.systems.Rossler(), final_time=2000)
         assert lam == pytest.approx(CANONICAL_LAMBDA_MAX["rossler"], abs=1e-2)
 
-    def test_known_lyapunov_agrees_with_constant(self) -> None:
+    def test_known_lyapunov_agrees_with_constant(self, tsdynamics) -> None:
         # The system's own reference spectrum should also match to two decimals.
-        known = tsdynamics.Lorenz().known_lyapunov["spectrum"][0]
+        known = tsdynamics.systems.Lorenz().info.known_lyapunov["spectrum"][0]
         assert known == pytest.approx(CANONICAL_LAMBDA_MAX["lorenz"], abs=1e-2)
 
-    def test_from_data_runs_and_is_positive(self) -> None:
+    def test_from_data_runs_and_is_positive(self, tsdynamics) -> None:
         # A diagnostic (noisy) estimate: we only assert it runs and returns a
         # finite, positive number for a chaotic series -- not that it matches the
         # canonical value (data-based exponents are known to be biased).

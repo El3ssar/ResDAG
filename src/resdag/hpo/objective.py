@@ -21,7 +21,7 @@ resdag.hpo.run : High-level orchestrator that calls :func:`build_objective`.
 resdag.hpo.losses : Loss functions available for evaluation.
 """
 
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import optuna
 import torch
@@ -58,6 +58,7 @@ def build_objective(
     n_checkpoints: int = 5,
     torch_scoring: bool = True,
     trial_callbacks: list[TrialCallback] | None = None,
+    error_policy: Literal["fail", "penalty"] = "penalty",
 ) -> TrialRunner:
     """Build an Optuna objective from user-defined callbacks.
 
@@ -93,7 +94,11 @@ def build_objective(
         ``val.shape[1]``.
     catch_exceptions : bool, default=True
         If ``True``, catch exceptions and return ``penalty_value`` instead of
-        raising.  Pruning (``optuna.TrialPruned``) is always re-raised.
+        raising under the legacy penalty policy. Pruning is always re-raised.
+    error_policy : {"penalty", "fail"}, default="penalty"
+        ``"fail"`` raises ``TrialEvaluationError`` for an invalid evaluation;
+        pass that exception in Optuna's ``catch`` argument to continue. The
+        high-level ``run_hpo`` configures this policy and its backend for you.
     penalty_value : float, default=1e10
         Value to return when a trial fails.
     monitor_losses : list[LossProtocol], optional
@@ -175,4 +180,5 @@ def build_objective(
         n_checkpoints=n_checkpoints,
         torch_scoring=torch_scoring,
         trial_callbacks=trial_callbacks,
+        error_policy=error_policy,
     )

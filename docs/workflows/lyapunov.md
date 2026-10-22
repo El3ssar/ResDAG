@@ -80,8 +80,12 @@ from resdag.utils import prepare_esn_data
 
 torch.manual_seed(0)
 
-# A canonical Lorenz-63 series at dt = 0.02.
-series = lorenz(6000)  # (1, 6000, 3)
+# Fit scaling on training history only; validation must not set its statistics.
+series = lorenz(6000, normalize=None)  # (1, 6000, 3), dt = 0.02
+history = series[:, :500 + 4000 + 1]
+mean = history.mean(dim=(0, 1), keepdim=True)
+scale = history.std(dim=(0, 1), keepdim=True, correction=0).clamp_min(1e-8)
+series = (series - mean) / scale
 warmup, train, target, f_warmup, val = prepare_esn_data(
     series, warmup_steps=500, train_steps=4000, val_steps=1000
 )
@@ -103,18 +107,16 @@ print("check:", round(steps_to_lyapunov(vpt_steps, dt=0.02, lambda_max=0.9056), 
 
 # The reservoir's own maximal Lyapunov exponent (edge-of-chaos diagnostic).
 lam = reservoir_lyapunov(model, f_warmup, horizon=500)
-print(f"reservoir lambda_max = {lam:.4f} per step  (< 0 => ESP-satisfying)")
+print(f"reservoir lambda_max = {lam:.4f} per step  (< 0 => sampled contraction)")
 ```
 
 </div>
 
-An illustrative output (results depend on weights, data, and the numerical backend):
-
-```text
-VPT = 347 steps  =  6.28 Lyapunov times
-check: 6.28
-reservoir lambda_max = -0.5955 per step  (< 0 => ESP-satisfying)
-```
+Results depend on reservoir weights, the data split, preprocessing and the
+numerical backend. The example deliberately computes scaling before preparing
+the split, using only the history that belongs to training. Built-in generators
+can normalize their entire returned series by default; request raw data with
+`normalize=None` for held-out forecasting experiments.
 
 Report the normalized horizon alongside the threshold, data scaling, and
 evaluation conditions. Lyapunov-time conversion removes the arbitrary step
@@ -126,7 +128,9 @@ unit; it does not make different forecasting tasks identical.
 Lyapunov exponent of the *trained reservoir's own* driven dynamics — a distinct
 quantity from the attractor's $\lambda_\mathrm{max}$ above. It runs Benettin's
 algorithm with QR reorthonormalisation of the analytic tangent map along an
-input-driven trajectory, in native torch with no optional dependency.
+input-driven trajectory, using Torch on a local CPU float64 copy with no
+optional dependency. It preserves the caller's weights, device, cached state
+and training/evaluation mode.
 
 It is the standard **edge-of-chaos** diagnostic. The Echo State Property
 requires trajectories from different initial states to converge under the same
@@ -142,8 +146,14 @@ spectrum = reservoir_lyapunov(model, f_warmup, horizon=500, k=4)   # top-4 as (4
 ```
 
 Pass a single `ESNLayer` or a model containing exactly one ESN reservoir; the
-reservoir must use the `tanh` activation (the only one whose analytic Jacobian
-is wired in).
+reservoir must use the standard tanh `ESNCell`. The diagnostic includes scalar
+or per-neuron leakage, recurrent calibration gains and intrinsic gains/biases.
+Alternative cell update equations raise an explicit error until their tangent
+maps are validated. Training-only state noise is disabled during measurement.
+Inputs are used for an initial warmup, then repeated for `transient + horizon`
+additional steps; `transient` growth is discarded and exactly `horizon` steps
+are averaged. Repeating a short drive can alter the measured dynamics, so use
+a representative input window.
 
 ## Arbitrary systems — the `dynamics` extra
 
@@ -155,7 +165,8 @@ argument:
   canonical constant — **no dependency**;
 - a **measured series** gives a noisy, data-driven diagnostic estimate (opt in
   with `from_="data"`, and pass `dt`);
-- a **`tsdynamics` System** gives a high-accuracy Benettin spectrum estimate.
+- a **`tsdynamics` System** computes a numerical Benettin spectrum estimate;
+  check convergence as you increase its averaging time.
 
 ```python
 from resdag.metrics import largest_lyapunov
@@ -177,6 +188,43 @@ largest_lyapunov("mackey_glass", tau=17)   # 0.0086  — canonical, no dependenc
     to estimate an exponent for an arbitrary system. The Lyapunov-time
     conversions, the canonical constants, `valid_prediction_time`, and
     `reservoir_lyapunov` all work with **no extra installed**.
+
+## Memory capacity and effective spectral radius
+
+These diagnose different aspects of a reservoir; evaluate autonomous forecast
+accuracy separately on chronological held-out data.
+
+```python
+from resdag import ESNLayer
+from resdag.metrics import memory_capacity, effective_spectral_radius
+
+scalar_reservoir = ESNLayer(40, feedback_size=1, bias=False, seed=7)
+capacity, curve = memory_capacity(
+    scalar_reservoir, max_delay=80, n_samples=2000,
+    test_samples=4000, seed=3, return_curve=True,
+)
+
+# Use consecutive states from each trajectory: leakage inversion needs neighbours.
+representative = torch.sin(torch.arange(300).float()).reshape(1, -1, 1)
+scalar_reservoir.reset_state(batch_size=1)
+states = scalar_reservoir(representative)
+radius = effective_spectral_radius(scalar_reservoir, states, max_states=64)
+```
+
+Memory readouts fit one random input stream and score a separate, independently
+warmed stream. Ridge fitting uses an augmented least-squares solve, so
+correlated states do not lose the regularizer through normal equations.
+Increasing `test_samples` and repeating seeds helps assess
+sampling noise. The theoretical population capacity bound is the state count;
+a finite-sample sum of squared correlations can exceed it. Capacity is not
+guaranteed to increase with spectral radius. Earlier versions scored fitting
+samples and could substantially overstate capacity; old numbers must be
+remeasured.
+
+Effective radius averages local Jacobian eigenvalue radii. It includes the same
+calibration and per-neuron leakage as the actual standard tanh ESN update and
+preserves model state and mode. It does not bound transient amplification for
+non-normal matrices and is not a global stability guarantee.
 
 ## Next
 

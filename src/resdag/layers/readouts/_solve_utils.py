@@ -95,9 +95,53 @@ resdag.layers.readouts.PinvReadoutLayer : lstsq / pseudo-inverse readout.
 """
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
+
+
+def _apply_with_solver_precision(
+    module: torch.nn.Module,
+    fn: Callable[[torch.Tensor], torch.Tensor],
+    buffer_names: tuple[str, ...],
+    *,
+    use_float64: bool,
+    recurse: bool,
+) -> None:
+    """Apply a module conversion without narrowing configured solver buffers.
+
+    Moving through float32 and then restoring float64 would already have lost
+    accumulated information. Keep the original tensors until the destination
+    is known, while ordinary parameters retain normal PyTorch conversions.
+    """
+    buffers = {name: module._buffers[name] for name in buffer_names if name in module._buffers}
+    if buffers and use_float64:
+        destination = fn(module.get_parameter("weight").detach().new_empty(0))
+        if destination.device.type == "mps":
+            raise ValueError(
+                "MPS does not support float64 solver statistics. Keep this readout on CPU "
+                "for float64 fitting, or construct it with use_float64=False for supported "
+                "lower-precision MPS operations. Ordinary fitted ridge readouts can be "
+                "moved to MPS for inference."
+            )
+    for name in buffers:
+        del module._buffers[name]
+    try:
+        torch.nn.Module._apply(module, fn, recurse=recurse)
+    finally:
+        module._buffers.update(buffers)
+    dtype = resolve_solve_dtype(module.get_parameter("weight").dtype, use_float64)
+    for name, value in buffers.items():
+        if value is None:
+            continue
+        destination = fn(value.new_empty(0))
+        module._buffers[name] = (
+            fn(value)
+            if destination.dtype == dtype
+            else value.to(device=destination.device, dtype=dtype)
+        )
+
 
 # Multiplier ``k`` for the escalated, scale-aware jitter used when the initial
 # Cholesky factorisation fails. The retry uses
@@ -190,7 +234,7 @@ class RidgeProblem:
     ----------
     X : torch.Tensor
         State matrix in ``gram_dtype``, of shape ``(N, F)``. Not centered —
-        centering is folded into :attr:`gram` / :attr:`rhs` analytically so
+        centered copies form :attr:`gram` / :attr:`rhs` while
         the raw ``X`` can still be reused by SVD-style solvers.
     y : torch.Tensor
         Target matrix in ``gram_dtype``, of shape ``(N, T)``.
@@ -247,10 +291,9 @@ def build_ridge_problem(
     operands, and form the (centered, when fitting an intercept) Gram matrix
     ``XᵀX`` and right-hand side ``Xᵀy``.
 
-    When ``fit_intercept`` is ``True`` the centered Gram and right-hand side
-    are formed analytically — ``XᵀX - n x̄ᵀx̄`` and ``Xᵀy - n x̄ᵀȳ`` — which
-    avoids materialising a centered copy of ``X`` and lets SVD-style solvers
-    work from the same prepared problem.
+    When ``fit_intercept`` is ``True`` form the products from explicitly
+    centered data. Subtracting raw second moments can catastrophically cancel
+    even in float64 when features have a large offset and small variation.
 
     Parameters
     ----------
@@ -284,9 +327,10 @@ def build_ridge_problem(
     if fit_intercept:
         x_mean = X.mean(dim=0, keepdim=True)
         y_mean = y.mean(dim=0, keepdim=True)
-        n = float(X.shape[0])
-        gram = X.T @ X - n * (x_mean.T @ x_mean)
-        rhs = X.T @ y - n * (x_mean.T @ y_mean)
+        centered_x = X - x_mean
+        centered_y = y - y_mean
+        gram = centered_x.T @ centered_x
+        rhs = centered_x.T @ centered_y
     else:
         gram = X.T @ X
         rhs = X.T @ y
@@ -517,7 +561,6 @@ def build_noisy_ridge_problem(
     Xg = X.to(resolved_gram_dtype)
     yg = y.to(resolved_gram_dtype)
 
-    n = float(Xg.shape[0])
     gram_acc = torch.zeros(Xg.shape[1], Xg.shape[1], dtype=Xg.dtype, device=Xg.device)
     rhs_acc = torch.zeros(Xg.shape[1], yg.shape[1], dtype=Xg.dtype, device=Xg.device)
     for _ in range(n_draws):
@@ -526,8 +569,10 @@ def build_noisy_ridge_problem(
         if fit_intercept:
             xbar = Xn.mean(dim=0, keepdim=True)
             ybar = yg.mean(dim=0, keepdim=True)
-            gram_acc += Xn.T @ Xn - n * (xbar.T @ xbar)
-            rhs_acc += Xn.T @ yg - n * (xbar.T @ ybar)
+            centered_x = Xn - xbar
+            centered_y = yg - ybar
+            gram_acc += centered_x.T @ centered_x
+            rhs_acc += centered_x.T @ centered_y
         else:
             gram_acc += Xn.T @ Xn
             rhs_acc += Xn.T @ yg
@@ -730,12 +775,11 @@ def solve_ridge(
         )
         warnings.warn(
             f"{layer_name}: the Gram matrix was not positive-definite for a "
-            f"plain Cholesky at alpha={alpha:g} (an eigenvalue fell below "
-            f"-alpha); recovered a finite solution via {how} and {escalated_note}. "
-            f"This is almost always a float32-Gram rounding artifact on GPU — the "
-            f"default now forms the Gram in float64, so if you see this you likely "
-            f"passed gram_dtype=torch.float32. Drop that override (or use "
-            f"SVDReadoutLayer) for a genuinely rank-deficient feature map.",
+            f"plain Cholesky at alpha={alpha:g}; recovered a finite solution via "
+            f"{how} and {escalated_note}. Rank-deficient or ill-conditioned features "
+            f"and rounding during Gram formation can cause this on any device. "
+            f"Increase regularization, use a higher Gram precision, or choose "
+            f"SVDReadoutLayer for a rank-deficient feature map.",
             RuntimeWarning,
             stacklevel=2,
         )

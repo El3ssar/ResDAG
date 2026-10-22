@@ -37,7 +37,7 @@ SEED = 42
 # ----------------------------------------------------------------------
 
 
-def model_creator(reservoir_size: int, spectral_radius: float, leak_rate: float):
+def model_creator(reservoir_size: int, spectral_radius: float, leak_rate: float, seed=None):
     """One fresh model per trial. Must accept every key of search_space."""
     return rd.classic_esn(
         reservoir_size=reservoir_size,
@@ -45,6 +45,7 @@ def model_creator(reservoir_size: int, spectral_radius: float, leak_rate: float)
         output_size=3,
         spectral_radius=spectral_radius,
         leak_rate=leak_rate,
+        seed=seed,
     )
 
 
@@ -59,8 +60,15 @@ def search_space(trial) -> dict:
 
 def load_splits():
     """Prepare the canonical Lorenz splits (rebuilt per worker under spawn)."""
-    data = rd.lorenz(2300, seed=SEED)  # (1, 2300, 3)
-    return rd.utils.prepare_esn_data(data, warmup_steps=200, train_steps=1600, val_steps=300)
+    data = rd.lorenz(2300, seed=SEED, normalize=None)  # raw (1, 2300, 3)
+    return rd.utils.prepare_esn_data(
+        data,
+        warmup_steps=200,
+        train_steps=1600,
+        val_steps=300,
+        normalize=True,
+        norm_method="standard",
+    )
 
 
 def data_loader(trial) -> dict:
@@ -116,7 +124,7 @@ def main() -> None:
 
     # The best configuration is just a model_creator call away:
     warmup, train, target, f_warmup, val = load_splits()
-    best_model = model_creator(**study.best_params)
+    best_model = model_creator(**study.best_params, seed=study.best_trial.user_attrs["model_seed"])
     rd.ESNTrainer(best_model).fit((warmup,), (train,), {"output": target})
     preds = best_model.forecast(f_warmup, horizon=val.shape[1])
     mse50 = torch.mean((preds[:, :50] - val[:, :50]) ** 2).item()

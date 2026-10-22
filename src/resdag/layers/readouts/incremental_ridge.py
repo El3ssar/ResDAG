@@ -6,8 +6,8 @@ This module provides :class:`IncrementalRidgeReadoutLayer`, a readout that fits
 ridge regression *incrementally* over a stream of state/target chunks. Instead of
 materialising every state in memory and solving once (the single-shot path of
 :class:`CGReadoutLayer` / :class:`CholeskyReadoutLayer`), it accumulates the
-ridge **sufficient statistics** — the Gram matrix ``XᵀX``, the cross-term
-``Xᵀy``, the column sums of ``X`` and ``y``, and the sample count ``n`` — into
+ridge **sufficient statistics** — centered cross-products, running means,
+column sums and the sample count — into
 registered buffers via :meth:`~IncrementalRidgeReadoutLayer.partial_fit`, then
 solves once in :meth:`~IncrementalRidgeReadoutLayer.finalize`.
 
@@ -16,7 +16,7 @@ The old name :class:`IncrementalRidgeReadout` is retained as a deprecated alias.
 This is the readout half of the ``DataLoader`` / streaming story: a sequence too
 long to fit in memory, or a :class:`torch.utils.data.DataLoader` of windowed
 chunks, can be fed chunk-by-chunk with no loss of accuracy. Because the
-sufficient statistics are exact and additive, the accumulated fit matches a
+sufficient statistics are merged with stable centered covariance updates, the fit matches a
 single full-batch CG / Cholesky fit over the concatenated data to within
 floating-point tolerance.
 
@@ -29,11 +29,17 @@ resdag.training.ESNTrainer : Trainer with a streaming ``fit_stream`` path.
 
 import sys
 import warnings
+from collections.abc import Callable
 from typing import Any
 
 import torch
 
-from ._solve_utils import resolve_gram_dtype, resolve_solve_dtype, solve_ridge
+from ._solve_utils import (
+    _apply_with_solver_precision,
+    resolve_gram_dtype,
+    resolve_solve_dtype,
+    solve_ridge,
+)
 from .base import ReadoutLayer
 
 # ``pytorch_symbolic`` frames that invoke a layer's ``forward`` to trace output
@@ -70,14 +76,15 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     The classic readout fit requires every state in memory at once. This layer
     instead accumulates the ridge **sufficient statistics** as chunks arrive:
 
-    - ``XtX`` — the un-centered Gram matrix ``Σ xᵢ xᵢᵀ`` of shape ``(F, F)``,
-    - ``Xty`` — the cross term ``Σ xᵢ yᵢᵀ`` of shape ``(F, T)``,
-    - ``sum_x`` / ``sum_y`` — the column sums of ``X`` / ``y`` (for the
-      un-penalised intercept),
+    - ``XtX`` / ``Xty`` — centered cross-products when ``bias=True`` and
+      raw products when ``bias=False``,
+    - ``_mean_x`` / ``_mean_y`` — stable running means for the intercept,
+    - ``sum_x`` / ``sum_y`` — retained column sums,
     - ``n`` — the running sample count.
 
-    These statistics are **additive**, so accumulating them chunk-by-chunk and
-    solving once is algebraically identical to forming the whole Gram in a
+    Centered chunk statistics are merged using the Chan covariance formula, so
+    accumulating them chunk-by-chunk and solving once is algebraically identical
+    to forming the whole Gram in a
     single pass. :meth:`finalize` assembles the centered, regularised normal
     equations from the running statistics and Cholesky-solves them, recovering
     the same coefficients (within floating point) that a full-batch
@@ -121,7 +128,9 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     use_float64 : bool, default=True
         If ``True`` the accumulator buffers and the small ``(F, F)`` solve run
         in ``float64`` and the fitted weights are cast back to the parameter
-        dtype.
+        dtype. Parameter casts such as ``.float()`` preserve float64 working
+        statistics. MPS cannot hold these statistics; use CPU or explicitly
+        opt out with ``use_float64=False`` for supported MPS operations.
     gram_dtype : torch.dtype, optional
         Dtype the per-chunk Gram matmuls run in. Default ``None`` is automatic:
         the solve dtype (``float64`` with ``use_float64=True``) on every device.
@@ -161,7 +170,12 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     Xty: torch.Tensor
     sum_x: torch.Tensor
     sum_y: torch.Tensor
+    _mean_x: torch.Tensor
+    _mean_y: torch.Tensor
+    _statistics_version: torch.Tensor
     _n: torch.Tensor
+
+    _PRECISION_BUFFERS = ("XtX", "Xty", "sum_x", "sum_y", "_mean_x", "_mean_y")
 
     def __init__(
         self,
@@ -198,6 +212,11 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         self.register_buffer("Xty", torch.zeros(in_features, out_features, dtype=acc_dtype))
         self.register_buffer("sum_x", torch.zeros(in_features, dtype=acc_dtype))
         self.register_buffer("sum_y", torch.zeros(out_features, dtype=acc_dtype))
+        self.register_buffer("_mean_x", torch.zeros(in_features, dtype=acc_dtype))
+        self.register_buffer("_mean_y", torch.zeros(out_features, dtype=acc_dtype))
+        # Version 1 stores centered cross-products when bias=True. Legacy
+        # checkpoints had no version and stored cancellation-prone raw moments.
+        self.register_buffer("_statistics_version", torch.ones((), dtype=torch.long))
         self.register_buffer("_n", torch.zeros((), dtype=torch.long))
 
         # Dtype the per-chunk Gram matmuls actually ran in (resolved from the
@@ -206,6 +225,72 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         # the precision loss happens at the float32 matmul, before the float64
         # accumulation, so the accumulator dtype would understate it.
         self._chunk_gram_dtype: torch.dtype | None = None
+
+    def _apply(
+        self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True
+    ) -> "IncrementalRidgeReadoutLayer":
+        _apply_with_solver_precision(
+            self,
+            fn,
+            self._PRECISION_BUFFERS,
+            use_float64=self.use_float64,
+            recurse=recurse,
+        )
+        return self
+
+    def _upgrade_raw_statistics(self, state: dict[str, Any], prefix: str = "") -> None:
+        if prefix + "_statistics_version" in state:
+            if int(state[prefix + "_statistics_version"].item()) != 1:
+                raise RuntimeError("Unsupported incremental ridge statistics version")
+            return
+        keys = ("XtX", "Xty", "sum_x", "sum_y", "_n")
+        if not all(prefix + name in state for name in keys):
+            return
+        count = int(state[prefix + "_n"].item())
+        xx = state[prefix + "XtX"]
+        dtype = resolve_solve_dtype(self.weight.dtype, self.use_float64)
+        mean_x = state[prefix + "sum_x"].to(dtype=dtype) / max(count, 1)
+        mean_y = state[prefix + "sum_y"].to(dtype=dtype) / max(count, 1)
+        state[prefix + "XtX"] = xx.to(dtype=dtype)
+        state[prefix + "Xty"] = state[prefix + "Xty"].to(dtype=dtype)
+        state[prefix + "sum_x"] = state[prefix + "sum_x"].to(dtype=dtype)
+        state[prefix + "sum_y"] = state[prefix + "sum_y"].to(dtype=dtype)
+        if self.bias is not None and count:
+            state[prefix + "XtX"] = xx.to(dtype=dtype) - count * torch.outer(mean_x, mean_x)
+            state[prefix + "Xty"] = state[prefix + "Xty"].to(dtype=dtype) - count * torch.outer(
+                mean_x, mean_y
+            )
+        state[prefix + "_mean_x"] = mean_x
+        state[prefix + "_mean_y"] = mean_y
+        state[prefix + "_statistics_version"] = torch.ones((), dtype=torch.long, device=xx.device)
+        if count:
+            warnings.warn(
+                "Upgraded legacy incremental ridge raw-moment statistics. Precision "
+                "already lost in old accumulators cannot be recovered; reset and refit "
+                "before continuing highly offset or ill-conditioned streams.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        local_metadata: dict[str, Any],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        self._upgrade_raw_statistics(state_dict, prefix)
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._upgrade_raw_statistics(self._buffers)
+        self.__dict__.setdefault("_chunk_gram_dtype", None)
 
     @property
     def n_seen(self) -> int:
@@ -225,6 +310,8 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         self.Xty.zero_()
         self.sum_x.zero_()
         self.sum_y.zero_()
+        self._mean_x.zero_()
+        self._mean_y.zero_()
         self._n.zero_()
         self._chunk_gram_dtype = None
         self._set_fitted(False)
@@ -239,7 +326,7 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         the layer's feature dimensions, and adds the chunk's contribution to the
         running ``XtX`` / ``Xty`` / ``sum_x`` / ``sum_y`` / ``n`` accumulators.
         Call once per ``DataLoader`` batch (or per window of a long sequence);
-        the statistics are additive so chunk boundaries do not affect the final
+        the centered statistics are merged so chunk boundaries do not affect the final
         fit.
 
         Calling ``partial_fit`` after :meth:`finalize` keeps accumulating onto
@@ -271,7 +358,7 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         states, targets = self._prepare_fit_inputs(states, targets, "partial_fit")
 
         # Form each chunk in the requested Gram dtype (float64 by default),
-        # then accumulate into the buffers on the module's current dtype/device.
+        # then merge into buffers in their independently configured working dtype.
         solve_dtype = resolve_solve_dtype(states.dtype, self.use_float64)
         gram_dtype = resolve_gram_dtype(states.dtype, states.device, solve_dtype, self.gram_dtype)
         self._chunk_gram_dtype = gram_dtype
@@ -279,8 +366,25 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         y = targets.to(gram_dtype)
 
         acc_dtype = self.XtX.dtype
-        self.XtX += (x.T @ x).to(acc_dtype)
-        self.Xty += (x.T @ y).to(acc_dtype)
+        if self.bias is not None:
+            chunk_mean_x = x.mean(dim=0)
+            chunk_mean_y = y.mean(dim=0)
+            centered_x = x - chunk_mean_x
+            centered_y = y - chunk_mean_y
+            delta_x = chunk_mean_x.to(acc_dtype) - self._mean_x
+            delta_y = chunk_mean_y.to(acc_dtype) - self._mean_y
+            old_count = self._n.to(acc_dtype)
+            total = old_count + states.shape[0]
+            correction = old_count * states.shape[0] / total
+            self.XtX.add_((centered_x.T @ centered_x).to(acc_dtype))
+            self.Xty.add_((centered_x.T @ centered_y).to(acc_dtype))
+            self.XtX.addmm_(delta_x[:, None], (correction * delta_x)[None, :])
+            self.Xty.addmm_(delta_x[:, None], (correction * delta_y)[None, :])
+            self._mean_x.add_(delta_x * (states.shape[0] / total))
+            self._mean_y.add_(delta_y * (states.shape[0] / total))
+        else:
+            self.XtX += (x.T @ x).to(acc_dtype)
+            self.Xty += (x.T @ y).to(acc_dtype)
         self.sum_x += x.sum(dim=0).to(acc_dtype)
         self.sum_y += y.sum(dim=0).to(acc_dtype)
         self._n += states.shape[0]
@@ -320,19 +424,8 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
             )
 
         fit_intercept = self.bias is not None
-        nf = float(n)
-
-        if fit_intercept:
-            # Centered Gram / RHS from the running statistics:
-            #   XᵀX - n x̄ᵀx̄ = XtX - (Σx)ᵀ(Σx) / n
-            #   Xᵀy - n x̄ᵀȳ = Xty - (Σx)ᵀ(Σy) / n
-            x_mean = (self.sum_x / nf).unsqueeze(0)  # (1, F)
-            y_mean = (self.sum_y / nf).unsqueeze(0)  # (1, T)
-            gram = self.XtX - nf * (x_mean.T @ x_mean)
-            rhs = self.Xty - nf * (x_mean.T @ y_mean)
-        else:
-            gram = self.XtX
-            rhs = self.Xty
+        gram = self.XtX
+        rhs = self.Xty
 
         layer_name = (
             f"{type(self).__name__}('{self._name}')"
@@ -349,7 +442,7 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
 
         intercept = None
         if fit_intercept and self.bias is not None:
-            intercept = (y_mean - x_mean @ coefs).squeeze(0)
+            intercept = self._mean_y - self._mean_x @ coefs
         self._copy_coefficients(coefs, intercept)
 
         self._set_fitted(True)

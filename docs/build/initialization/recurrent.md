@@ -100,3 +100,55 @@ GPU random draws are identical.
 Continue with [custom registration](custom.md), the
 [complete builder catalog](topologies/index.md), or
 [training-data calibration](../../workflows/calibration.md).
+
+## Spectral measurement and initialization cost
+
+Automatic scaling measures dense matrices with `torch.linalg.eigvals`. For
+large matrices with at most 10% nonzero entries it uses SciPy's sparse Arnoldi
+solver on CPU, with a dense fallback if that solve fails. Arnoldi is a numerical
+approximation; requesting several leading eigenvalues reduces sensitivity to
+clustered spectra. MPS measurements also use CPU. Dense eigendecomposition can
+make construction expensive for a large reservoir; it does not run at every
+forecast step.
+
+A power estimate that stops changing can still have missed the dominant mode.
+It is therefore insufficient to validate the radius used for scaling. When
+construction cost matters, prefer a builder whose spectrum is known by design
+and explicitly keep its native scale with `prescaled=True` or `rescale=False`.
+Benchmark both construction time and subsequent forecasting for your workload.
+
+## Migration: corrected graph weights and degree
+
+Two graph builders now follow their stated mathematical definitions. Reservoirs
+using them can produce different weights and forecasts with the same old seed;
+retrain readouts and reevaluate previously selected hyperparameters.
+
+- `regular` now connects each node to exactly `k` distinct neighbours, excluding
+  optional self-loops. Previously odd `k` silently produced `k - 1` neighbours.
+  Odd `k` uses an antipodal matching, so `n` must be even. Valid configurations
+  satisfy `0 <= k < n` and `n * k` even. Directed mode has `k` incoming and `k`
+  outgoing neighbours. To preserve the old odd-degree connectivity, request
+  `k - 1`; matching an old random realization exactly requires saved weights.
+- `simple_cycle_jumps` now adds the cycle and jump contributions on shared edges.
+  With `jump_length=1`, forward edges have weight `r_c + r_l` and reverse edges
+  have weight `r_l`. Previously jumps overwrote the cycle weight, so changing
+  `r_c` could have no effect. Each bidirectional jump pair is counted once.
+  Saved weights are the reliable way to retain an existing realization.
+- `spectral_cascade(..., spectral_radius=0)` now produces zero clique weights;
+  it previously retained nonzero weights.
+
+```python
+# True degree three, including one opposite neighbour on an even ring.
+reservoir = ESNLayer(
+    128, feedback_size=3,
+    recurrent_initializer=("regular", {"k": 3}), seed=7,
+)
+
+# Cycle and jump contributions are both preserved where their edges overlap.
+reservoir = ESNLayer(
+    128, feedback_size=3, spectral_radius=None,
+    recurrent_initializer=("simple_cycle_jumps", {
+        "jump_length": 1, "r_c": 0.6, "r_l": 0.1,
+    }), seed=7,
+)
+```

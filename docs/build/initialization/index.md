@@ -49,13 +49,16 @@ layer = ESNLayer(200, feedback_size=3, input_size=5,
 
 ## Reproducibility
 
-A single `seed` on `ESNLayer` fixes the **entire** reservoir — the recurrent
+For built-in initializers, a single `seed` on `ESNLayer` fixes the **entire** reservoir — the recurrent
 (topology) matrix, the feedback and input weights, and the random bias — so two
 layers built with the same seed are identical down to the last entry. It covers
 the registry/callable specs *and* the default `uniform(-1, 1)` draws used when
-no spec is given, and it is independent of the global RNG state:
+no spec is given, and it is independent of the global RNG state. A custom
+callback must accept and use `seed` or `generator` to provide the same guarantee:
 
 ```python
+import torch
+
 a = ESNLayer(200, feedback_size=3, topology="erdos_renyi", seed=42)
 b = ESNLayer(200, feedback_size=3, topology="erdos_renyi", seed=42)
 assert torch.equal(a.weight_hh, b.weight_hh)
@@ -68,8 +71,9 @@ for threading a per-trial generator (e.g. `seed + trial.number`) through an HPO
 `model_creator` so every trial draws an identical reservoir run-to-run. An
 explicit `seed` inside a tuple/object spec always wins over the layer-level one.
 Pass `seed=None` (the default) and the reservoir still tracks
-`torch.manual_seed`, because every generator — NumPy for graph topologies, torch
-for the rectangular/bias draws — is derived from torch's global RNG.
+`torch.manual_seed`, because built-in NumPy and Torch draws derive their generators from Torch's
+global RNG. Configured custom objects retain their own seed policy. See
+[custom reproducibility](custom.md#reproducibility-and-numerical-precision).
 
 ## Any function is a topology
 

@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from resdag.utils.general import coerce_seed_to_int
+from resdag.utils.general import coerce_seed_to_int, create_rng
 
 from ._sign_sampling import build_sign_matrix
 from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
@@ -109,7 +109,7 @@ class WeightedInputInitializer(InputFeedbackInitializer):
         dtype = weight.dtype
         compute_dtype = _numpy_compute_dtype(dtype)
 
-        rng = np.random.default_rng(coerce_seed_to_int(self.seed))
+        rng = create_rng(coerce_seed_to_int(self.seed))
         q = _block_size(out_features, in_features)
 
         # Natural range is [-1, 1]; the shared scaling contract multiplies by
@@ -238,7 +238,7 @@ class WeightedMinimalInitializer(InputFeedbackInitializer):
         dtype = weight.dtype
         compute_dtype = _numpy_compute_dtype(dtype)
 
-        rng = np.random.default_rng(coerce_seed_to_int(self.seed))
+        rng = create_rng(coerce_seed_to_int(self.seed))
         q = _block_size(out_features, in_features)
 
         # Build the constant-magnitude block matrix (off-block entries stay 0).

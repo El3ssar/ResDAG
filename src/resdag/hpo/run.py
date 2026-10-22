@@ -15,7 +15,7 @@ resdag.hpo.losses : Available loss functions.
 import logging
 import os
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import optuna
 import torch
@@ -122,6 +122,7 @@ def run_hpo(
     n_checkpoints: int = 5,
     torch_scoring: bool = True,
     trial_callbacks: list[TrialCallback] | None = None,
+    error_policy: Literal["fail", "penalty"] = "fail",
 ) -> optuna.Study:
     """Run an Optuna hyperparameter optimization study for ESN models.
 
@@ -245,9 +246,18 @@ def run_hpo(
     verbosity : int, default=1
         Logging verbosity: ``0`` = silent, ``1`` = normal, ``2`` = verbose.
     catch_exceptions : bool, default=True
-        If ``True``, catch exceptions and return *penalty_value*.
+        If ``True``, continue after invalid evaluations according to
+        ``error_policy``. If ``False``, propagate their original exceptions.
     penalty_value : float, default=1e10
-        Value returned for failed trials.
+        Value used only by the explicit legacy ``error_policy="penalty"``.
+    error_policy : {"fail", "penalty"}, default="fail"
+        Record caught invalid evaluations as Optuna ``FAIL`` trials, excluding
+        them from winner selection. ``"penalty"`` retains the legacy numeric
+        penalty behavior. Studies with failed/invalid evaluations and no valid
+        completion raise instead of returning a misleading winner. Fully pruned
+        studies are returned without a best trial, following Optuna semantics.
+        Low-level ``TrialRunner`` and ``build_objective`` retain their legacy
+        penalty default.
     clip_value : float, optional
         Upper bound for the objective value.  When set and the raw loss
         exceeds this threshold, the value returned to Optuna is clamped to
@@ -367,6 +377,8 @@ def run_hpo(
         raise ValueError(f"n_trials must be positive, got {n_trials}")
     if n_workers <= 0:
         raise ValueError(f"n_workers must be positive, got {n_workers}")
+    if error_policy not in ("fail", "penalty"):
+        raise ValueError("error_policy must be 'fail' or 'penalty'")
     if not callable(model_creator):
         raise TypeError("model_creator must be callable")
     if not callable(search_space):
@@ -493,6 +505,7 @@ def run_hpo(
         n_checkpoints=n_checkpoints,
         torch_scoring=torch_scoring,
         trial_callbacks=trial_callbacks,
+        error_policy=error_policy,
     )
 
     # ── Run optimization ─────────────────────────────────────────────
@@ -535,6 +548,25 @@ def run_hpo(
     else:
         logger.info(f"All {n_trials} trials already completed")
 
+    completed = study.get_trials(states=(optuna.trial.TrialState.COMPLETE,))
+    valid = [
+        trial
+        for trial in completed
+        if "error" not in trial.user_attrs and not trial.user_attrs.get("nonfinite_loss", False)
+    ]
+    invalid = study.get_trials(states=(optuna.trial.TrialState.FAIL,))
+    if not valid and (invalid or completed):
+        failed = invalid or completed
+        detail = failed[0].user_attrs.get("error", "Non-finite or invalid evaluation")
+        raise RuntimeError(
+            f"No valid HPO trials completed. First evaluation error: {detail}. "
+            "Use catch_exceptions=False to debug the underlying failure."
+        )
+    if completed and study.best_trial not in valid:
+        raise RuntimeError(
+            "The study's best score belongs to an invalid penalty evaluation. "
+            "Use a fresh study with error_policy='fail' to avoid selecting invalid trials."
+        )
     return study
 
 

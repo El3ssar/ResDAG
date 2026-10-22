@@ -334,6 +334,7 @@ def rollout(
     *,
     no_grad: bool,
     compile: bool = False,
+    output_templates: tuple[torch.Tensor, ...] | None = None,
 ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
     """
     Roll a flattened single-step engine forward autoregressively.
@@ -392,6 +393,10 @@ def rollout(
         path is inference-only, so callers must gate it to ``no_grad=True`` (the
         ``forecast`` public method raises otherwise); here it only ever writes
         into the preallocated buffers.
+    output_templates : tuple of torch.Tensor, optional
+        One warmup output per head, used to preserve each head's dtype and
+        device when allocating inference buffers. Omitted templates retain the
+        feedback placement, for callers with homogeneous outputs.
 
     Returns
     -------
@@ -430,9 +435,18 @@ def rollout(
     forecast_buffers: list[torch.Tensor] = []
     step_accumulators: list[list[torch.Tensor]] = []
     if no_grad:
-        forecast_buffers = [
-            torch.empty(batch_size, horizon, dim, dtype=dtype, device=device) for dim in out_dims
-        ]
+        if output_templates is None:
+            forecast_buffers = [
+                torch.empty(batch_size, horizon, dim, dtype=dtype, device=device)
+                for dim in out_dims
+            ]
+        else:
+            if len(output_templates) != n_out:
+                raise ValueError("Expected one output template per forecast head")
+            forecast_buffers = [
+                template.new_empty(batch_size, horizon, dim)
+                for template, dim in zip(output_templates, out_dims)
+            ]
     else:
         step_accumulators = [[] for _ in range(n_out)]
 

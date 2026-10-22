@@ -5,10 +5,11 @@ welcome — components, fixes, docs, benchmarks. This guide covers the
 mechanics; the design rationale lives in the
 [documentation](https://el3ssar.github.io/ResDAG/).
 
-> **Looking for something to work on?** The roadmap is tracked as a
-> dependency-ordered set of issues, grouped under the `type:epic` tracking
-> issues and organized by the `pillar:*` labels (correctness, speed, api,
-> pipeline, hpo). Pick any issue labelled `status:ready`.
+> **Looking for something to work on?** Start with the
+> [roadmap](https://github.com/El3ssar/ResDAG/blob/main/docs/project/roadmap.md), the canonical Pending/WIP/Done tracker.
+> Update its task status and verification evidence in the implementation PR.
+> Related issues can still use the `type:epic`, `pillar:*` and `status:ready`
+> labels for discussion and dependency tracking.
 
 ## Development setup
 

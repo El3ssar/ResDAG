@@ -16,7 +16,7 @@ alone.
 
 The feedback signal drives a tanh reservoir, then rejoins its own states at
 the concatenation, so the readout (a
-[`CGReadoutLayer`](../readouts/cg-readout.md)) solves ridge regression over
+[`RidgeReadoutLayer`](../readouts/index.md)) solves ridge regression over
 `feedback_size + reservoir_size` features. The linear part of the
 input–output map reaches the readout unfiltered; the reservoir only has to
 supply what linearity cannot.
@@ -33,15 +33,18 @@ import torch
 from resdag.models import classic_esn
 from resdag.training import ESNTrainer
 
-series = torch.cumsum(0.1 * torch.randn(1, 1201, 3), dim=1)
+t = torch.arange(1401) * 0.05
+series = torch.stack((t.sin(), t.cos(), (2 * t).sin()), dim=-1).unsqueeze(0)
 
-model = classic_esn(reservoir_size=300, feedback_size=3, output_size=3)
+model = classic_esn(reservoir_size=300, feedback_size=3, output_size=3, seed=7)
 ESNTrainer(model).fit(
     warmup_inputs=(series[:, :200],),
     train_inputs=(series[:, 200:1200],),
     targets={"output": series[:, 201:1201]},              # next-step targets
 )
-preds = model.forecast(series[:, :200], horizon=100)      # (1, 100, 3)
+model.eval()
+preds = model.forecast(series[:, 1001:1201], horizon=200)  # (1, 200, 3)
+truth = series[:, 1201:1401]                             # held-out continuation
 ```
 
 ## Parameters
@@ -55,6 +58,7 @@ preds = model.forecast(series[:, :200], horizon=100)      # (1, 100, 3)
 | `activation` | `"tanh"` | also `"relu"`, `"sigmoid"`, `"identity"` |
 | `bias`, `trainable` | `True`, `False` | random bias on; frozen reservoir |
 | `readout_alpha`, `readout_bias`, `readout_name` | `1e-6`, `True`, `"output"` | ridge strength; `readout_name` keys the targets dict |
+| `readout`, `readout_kwargs` | `"ridge"`, `None` | direct Cholesky ridge by default; other solver names and options are supported |
 | `**reservoir_kwargs` | — | forwarded to `ESNLayer` (e.g. `bias_scaling`) |
 
 !!! note "Choosing a baseline"

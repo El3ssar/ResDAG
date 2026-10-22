@@ -169,7 +169,9 @@ class ParallelESNModel(torch.nn.Module):
         halo: int,
     ) -> None:
         super().__init__()
-        patch_index = _patch_gather_index(input_dim, core_width, halo)
+        patch_index = _patch_gather_index(input_dim, core_width, halo).to(
+            device=reservoir.reference_device_dtype()[0]
+        )
         patch_width = core_width + 2 * halo
         if reservoir.feedback_size != patch_width:
             raise ValueError(

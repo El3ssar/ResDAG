@@ -118,3 +118,40 @@ nested functions if you need full-model serialization.
 See the [input/feedback catalog](initializers/index.md) for existing recipes,
 [recurrent choices](recurrent.md) for spectral control, and
 [API reference](../../reference/init.md) for subclass contracts.
+
+## Reproducibility and numerical precision
+
+Direct callbacks, `(callback, kwargs)` tuples and registered names use the
+same seed rules. A callback accepting `seed=` receives the layer seed unless
+you explicitly bind one. In-place Torch functions accepting `generator=` get
+a local generator on the destination device. A bound generator takes precedence
+and advances on each call; reuse a fresh generator with the same seed when you
+want to reproduce its first draw. Configured initializer objects keep their own
+seed policy and are used as supplied.
+
+```python
+from resdag.init import get_recurrent_initializer
+from resdag.init.input_feedback import get_input_feedback
+
+# Explicit initializer seeds take precedence over the layer seed.
+recurrent = get_recurrent_initializer(
+    "orthogonal", seed=11, rescale=False,
+)
+feedback = get_input_feedback("normal", scale=0.2, seed=12)
+layer = ESNLayer(64, feedback_size=2, recurrent_initializer=recurrent,
+                 feedback_initializer=feedback, seed=99)
+```
+
+For built-in NumPy-backed initializers, omitting a seed draws from a generator
+derived from Torch's global RNG, so resetting `torch.manual_seed(...)` reproduces
+the draw. Custom callbacks that ignore both seed and generator remain responsible
+for their own randomness. Graph or NumPy float64 outputs retain their precision
+when copied into float64 reservoir weights; constructing float32 values first
+and converting them later cannot recover the lost digits.
+
+Some structured initializers need options or dimensions that cannot be inferred
+from the layer. For example, supply `("dendrocycle_input", {"c": 0.5})` or
+`("ring_window", {"c": 0.5, "window": 5})`. These tuple forms work the same
+way as configuring an initializer object explicitly. Each catalog page includes
+a complete example with suitable dimensions and required parameters, and the
+examples are executed in the test suite.

@@ -37,7 +37,8 @@ def simple_cycle_jumps_graph(
         Weight for cycle edges. Used verbatim (pre-scaled topology); any layer
         ``spectral_radius`` is ignored.
     r_l : float
-        Weight for jump edges.
+        Weight for jump edges. Where a jump overlaps a cycle edge, its weight
+        is added to the cycle contribution. Repeated jump pairs count once.
 
     Returns
     -------
@@ -47,6 +48,10 @@ def simple_cycle_jumps_graph(
         - Bidirectional jump edges every jump_length nodes (weight = r_l)
           until n - (n % jump_length).
     """
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer.")
+    if isinstance(jump_length, bool) or not isinstance(jump_length, int) or jump_length < 1:
+        raise ValueError("jump_length must be a positive integer.")
     G = DiGraph()
     G.add_nodes_from(range(n))
 
@@ -56,9 +61,13 @@ def simple_cycle_jumps_graph(
 
     # Bidirectional jumps
     limit = n - (n % jump_length)
+    pairs = set()
     for i in range(0, limit, jump_length):
         j = (i + jump_length) % n
-        G.add_edge(i, j, weight=r_l)
-        G.add_edge(j, i, weight=r_l)
+        pairs.add((min(i, j), max(i, j)))
+    for i, j in sorted(pairs):
+        for source, target in {(i, j), (j, i)}:
+            previous = G.get_edge_data(source, target, {}).get("weight", 0.0)
+            G.add_edge(source, target, weight=previous + r_l)
 
     return G

@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from resdag.utils.general import coerce_seed_to_int
+from resdag.utils.general import coerce_seed_to_int, create_rng
 
 from .base import InputFeedbackInitializer, _numpy_compute_dtype, _resolve_shape
 from .registry import register_input_feedback
@@ -149,7 +149,7 @@ class InformedInputInitializer(InputFeedbackInitializer):
                 f"({model_in_size}) so state_size > 0."
             )
 
-        rng = np.random.default_rng(coerce_seed_to_int(self.seed))
+        rng = create_rng(coerce_seed_to_int(self.seed))
         values = np.zeros((out_features, in_features), dtype=compute_dtype)
 
         num_for_state = int(np.floor(out_features * self.gamma))

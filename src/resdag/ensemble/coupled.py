@@ -124,7 +124,15 @@ class CoupledEnsembleESNModel(nn.Module):
                 f"aggregator must be 'mean', 'median', or an nn.Module; got '{aggregator}'."
             )
 
+        if not isinstance(aggregator, (str, nn.Module)):
+            raise TypeError("aggregator must be 'mean', 'median', or an nn.Module")
+        for index, model in enumerate(models):
+            if not isinstance(model, ESNModel):
+                raise TypeError(
+                    f"Sub-model {index} must be an ESNModel, got {type(model).__name__}"
+                )
         self._validate_feedback_output_dims(models)
+        self._validate_member_interfaces(models)
 
         reservoir_owners: dict[int, int] = {}
         for index, model in enumerate(models):
@@ -147,6 +155,37 @@ class CoupledEnsembleESNModel(nn.Module):
         else:
             self.aggregator_module = None
             self._aggregator_str = aggregator
+
+    @staticmethod
+    def _validate_member_interfaces(models: list[ESNModel]) -> None:
+        """Reject incompatible shared inputs before running any member."""
+        expected = tuple(int(node.shape[-1]) for node in models[0].inputs)
+        reference: tuple[torch.device, torch.dtype] | None = None
+        for index, model in enumerate(models):
+            widths = tuple(int(node.shape[-1]) for node in model.inputs)
+            if widths != expected:
+                raise ValueError(
+                    f"Sub-model {index} expects input feature widths {widths}, but shared "
+                    f"ensemble inputs must match sub-model 0's widths {expected}."
+                )
+            tensor = next(
+                (
+                    item
+                    for item in chain(model.parameters(), model.buffers())
+                    if item.is_floating_point()
+                ),
+                None,
+            )
+            if tensor is not None:
+                placement = (tensor.device, tensor.dtype)
+                if reference is None:
+                    reference = placement
+                elif placement != reference:
+                    raise ValueError(
+                        f"Sub-model {index} uses device={tensor.device}, dtype={tensor.dtype}; "
+                        f"all ensemble members must share device={reference[0]}, "
+                        f"dtype={reference[1]}. Move/cast members before constructing the ensemble."
+                    )
 
     @staticmethod
     def _validate_feedback_output_dims(models: list[ESNModel]) -> None:
@@ -943,9 +982,15 @@ class CoupledEnsembleESNModel(nn.Module):
     def _aggregate_stacked(self, stacked: torch.Tensor) -> torch.Tensor:
         """Aggregate a pre-stacked (N, batch, T, F) tensor."""
         if self.aggregator_module is not None:
-            # nn.Module.__call__ is typed to return Any; the aggregator contract
-            # is to return a single aggregated tensor.
-            return cast(torch.Tensor, self.aggregator_module(stacked))
+            result = self.aggregator_module(stacked)
+            if not isinstance(result, torch.Tensor):
+                raise TypeError("A custom ensemble aggregator must return a torch.Tensor")
+            if result.shape != stacked.shape[1:]:
+                raise ValueError(
+                    "A custom ensemble aggregator must preserve (batch, time, features): "
+                    f"expected {tuple(stacked.shape[1:])}, got {tuple(result.shape)}"
+                )
+            return result
         if self._aggregator_str == "mean":
             return stacked.mean(dim=0)
         # Interpolated (statistical) median: ``torch.quantile(.., 0.5)`` averages

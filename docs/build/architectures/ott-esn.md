@@ -15,13 +15,13 @@ forecasting chaotic systems.
 `Input → Reservoir → SelectiveExponentiation → Concatenate(Input, Augmented) → Readout`
 
 `SelectiveExponentiation(index=0, exponent=2.0)` squares the even-indexed
-state units and passes the odd-indexed ones through untouched. A tanh
-reservoir is an odd function of its drive, so without this the readout only
-sees odd-order terms, and an autonomous forecast can settle onto the mirror
-image of the attractor. Squaring half the units gives the readout
-even-order features and breaks that symmetry, while the concatenation keeps
-the raw input available as in [classic_esn](classic-esn.md). The factory
-builds the readout as a [CGReadoutLayer](../readouts/cg-readout.md).
+state units and passes the odd-indexed ones through untouched. With zero
+bias, tanh's odd symmetry can limit the even-order features available to a
+linear readout. Squaring half the units supplies those features explicitly;
+nonzero biases also break the exact odd symmetry. The concatenation keeps
+the raw input available as in [classic_esn](classic-esn.md). The default
+readout is [RidgeReadoutLayer](../readouts/index.md), using a direct Cholesky
+ridge solve. Other readout solvers remain configurable.
 
 <figure markdown>
 ![wiring](../../assets/figures/architectures/ott_esn.svg)
@@ -35,19 +35,22 @@ import torch
 from resdag.models import ott_esn
 from resdag.training import ESNTrainer
 
-series = torch.cumsum(0.1 * torch.randn(1, 1201, 3), dim=1)
+t = torch.arange(1401) * 0.05
+series = torch.stack((t.sin(), t.cos(), (2 * t).sin()), dim=-1).unsqueeze(0)
 
 model = ott_esn(
     reservoir_size=500, feedback_size=3, output_size=3,
     topology=("watts_strogatz", {"k": 6, "p": 0.3}),
-    spectral_radius=0.95,
+    spectral_radius=0.95, seed=7,
 )
 ESNTrainer(model).fit(
     warmup_inputs=(series[:, :200],),
     train_inputs=(series[:, 200:1200],),
     targets={"output": series[:, 201:1201]},
 )
-preds = model.forecast(series[:, :200], horizon=100)   # (1, 100, 3)
+model.eval()
+preds = model.forecast(series[:, 1001:1201], horizon=200)  # (1, 200, 3)
+truth = series[:, 1201:1401]                             # held-out continuation
 ```
 
 ## Parameters

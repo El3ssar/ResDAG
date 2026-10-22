@@ -33,18 +33,21 @@ import torch
 from resdag.models import power_augmented
 from resdag.training import ESNTrainer
 
-series = torch.cumsum(0.1 * torch.randn(1, 1201, 3), dim=1)
+t = torch.arange(1401) * 0.05
+series = torch.stack((t.sin(), t.cos(), (2 * t).sin()), dim=-1).unsqueeze(0)
 
 model = power_augmented(
     reservoir_size=500, feedback_size=3, output_size=3,
-    exponent=3.0,                       # odd exponents preserve state signs
+    exponent=3.0, seed=7,               # odd exponents preserve state signs
 )
 ESNTrainer(model).fit(
     warmup_inputs=(series[:, :200],),
     train_inputs=(series[:, 200:1200],),
     targets={"output": series[:, 201:1201]},
 )
-preds = model.forecast(series[:, :200], horizon=100)   # (1, 100, 3)
+model.eval()
+preds = model.forecast(series[:, 1001:1201], horizon=200)  # (1, 200, 3)
+truth = series[:, 1201:1401]                             # held-out continuation
 ```
 
 Because `exponent` is continuous, the factory works directly as a
@@ -53,25 +56,26 @@ sweep `exponent` alongside `spectral_radius`.
 
 !!! warning "Choose the exponent for signed states"
     `tanh` reservoir states span `[-1, 1]`, negatives and zeros included.
-    Even integers (`2.0`, the default) and odd integers (`3.0`) are always
+    Even integers (`2.0`) and odd integers (`3.0`, the default) are always
     safe. A *non-integer* exponent (`0.5`, `1.5`) on a negative state
     returns `nan`, and a *negative* exponent (`-1.0`) on a zero state
     returns `inf` — silently, since this factory uses the default
     `torch.pow`. If you need a non-integer exponent on signed states, wire
     the model by hand with
     [`Power(exponent, sign_preserving=True)`](../layers/transforms.md),
-    which applies `sign(x) * abs(x) ** exponent` and stays finite.
+    which applies `sign(x) * abs(x) ** exponent`. Nonnegative exponents
+    avoid the negative-state issue; negative exponents still need care at zero.
 
 ## Parameters
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
 | `reservoir_size`, `feedback_size`, `output_size` | required | units, input dim, output dim |
-| `exponent` | `2.0` | power applied to every reservoir state; prefer integers on signed `tanh` states (see warning above) |
+| `exponent` | `3.0` | power applied to every reservoir state; prefer integers on signed `tanh` states (see warning above) |
 | `topology`, `feedback_initializer` | `None` | any [initialization spec](../initialization/index.md) |
 | `spectral_radius`, `leak_rate` | `0.9`, `1.0` | factory scales the spectrum; `1.0` = no leak |
 | `activation`, `bias`, `trainable` | `"tanh"`, `True`, `False` | reservoir options, as in the other factories |
-| `readout_alpha`, `readout_bias`, `readout_name` | `1e-6`, `True`, `"output"` | ridge strength of the [CG readout](../readouts/cg-readout.md); `readout_name` keys the targets dict |
+| `readout_alpha`, `readout_bias`, `readout_name` | `1e-6`, `True`, `"output"` | ridge strength of the default [direct readout](../readouts/index.md); `readout_name` keys the targets dict |
 | `**reservoir_kwargs` | — | forwarded to `ESNLayer` (e.g. `bias_scaling`) |
 
 ## Reference

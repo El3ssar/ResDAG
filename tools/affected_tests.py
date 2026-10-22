@@ -134,6 +134,15 @@ def _is_broad_impact(rel_path: str) -> bool:
 # fewer tests" invariant. They are for cross-boundary dependencies that live
 # outside ``src/resdag`` and cannot be inferred from imports.
 _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
+    # Documentation recipes execute in these tests; imports alone do not catch
+    # invalid required arguments or forward-time shape errors.
+    "docs/": (
+        "tests/test_init/test_correctness_contracts.py",
+        "tests/test_documented_architectures.py",
+        "tests/test_examples_smoke.py",
+    ),
+    "hooks/": ("tests/test_init/test_correctness_contracts.py",),
+    "examples/": ("tests/test_examples_smoke.py",),
     # Perf-gate floors read by the perf-regression test (incl. its well-formed
     # check): a malformed/edited targets.json must run those tests on the PR.
     "benchmarks/targets.json": ("tests/test_benchmarks/",),

@@ -145,6 +145,11 @@ def transfer_trials(
     storage in the parent process, so transferred trials are visible to forked
     workers.
 
+    Both studies must use the same objective directions. Reusing evaluated
+    scores also assumes identical data, preprocessing and objective semantics;
+    for a new experiment use ``warm_start`` to evaluate prior configurations
+    again. Trials marked with an error/non-finite diagnostic are not copied.
+
     Parameters
     ----------
     study : optuna.Study
@@ -172,11 +177,18 @@ def transfer_trials(
     7
     """
     source = _resolve_source_study(transfer_from)
+    if study.directions != source.directions:
+        raise ValueError(
+            "Cannot transfer evaluated scores between studies with different objective directions. "
+            "Use warm_start to re-evaluate prior configurations with the new objective."
+        )
 
     completed = [t for t in source.trials if t.state == TrialState.COMPLETE]
     transferred = 0
     for src in completed:
         if src.value is None:
+            continue
+        if "error" in src.user_attrs or src.user_attrs.get("nonfinite_loss", False):
             continue
 
         if param_names is None:

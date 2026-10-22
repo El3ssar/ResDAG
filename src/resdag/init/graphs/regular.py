@@ -19,16 +19,16 @@ def regular_adjacency(
 
     Vectorized NumPy construction of the same banded adjacency that
     :func:`regular_graph` describes, without the ``O(n*k)`` Python loop. Each
-    node connects to its ``k // 2`` forward neighbours (wrapping on the ring);
-    undirected graphs mirror those edges, directed graphs add the reverse edges
-    as independent draws.
+    node has exactly ``k`` distinct neighbours. Paired ring offsets contribute
+    two neighbours each; an odd ``k`` adds the antipodal matching on an even
+    ring. Directed graphs replace each pair with independently weighted arcs.
 
     Parameters
     ----------
     n : int
         Number of nodes.
     k : int
-        Number of neighbours per node (``k // 2`` on each side).
+        Number of neighbours per node, excluding optional self-loops.
     directed : bool, optional
         If ``True``, the forward and reverse edges are drawn independently;
         otherwise the forward edges are mirrored to keep the matrix symmetric.
@@ -48,14 +48,19 @@ def regular_adjacency(
     Raises
     ------
     ValueError
-        If ``k > n - (n % 2)`` (an invalid regular ring-lattice configuration).
+        If ``n`` or ``k`` is invalid, ``k >= n``, or both ``n`` and ``k``
+        are odd (an impossible undirected regular degree).
 
     See Also
     --------
     regular_graph : NetworkX-returning wrapper around this builder.
     """
-    if k > n - (n % 2):
-        raise ValueError(f"k must be <= n - (n % 2). Got k={k}, n={n}.")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer.")
+    if isinstance(k, bool) or not isinstance(k, int) or not 0 <= k < n:
+        raise ValueError(f"k must be an integer with 0 <= k < n. Got k={k}, n={n}.")
+    if n % 2 and k % 2:
+        raise ValueError(f"n * k must be even for a regular ring lattice. Got k={k}, n={n}.")
 
     rng = create_rng(seed)
     adjacency = np.zeros((n, n), dtype=np.float32)
@@ -77,6 +82,16 @@ def regular_adjacency(
         else:
             # Undirected: mirror the forward edge weight.
             adjacency[neighbors, rows] = forward
+
+    if k % 2:
+        # Visit each antipodal pair once, rather than overwriting the reverse
+        # weight when the other endpoint is visited.
+        half = n // 2
+        first = rows[:half]
+        opposite = first + half
+        forward = _weights((rows + half) % n)[:half]
+        adjacency[first, opposite] = forward
+        adjacency[opposite, first] = _weights((rows + half) % n)[:half] if directed else forward
 
     if self_loops:
         if random_weights:
@@ -122,7 +137,8 @@ def regular_graph(
     n : int
         Number of nodes.
     k : int
-        Number of neighbors each node is connected to. Must be <= n - (n % 2) in undirected mode.
+        Number of distinct neighbours, excluding optional self-loops. Must
+        satisfy ``0 <= k < n`` and ``n * k`` even.
     directed : bool, optional
         If True, the graph is directed; else undirected. Default: False.
     self_loops : bool, optional
@@ -141,7 +157,7 @@ def regular_graph(
     Raises
     ------
     ValueError
-        If ``k > n - (n % 2)`` (an invalid regular ring-lattice configuration).
+        If ``n`` or ``k`` is invalid, or ``n * k`` is odd.
     """
     # ``regular_adjacency`` performs the ``k`` validation (raising the same
     # ValueError) so the fast path and the NetworkX path agree.

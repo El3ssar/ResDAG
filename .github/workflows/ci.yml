@@ -83,8 +83,9 @@ jobs:
 
       - name: Re-render cross-library REPORT.md (resdag-only, deterministic)
         # reservoirpy / ReservoirComputing.jl are not installed in CI, so this
-        # renders the resdag-only rows; it proves the report regenerates
-        # deterministically with the flat-engine forecast win reflected. The
+        # renders resdag-only rows and smoke-checks the reporting pipeline.
+        # Internal pytest gates above enforce numerical/performance regression
+        # checks; these rows do not establish cross-library superiority. The
         # committed REPORT.md (full cross-library matrix) is regenerated on the
         # benchmark machine where the external libraries are present.
         working-directory: benchmarks

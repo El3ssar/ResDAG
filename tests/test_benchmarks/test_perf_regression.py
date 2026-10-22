@@ -17,11 +17,11 @@ Three ratios are gated (slugs / tickets):
 * ``vectorized_ngrc_vs_stepwise`` — the vectorized NG-RC feature pass
   (``reservoir-vectorize-ngrc``, #255) vs a Python loop over the single-step
   cell.
-* ``fast_spectral_radius_vs_dense_eigvals`` — the power-iteration spectral-radius
+* ``fast_spectral_radius_vs_dense_eigvals`` — the sparse Arnoldi spectral-radius
   estimate (``init-fast-spectral-radius``, #185) vs the dense ``eigvals``
   eigendecomposition.
 
-All three run on CPU with float32 and require no external library, so they are
+All three run on CPU with float32 and require no external RC library, so they are
 reproducible on any machine. They live behind the ``benchmark`` pytest marker
 (deselected by default; run with ``pytest -m benchmark``) because they are timing
 assertions, and each also carries a built-in correctness check (the fast and
@@ -276,10 +276,9 @@ class TestInternalSpeedupTargets:
         # scipy Arnoldi ``eigs`` — a few largest-magnitude eigenvalues via O(nnz)
         # matvecs — instead of the O(n^3) dense eigendecomposition. That is the
         # hardware-portable win (orders of magnitude fewer flops), and it is what
-        # this gate protects. (The dense pure-torch power-iteration path is a
-        # correctness-first scipy-less fallback: it does two matmuls per step for
-        # complex-conjugate-pair robustness and is *not* a reliable speedup, so it
-        # is deliberately not the thing measured here.)
+        # this gate protects. Dense matrices and a missing/failed SciPy solve
+        # use dense eigvals for dependable scaling; neither is claimed faster
+        # than the exact reference measured here.
         n = 2000
         density = 0.01
         matrix = (torch.randn(n, n) * 0.1) * (torch.rand(n, n) < density)

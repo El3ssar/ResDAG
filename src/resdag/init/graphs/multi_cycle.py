@@ -60,10 +60,12 @@ def multi_cycle_graph(
     >>> # Convert to dense recurrent matrix (node order is sorted by label):
     >>> W = smcr_matrix_from_graph(G)
     """
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer.")
+    if isinstance(k, bool) or not isinstance(k, int) or k < 1:
+        raise ValueError("k must be an integer >= 1.")
     if n % k != 0:
         raise ValueError("N must be divisible by k.")
-    if not isinstance(k, int) or k < 1:
-        raise ValueError("k must be an integer >= 1.")
 
     n_per_cycle = n // k
     first = start_node

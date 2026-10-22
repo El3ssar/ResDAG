@@ -251,6 +251,10 @@ trainable, feedback_initializer, input_initializer, topology, seed
         """float : Forward-Euler step size :math:`\\varepsilon` (alias of :attr:`dt`)."""
         return self.dt
 
+    @epsilon.setter
+    def epsilon(self, value: float) -> None:
+        self.dt = value
+
     @property
     def gamma(self) -> float:
         r"""

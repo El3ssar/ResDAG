@@ -24,6 +24,61 @@ from resdag.hpo.trial_runner import TrialRunner, _checkpoint_horizons  # noqa: E
 from resdag.models import ott_esn  # noqa: E402
 
 
+@pytest.mark.parametrize("direction", ["minimize", "maximize"])
+def test_caught_exception_penalty_respects_study_direction(direction):
+    def broken_creator(**kwargs):
+        raise ValueError("invalid model configuration")
+
+    runner = build_objective(
+        model_creator=broken_creator,
+        search_space=lambda trial: {},
+        data_loader=data_loader,
+        loss_fn=mae_loss,
+        penalty_value=123.0,
+        error_policy="penalty",
+    )
+    study = optuna.create_study(direction=direction)
+    study.optimize(runner, n_trials=1)
+    expected = -123.0 if direction == "maximize" else 123.0
+    assert study.trials[0].value == expected
+    assert "invalid model configuration" in study.trials[0].user_attrs["error"]
+
+
+def test_trial_evaluation_error_is_public_and_dependency_guarded(monkeypatch):
+    import resdag.hpo as hpo
+    import resdag.hpo.trial_runner as runner_module
+
+    assert "TrialEvaluationError" in hpo.__all__
+    assert "TrialEvaluationError" in runner_module.__all__
+    assert hpo.TrialEvaluationError is runner_module.TrialEvaluationError
+    monkeypatch.setattr(hpo, "_OPTUNA_AVAILABLE", False)
+    with pytest.raises(ImportError, match="resdag\\[hpo\\]"):
+        getattr(hpo, "TrialEvaluationError")
+
+
+def test_legacy_pickled_runner_retains_penalty_policy():
+    runner = build_objective(
+        model_creator=model_creator,
+        search_space=search_space,
+        data_loader=data_loader,
+        loss_fn=mae_loss,
+        penalty_value=456.0,
+        error_policy="fail",
+    )
+    del runner.__dict__["error_policy"]
+    restored = pickle.loads(pickle.dumps(runner))
+    assert restored.error_policy == "penalty"
+
+    def broken_creator(**kwargs):
+        raise ValueError("legacy invalid configuration")
+
+    restored.model_creator = broken_creator
+    study = optuna.create_study(direction="maximize")
+    study.optimize(restored, n_trials=1)
+    assert study.trials[0].state == optuna.trial.TrialState.COMPLETE
+    assert study.trials[0].value == -456.0
+
+
 # ── Module-level callbacks (must be top-level so the runner stays picklable) ──
 def model_creator(reservoir_size: int = 40, spectral_radius: float = 0.9):
     """Create a small Ott ESN for fast trials."""

@@ -25,21 +25,27 @@ import gc
 import inspect
 import logging
 import random
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import numpy as np
 import optuna
 import torch
 
 from resdag.core import ESNModel
+from resdag.core._modes import evaluating
 from resdag.training import ESNTrainer
 
 from ._torch_losses import score_builtin_tensor_loss
 from .losses import LossProtocol
 
-__all__ = ["TrialRunner", "TrialCallback"]
+__all__ = ["TrialRunner", "TrialCallback", "TrialEvaluationError"]
 
 logger = logging.getLogger(__name__)
+
+
+class TrialEvaluationError(RuntimeError):
+    """An invalid evaluation that an HPO backend records as a failed trial."""
+
 
 # Substring of the RuntimeError PyTorch raises when a *forked* worker touches
 # CUDA after the parent already initialised it. This is a *systematic* failure —
@@ -258,6 +264,7 @@ class TrialRunner:
         n_checkpoints: int = 5,
         torch_scoring: bool = True,
         trial_callbacks: list[TrialCallback] | None = None,
+        error_policy: Literal["fail", "penalty"] = "penalty",
     ) -> None:
         self.model_creator = model_creator
         self.search_space = search_space
@@ -277,6 +284,15 @@ class TrialRunner:
         self.n_checkpoints = n_checkpoints
         self.torch_scoring = torch_scoring
         self.trial_callbacks = trial_callbacks
+        if error_policy not in ("fail", "penalty"):
+            raise ValueError("error_policy must be 'fail' or 'penalty'")
+        self.error_policy = error_policy
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
+        # Older serialized objectives used numeric penalties and did not store
+        # an error policy. Preserve that behavior when resuming their workers.
+        self.__dict__.setdefault("error_policy", "penalty")
 
     # ── Public API ───────────────────────────────────────────────────────
     def __call__(self, trial: optuna.Trial) -> float:
@@ -290,8 +306,9 @@ class TrialRunner:
         Returns
         -------
         float
-            Loss value for Optuna to minimize.  On failure (when
-            ``catch_exceptions`` is ``True``) ``penalty_value`` is returned.
+            Loss value for Optuna to minimize. The explicit penalty policy
+            returns ``penalty_value`` for caught failures; the fail policy
+            raises ``TrialEvaluationError`` for the backend to record.
 
         Raises
         ------
@@ -329,7 +346,9 @@ class TrialRunner:
             if self.catch_exceptions:
                 logger.warning(f"Trial {trial.number} failed: {e}")
                 trial.set_user_attr("error", str(e))
-                return self.penalty_value
+                if self.error_policy == "fail":
+                    raise TrialEvaluationError(str(e)) from e
+                return self._directional_penalty(trial)
             raise
         finally:
             _cleanup()
@@ -338,8 +357,14 @@ class TrialRunner:
     def _run(self, trial: optuna.Trial) -> float:
         """Run the full per-trial pipeline (seed → train → forecast → score)."""
         trial_seed = self._seed_trial(trial)
+        if trial_seed is not None:
+            trial.set_user_attr("trial_seed", trial_seed)
 
         params = self.search_space(trial)
+        if _accepts_seed(self.model_creator):
+            model_seed = params.get("seed", trial_seed)
+            if isinstance(model_seed, int):
+                trial.set_user_attr("model_seed", model_seed)
 
         data = self.data_loader(trial)
         _validate_data_keys(data, drivers_keys=self.drivers_keys)
@@ -484,15 +509,19 @@ class TrialRunner:
                 f_warmup_inputs = f_warmup_inputs + (data[f"f_warmup_{key}"],)
                 forecast_drivers_list.append(data[f"forecast_{key}"])
 
-        preds = model.forecast(
-            f_warmup_inputs,
-            forecast_inputs=tuple(forecast_drivers_list) if forecast_drivers_list else None,
-            horizon=horizon,
-        )
+        with evaluating(model):
+            preds = model.forecast(
+                f_warmup_inputs,
+                forecast_inputs=tuple(forecast_drivers_list) if forecast_drivers_list else None,
+                horizon=horizon,
+            )
         # ``forecast`` returns a tuple for multi-output models; feedback is
         # always the first output (matched against ``val`` below).
         if isinstance(preds, tuple):
             preds = preds[0]
+
+        if not torch.isfinite(preds).all():
+            raise ValueError("Forecast contains non-finite values; the trial is invalid")
 
         return preds, data["val"]
 
@@ -554,18 +583,12 @@ class TrialRunner:
         return raw_loss
 
     def _penalize_nonfinite(self, trial: optuna.Trial, raw_loss: float) -> float:
-        """Substitute ``penalty_value`` for a non-finite (NaN/inf) loss.
+        """Reject a non-finite loss, or apply an explicitly chosen legacy penalty.
 
-        A non-finite loss is a *value*, not an exception, so it bypasses the
-        ``catch_exceptions`` / ``penalty_value`` machinery and Optuna rejects it
-        — recording the trial as ``FAIL`` and excluding it from the study's best
-        value and summaries.  Diverged forecasts are the primary failure mode of
-        the chaotic-system use case this module targets, so non-finite losses are
-        common; failing them starves the sampler of the signal that the region is
-        bad.  This guard turns a non-finite loss into a *completed* trial scored
-        at ``penalty_value`` (sign-flipped for ``maximize`` studies so the
-        penalty is genuinely the worst possible value) and records the original
-        non-finiteness as the ``nonfinite_loss`` user attribute for diagnosis.
+        Always retain the ``nonfinite_loss`` diagnostic. High-level studies use
+        the fail policy so a divergent evaluation cannot become the winner.
+        The penalty policy preserves low-level compatibility and flips the
+        numeric penalty's sign for a maximization study.
 
         Parameters
         ----------
@@ -585,14 +608,20 @@ class TrialRunner:
             return raw_loss
 
         trial.set_user_attr("nonfinite_loss", True)
-        penalty = self.penalty_value
-        if trial.study.direction == optuna.study.StudyDirection.MAXIMIZE:
-            penalty = -penalty
+        if self.error_policy == "fail":
+            raise ValueError(f"Objective returned a non-finite loss: {raw_loss}")
+        penalty = self._directional_penalty(trial)
         logger.warning(
             f"Trial {trial.number}: non-finite loss ({raw_loss}); "
             f"substituting penalty_value={penalty}."
         )
         return penalty
+
+    def _directional_penalty(self, trial: optuna.Trial) -> float:
+        """Keep an explicit legacy penalty unfavorable in either direction."""
+        if trial.study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            return -self.penalty_value
+        return self.penalty_value
 
     def _apply_clipping(self, trial: optuna.Trial, raw_loss: float) -> float:
         """Clamp or prune based on ``clip_value`` / ``prune_on_clip``."""

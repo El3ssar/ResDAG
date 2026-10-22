@@ -294,8 +294,9 @@ class ESNModel(ps.SymbolicModel):
         """Run the complete DAG with explicit recurrent states.
 
         Inputs use ``(batch, time, features)``. Omitting ``states`` starts each
-        reservoir from zeros. Otherwise pass the complete state dictionary
-        returned by an earlier call; keys match :meth:`get_reservoir_states`.
+        reservoir from its configured reset state (zero by default). Otherwise
+        pass the complete state dictionary returned by an earlier call; keys
+        match :meth:`get_reservoir_states`.
         The returned output includes every original transform and readout.
         Stored reservoir states and supplied state tensors are not changed.
 
@@ -323,7 +324,7 @@ class ESNModel(ps.SymbolicModel):
 
     def reset_reservoirs(self) -> None:
         """
-        Reset all reservoir layer states to zero.
+        Reset all reservoir layers for lazy initialization from their configured state.
 
         This clears the internal hidden states of all :class:`BaseReservoirLayer`
         modules in the model, preparing it for a new sequence.
@@ -1204,6 +1205,7 @@ class ESNModel(ps.SymbolicModel):
                     [out.shape[-1] for out in outputs],
                     no_grad=no_grad,
                     compile=compile,
+                    output_templates=outputs,
                 )
                 for reservoir, state in zip(flat.reservoir_layers, states):
                     if reservoir.detach_state_between_calls and state.grad_fn is not None:
@@ -1483,7 +1485,7 @@ class ReservoirModelModule(torch.nn.Module):
         return cast(ReservoirModelProtocol, self.model)
 
     def forward(self, *inputs: torch.Tensor) -> ModelOutput:
-        """Predict a sequence, starting from zeros for independent batches."""
+        """Predict independent sequences from each reservoir's configured reset state."""
         if self.stateful:
             output: ModelOutput = self.model(*inputs)
             return output

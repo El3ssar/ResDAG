@@ -129,6 +129,12 @@ def render(results: dict, present_keys: set[str] | None = None) -> str:
     meta = results.get("meta", {})
     out = ["## Reservoir-computing library benchmark\n"]
     out.append(
+        "> **Unverified comparisons.** Forecast alignment and optional adapters "
+        "still need the corrected validation described in phase 5 of "
+        "`docs/project/roadmap.md`. These tables do not establish current "
+        "cross-library speed or accuracy superiority.\n"
+    )
+    out.append(
         "Speedups are relative to **reservoirpy** (so reservoirpy = 1.00×; "
         "a value above 1× is *faster than reservoirpy*). Every library runs the "
         "same nominal ESN architecture on a byte-identical Lorenz-63 series; each "

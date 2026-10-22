@@ -124,3 +124,21 @@ jobs:
           name: resdag-py${{ matrix.python-version }}
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  dynamics:
+    # Keep the optional integration installed: a skipped import cannot verify
+    # compatibility with TSDynamics' public analysis namespace.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-environment
+        with:
+          python-version: ${{ matrix.python-version }}
+          dependency-mode: ${{ inputs.dependency-mode }}
+          extras: dev,hpo,dynamics
+      - name: Optional dynamics integration
+        run: pytest --no-cov -q tests/test_metrics/test_lyapunov.py

@@ -220,6 +220,7 @@ nav:
       - Utilities: reference/utils.md
   - Project:
       - project/index.md
+      - Roadmap: project/roadmap.md
       - Citation: project/citation.md
       - Ecosystem: project/ecosystem.md
       - Related work: project/related-work.md

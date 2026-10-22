@@ -1,5 +1,11 @@
 ## Reservoir-computing library benchmark
 
+> **Historical, unverified for current releases.** The phase-one audit found
+> forecast-index alignment differences and unsupported optional adapter paths
+> in the comparison harness. These archived numbers must not be used to claim
+> current speed or accuracy superiority. Correcting the harness and rerunning
+> matched workloads is tracked in `docs/project/roadmap.md`, phase 5.
+
 Speedups are relative to **reservoirpy** (so reservoirpy = 1.00×; a value above 1× is *faster than reservoirpy*). Every library runs the same nominal ESN architecture on a byte-identical Lorenz-63 series; each cell is the median wall-clock time over 3 repeats.
 
 

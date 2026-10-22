@@ -166,11 +166,11 @@ class FISTAReadoutLayer(ReadoutLayer):
     power_iters : int, default=0
         If ``> 0``, estimate the top Gram eigenvalue with this many power
         iterations instead of the exact :func:`torch.linalg.eigvalsh`. The
-        estimate is scaled up by ``(1 + power_iter_margin)`` so the step size
-        stays safely below the true ``1/L`` (an under-estimated ``L`` would
-        overshoot and diverge).
+        estimate is scaled up by ``(1 + power_iter_margin)`` to initialize the
+        step size. Backtracking verifies the quadratic majorizer before each
+        update; the margin alone is not a guaranteed spectral upper bound.
     power_iter_margin : float, default=0.05
-        Safety margin applied to a power-iteration eigenvalue estimate.
+        Initial margin applied to a power-iteration eigenvalue estimate.
 
     Attributes
     ----------
@@ -258,9 +258,9 @@ class FISTAReadoutLayer(ReadoutLayer):
 
         Uses an exact symmetric eigenvalue solve by default (the Gram is only
         ``(F, F)``); with ``power_iters > 0`` it runs that many power
-        iterations and inflates the estimate by ``(1 + power_iter_margin)`` so
-        the derived step size stays below the true ``1/L`` — an *under*-
-        estimated Lipschitz constant would overshoot and diverge FISTA.
+        iterations and inflates the estimate by ``(1 + power_iter_margin)``.
+        The estimate need not be an upper bound; proximal-step backtracking
+        verifies the quadratic majorizer before accepting an update.
 
         Parameters
         ----------
@@ -270,7 +270,7 @@ class FISTAReadoutLayer(ReadoutLayer):
         Returns
         -------
         float
-            An estimate of (an upper bound on) ``λ_max(XᵀX)``.
+            An estimate of ``λ_max(XᵀX)`` used to initialize backtracking.
         """
         if gram.shape[0] == 0:
             return 0.0
@@ -285,7 +285,9 @@ class FISTAReadoutLayer(ReadoutLayer):
             w = gram @ v
             w_norm = float(torch.linalg.norm(w).item())
             if w_norm == 0.0:
-                return 0.0
+                # A valid nonzero Gram can annihilate this initial vector.
+                # The absolute row-sum norm is a safe spectral upper bound.
+                return float(gram.abs().sum(dim=1).max().item())
             v = w / w_norm
             eig = w_norm
         # Inflate to guard against a low estimate (few iterations under-shoot).
@@ -334,6 +336,10 @@ class FISTAReadoutLayer(ReadoutLayer):
 
         lambda_max = self._top_eigenvalue(gram)
         lipschitz = 2.0 * lambda_max + l2
+        if not math.isfinite(lipschitz):
+            raise RuntimeError(
+                "FISTA requires finite curvature; scale the features or use float64."
+            )
         # Degenerate Gram (all-zero states / zero features): nothing to solve.
         if lipschitz <= 0.0:
             self.n_iter_ = 0
@@ -341,8 +347,11 @@ class FISTAReadoutLayer(ReadoutLayer):
             coefs = torch.zeros_like(rhs)
             return finalize_fit(problem, coefs)
 
-        step = 1.0 / lipschitz
-        threshold = step * l1
+        upper_bound = lipschitz
+        if self.power_iters > 0:
+            upper_bound = (2.0 * float(gram.abs().sum(dim=1).max().item()) + l2) * (
+                1.0 + 64 * torch.finfo(gram.dtype).eps
+            )
 
         w = torch.zeros_like(rhs)
         z = w.clone()
@@ -363,7 +372,24 @@ class FISTAReadoutLayer(ReadoutLayer):
             if l2 != 0.0:
                 grad = grad + l2 * z
             # Proximal gradient step + soft-threshold (prox of the L1 term).
-            w_new = _soft_threshold(z - step * grad, threshold)
+            while True:
+                step = 1.0 / lipschitz
+                w_new = _soft_threshold(z - step * grad, step * l1)
+                if self.power_iters <= 0:
+                    break
+                delta_z = w_new - z
+                norm_squared = delta_z.square().sum()
+                curvature = 2.0 * (delta_z * (gram @ delta_z)).sum() + l2 * norm_squared
+                majorizer = lipschitz * norm_squared
+                finite = torch.isfinite(curvature) & torch.isfinite(majorizer)
+                if bool(finite & (curvature <= majorizer * (1 + 32 * torch.finfo(gram.dtype).eps))):
+                    break
+                if lipschitz >= upper_bound or not math.isfinite(upper_bound):
+                    raise RuntimeError(
+                        "FISTA could not form a finite safe step; scale features/targets "
+                        "or use a higher working precision."
+                    )
+                lipschitz = min(2.0 * lipschitz, upper_bound)
 
             # Nesterov momentum extrapolation.
             t_new = 0.5 * (1.0 + math.sqrt(1.0 + 4.0 * t * t))

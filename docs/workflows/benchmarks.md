@@ -6,6 +6,15 @@ description: How resdag's training and forecasting speed compares to reservoirpy
 
 # Benchmarks
 
+!!! warning "Historical results; current comparisons are pending"
+    These tables are archived measurements, not evidence for the current
+    release. The phase-one audit found mismatched forecast indexing and
+    unsupported optional adapter paths in the comparison harness. Treat its
+    accuracy rankings and cross-library speed ratios as unverified until the
+    aligned workloads are rerun. The [roadmap](../project/roadmap.md#phase-5-speed-memory-and-comparisons)
+    tracks the corrected speed–accuracy study. Internal CPU regression gates
+    compare ResDAG execution paths and do not establish superiority to another library.
+
 The historical measurements below compare ResDAG 0.6.0 head-to-head with two
 established reservoir-computing libraries — [reservoirpy](https://github.com/reservoirpy/reservoirpy)
 (NumPy/SciPy) and [ReservoirComputing.jl](https://github.com/SciML/ReservoirComputing.jl)
@@ -27,7 +36,7 @@ records later sweeps with their own environment and settings.
     median wall-clock time over repeated runs (a warmup iteration is discarded;
     GPU work is synchronized before the clock stops).
 
-!!! success "Highlights (RTX 3060 laptop, vs reservoirpy)"
+!!! note "Archived observations (RTX 3060 laptop, vs reservoirpy)"
     - **Training scales on the GPU.** At a 2000-unit reservoir, resdag (GPU)
       trains **16× faster** than reservoirpy; on a 20k-step dataset it is **~2×**
       faster. The dense-reservoir + conjugate-gradient design is built for this.

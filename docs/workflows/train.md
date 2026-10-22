@@ -53,11 +53,14 @@ rd.ESNTrainer(model).fit(
 2. Resets all reservoir states, then runs one teacher-forced pass over
    `warmup_inputs` to synchronize them.
 3. Registers a pre-hook on every readout in the model.
-4. Runs one forward pass over `train_inputs`. When each readout
+4. Runs a forward pass over `train_inputs`. When each readout
    executes, its hook fits it on the tensor entering it (by conjugate
    gradient, for `CGReadoutLayer`). In multi-readout DAGs, downstream
    layers therefore receive outputs from already-fitted readouts, in
-   dependency order.
+   dependency order. If a fitted readout feeds another reservoir, the trainer
+   starts a new stage: it resets the states, repeats warmup with that readout's
+   fitted weights, then fits the downstream readouts. Parallel readouts and
+   readouts connected through algebraic layers still share a single pass.
 
 **Multi-readout models** need one key per readout `name`:
 

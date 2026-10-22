@@ -31,6 +31,7 @@ import numpy as np
 import torch
 
 from resdag.core import ESNModel
+from resdag.core._modes import evaluating
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.models import classic_esn
 from resdag.training import ESNTrainer
@@ -143,6 +144,8 @@ class ESN:
     - **Stateful reset.** :meth:`forecast` always resets the reservoir and
       re-synchronises on the training tail, so back-to-back forecasts are
       independent and reproducible — no manual ``reset_reservoirs()`` needed.
+      It temporarily enters evaluation mode so training-only state noise is
+      disabled, then restores every module's previous training/evaluation flag.
     - **Readout name.** The internal readout is named consistently and the
       trainer is fed a matching ``{name: target}`` dict, so the
       "readout name must match the targets key" footgun is handled for you.
@@ -299,6 +302,8 @@ class ESN:
         of the training series, then autoregressively generates ``horizon``
         steps via :meth:`~resdag.core.ESNModel.forecast`.  Because the state is
         always reset first, successive calls are independent.
+        Training-only noise is disabled during forecasting. Every module's
+        previous training/evaluation flag is restored, including on failure.
 
         Parameters
         ----------
@@ -330,11 +335,12 @@ class ESN:
             raise RuntimeError("forecast() called before fit(). Call fit(series) first.")
         # forecast() resets the reservoir internally (reset=True), so two
         # successive forecasts are independent — no manual reset needed.
-        prediction = self.model.forecast(
-            self._sync_tail,
-            horizon=horizon,
-            return_warmup=return_warmup,
-        )
+        with evaluating(self.model):
+            prediction = self.model.forecast(
+                self._sync_tail,
+                horizon=horizon,
+                return_warmup=return_warmup,
+            )
         # classic_esn is single-output, so forecast returns a single tensor.
         assert isinstance(prediction, torch.Tensor)
         return self._from_tensor(prediction)

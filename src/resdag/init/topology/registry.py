@@ -32,7 +32,7 @@ Examples
 """
 
 import inspect
-from typing import Any, Callable, get_args, get_origin
+from typing import Any, Callable
 
 from .base import GraphTopology, MatrixTopology, TopologyInitializer
 
@@ -282,18 +282,17 @@ def show_topologies(name: str | None = None) -> list[str] | None:
             continue
 
         # Type extraction
-        if param.annotation is not inspect.Parameter.empty:
-            origin = get_origin(param.annotation)
-            if origin is None:
-                type_str = param.annotation.__name__
-            else:
-                args = get_args(param.annotation)
-                type_str = " | ".join(a.__name__ for a in args)
-        else:
-            type_str = "Any"
+        annotation = param.annotation
+        type_str = (
+            "Any"
+            if annotation is inspect.Parameter.empty
+            else annotation if isinstance(annotation, str) else inspect.formatannotation(annotation)
+        )
 
         # Default resolution
-        if param.default is not inspect.Parameter.empty:
+        if param_name in default_kwargs:
+            default = default_kwargs[param_name]
+        elif param.default is not inspect.Parameter.empty:
             default = param.default
         else:
             default = default_kwargs.get(param_name, "<required>")

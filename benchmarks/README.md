@@ -1,5 +1,10 @@
 # Reservoir-computing library benchmark
 
+The committed cross-library tables are historical. An audit found forecast
+alignment differences and unsupported adapter paths; their accuracy rankings
+and relative timings need a corrected rerun before being cited as current
+performance evidence. See [phase 5 of the roadmap](../docs/project/roadmap.md).
+
 An extensible, re-runnable harness that compares resdag against other reservoir
 -computing libraries on **identical ESN architectures and identical data**, then
 renders speedup tables (relative to reservoirpy).
@@ -86,7 +91,7 @@ fast path:
 |---|---|---|---|
 | `flat_forecast_vs_graph_reexec` | flat single-step forecast engine vs per-step pytorch_symbolic graph walk | ≥ 1.8× | #254 |
 | `vectorized_ngrc_vs_stepwise` | vectorized `NGCell.forward_sequence` vs a Python loop over `forward` | ≥ 5× | #255 |
-| `fast_spectral_radius_vs_dense_eigvals` | power-iteration spectral-radius estimate vs dense `eigvals` | ≥ 2× | #185 |
+| `fast_spectral_radius_vs_dense_eigvals` | sparse SciPy Arnoldi estimate vs dense `eigvals` | ≥ 2× | #185 |
 
 The floors are deliberately conservative against a loaded CI runner — they catch
 a fast path silently reverting to the naive path (an *algorithmic* regression),

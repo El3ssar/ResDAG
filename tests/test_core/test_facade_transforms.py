@@ -141,11 +141,6 @@ def test_inference_first_fit_converts_originals_to_ordinary_autograd_state(devic
         washout=1,
         seed=3,
         input_transforms={"input": custom},
-        readout_kwargs=(
-            {"solver": "solve", "use_float64": False, "gram_dtype": torch.float32}
-            if device == "mps"
-            else None
-        ),
     )
     dtype = torch.float64 if device == "cpu" else torch.float32
     data = _data().to(device=device, dtype=dtype)

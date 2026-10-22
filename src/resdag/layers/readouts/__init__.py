@@ -8,6 +8,8 @@ Classes
 -------
 ReadoutLayer
     Base per-timestep linear layer with fitting interface.
+AutoReadoutLayer
+    Precision-aware automatic L2 fitting with explicit solver overrides.
 CGReadoutLayer
     Readout with Conjugate Gradient ridge regression solver.
 RidgeReadoutLayer
@@ -56,6 +58,7 @@ resdag.training.ESNTrainer : Trainer that uses these readouts.
 resdag.layers.ESNLayer : ESN layer for generating states.
 """
 
+from .auto_readout import AutoReadoutLayer, ReadoutSolveReport
 from .base import ReadoutLayer
 from .cg_readout import CGReadoutLayer
 from .cholesky_readout import CholeskyReadoutLayer
@@ -68,6 +71,8 @@ from .svd_readout import SVDReadoutLayer
 
 __all__ = [
     "ReadoutLayer",
+    "AutoReadoutLayer",
+    "ReadoutSolveReport",
     "CGReadoutLayer",
     "RidgeReadoutLayer",
     "CholeskyReadoutLayer",

@@ -59,7 +59,7 @@ from resdag.data._trajectory_ports import (
     validate_trajectory_ports_context,
 )
 from resdag.data.prepare import NormMethod
-from resdag.layers.readouts import ReadoutLayer
+from resdag.layers.readouts import AutoReadoutLayer, ReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
 
 if TYPE_CHECKING:
@@ -563,6 +563,44 @@ class Model(nn.Module):
         """Restore ordinary-forward reservoir states, not delayed-rollout queues."""
         recurrent_graph(self.graph).set_state(states, strict=strict)
 
+    def tune(
+        self,
+        training: Streams | Trajectory | Mapping[str, Trajectory],
+        targets: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
+        *,
+        preset: Literal["quick", "balanced", "thorough"] = "balanced",
+        n_trials: int | None = None,
+        horizon: int | None = None,
+        n_jobs: int = 1,
+        **options: Any,
+    ) -> Model:
+        """Tune autonomous forecasts, refit the winner and return this model.
+
+        Requires ``resdag[hpo]``. The final 20% is held out while comparing
+        candidates, then the winner is refitted on all supplied data. Keep a
+        separate final test set. ``factory(params, seed)`` rebuilds custom DAGs;
+        without it, sizes and weights stay fixed and alpha/washout can vary.
+        ``search_space(trial)`` uses ordinary Optuna suggestions. Advanced
+        options and :attr:`tuning_report` are documented in the tuning guide.
+        A failure leaves this model unchanged. Tune before creating optimizers.
+        """
+        from resdag.hpo import _require_optuna
+
+        _require_optuna()
+        from resdag.hpo.tuning import tune_model
+
+        tune_model(
+            self,
+            training,
+            targets,
+            preset=preset,
+            n_trials=n_trials,
+            horizon=horizon,
+            n_jobs=n_jobs,
+            **options,
+        )
+        return self
+
     def fit(
         self,
         training: Streams | Trajectory | Mapping[str, Trajectory],
@@ -585,16 +623,8 @@ class Model(nn.Module):
         refitting clears trajectory defaults on success.
         """
         self._validate_ports()
-        self._backend.validate_fit(self.graph)
-        self._validate_transform_ownership()
-        complete_history = self._requires_complete_history()
-        trajectory_context = None
-        trajectory_system = None
         implicit = targets is None
-        fit_start = self.washout
-        prepared = None
-        clocked_training = is_trajectory(training) or has_trajectory_port(training)
-        if clocked_training:
+        if is_trajectory(training) or has_trajectory_port(training):
             prepared = prepare_trajectory_ports(
                 training,
                 input_names=self.input_names,
@@ -609,18 +639,24 @@ class Model(nn.Module):
             reference = module_reference(self.graph)
             dtype = None if reference is None else reference.dtype
             device = None if reference is None else reference.device
-            training = {
+            inputs = {
                 name: torch.tensor(data, dtype=dtype, device=device)
                 for name, data in zip(self.input_names, prepared.inputs)
             }
-            targets = {
+            labels = {
                 name: torch.tensor(data, dtype=dtype, device=device)
                 for name, data in zip(self.output_names, prepared.targets)
             }
-            fit_start = max(fit_start, prepared.supervised_start)
-            trajectory_context = prepared.context
-            trajectory_system = prepared.output_systems
-        elif is_trajectory(targets) or has_trajectory_port(targets):
+            return self._fit_prepared(
+                inputs,
+                labels,
+                supervised_start=prepared.supervised_start,
+                supervised_stop=prepared.supervised_stop,
+                implicit=implicit,
+                trajectory_context=prepared.context,
+                trajectory_system=prepared.output_systems,
+            )
+        if is_trajectory(targets) or has_trajectory_port(targets):
             raise TypeError(
                 "Trajectory targets require clocked Trajectory training inputs; "
                 "Tensor targets remain caller-aligned"
@@ -628,21 +664,8 @@ class Model(nn.Module):
         values, was_2d = self._streams(
             cast(Streams, training), self.input_names, self._input_widths, "training", finite=True
         )
-        train_inputs: tuple[torch.Tensor, ...]
-        target_values: tuple[torch.Tensor, ...]
-        if prepared is not None:
-            train_inputs = tuple(value[:, : prepared.supervised_stop] for value in values)
-            target_values, _ = self._streams(
-                cast(Streams, targets),
-                self.output_names,
-                self._output_widths,
-                "targets",
-                finite=True,
-            )
-            target_values = tuple(
-                value[:, fit_start - prepared.supervised_start :] for value in target_values
-            )
-        elif implicit:
+        stop = values[0].shape[1]
+        if implicit:
             if (
                 len(values) != 1
                 or len(self.output_names) != 1
@@ -653,9 +676,12 @@ class Model(nn.Module):
                     "provide explicit named targets for custom graphs"
                 )
             lead = self._prediction_leads[0]
-            train_inputs, target_values = (values[0][:, :-lead],), (
-                values[0][:, lead + fit_start :],
-            )
+            stop -= lead
+            labels = {
+                self.output_names[0]: (
+                    values[0][:, lead:].squeeze(0) if was_2d else values[0][:, lead:]
+                )
+            }
         else:
             target_values, targets_2d = self._streams(
                 cast(Streams, targets),
@@ -668,8 +694,62 @@ class Model(nn.Module):
                 value.shape[:2] != values[0].shape[:2] for value in target_values
             ):
                 raise ValueError("Explicit targets must share training batch/time axes and layout")
-            train_inputs = values
-            target_values = tuple(value[:, fit_start:] for value in target_values)
+            labels = {
+                name: value.squeeze(0) if was_2d else value
+                for name, value in zip(self.output_names, target_values)
+            }
+        return self._fit_prepared(
+            cast(Streams, training),
+            labels,
+            supervised_start=0,
+            supervised_stop=stop,
+            implicit=implicit,
+        )
+
+    def _fit_prepared(
+        self,
+        training: Streams,
+        targets: Streams,
+        *,
+        supervised_start: int,
+        supervised_stop: int,
+        implicit: bool = False,
+        trajectory_context: dict[str, Any] | None = None,
+        trajectory_system: tuple[Any, ...] | None = None,
+    ) -> Model:
+        """Fit an admitted origin window, retaining every observed input row.
+
+        Private adapters supply already aligned labels for exactly
+        ``supervised_start:supervised_stop``. Absolute washout is applied once.
+        This separates regression support from the complete observed clock;
+        purging future labels must not move the cached forecasting boundary.
+        """
+        self._validate_ports()
+        self._backend.validate_fit(self.graph)
+        self._validate_transform_ownership()
+        complete_history = self._requires_complete_history()
+        values, was_2d = self._streams(
+            training, self.input_names, self._input_widths, "training", finite=True
+        )
+        if (
+            type(supervised_start) is not int
+            or type(supervised_stop) is not int
+            or not 0 <= supervised_start < supervised_stop <= values[0].shape[1]
+        ):
+            raise ValueError(
+                "Supervised origins must be a nonempty interval within observed inputs"
+            )
+        target_values, targets_2d = self._streams(
+            targets, self.output_names, self._output_widths, "targets", finite=True
+        )
+        if targets_2d != was_2d or any(
+            value.shape[:2] != (values[0].shape[0], supervised_stop - supervised_start)
+            for value in target_values
+        ):
+            raise ValueError("Prepared targets must match the admitted origin window and layout")
+        fit_start = max(self.washout, supervised_start)
+        train_inputs = tuple(value[:, :supervised_stop] for value in values)
+        target_values = tuple(value[:, fit_start - supervised_start :] for value in target_values)
         if train_inputs[0].shape[1] <= fit_start:
             raise ValueError("Training must contain washout plus at least one input/target pair")
         fitting_inputs = tuple(value[:, fit_start:] for value in train_inputs)
@@ -740,6 +820,21 @@ class Model(nn.Module):
             for value in values:
                 tail = (value if complete_history else value[:, -tail_length:]).detach().clone()
                 history.append(tail.squeeze(0) if was_2d else tail)
+        # Solve reports are intentionally not checkpoint state. Transfer them
+        # from the successful staged fit by graph path without replacing live
+        # readouts/parameters, or losing diagnostics at the state-dict commit.
+        staged_reports = {
+            path: layer.last_solve
+            for path, layer in candidate.named_modules()
+            if isinstance(layer, AutoReadoutLayer)
+        }
+        live_auto_readouts = {
+            path: layer
+            for path, layer in self.graph.named_modules()
+            if isinstance(layer, AutoReadoutLayer)
+        }
+        if staged_reports.keys() != live_auto_readouts.keys():
+            raise RuntimeError("Staged automatic readout paths do not match the live graph")
         with torch.inference_mode(False):
             self.graph.load_state_dict(candidate.state_dict())
         recurrent_graph(self.graph).reset_reservoirs()
@@ -762,6 +857,8 @@ class Model(nn.Module):
             self._fitted = torch.ones((), dtype=torch.bool, device=values[0].device)
         self._trajectory_context = trajectory_context
         object.__setattr__(self, "_trajectory_system", trajectory_system)
+        for path, layer in live_auto_readouts.items():
+            layer.last_solve = staged_reports[path]
         return self
 
     def _feedback_scaling_matches(self, input_index: int = 0, output_index: int = 0) -> bool:

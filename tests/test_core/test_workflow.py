@@ -85,19 +85,26 @@ def test_named_multihead_targets_do_not_need_internal_readout_names():
 
 
 def test_stateless_outputs_keep_original_units_states_and_upstream_gradients():
+    generator = torch.Generator().manual_seed(31)
     graph = classic_esn(6, 1, 1, seed=18, dtype=torch.float64)
-    model = Model(graph=graph, washout=2).fit(torch.randn(1, 25, 1, dtype=torch.float64))
+    training = torch.randn(1, 25, 1, generator=generator, dtype=torch.float64)
+    model = Model(graph=graph, washout=2).fit(training)
     model(torch.ones(1, 2, 1, dtype=torch.float64))
     stored = model.get_state()
-    data = torch.randn(1, 7, 1, dtype=torch.float64, requires_grad=True)
+    data = torch.randn(1, 7, 1, generator=generator, dtype=torch.float64, requires_grad=True)
     all_output, all_states = model.forward_stateless(data)
     a, state = model.forward_stateless(data[:, :3])
     b, final = model.forward_stateless(data[:, 3:], states=state)
-    torch.testing.assert_close(torch.cat((a, b), 1), all_output, rtol=0, atol=0)
+    chunked_output = torch.cat((a, b), 1)
+    # Different readout matrix shapes can change BLAS reduction order by a few
+    # float64 ulps; recurrent states below must still agree exactly.
+    torch.testing.assert_close(chunked_output, all_output, rtol=1e-12, atol=1e-12)
     _assert_state_equal(final, all_states)
     _assert_state_equal(model.get_state(), stored)
-    all_output.square().sum().backward()
-    assert data.grad is not None and bool((data.grad != 0).any())
+    all_gradient = torch.autograd.grad(all_output.square().sum(), data)[0]
+    chunked_gradient = torch.autograd.grad(chunked_output.square().sum(), data)[0]
+    torch.testing.assert_close(chunked_gradient, all_gradient, rtol=1e-12, atol=1e-12)
+    assert bool((all_gradient != 0).any())
 
 
 def test_internal_readouts_are_rejected_before_mutation():

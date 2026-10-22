@@ -65,10 +65,11 @@ def test_broad_impact_changes_run_full_suite(path: str) -> None:
     assert sel.tests == [AT.FULL_SUITE_TARGET]
 
 
-def test_docs_only_change_runs_nothing() -> None:
+def test_docs_only_change_runs_executable_documentation_checks() -> None:
     sel = AT.select_tests(["README.md", "docs/guide/index.md"])
-    assert sel.mode == "none"
-    assert sel.tests == []
+    assert sel.mode == "selected"
+    assert "tests/test_init/test_correctness_contracts.py" in sel.tests
+    assert "tests/test_examples_smoke.py" in sel.tests
 
 
 def test_changed_test_file_is_always_selected() -> None:
@@ -261,3 +262,14 @@ def test_invalid_base_propagates_for_ci_fallback(monkeypatch) -> None:
     monkeypatch.setattr(AT, "_git", broken_diff)
     with pytest.raises(subprocess.CalledProcessError):
         AT.changed_files_from_git("missing-base", include_dirty=False)
+
+
+@pytest.mark.parametrize("changed", ["docs/start/end-to-end.md", "hooks/docs_autogen.py"])
+def test_documentation_changes_select_executable_catalog(changed):
+    selection = AT.select_tests([changed])
+    assert "tests/test_init/test_correctness_contracts.py" in selection.tests
+
+
+def test_example_body_changes_select_example_checks():
+    selection = AT.select_tests(["examples/10_hpo.py"])
+    assert "tests/test_examples_smoke.py" in selection.tests

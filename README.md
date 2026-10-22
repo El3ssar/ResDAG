@@ -22,6 +22,9 @@ ResDAG treats reservoir models — echo state networks and beyond — as ordinar
 
 **[Documentation →](https://el3ssar.github.io/ResDAG/)**
 
+Track planned work and verification in the [roadmap](docs/project/roadmap.md),
+with Pending, WIP and Done statuses.
+
 ## Installation
 
 ```bash

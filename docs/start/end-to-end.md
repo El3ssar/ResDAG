@@ -100,8 +100,8 @@ pipeline = nn.Sequential(
 output = pipeline(train)
 ```
 
-`as_module()` starts each call from zero recurrent state, making independent
-windows safe to batch or shuffle. It shares weights with the original model.
+`as_module()` starts each call from the configured reset state (zero by default),
+making independent windows safe to batch or shuffle. It shares weights with the original model.
 Use ordinary PyTorch loss functions and optimizers to train your added head.
 Gradients can also flow to an encoder placed before the reservoir, while its
 frozen weights stay fixed. Keep preprocessing consistent with the data used to
@@ -156,6 +156,11 @@ You can also choose [oscillator dynamics](../build/layers/oscillator.md),
 forecasting and `as_module()` integration apply to all of them. Optional
 [calibration](../workflows/calibration.md) adapts a standard tanh ESN on training
 inputs before its readout is fitted.
+
+The friendly `ESN.forecast()` temporarily enters evaluation mode and restores
+the previous module modes afterward. When using the lower-level graph model
+directly, call `model.eval()` yourself before inference, as in the examples
+above. This disables training-only reservoir noise and ordinary PyTorch dropout.
 
 Run `uv run python examples/16_custom_reservoirs.py` for a small comparison that
 registers a custom initializer, calibrates, trains, forecasts, saves/restores,

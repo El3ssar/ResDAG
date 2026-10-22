@@ -55,7 +55,7 @@ hpo = ["optuna>=3.0.0"]
 # >=3.12) rather than failing to resolve; the pure-math conversions and the
 # canonical-constant / reservoir-Jacobian paths in `resdag.metrics` work without
 # it. Every `tsdynamics` import in the library is lazy + guarded.
-dynamics = ["tsdynamics>=2.5.0; python_version >= '3.12'"]
+dynamics = ["tsdynamics>=6.0.2,<7; python_version >= '3.12'"]
 # Optional adaptive-ODE stack: the continuous reservoir cells
 # (`ContinuousReservoirCell`, `EuSNCell`) integrate their vector field with a
 # built-in fixed-step Euler / RK4 solver by default (no dependency). Passing
@@ -160,7 +160,7 @@ omit = ["tests/*", "**/__pycache__/*"]
 # --no-cov, see .github/workflows/_test.yml). Held a few points below the
 # measured total so noise across the Python 3.11-3.14 matrix can't trip it;
 # raise it as coverage climbs.
-fail_under = 64
+fail_under = 90
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

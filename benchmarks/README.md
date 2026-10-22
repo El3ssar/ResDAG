@@ -1,5 +1,10 @@
 # Reservoir-computing library benchmark
 
+The committed cross-library tables are historical. An audit found forecast
+alignment differences and unsupported adapter paths; their accuracy rankings
+and relative timings need a corrected rerun before being cited as current
+performance evidence. See [phase 5 of the roadmap](../docs/project/roadmap.md).
+
 An extensible, re-runnable harness that compares resdag against other reservoir
 -computing libraries on **identical ESN architectures and identical data**, then
 renders speedup tables (relative to reservoirpy).

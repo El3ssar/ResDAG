@@ -109,11 +109,14 @@ def test_submodule_reexport_resolves_to_submodule() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_hpo_change_does_not_pull_layers_or_init() -> None:
+def test_hpo_change_reaches_common_workflow_but_not_initializers() -> None:
     sel = AT.select_tests(["src/resdag/hpo/losses.py"])
     assert "tests/test_hpo/test_losses.py" in sel.tests
+    # Model/ESN now expose tune(), whose optional HPO package imports losses.
+    # These workflows are no longer independent of HPO. Initializers still are.
+    assert "tests/test_hpo/test_tuning_workflow.py" in sel.tests
+    assert "tests/test_facade.py" in sel.tests
     assert not any(t.startswith("tests/test_init/") for t in sel.tests)
-    assert not any(t.startswith("tests/test_layers/") for t in sel.tests)
 
 
 def test_io_change_stays_within_utils() -> None:

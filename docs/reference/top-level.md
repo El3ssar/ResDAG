@@ -57,6 +57,8 @@ trainer = rd.ESNTrainer(model)
 | Symbol | Canonical home |
 | ------ | -------------- |
 | [`ReadoutLayer`][resdag.layers.readouts.ReadoutLayer] | `resdag.layers.readouts` |
+| [`AutoReadoutLayer`][resdag.layers.readouts.AutoReadoutLayer] | `resdag.layers.readouts` |
+| [`ReadoutSolveReport`][resdag.layers.readouts.ReadoutSolveReport] | `resdag.layers.readouts` |
 | [`RidgeReadoutLayer`][resdag.layers.readouts.RidgeReadoutLayer] | `resdag.layers.readouts` |
 | [`CholeskyReadoutLayer`][resdag.layers.readouts.CholeskyReadoutLayer] | `resdag.layers.readouts` |
 | [`CGReadoutLayer`][resdag.layers.readouts.CGReadoutLayer] | `resdag.layers.readouts` |

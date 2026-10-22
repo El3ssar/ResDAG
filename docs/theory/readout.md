@@ -6,10 +6,13 @@ description: Stable centered ridge regression, explicit solver choices, working 
 
 # Readout solvers
 
-A readout learns a linear map from reservoir features to targets. The default
-`RidgeReadoutLayer` uses a direct Cholesky solve. Other solvers address different
-conditioning, regularization and streaming requirements; choose one explicitly
-with the factory's `readout=` argument and configure it with `readout_kwargs`.
+A readout learns a linear map from reservoir features to targets. The friendly
+`rd.ESN` preset uses `AutoReadoutLayer`: it checks numerical suitability and
+chooses among primal/dual Cholesky, augmented QR and direct SVD without increasing
+the requested L2 penalty. Lower-level model factories retain a direct ridge
+default; pass `readout="auto"` to select the same policy explicitly. See the
+[practical solver guide](../guides/readout-solvers.md) for examples, diagnostics,
+device fallback and forcing an algorithm.
 
 ## The ridge objective
 
@@ -49,6 +52,7 @@ allocate an unused feature-by-feature Gram matrix.
 
 | Readout / factory key | Method | Useful when |
 | --- | --- | --- |
+| `AutoReadoutLayer` / `auto` | Checked primal/dual Cholesky, augmented QR or design-matrix SVD | A common L2 objective with automatic numerical checks and explicit overrides |
 | `RidgeReadoutLayer` / `ridge` | Cholesky, or explicit `solver="solve"` for LU | Regularized, well-conditioned batch fitting |
 | `CholeskyReadoutLayer` / `cholesky` | Direct Cholesky ridge | You want that method by name |
 | `CGReadoutLayer` / `cg` | Iterative conjugate gradient on a full Gram matrix | Iterative fitting is preferable for your feature width and tolerance |
@@ -64,10 +68,41 @@ feature too, and forgetting changes sample weights. FISTA adds an L1 penalty;
 `l1_ratio` controls the balance with its quadratic penalty. Check each class's
 reference when comparing coefficients.
 
+Auto always keeps the L2 objective and requested `alpha`: FISTA, RLS and
+pseudoinverse are never automatic substitutes for a positive-ridge fit. It tries
+the smaller normal system, checks full inverse-norm conditioning and estimated
+Gram roundoff, and checks a normalized optimality residual. QR/SVD recovery does
+not increase the penalty. A forced Auto algorithm never switches to another
+algorithm; unsuitable forced paths warn or raise. The immutable `last_solve`
+report identifies the actual method, placement, precision, residuals and reasons
+for recovery.
+
 For `alpha=0`, a Cholesky or LU solve needs adequate rank; use SVD or pseudoinverse
 for rank-deficient designs. Cholesky's recovery path can add rescue jitter or
 project a numerically indefinite Gram, emitting a warning. This is a numerical
 fallback, not evidence that the original requested problem was well-conditioned.
+This rescue behavior belongs to the explicit ridge classes, not Auto's
+unchanged-penalty recovery policy.
+
+SVD computes $X_c=U\,\mathrm{diag}(s)V^\top$ and, for positive ridge,
+
+$$
+W=V\,\mathrm{diag}\!\left(\frac{s}{s^2+\alpha}\right)U^\top Y_c.
+$$
+
+The filter is evaluated in scaled form to avoid overflowing $s^2$ for large
+finite singular values. It preserves `alpha`; this numerical improvement does
+not guarantee accurate decomposition or coefficients for arbitrary data scales.
+For zero penalty, `rcond` discards small singular values and defines the numerical
+minimum-norm solution. Auto uses a dtype/dimension-aware default cutoff; the
+explicit SVD class defaults to `1e-15`. No cutoff truncates positive-ridge SVD.
+Both SVD and Auto reject nonfinite or negative penalties/cutoffs.
+
+Very weak regularization on dependent features can produce large cancelling
+coefficients in finite precision, even with small training and optimality
+residuals. Auto warns and records the final severe-conditioning risk when
+detected. Rescaling, an explicitly stronger penalty or higher precision can help;
+held-out autonomous forecast accuracy remains a separate validation target.
 
 CG still stores an $F\times F$ Gram matrix: it is **not matrix-free**. It solves
 output columns together with separate step sizes, warns on under-convergence,
@@ -82,6 +117,14 @@ power vector that misses a nonzero eigenspace therefore cannot turn a real fitti
 problem into a false converged zero solution.
 
 ## Working precision and device placement
+
+Auto uses `solve_dtype`: float64 on CPU/CUDA by default, and an initial native
+float32 attempt on MPS. Unsafe or unavailable MPS decompositions use an explicit
+CPU float64 bridge, with a warning and the actual device recorded in the report.
+`cpu_fallback=False` raises instead of bridging. The fitted parameters keep their
+ordinary model dtype/device, and a forced algorithm remains forced across a
+bridge. Unlike the explicit solvers below, Auto does not accept `use_float64`
+or `gram_dtype`; choose the options of the selected readout class.
 
 Direct and incremental ridge form their Gram in the solve dtype by default:
 float64 with `use_float64=True`. CG retains a different historical default:

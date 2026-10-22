@@ -667,7 +667,7 @@ def solve_ridge(
 ) -> torch.Tensor:
     """Robustly solve the regularised normal equations ``(gram + αI) W = rhs``.
 
-    This is the single shared solve path for every Gram-based readout
+    This is the shared solve path for the explicit direct/incremental readouts
     (:class:`CholeskyReadoutLayer`, :class:`RidgeReadoutLayer`,
     :class:`IncrementalRidgeReadoutLayer`). It resolves the GPU-default ``float32``
     Gram footgun: on a rank-deficient centered Gram, ``float32`` rounding noise

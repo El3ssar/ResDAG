@@ -4,7 +4,7 @@ description: Implemented behavior, agreed construction and boundaries for the co
 
 # Phase two: the common model workflow
 
-**Status: Done; awaiting merge and major release.** See verification in the
+**Status: Done; merged through PR #460.** See release verification in the
 [roadmap](roadmap.md#completion-verification).
 This page records current decisions and implementation boundaries. Start with
 the runnable [common model guide](../start/model-workflow.md) or the shorter

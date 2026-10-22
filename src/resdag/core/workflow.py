@@ -132,8 +132,9 @@ class Model(nn.Module):
     its prediction lead. An empty sequence leaves all inputs externally driven.
 
     ``state_dict`` includes scaling, ordered port metadata and the observed tail;
-    reconstruct the same DAG before loading. Complete artifact loading, tuning
-    and diagram exports are later roadmap increments.
+    reconstruct the same DAG before loading. ``tune`` compares candidates and
+    installs a refitted winner; its report exposes the Optuna study. Complete
+    artifact loading and diagram exports are later roadmap increments.
 
     With the optional ``dynamics`` extra, bare or named TSDynamics trajectories
     use one shared observed clock. Explicit targets are aligned to each head's

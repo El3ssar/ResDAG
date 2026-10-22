@@ -1,0 +1,124 @@
+---
+description: Agreed tuning experience, numerical safeguards and implementation progress for phase three.
+---
+
+# Phase three: reliable tuning
+
+**Status: WIP.** The [roadmap](roadmap.md#phase-3-tuning-and-automatic-solver-policy)
+tracks implementation and verification. The common `model.tune(...)` lifecycle,
+joblib execution and automatic readout are implemented. Forecast-generation
+pruning and staged resource promotion remain separate unfinished work.
+
+## Approved experience
+
+Tuning builds candidate models, trains them, compares their autonomous
+forecasts and keeps the winning configuration. Basic ESNs and custom DAGs
+use the same command. Quick, balanced and thorough presets control the amount
+of work; balanced is the default. Advanced users retain their own Optuna
+samplers, search spaces and objectives.
+
+The maintainer approved:
+
+- `model.tune(data)` reserves the last **20%** chronologically for validation,
+  then refits the winner on **all supplied development data**. Keep the final
+  test data outside this call. Explicit splits remain available.
+- A custom DAG may supply a Python construction recipe for each candidate.
+  Changing reservoir sizes can require changing the downstream readout width;
+  the recipe rebuilds those connections together. Preset ESNs do this
+  automatically.
+- The same outer model object receives the fitted winner. Its internal graph
+  and parameters may change. Tune before creating a PyTorch optimizer.
+- The existing automatic-solver goal remains: choose a safe method, allow
+  explicit overrides, and disclose precision, device and fallback decisions.
+
+The fluent interface returns the same model, like `fit`.
+`model.tuning_report` exposes the full Optuna study, resolved winning settings,
+fixed seeds, validation windows, errors and timings. Candidate evaluation, final
+refitting and owned-storage cleanup finish before replacing the current model.
+Changing internal parameters requires creating any PyTorch optimizer afterward.
+
+## Data and timing safeguards
+
+Trials use the common `Model.fit` and `Model.forecast` behavior, including
+training-only preprocessing, named ports, prediction leads, feedback delays,
+device placement and trajectory timestamps. The older raw-graph HPO runner
+does not provide this common workflow by itself.
+
+Validation boundaries must account for prediction distance. If training
+observations stop at sample 800 and an output predicts two samples ahead,
+the example originating at sample 799 has its label at 801. That example
+must not enter the training solve. All observations through 800 can still
+warm the reservoir. Final refitting must keep the last supplied observation
+as the forecast endpoint.
+
+For trajectories, split the raw observations before interpolation. Otherwise
+PCHIP or cubic coefficients can depend on the validation suffix. Tensor
+targets need equally explicit alignment: each target row labels its input
+origin plus the declared prediction lead.
+
+Every configuration faces the same initialization seeds and forecast
+starting points. Scoring scales stay fixed across forecast prefixes;
+recomputing them from a growing validation suffix changes the meaning of an
+early pruning score. Named outputs require explicit aggregation rather than
+silently scoring the first head.
+
+True forecast pruning still needs an executor checkpoint hook. Calling
+`forecast` repeatedly on chunks cannot resume an in-progress delayed-feedback
+queue from reservoir state alone. Tests must compare values, timelines and
+final states with an uninterrupted rollout.
+
+## Winner and parallel policy
+
+- The default reward is the length of the contiguous accurate forecast, using
+  a normalized error threshold of **0.2** and fixed training-only scales.
+- Within an origin, batch cases use their median horizon; multiple heads use
+  the weakest horizon. The trial uses the median across seeds and origins.
+  Mean head aggregation and custom objectives remain available.
+- `n_jobs=1` runs in the caller. More workers use joblib/loky with notebook
+  recipe support and bounded submission windows. Failed attempts consume the
+  configuration budget. A timeout stops new windows; already running work and
+  the final refit finish normally.
+- Reusing a study requires the same recorded data/task, seeds, objective and
+  construction recipe. Foreign evaluated scores are rejected. Standard Optuna
+  queued configurations remain supported.
+
+| Preset | New configurations | Initialization seeds | Forecast origins |
+| --- | ---: | ---: | ---: |
+| Quick | 8 | 1 | 1 |
+| Balanced | 24 | 3 | 3 |
+| Thorough | 80 | 5 | 5 |
+
+Each budget can be overridden. The default horizon is half the validation span
+and stays the same across presets. Origins can overlap and are not independent
+replicates. A custom DAG without a construction recipe retains its feature
+weights and uses one initialization; it does not pretend that copying the same
+weights produces independent reservoirs. Explicit validation remains outside
+the final refit. See the [tuning guide](../workflows/tune.md).
+
+The friendly `ESN` now defaults to `readout="auto"`, with guarded primal/dual
+Cholesky, augmented QR and SVD routes. Forced methods keep their algorithm and
+requested alpha. Reports disclose precision, conditioning and any CPU bridge;
+finite precision still limits coefficient accuracy. The lower-level factories
+retain their explicitly documented readout defaults. See
+[readout solvers](../guides/readout-solvers.md).
+
+## First correctness increment
+
+The initial work repairs independent defects before adding the new lifecycle:
+
+- SVD ridge filter factors avoid squaring large finite singular values.
+  The requested regularization is preserved. Non-finite or negative `alpha`
+  and `rcond` are rejected at construction and before solving.
+- Study transfer skips missing/non-finite completed scores, including trials
+  produced outside ResDAG. Matching multi-objective values remain intact.
+- Study summaries order their top trials in the actual objective direction.
+- Owned RDB sessions and persistent-database connection pools are released
+  after `run_hpo`, even when setup or trial evaluation fails. A returned SQLite
+  memory study retains its backing pool so its data survives. Path-based
+  transfer releases its own source connections; caller-supplied studies retain
+  their ownership. A cleanup failure cannot hide the original operation error.
+
+The older raw `run_hpo` runner retains its separate manual worker launcher.
+Its worker startup/cancellation redesign remains open; the new common tuner
+uses joblib. Verification is recorded in the roadmap as each increment passes
+its checks.

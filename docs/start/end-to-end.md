@@ -52,8 +52,9 @@ Otherwise the model uses its saved training history.
 
 Chaotic forecasts eventually diverge. Compare several starting points and
 seeds on validation data, then evaluate the final choice on an untouched test
-period. Automatic tuning and matched speed–accuracy comparisons remain in
-[roadmap phases three and five](../project/roadmap.md).
+period. [Automatic tuning](../workflows/tune.md) handles the validation split,
+candidate comparison and final refit. Matched speed–accuracy comparisons remain
+in [roadmap phase five](../project/roadmap.md).
 
 ## 3. Save and restore a Torch state checkpoint
 
@@ -130,10 +131,10 @@ Move both the model and tensor data with `.to(device=..., dtype=...)`. Fitted
 statistics move with the model. An untouched lazy ESN adopts its first training
 tensor's dtype/device; explicit constructor placement or `.to(...)` fixes them.
 
-On MPS, use float32 and a supported readout, such as
-`readout="cg", readout_kwargs={"use_float64": False}`; fitting on CPU and moving
-the trained model afterward is also supported. Device-aware automatic solver
-selection is phase three.
+On MPS, use float32. The default automatic readout uses supported native solves
+when its numerical checks pass, and reports/warns about any CPU float64
+fallback. Set `readout_kwargs={"cpu_fallback": False}` to require native fitting,
+or explicitly choose a solver. See [readout solvers](../guides/readout-solvers.md).
 
 Use `compile=True` only for supported fast execution, and measure first-time
 compilation separately. For custom operations that need the whole sequence,

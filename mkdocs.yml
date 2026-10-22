@@ -197,12 +197,14 @@ nav:
   - Work:
       - workflows/index.md
       - Train: workflows/train.md
+      - Readout solvers: guides/readout-solvers.md
       - Calibrate: workflows/calibration.md
       - Forecast: workflows/forecast.md
       - Forecast execution: advanced/forecast-capabilities.md
       - Lyapunov time: workflows/lyapunov.md
       - NG-RC: workflows/ngrc.md
       - Tune: workflows/tune.md
+      - Raw HPO runner: advanced/raw-hpo.md
       - Streaming & DataLoaders: workflows/streaming.md
       - Scale & deploy: workflows/deploy.md
       - Benchmarks: workflows/benchmarks.md
@@ -229,6 +231,7 @@ nav:
       - project/index.md
       - Roadmap: project/roadmap.md
       - Phase two design: project/phase-two-design.md
+      - Phase three design: project/phase-three-design.md
       - Graph tooling: project/graph-tooling.md
       - New ESN API: project/esn-migration.md
       - Citation: project/citation.md

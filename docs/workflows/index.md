@@ -15,8 +15,10 @@ execution, and model persistence. The guides below cover that cycle. Optional ca
 activity on training data before fitting the readout.
 
 For the new named-graph interface, start with the
-[common model workflow](../start/model-workflow.md). Its supported scope and
-remaining phase-two work are listed in that guide.
+[common model workflow](../start/model-workflow.md), then use
+[tuning](tune.md) for preset and custom-DAG searches. The
+[roadmap](../project/roadmap.md) distinguishes implemented features from
+remaining work.
 
 <div class="grid cards" markdown>
 
@@ -54,9 +56,9 @@ remaining phase-two work are listed in that guide.
 
     ---
 
-    The eight hyperparameters that drive forecast quality, intuition for
-    spectral radius, leak rate, and ridge regularization, and complete
-    hyperparameter studies with `run_hpo`.
+    Tune a preset or custom DAG with fixed seeds, forecast starting points and
+    training-only scaling. Inspect the study and keep a refitted winner ready
+    to forecast; customize recipes, search spaces and objectives.
 
 - **[Scale & deploy](deploy.md)**
 

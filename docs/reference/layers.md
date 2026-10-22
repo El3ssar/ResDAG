@@ -10,6 +10,10 @@ The `nn.Module` components used to build models: single-step reservoir
 cells, the stateful sequence layers that wrap them, readout layers, and
 transform layers. All are importable directly from `resdag.layers`.
 
+For automatic fitting, solver overrides and diagnostics, start with the
+[readout solver guide](../guides/readout-solvers.md). `rd.ESN` uses
+`AutoReadoutLayer` by default; lower-level factories expose it as `readout="auto"`.
+
 ::: resdag.layers.cells
     options:
       members:
@@ -49,6 +53,8 @@ transform layers. All are importable directly from `resdag.layers`.
     options:
       members:
         - ReadoutLayer
+        - AutoReadoutLayer
+        - ReadoutSolveReport
         - CGReadoutLayer
         - RidgeReadoutLayer
         - CholeskyReadoutLayer

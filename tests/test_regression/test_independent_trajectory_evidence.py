@@ -81,6 +81,7 @@ def test_independent_study_preregistration_source_and_helper_bindings():
         == set(bridge["changed_since_study"])
         == {
             "src/resdag/__init__.py",
+            "src/resdag/core/workflow.py",
             "src/resdag/models/parallel_esn.py",
         }
     )
@@ -88,6 +89,7 @@ def test_independent_study_preregistration_source_and_helper_bindings():
         assert entry["study_sha256"] == source["files"][name]
         assert entry["later_sha256"] == bridge["files"][name]
         assert entry["diff"]
+        assert _sha(entry["later_source"].encode()) == entry["later_sha256"]
 
 
 def test_independent_study_fresh_ics_and_complete_nested_design():
@@ -319,15 +321,92 @@ def test_independent_study_exact_paired_regression_and_native_receipts():
         )
     assert paired["all270_full_forecasts_bit_identical"]
     assert paired["all90_fitted_tensor_fingerprints_identical"]
-    for process in report["processes"] + paired["baseline_processes"]:
+    _assert_final_runtime_replay(report, fits, forecasts)
+    for process in (
+        report["processes"]
+        + paired["baseline_processes"]
+        + report["final_runtime_replay"]["processes"]
+    ):
         policy = process["native_policy"]
         assert policy["fresh_cli_bootstrap"]
         assert policy["torch_intraop_threads"] == policy["torch_interop_threads"] == 1
         assert set(policy["requested_environment"].values()) == {"1"}
         assert all(pool["num_threads"] == 1 for pool in policy["native_pools"])
-        assert process["timing_boundary"]
+        assert process.get("timing_boundary", process.get("timing_scope"))
         assert "warnings" in process
         assert process["start_condition"]["utc"] <= process["end_condition"]["utc"]
+
+
+def _assert_final_runtime_replay(report, fits, forecasts):
+    replay = report["final_runtime_replay"]
+    plan = replay["plan"]
+    assert plan["source_files"] == report["source"]["final_source_bridge"]["files"]
+    assert _canonical(plan["source_files"]) == plan["source_manifest_sha256"]
+    assert plan["original_preregistered_sha256"] == report["preregistration"]["sha256"]
+    assert plan["original_source_manifest_sha256"] == report["source"]["manifest_sha256"]
+    assert replay["additional_fits"] == replay["additional_integrations"] == 0
+    assert plan["additional_fits"] == plan["additional_ode_integrations"] == 0
+    assert plan["selection_or_retuning"] is False
+    assert len(replay["fitted_checkpoints"]) == 90
+    assert {f["id"] for f in replay["fitted_checkpoints"]} == set(fits)
+    for loaded in replay["fitted_checkpoints"]:
+        original = fits[loaded["id"]]
+        assert loaded["checkpoint_sha256"] == original["checkpoint"]["sha256"]
+        expected = {
+            key: value
+            for key, value in original["fitted_fingerprint"]["tensors"].items()
+            if key in loaded["persisted_tensor_names"]
+        }
+        assert _canonical(expected) == loaded["persisted_fitted_tensors_sha256"]
+        assert loaded["all_persisted_fitted_tensors_exact"]
+        assert (
+            loaded["expected_fitted_tensor_fingerprint_sha256"]
+            == original["fitted_fingerprint"]["sha256"]
+        )
+        if loaded["exact"]:
+            assert (
+                loaded["fitted_tensor_fingerprint_sha256"]
+                == original["fitted_fingerprint"]["sha256"]
+            )
+            assert loaded["post_fit_transient_state_status"] == "exact"
+        else:
+            assert loaded["post_fit_transient_state_reconstruction_required"]
+            assert loaded["post_fit_transient_state_status"].startswith("unavailable;")
+    assert replay["all90_fitted_tensor_fingerprints_identical"] == all(
+        f["exact"] for f in replay["fitted_checkpoints"]
+    )
+    assert replay["all90_persisted_fitted_tensor_fingerprints_identical"]
+    assert replay["all90_fitted_tensor_fingerprints_identical"]
+    assert len(replay["forecasts"]) == 270
+    assert {r["id"] for r in replay["forecasts"]} == set(forecasts)
+    for repeated in replay["forecasts"]:
+        original = forecasts[repeated["id"]]
+        for key in ("prediction", "final_state", "scores"):
+            assert repeated[key] == original[key]
+        assert repeated["prediction_npy_sha256"] == original["prediction_file"]["sha256"]
+        assert repeated["error_trace_sha256"] == original["normalized_error_trace"]["sha256"]
+        assert all(
+            repeated[key]
+            for key in (
+                "same_prediction",
+                "same_prediction_file_bytes",
+                "same_final_states",
+                "same_scores",
+            )
+        )
+    assert replay["all270_full_forecasts_states_scores_bit_identical"]
+    script = report["scripts"]["final_runtime_replay"]
+    assert _sha(script["source"].encode()) == script["sha256"] == plan["replay_script_sha256"]
+    compile(script["source"], "<final runtime replay>", "exec")
+    assert len(replay["processes"]) == 10
+    assert [attempt["retained_forecast_checks"] for attempt in report["replay_setup_attempts"]] == [
+        18,
+        18,
+    ]
+    for attempt in report["replay_setup_attempts"]:
+        assert attempt["additional_fits"] == attempt["additional_integrations"] == 0
+        assert attempt["all_retained_forecast_checks_exact"]
+        assert _sha(attempt["script"]["source"].encode()) == attempt["script"]["sha256"]
 
 
 def test_independent_study_reconstructs_frozen_tree_with_stdlib_only(tmp_path):
@@ -372,3 +451,43 @@ def test_independent_study_reconstructs_frozen_tree_with_stdlib_only(tmp_path):
     repeated = subprocess.run(command, capture_output=True, text=True, timeout=30)
     assert repeated.returncode != 0
     assert _sha((output / "preregistered.json").read_bytes()) == report["preregistration"]["sha256"]
+    final_stage = report["reproduction"]["final_replay_stage_script"]
+    assert _sha(final_stage["source"].encode()) == final_stage["sha256"]
+    final_script = tmp_path / "reconstruct_final_replay.py"
+    final_script.write_text(final_stage["source"])
+    final_output = tmp_path / "final"
+    final_command = [
+        sys.executable,
+        "-S",
+        str(final_script),
+        "--publication",
+        str(PUBLICATION),
+        "--repository",
+        str(ROOT),
+        "--output",
+        str(final_output),
+        "--numerical-python",
+        sys.executable,
+    ]
+    subprocess.run(final_command, capture_output=True, text=True, check=True, timeout=30)
+    final_receipt = json.loads((final_output / "staging-receipt.json").read_text())
+    assert final_receipt["source_only"]
+    assert (
+        final_receipt["source_manifest_sha256"]
+        == report["source"]["final_source_bridge"]["manifest_sha256"]
+    )
+    assert (
+        final_receipt["replay_script_sha256"] == report["scripts"]["final_runtime_replay"]["sha256"]
+    )
+    assert (
+        final_receipt["numerical_modules_imported"]
+        == final_receipt["numerical_commands_executed"]
+        == []
+    )
+    assert final_receipt["commands"] == []
+    final_manifest = {
+        path.relative_to(final_output / "source").as_posix(): _sha(path.read_bytes())
+        for path in (final_output / "source").rglob("*")
+        if path.is_file()
+    }
+    assert final_manifest == report["source"]["final_source_bridge"]["files"]

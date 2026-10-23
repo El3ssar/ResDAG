@@ -28,13 +28,18 @@ and cross-device tensor operations in the tested hot path. These establish
 composition correctness; AOT eager capture and MPS checks do not measure CUDA
 throughput. CUDA is unavailable on this host.
 
-The acceptance tests found two integration defects. CPU autocast could request
+The acceptance tests found integration defects. CPU autocast could request
 an unsupported low-precision CSR multiplication; that operation now uses the
 stored weight precision on the same device, preserving gradients through the
 surrounding mixed-precision network. Full-graph capture could fail while
 inspecting the stored state's `grad_fn`; the compile-aware guard now detaches
 only carried state under the existing default. Current-call gradients and
 explicit cross-call gradient retention remain covered.
+Hosted Torch 2.10 checks on Python 3.11–3.13 also exposed evaluation of a
+typing union inside the preprocessing getter. Quoting that typing-only argument
+preserves its eager identity operation and lets Dynamo capture the forward
+graph; all four compiled cases and the full pipeline selection pass in an
+isolated Python 3.13/Torch 2.10 reproduction.
 
 The [experiment guide](../start/forecast-experiment.md) now saves resolved
 settings, versions, split identities, artifact hashes and exact replay data.
@@ -66,17 +71,19 @@ descriptive process observations, not confidence intervals.
 
 | Batch / patches | Forecast ratio, block 1 / block 2 | Fit control ratio, block 1 / block 2 |
 | --- | ---: | ---: |
-| 1 / 8 | 1.104 / 1.070 | 0.994 / 1.001 |
-| 1 / 64 | 1.099 / 1.104 | 0.972 / 1.006 |
-| 4 / 8 | 1.061 / 1.082 | 1.006 / 0.998 |
-| 4 / 64 | 1.023 / 1.033 | 1.024 / 1.007 |
+| 1 / 8 | 1.098 / 1.055 | 0.981 / 1.004 |
+| 1 / 64 | 1.041 / 1.078 | 0.973 / 1.015 |
+| 4 / 8 | 1.096 / 1.096 | 0.956 / 0.982 |
+| 4 / 64 | 1.023 / 1.041 | 0.929 / 0.996 |
 
-Forecast improvement ranges from about **2–10%** in these workloads. Fitting
-does not use the new path: its unchanged control is mostly within one percent,
-with two block/case controls about 2.8% slower and 2.4% faster. This supports a bounded
-parallel-forecast improvement, not a universal training improvement or a
-cross-library speed ranking. The earlier parallel patch-scaling failure was
-not reproduced with the current benchmark recipe; its threshold is unchanged.
+Forecast elapsed time falls by about **2–9%** in these workloads. Fitting
+does not use the new path: its unchanged control varies from about 1.5% faster
+to 7.6% slower. Read these small forecast gains with that control variation in
+mind. This is bounded parallel-forecast evidence, not a universal training
+improvement or a cross-library speed ranking. All 96 workflows also preserve
+their exactness hashes from the earlier run before the typing-only compiler
+fix. The earlier parallel patch-scaling failure was not reproduced with the
+current benchmark recipe; its threshold is unchanged.
 
 [Download every sample, exactness hash, frozen source and replay script](../assets/data/phase-five-parallel-cpu-2026-10-23.json).
 
@@ -94,6 +101,8 @@ study. At the main 0.3 normalized-error threshold, the preregistered aggregate
 is the **median of the five trajectory medians**; each trajectory median contains
 nine seed/origin forecasts. The independent unit is a trajectory, not each of
 the 45 nested forecasts. Full individual ranges include censored lower bounds.
+Each recipe retains its own selected size and settings; this is not an
+architecture ablation with matched hyperparameters.
 
 | Primary recipe | Median at 0.3, Lyapunov times | Individual range at 0.3 | Forecasts reaching the test limit at 0.3 | Median at 0.5 |
 | --- | ---: | ---: | ---: | ---: |
@@ -116,19 +125,47 @@ They do not compare competitor accuracy on this new bank or establish that an
 implementation change caused the vanilla shortfall. Previously inspected
 forecast banks remain distinct from these new observations.
 
-A paired regression separately repeats the same 90 fits and 270 forecasts on
-clean baseline `eb70bf11`, using the sealed observations and initial weights.
+A paired regression for the initial implementation separately repeats the same
+90 fits and 270 forecasts on clean baseline `eb70bf11`, using the sealed
+observations and initial weights.
 Every fitted-tensor fingerprint, complete prediction, final state and score
-matches exactly. The new integration fixes therefore preserve this measured
-forecast bank. This second pass adds no tuning or test-based selection.
+matches exactly. This second pass adds no tuning or test-based selection.
 
 The preregistered runtime was frozen before the release-metadata rebase. Its
-version literal is 5.0.0; the final tree is based on 5.0.1 and additionally
-tightens the parallel-only custom-readout guard, which none of these six recipes
-uses. The public record retains both source manifests and that explicit bridge;
-it does not relabel the original frozen capture as a later checkout.
+version literal is 5.0.0. Subsequent changes update that literal to 5.0.1,
+tighten a parallel-only custom-readout guard unused by these six recipes, and
+quote the preprocessing getter's typing-only cast for older compiler support.
+The public record retains the original source and every subsequent source
+bridge; it does not relabel the frozen capture as a later checkout.
+
+On the final corrected runtime, a separate replay loads all **90 original
+fitted checkpoints** and reproduces all **270 forecasts** exactly, including
+complete prediction bytes, final states and both scores. Every fitted tensor
+fingerprint also matches; the common graph's nonpersistent post-fit state is
+restored by the original teacher-forced input prefix. This replay performs no
+readout solve, fitting, integration or tuning. Two stopped restore-setup attempts
+are retained separately; neither found a forecast discrepancy or contributes
+to the original study's scores.
 
 [Download all 270 scores, lossless error traces, trajectory summaries, paired regression and reproduction inputs](../assets/data/phase-five-independent-trajectories-2026-10-23.json).
+
+### Closeout verification
+
+The implementation is in [PR #467](https://github.com/El3ssar/ResDAG/pull/467).
+The initial `3493889` checks identified the older-Python/Torch 2.10 graph-capture
+failure described above; final hosted acceptance follows its quoted-cast fix.
+These package checks cover the corrected candidate source; its wheel
+retains the base version 5.0.1 and is not the previously published 5.0.1 artifact.
+The final tracker update changes prose only.
+
+| Check | Result |
+| --- | --- |
+| Complete local suite before the typing-only follow-up | **6,509 passed**, 245 skipped, 13 benchmark cases deselected; **93.86% coverage** against the unchanged 90% floor. Final corrected-source replay is being recorded. Compiler acceptance cases isolate their caches rather than changing Torch's global recompile limit. |
+| Configured local CPU gates | **Four passed**, four unavailable-device skips, one deselected; thresholds unchanged. |
+| Clean candidate package | **110 installed-wheel checks passed**, three unavailable-CUDA skips, plus all eight common-workflow guide blocks. All **205 runtime modules**, the typing marker, **209 RECORD entries** and actual installed import origins verify against the frozen source and sdist. |
+| Minimum optional dependency | **13 experiment checks pass** with an actual isolated **TSDynamics 6.0.2** install, including fresh-process exact trajectory replay. |
+| Older Python / minimum Torch | Python **3.13.16 / Torch 2.10.0** reproduces all four original graph-capture failures; the corrected source passes all **34 pipeline checks**, including those four cases, with three unavailable-CUDA skips. |
+| Static and documentation | Ruff/Black and whole-package mypy (**205 modules**) pass. Strict MkDocs passes; all four changed pages were visually inspected, and all three new downloadable records match their served bytes. |
 
 ## CPU follow-up
 

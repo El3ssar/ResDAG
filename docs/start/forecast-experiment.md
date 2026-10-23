@@ -216,7 +216,10 @@ for registered custom components, trusted notebook bundles and device mapping.
 ## Try Rössler or a larger reservoir
 
 The runnable script generates data, evaluates all three models, saves their
-diagrams and portable checkpoints, and checks reload parity:
+diagrams and portable checkpoints, and checks reload parity.
+
+Run these commands from a ResDAG checkout. The complete script is
+[examples/17_forecast_experiment.py](https://github.com/El3ssar/ResDAG/blob/main/examples/17_forecast_experiment.py).
 
 ```sh
 python examples/17_forecast_experiment.py --system lorenz --output lorenz-run

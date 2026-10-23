@@ -52,6 +52,33 @@ model-state interface. See [execution capabilities](advanced/forecast-capabiliti
 remain unchanged; [its guide](reference/lsmr-readout.md) explains convergence and
 accelerator transfers.
 
+### Independent initialization streams
+
+New ESN, continuous, Euler, edge-of-stability, residual ESN, gated reservoir and
+LIF models now use separate random streams for feedback, external inputs,
+recurrent weights and bias, including the gated cell's candidate and gate roles.
+Previously, mixing a named or custom initializer with a default could
+restart the same random sequence: a bias could repeat a feedback prefix, or
+recurrent weights could reuse feedback draws. Changing one role no longer
+shifts the other roles, even when an optional input is added or removed.
+
+**New seeded models can have different weights and forecast results.** This
+includes graph-based recurrent initializers, whose fallback seed now belongs
+to the recurrent role. Repeat comparisons and tuning for newly constructed
+models; do not treat older accuracy measurements as evidence for these new
+initializations. Loading an existing checkpoint keeps its materialized weights
+and reservoir state; it does not replace them with new seeded draws.
+
+An integer seed fixes every local role without consuming the global RNG.
+Passing a `torch.Generator` now uses its `initial_seed()` without advancing it,
+matching the named-initializer convention. With `seed=None`, the cell draws
+one master integer from Torch's CPU global RNG and derives its local roles
+from that value; `torch.manual_seed` still reproduces construction. Explicit
+initializer seeds, including an explicitly bound `seed=None`, and RNGs owned
+by custom initializer objects or callbacks keep their own policies. The
+standalone `create_torch_generator` utility still returns and advances an
+explicitly supplied generator when callers use it for draws.
+
 ## Phase-four training and persistence changes
 
 The common `rd.ESN` and `rd.Model` now support `model.save("run.pt")` and

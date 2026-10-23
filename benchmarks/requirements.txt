@@ -7,3 +7,4 @@
 # For GPU numbers, install a CUDA build of torch (e.g. the cu128 wheels) rather
 # than the default CPU wheel.
 reservoirpy==0.4.2
+threadpoolctl==3.6.0

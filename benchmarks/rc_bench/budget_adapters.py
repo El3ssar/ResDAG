@@ -6,6 +6,7 @@ change the historical matched-workload adapters or public ResDAG defaults.
 
 from __future__ import annotations
 
+import base64
 import os
 import select
 import shutil
@@ -129,6 +130,7 @@ class PythonBudgetAdapter:
                 feedback_initializer=("uniform", {"input_scaling": params.input_scaling}),
                 bias=True,
                 bias_scaling=params.bias_scaling,
+                bias_initializer=("uniform", {"input_scaling": params.bias_scaling}),
                 seed=seed,
                 dtype=torch.float64,
             )(inputs)
@@ -211,6 +213,26 @@ class JuliaCandidate:
         return prediction, {"worker_forecast_seconds": result[0]}
 
 
+def _parse_julia_greeting(greeting: list[str]) -> tuple[dict[str, str], dict[str, Any]]:
+    if len(greeting) != 7 or greeting[0] != "READY":
+        raise RuntimeError(f"Unexpected Julia budget worker greeting: {greeting}")
+    try:
+        julia_threads, blas_threads = int(greeting[3]), int(greeting[4])
+        blas_config = base64.b64decode(greeting[6], validate=True).decode("utf-8")
+    except ValueError as error:
+        raise RuntimeError("Unverifiable Julia budget worker thread metadata") from error
+    if julia_threads != 1 or blas_threads != 1:
+        raise RuntimeError("Julia budget worker must verify one Julia thread and one BLAS thread")
+    if not all(value.strip() for value in (greeting[1], greeting[2], greeting[5], blas_config)):
+        raise RuntimeError("Incomplete Julia budget worker thread metadata")
+    return {"julia": greeting[1], "ReservoirComputing": greeting[2]}, {
+        "julia_threads": julia_threads,
+        "blas_threads": blas_threads,
+        "blas_vendor": greeting[5],
+        "blas_config": blas_config,
+    }
+
+
 class JuliaBudgetAdapter:
     """One isolated standard Julia subprocess, no per-candidate startup charge."""
 
@@ -248,13 +270,10 @@ class JuliaBudgetAdapter:
         )
         try:
             greeting = self.readline(timeout=180).split("\t")
+            self.versions, self.thread_metadata = _parse_julia_greeting(greeting)
         except BaseException:
             self.close()
             raise
-        if len(greeting) != 3 or greeting[0] != "READY":
-            self.close()
-            raise RuntimeError(f"Unexpected Julia budget worker greeting: {greeting}")
-        self.versions = {"julia": greeting[1], "ReservoirComputing": greeting[2]}
 
     def readline(self, timeout: float | None = None) -> str:
         stdout = self.process.stdout
@@ -357,6 +376,7 @@ def prepare_adapter(library: str, *, julia_storage: str = "dense"):
     info = {"startup_synthetic_warmup_seconds": time.perf_counter() - started}
     if library == "rcjl":
         info["versions"] = adapter.versions
+        info["thread_policy"] = adapter.thread_metadata
     return adapter, info
 
 

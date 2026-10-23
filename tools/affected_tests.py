@@ -169,13 +169,22 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_benchmark_protocol.py",
         "tests/test_benchmark_budget.py",
         "tests/test_benchmark_julia_protocol.py",
+        "tests/test_benchmark_threads.py",
     ),
     "benchmarks/julia/": (
         "tests/test_benchmark_protocol.py",
         "tests/test_benchmark_budget.py",
         "tests/test_benchmark_julia_protocol.py",
     ),
-    "benchmarks/BUDGET_PROTOCOL.md": ("tests/test_benchmark_budget.py",),
+    "benchmarks/BUDGET_PROTOCOL.md": (
+        "tests/test_benchmark_budget.py",
+        "tests/test_benchmark_threads.py",
+    ),
+    "benchmarks/requirements.txt": (
+        "tests/test_benchmark_protocol.py",
+        "tests/test_benchmark_budget.py",
+        "tests/test_benchmark_threads.py",
+    ),
     "benchmarks/accuracy_regression.py": ("tests/test_regression/test_phase5_accuracy.py",),
     "benchmarks/tuned_accuracy.py": ("tests/test_regression/test_phase5_accuracy.py",),
     "benchmarks/results/phase-five-accuracy-2026-10-23.json": (

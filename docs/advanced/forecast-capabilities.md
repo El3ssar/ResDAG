@@ -13,8 +13,10 @@ PyTorch execution hooks also apply during forecasting and explicit-state
 execution. ResDAG detects local, nested and global registrations automatically
 and uses ordinary module calls when needed. A hook on an `rd.Model` or `rd.ESN`
 sees its usual original-unit inputs and outputs; named feedback and delays use
-those modified predictions. Hook-free models retain the lean executor. Requesting
-`compile=True` with execution hooks emits a warning and uses eager execution.
+those modified predictions. Hook-free models retain the lean executor. On
+backends that support compiled forecasts, requesting `compile=True` with
+execution hooks emits a warning and uses eager execution. Full-history execution
+and parallel/coupled workflow backends reject `compile=True` independently of hooks.
 Hooks may change output dtype or device. In fast mode, a prehook can convert
 the next feedback frame back to the graph's required placement, just as in an
 ordinary model call. History replay uses `torch.cat` to extend each input

@@ -271,6 +271,10 @@ def test_canonical_protocol_has_disjoint_train_validation_test_and_ten_lt(system
 def test_cli_freezes_all_winners_before_reading_any_final_test_values(
     monkeypatch, tmp_path, final_failure
 ):
+    from contextlib import nullcontext
+
+    # Fake adapters isolate the clock/leakage oracle from native resources.
+    monkeypatch.setattr(budget, "single_thread_policy", lambda: nullcontext({"synthetic": True}))
     data, output = tmp_path / "data", tmp_path / "output"
     data.mkdir()
     (data / "data.json").write_text("{}")
@@ -360,6 +364,18 @@ def test_real_common_python_recipe_has_random_bias_and_no_readout_intercept(libr
         assert np.max(np.abs(win)) <= params.input_scaling
         assert np.count_nonzero(win) == win.size
     assert np.ptp(bias) > 0 and np.max(np.abs(bias)) <= params.bias_scaling
+    if library == "resdag-cpu":
+        normalized_input = (
+            cell.weight_feedback.detach().numpy().ravel()[: params.reservoir_size]
+            / params.input_scaling
+        )
+        assert not np.allclose(bias / params.bias_scaling, normalized_input, atol=1e-14, rtol=0)
+        replay, _ = PythonBudgetAdapter(library).fit(samples, params, 7, 3)
+        replay_cell = next(m for m in replay.model.modules() if isinstance(m, rd.ESNCell))
+        np.testing.assert_array_equal(bias, replay_cell.bias_h.detach().numpy())
+        changed, _ = PythonBudgetAdapter(library).fit(samples, params, 19, 3)
+        changed_cell = next(m for m in changed.model.modules() if isinstance(m, rd.ESNCell))
+        assert not np.array_equal(bias, changed_cell.bias_h.detach().numpy())
     first, _ = candidate.forecast(samples[-3:], 4)
     again, _ = candidate.forecast(samples[-3:], 4)
     assert first.dtype == np.float64 and np.isfinite(first).all()

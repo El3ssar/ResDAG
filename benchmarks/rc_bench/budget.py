@@ -26,18 +26,15 @@ from typing import Any, Callable
 
 # Enforce the declared CPU resource policy before importing NumPy/BLAS/Torch.
 if __name__ == "__main__":
-    for _variable in (
-        "OPENBLAS_NUM_THREADS",
-        "OMP_NUM_THREADS",
-        "MKL_NUM_THREADS",
-        "JULIA_NUM_THREADS",
-    ):
-        os.environ[_variable] = "1"
+    from ._threads import bootstrap_cli
+
+    bootstrap_cli()
     os.environ["TQDM_DISABLE"] = "1"
 
 import numpy as np
 import optuna
 
+from ._threads import ThreadPolicyError, single_thread_policy, verify_thread_policy
 from .budget_adapters import CommonParams, julia_storage_pilot, prepare_adapter
 from .config import Point
 from .data import prepare_point
@@ -155,6 +152,7 @@ def evaluate_candidate(
     check = deadline.check if deadline is not None else lambda: None
     training = np.ascontiguousarray(values[: protocol.train_stop])
     for seed in seeds:
+        verify_thread_policy()
         check()
         fitted = {"seed": seed, "started_elapsed": deadline.elapsed if deadline else None}
         ledger["fits"].append(fitted)
@@ -162,6 +160,8 @@ def evaluate_candidate(
         try:
             candidate, timing = adapter.fit(training, params, seed, protocol.washout)
             fitted.update(timing, complete=True)
+        except ThreadPolicyError:
+            raise
         except Exception as exception:
             fitted.update(complete=False, failure=f"{type(exception).__name__}: {exception}")
             if not keep_errors:
@@ -178,6 +178,7 @@ def evaluate_candidate(
             continue
         finally:
             fitted["wall_seconds"] = time.perf_counter() - started
+            verify_thread_policy()
         check()
         for origin in origins:
             check()
@@ -191,6 +192,8 @@ def evaluate_candidate(
                 prediction, timing = candidate.forecast(history, protocol.horizon)
                 result = score(prediction, values[origin : origin + protocol.horizon], protocol)
                 operation.update(timing, complete=True)
+            except ThreadPolicyError:
+                raise
             except Exception as exception:
                 operation.update(complete=False, failure=f"{type(exception).__name__}: {exception}")
                 if not keep_errors:
@@ -206,6 +209,7 @@ def evaluate_candidate(
                 continue
             finally:
                 operation["wall_seconds"] = time.perf_counter() - started
+                verify_thread_policy()
             check()
             ledger["runs"].append({"seed": seed, "origin": origin, "status": "complete", **result})
             predictions[f"seed{seed}-origin{origin}"] = prediction
@@ -269,6 +273,8 @@ def tune_track(
             trial.set_user_attr("eligible", True)
             deadline.check()
             return summary["0.3"]["median"]
+        except ThreadPolicyError:
+            raise
         except Exception as exception:
             elapsed = deadline.elapsed
             trial.set_user_attr("work", ledger)
@@ -462,6 +468,11 @@ def render(report: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    with single_thread_policy() as policy:
+        return _main(argv, policy)
+
+
+def _main(argv: list[str] | None, thread_policy: dict) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -490,15 +501,10 @@ def main(argv: list[str] | None = None) -> int:
     if "rcjl" in args.libraries and julia_storage == "auto":
         pilot = julia_storage_pilot()
         julia_storage = pilot["selection"]
-    import torch
-
-    torch.set_num_threads(1)
-    if __name__ == "__main__":
-        torch.set_num_interop_threads(1)
     report = {
-        "protocol": "equal-wall-time-v1",
+        "protocol": "equal-wall-time-v2",
         "smoke": args.smoke,
-        "thread_policy": {"workers": 1, "CPU_threads": 1, "dtype": "float64"},
+        "thread_policy": thread_policy,
         "versions": _versions(),
         "source_data": json.loads((args.data_dir / "data.json").read_text()),
         "source": _source_manifest(),
@@ -520,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
         for library in args.libraries:
             key = f"{system}-{library}"
             adapter, startup = prepare_adapter(library, julia_storage=julia_storage)
+            verify_thread_policy()
             study = optuna.create_study(
                 direction="maximize",
                 sampler=optuna.samplers.TPESampler(seed=20261023),
@@ -562,6 +569,7 @@ def main(argv: list[str] | None = None) -> int:
             np.array(raw[protocol.validation_stop : protocol.test_stop]).tobytes()
         ).hexdigest()
         adapter, startup = prepare_adapter(library, julia_storage=julia_storage)
+        verify_thread_policy()
         ledger = {"fits": [], "forecasts": [], "runs": []}
         try:
             ledger, predictions = evaluate_candidate(
@@ -585,6 +593,8 @@ def main(argv: list[str] | None = None) -> int:
                     else None
                 ),
             }
+        except ThreadPolicyError:
+            raise
         except Exception as exception:
             track["test"] = {
                 "failure": f"{type(exception).__name__}: {exception}",

@@ -76,9 +76,11 @@ _SPARSE_AUTO_MIN_SIZE = _SPARSE_AUTO_MIN_SIZE_CPU
 SparseSpec = bool | Literal["auto"]
 
 # Golden-ratio offsets used to derive independent, deterministic sub-seeds from
-# the single layer-level ``seed``.  ``0x9E3779B9`` (2**32 / phi) is the classic
-# Fibonacci-hashing additive constant; doubling it gives a second, distinct
-# offset for the input-weight stream.
+# the single layer-level ``seed``. ``0x9E3779B9`` (2**32 / phi) is the classic
+# Fibonacci-hashing additive constant. Roles use feedback=0, input=2C,
+# recurrent=4C, bias=6C and initial-state=8C; noise=C and orthogonal skip=3C
+# remain separate. Named/custom fallback seeds and default Torch draws use the
+# same role seed, so changing one initializer cannot shift another role.
 #
 # ``_NOISE_SEED_OFFSET`` separates the train-mode state-noise stream from the
 # weight-init draws (historical behaviour, unchanged).  ``_INPUT_SEED_OFFSET``
@@ -89,6 +91,7 @@ SparseSpec = bool | Literal["auto"]
 # seeds never coincide.
 _NOISE_SEED_OFFSET = 0x9E3779B9
 _INPUT_SEED_OFFSET = (0x9E3779B9 * 2) % (2**63 - 1)
+_RECURRENT_SEED_OFFSET = 2 * _INPUT_SEED_OFFSET
 
 
 def _salt_seed(seed: int | None, offset: int) -> int | None:
@@ -279,17 +282,18 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         parameter — the recurrent (topology) matrix, the feedback and input
         weights (including the default ``uniform(-1, 1)`` draw used when no
         initializer is given), and the random bias. Accepts a plain ``int`` or
-        a :class:`torch.Generator` (an int is extracted from the generator's
-        ``initial_seed()`` for the NumPy-backed topology/named-initializer
-        path, while the generator itself drives the torch default-init draws).
+        a :class:`torch.Generator`, whose ``initial_seed()`` defines the master
+        seed without advancing the caller's generator. Independent fixed role
+        seeds drive feedback, input, recurrent weights, bias and reset state.
         With ``seed`` set, a string- or callable-form
         ``topology='erdos_renyi'`` produces the same recurrent matrix on every
         build, without the ``('erdos_renyi', {'seed': ...})`` tuple form. An
         explicit ``seed`` inside a tuple/object spec always wins over this
-        argument. When ``seed=None`` (the default), string-form graph
-        topologies and the default torch draws are still reproducible under
-        ``torch.manual_seed`` because their generators are derived from torch's
-        global RNG.
+        argument. When ``seed=None`` (the default), one master integer is drawn
+        from Torch's CPU global RNG, then every role uses its own local stream.
+        This advances the global RNG once and remains reproducible under
+        ``torch.manual_seed``. Explicit initializer RNG policies remain owned by
+        their callbacks/objects, including an explicitly bound ``seed=None``.
 
     Attributes
     ----------
@@ -434,6 +438,11 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         # torch.Generator is reduced to its initial_seed() so the topology stays
         # a pure function of the generator.
         self._seed_int = coerce_seed_to_int(seed)
+        if self._seed_int is None:
+            # One master draw keeps optional roles independent even without an
+            # explicit seed. Device placement never changes which global RNG
+            # supplies this master; custom explicit RNG policies still win.
+            self._seed_int = int(torch.randint(0, 2**63 - 1, (1,), device="cpu").item())
         # Per-device cache of torch Generators driving the train-mode state
         # noise.  Built lazily on first use (and rebuilt after unpickling — see
         # ``__getstate__``) so the noise stream follows the state's device while
@@ -1192,7 +1201,7 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
             self._maybe_build_sparse_weight()
 
     # ------------------------------------------------------------------
-    # Weight initialization (verbatim from legacy ReservoirLayer)
+    # Weight initialization (independent streams per parameter role)
     # ------------------------------------------------------------------
 
     def _get_activation(self, activation: str) -> Callable[[torch.Tensor], torch.Tensor]:
@@ -1214,30 +1223,31 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def _initialize_weights(self) -> None:
         """Initialize all weight matrices.
 
-        A single torch ``Generator`` (built from ``self.seed``) drives every
-        default ``nn.init`` draw — feedback, input, recurrent, then bias, in
-        that fixed order — so a given ``seed`` deterministically reproduces all
-        parameters.  Named/object initializers and topologies seed themselves
-        from the integer seed instead (see ``_seed_int``).
+        Each role has a local generator derived from the effective master
+        seed. Named/custom initializers receive the same role seed as that
+        role's default draw, with explicit spec seeds taking precedence.
+        No role depends on how many random values another role consumes.
         """
-        # One generator for all torch default draws; seeded from self.seed so
-        # the parameters are a pure function of the seed and independent of the
-        # global RNG state.  When seed is None it is derived from the global RNG
-        # so torch.manual_seed still propagates.
         target_device = torch.empty(0, **self._factory_kwargs).device
-        init_seed = self.seed
-        if isinstance(init_seed, torch.Generator) and init_seed.device != target_device:
-            init_seed = init_seed.initial_seed()
-        generator = create_torch_generator(init_seed, device=target_device)
+        feedback_generator = create_torch_generator(self._seed_int, device=target_device)
+        input_generator = create_torch_generator(
+            _salt_seed(self._seed_int, _INPUT_SEED_OFFSET), device=target_device
+        )
+        recurrent_generator = create_torch_generator(
+            _salt_seed(self._seed_int, _RECURRENT_SEED_OFFSET), device=target_device
+        )
+        bias_generator = create_torch_generator(
+            _salt_seed(self._seed_int, 3 * _INPUT_SEED_OFFSET), device=target_device
+        )
 
-        self._initialize_feedback_weights(generator)
+        self._initialize_feedback_weights(feedback_generator)
 
         if self.input_size is not None:
-            self._initialize_input_weights(generator)
+            self._initialize_input_weights(input_generator)
         else:
             self.register_parameter("weight_input", None)
 
-        self._initialize_recurrent_weights(generator)
+        self._initialize_recurrent_weights(recurrent_generator)
 
         if self._bias:
             # Random bias drawn like the feedback/input weights.  A
@@ -1253,7 +1263,7 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
                     raise ValueError("bias_initializer must produce finite values")
             elif self.bias_scaling != 0.0:
                 nn.init.uniform_(
-                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
+                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=bias_generator
                 )
             else:
                 nn.init.zeros_(self.bias_h)
@@ -1299,7 +1309,9 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
 
     def _initialize_recurrent_weights(self, generator: torch.Generator) -> None:
         """Initialize recurrent weight matrix from topology or random."""
-        resolved = resolve_topology(self.topology, seed=self._seed_int)
+        resolved = resolve_topology(
+            self.topology, seed=_salt_seed(self._seed_int, _RECURRENT_SEED_OFFSET)
+        )
         target = torch.empty(0, **self._factory_kwargs)
         threshold = (
             _SPARSE_AUTO_MIN_SIZE_CUDA

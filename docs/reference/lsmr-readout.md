@@ -64,7 +64,7 @@ $$
 \min_{W,b}\;\lVert XW+b-Y\rVert_F^2+\alpha\lVert W\rVert_F^2.
 $$
 
-`alpha` penalizes the **sum** of squared errors. SciPy receives
+The data-fit term uses the **sum** of squared errors, rather than their mean. SciPy receives
 `damp=sqrt(alpha)`. The intercept is unpenalized: supervised feature and target
 means are removed during the solve, then restored in the fitted bias. With
 `bias=False`, no centering or intercept is applied. Each target column is scaled
@@ -95,6 +95,10 @@ are estimates. Different solvers' conditioning estimates need not use the same
 norm or matrix.
 
 ## Devices and PyTorch integration
+
+When tuning with a memory budget, the default planner still reserves general
+direct-solver workspaces. A custom `memory_estimator` can describe LSMR's
+tighter requirements; see [memory and sparse models](../workflows/sparse-reservoirs.md#readout-and-sequence-memory).
 
 Fitting runs on CPU in float64. Accelerator feature tensors are copied to CPU
 with a `RuntimeWarning`; pass `cpu_fallback=False` to reject that transfer.

@@ -504,16 +504,20 @@ them alone would not improve performance.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P5-01 | WIP | Correct held-out comparison windows and common prediction alignment. | Real Python and pinned Julia 1.12.5 / ReservoirComputing.jl 0.12.23 adapters pass independent first-step, ridge and recurrence oracles. Optional hosted Julia verification added; hosted acceptance is pending. Training-only scales, declared model policies and failed-track handling remain explicit. |
+| P5-01 | Done | Correct held-out comparison windows and common prediction alignment. | Real Python and pinned Julia 1.12.5 / ReservoirComputing.jl 0.12.23 adapters pass independent first-step, ridge and recurrence oracles locally and in hosted CI. Training-only scales, declared model policies and failed-track handling remain explicit. |
 | P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | The first increment verified 150 matched tuned/control replays. The approved continuation compares vanilla ESNs on both systems, ten CPU tuning minutes per library/system, then five reserved seeds × three starts. Winners freeze before final-test access. Independent trajectories and broader scale regimes remain open. |
-| P5-03 | WIP | Actual sparse/structured operators and appropriate matrix-free readouts. | Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented. Focused ownership, lifecycle, numerical, gradient and checkpoint tests pass. Full-suite, controlled timing and hosted acceptance are in progress; automatic solver/operator policies stay unchanged. |
-| P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. Baseline operator profiles and paired structured-kernel measurements are retained; final workflow timing and compilation modernization remain open. |
+| P5-03 | WIP | Actual sparse/structured operators and appropriate matrix-free readouts. | Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented and pass full-suite, checkpoint, gradient and hosted checks. Broader operator regimes and tighter solver/storage-aware tuning estimates remain open; automatic solver/operator policies stay unchanged. |
+| P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. Baseline profiles, structured kernels and bounded paired workflow timing are verified. Broader batch/patch scaling and cold-versus-warm compilation timing remain open. |
 | P5-05 | WIP | Publish speed–accuracy–memory tradeoffs against current competitors. | Shared equal-time runner and reproducible protocol implemented with recorded versions, hardware, timing, source fingerprints and memory limitations. Full scientific comparison and published results are pending. |
 | P5-06 | Done | Bring the broader forecasting search into built-in vanilla and OTT tuning. | Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage. |
 
-Python 3.14 warns that `torch.jit.script_method` is deprecated. The phase-five
-execution review must address that path using supported PyTorch tooling and
-verify value, state and gradient behavior before replacing it.
+Python 3.14 emits fourteen `torch.jit.script_method` deprecation warnings when
+Torch 2.10 imports its own MKLDNN helpers through the `torch.compile` backend.
+Static tracing confirmed that neither ResDAG nor its functional graph dependency
+implements that deprecated path. The existing compile correctness tests pass;
+retain the upstream warning boundary rather than replacing the graph backend
+to suppress it. ResDAG's `Standardize.inverse` export annotation remains covered
+by explicit scripting tests.
 
 ### First-increment accuracy evidence
 
@@ -543,6 +547,24 @@ from the new studies, but are historically known; one trajectory per system
 does not establish generalization across independently generated runs.
 Incomplete or late candidates cannot win, and final build/fit failures cannot
 be disguised as short but valid forecasts.
+
+Local acceptance on runtime source `4439e29`: **6,153 tests passed** at
+**93.82% coverage**; **270 installed-wheel checks** passed with two unavailable
+CUDA cases skipped. All 205 runtime files match the wheel, sdist and installed
+package. An independent replay of the frozen classical/OTT experiments found
+**150/150 byte-identical forecasts**, all 50 initial/fitted model fingerprints
+identical, and unchanged 0.3/0.5 scores and censoring. There was no retuning.
+
+Fresh-process ABBA timings on this Apple Silicon CPU used 400 units,
+1,501 synthetic training samples, 256 forecast steps, and one/four Torch
+threads. Dense classical/OTT fit and forecast medians stayed within about 1%
+of the merged baseline; this is no meaningful speed-change claim. The sparse
+cycle workflow improved **1.10–1.13×** in fitting and **1.11–1.13×** in
+forecasting. Its retained model tensor storage fell from **1,321,042** to
+**37,842 bytes**; the sparse random example fell from **1,351,978** to
+**58,466 bytes**. These are workload-specific tensor-storage observations,
+not process peak-RSS or universal speed claims. Existing local CPU performance
+gates passed **4 checks** with their thresholds unchanged.
 
 The merged first increment's post-merge release run
 [passed](https://github.com/El3ssar/ResDAG/actions/runs/39950943063):

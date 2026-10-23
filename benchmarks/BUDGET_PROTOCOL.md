@@ -5,6 +5,8 @@ It asks which accuracy each library reaches with the same **600-second CPU
 tuning budget**, not which library happened to receive the luckiest settings.
 There are six independent studies: three libraries on each of Lorenz and
 Rössler. Do not present a small smoke run as a performance comparison.
+The verified-thread protocol is `equal-wall-time-v2`. Earlier `v1` runs without
+verified backend limits are not valid references for an equal-thread headline.
 
 ## Common model and implementation choices
 
@@ -28,6 +30,11 @@ and diagonal/self-connections are permitted. Nominal density is
 `mean_degree / reservoir_size`. Input weights are dense independent uniform
 draws in `[-input_scale, input_scale]`. Reservoir bias is a **random vector**
 of uniform draws in `[-bias_scale, bias_scale]`, not a constant offset.
+The ResDAG recipe explicitly selects its uniform bias initializer so the
+existing salted bias seed is separate from the input-weight seed. This avoids
+reusing the beginning of the input generator's stream; public model defaults
+are unchanged. ReservoirPy spawns separate input/recurrent/bias streams; Julia
+advances its native generator between the component draws.
 
 Native random streams and sparse-mask construction differ. ResDAG's explicit
 callback uses independent Bernoulli edges, reservoirpy uses its native SciPy
@@ -47,10 +54,15 @@ Its measurements, startup and selected layout remain in the result JSON.
 `--julia-storage dense|sparse` forces a documented layout for reproduction.
 
 Readout implementations also differ: ResDAG's `RidgeReadoutLayer`,
-reservoirpy's `Ridge`, and Julia's `StandardRidge`. These are direct solvers
-of the same regularized objective, with each library's native numerical
-behavior. The experiment does not silently change regularization or retry
-failed candidates with a different solver.
+reservoirpy's `Ridge`, and Julia's `StandardRidge`. The requested ridge penalty
+is shared, but native numerical policies differ. ResDAG's Cholesky recovery
+may increase effective regularization or project a numerically indefinite
+Gram matrix onto the positive-semidefinite cone. Warnings disclose recovery;
+Python may deduplicate repeated warnings, and the current readout has no
+structured per-fit effective-alpha report. These results therefore do not
+promise an identical realized regularized objective. The harness itself does
+not retry failed candidates, alter their requested penalty or choose another
+solver. ReservoirPy uses a symmetric Gram solve; pinned Julia uses augmented QR.
 
 ## Data and held-out boundaries
 
@@ -87,11 +99,38 @@ does not establish generalization across independent trajectories.
 
 ## Budget and failures
 
+The CLI starts a fresh Python process with `VECLIB_MAXIMUM_THREADS`,
+`OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `OMP_NUM_THREADS`,
+`BLIS_NUM_THREADS` and `JULIA_NUM_THREADS` set to one, overriding inherited
+values before numerical imports. It holds the standard `threadpoolctl` limits
+and verifies detected BLAS/OpenMP counters. Torch intra-op and inter-op limits
+are both one. On Apple Accelerate, environment variables alone are insufficient:
+the benchmark calls the supported macOS 15+ `BLASSetThreading` API and requires
+`BLASGetThreading == BLAS_THREADING_SINGLE_THREADED` on its synchronous calling
+thread. Unsupported or unverifiable backends stop the experiment before a
+scientific headline is accepted. Settings are checked again after fits and
+forecasts, including failed operations.
+
+Julia separately sets and verifies its BLAS limit and Julia thread count at
+worker startup. Reports record requested variables, observed native counters,
+actual build/backend configuration and module origins. These verify API
+configuration, not operating-system thread occupancy or every kernel's internal
+scheduling. The synthetic storage pilot uses the same controls.
+
+If an earlier run lacks these controls, preserve it as aborted or unverified;
+start a fresh CLI process and new output directory. Do not resume its study or
+reuse its scores as an equal-thread result. Only the newly capped study's own
+validation scores may choose its winners.
+
 The tuner is standard Optuna `study.optimize`, seeded TPE, `NopPruner`,
 `n_jobs=1`, with persistent SQLite studies. It starts after imports and one
 fixed synthetic warmup of each library. Julia stays in one standard subprocess
 during each study, avoiding repeated interpreter startup. Startup/JIT warmup
 is reported separately and uses no trajectory observations.
+The per-track startup field measures adapter creation and the small synthetic
+warmup. Global Python imports and thread-policy initialization are also outside
+the search budget; that field is not a measurement of total process startup.
+Any later size- or algorithm-specific compilation remains inside candidate work.
 
 The budget includes candidate sampling, construction, three fits, nine
 history/rollout evaluations, scoring, Python↔Julia file/pipe IPC and study

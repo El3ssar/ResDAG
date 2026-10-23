@@ -10,8 +10,9 @@ number of features. Choose a remedy for the allocation that limits your model.
 
 ## Compressed reservoir weights
 
-`sparse=True` keeps only compressed recurrent weights. It no longer retains a
-full square matrix alongside them. The same fit, forecast and save commands work:
+For supported frozen ESN reservoirs, `sparse=True` keeps only compressed
+recurrent weights. It no longer retains a full square matrix alongside them.
+The same fit, forecast and save commands work:
 
 ```python
 import torch
@@ -118,3 +119,10 @@ sequences, use the [streaming workflow](streaming.md) with a compatible
 incremental readout. Explicit-state DAG evaluation releases intermediate
 feature tensors after their last consumer, while keeping requested outputs,
 final states and tensors needed by autograd alive.
+
+Tuning's optional memory-budget planner remains conservative: its default
+estimate reserves dense preset weights and general direct-solver workspaces,
+even when a candidate selects sparse storage or LSMR. It can therefore reject
+a model that would actually fit. Supply a workload-specific `memory_estimator`
+when you need tighter admission; see [tuning resources](../advanced/tuning-resources.md).
+This estimate does not change the model's actual storage or solver.

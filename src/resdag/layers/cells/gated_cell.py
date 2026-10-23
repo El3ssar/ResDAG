@@ -80,7 +80,6 @@ from resdag.init.utils import InitializerSpec, TopologySpec, resolve_initializer
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
 from ._initialization import (
-    device_matches_seed,
     initialize_vector,
     initialized_state,
     install_initial_state,
@@ -88,6 +87,10 @@ from ._initialization import (
 )
 from .base_cell import ReservoirCell
 from .esn_cell import _INPUT_SEED_OFFSET, _identity, _salt_seed
+
+# Existing gate/input/bias/reset roles occupy 2C and 4C through 9C. Keep
+# candidate recurrence on its own stream without changing those named roles.
+_CANDIDATE_RECURRENT_SEED_OFFSET = 0x9E3779B9 * 10
 
 # ----------------------------------------------------------------------------
 # Packed multi-tensor-state helpers (the reusable convention)
@@ -258,8 +261,10 @@ class GatedReservoirCell(ReservoirCell):
         topology would make the update gate structurally sparse, which is not
         the intent).
     seed : int or torch.Generator, optional
-        Reproducibility seed fixing every weight and bias, exactly as in
-        :class:`ESNCell`.
+        Reproducibility seed for independent weight, bias and reset-state roles.
+        Integers and a generator's ``initial_seed()`` do not advance the caller's
+        RNG. ``None`` draws one master seed from Torch's CPU global RNG. Explicit
+        initializer seeds and callback-owned generators retain their own policy.
 
     recurrent_initializer : spec, optional
         First-class alias for ``topology``. Supply one spelling only. Names,
@@ -395,6 +400,8 @@ class GatedReservoirCell(ReservoirCell):
         self._trainable = trainable
         self.seed = seed
         self._seed_int = coerce_seed_to_int(seed)
+        if self._seed_int is None:
+            self._seed_int = int(torch.randint(0, 2**63 - 1, (1,), device="cpu").item())
 
         self._activation_name = activation
         self.activation_fn = self._get_activation(activation)
@@ -655,18 +662,20 @@ class GatedReservoirCell(ReservoirCell):
     def _initialize_weights(self) -> None:
         """Initialize every drive, recurrent, and gate weight plus biases.
 
-        A single torch ``Generator`` (seeded from ``self.seed``) drives every
-        default draw in a fixed order — feedback, input, recurrent candidate
-        ``W_hh``, recurrent gate ``W_hz``, then biases — so a given ``seed``
-        deterministically reproduces the whole cell.
+        Each role uses a distinct local stream, shared by its default draw and
+        initializer fallback. Optional or overridden roles cannot shift another
+        role's draws; explicitly seeded initializers retain precedence.
         """
-        generator = create_torch_generator(
-            (
-                self.seed
-                if device_matches_seed(self.seed, self._factory_kwargs["device"])
-                else self._seed_int
-            ),
-            device=self._factory_kwargs["device"],
+        target_device = self._factory_kwargs["device"]
+        feedback_generator = create_torch_generator(self._seed_int, device=target_device)
+        input_seed = _salt_seed(self._seed_int, _INPUT_SEED_OFFSET)
+        input_generator = create_torch_generator(input_seed, device=target_device)
+        candidate_seed = _salt_seed(self._seed_int, _CANDIDATE_RECURRENT_SEED_OFFSET)
+        candidate_generator = create_torch_generator(candidate_seed, device=target_device)
+        gate_seed = _salt_seed(self._seed_int, 0x9E3779B9 * 4)
+        gate_generator = create_torch_generator(gate_seed, device=target_device)
+        bias_generator = create_torch_generator(
+            _salt_seed(self._seed_int, 0x9E3779B9 * 5), device=target_device
         )
 
         # Feedback drive weight.
@@ -677,7 +686,7 @@ class GatedReservoirCell(ReservoirCell):
         if resolved_fb is not None:
             resolved_fb.initialize(self.weight_feedback)
         else:
-            nn.init.uniform_(self.weight_feedback, -1, 1, generator=generator)
+            nn.init.uniform_(self.weight_feedback, -1, 1, generator=feedback_generator)
 
         # Driving-input drive weight (salted seed so it never coincides with the
         # feedback stream — same rationale as ESNCell).
@@ -685,12 +694,11 @@ class GatedReservoirCell(ReservoirCell):
             self.weight_input = nn.Parameter(
                 torch.empty(self.reservoir_size, self.input_size, **self._factory_kwargs)
             )
-            input_seed = _salt_seed(self._seed_int, _INPUT_SEED_OFFSET)
             resolved_in = resolve_initializer(self.input_initializer, seed=input_seed)
             if resolved_in is not None:
                 resolved_in.initialize(self.weight_input)
             else:
-                nn.init.uniform_(self.weight_input, -1, 1, generator=generator)
+                nn.init.uniform_(self.weight_input, -1, 1, generator=input_generator)
         else:
             self.register_parameter("weight_input", None)
 
@@ -716,11 +724,11 @@ class GatedReservoirCell(ReservoirCell):
         self.weight_hh = nn.Parameter(
             torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
         )
-        resolved_topo = resolve_topology(self.topology, seed=self._seed_int)
+        resolved_topo = resolve_topology(self.topology, seed=candidate_seed)
         if resolved_topo is not None:
             resolved_topo.initialize(self.weight_hh, spectral_radius=self.spectral_radius)
         else:
-            nn.init.uniform_(self.weight_hh, -1.0, 1.0, generator=generator)
+            nn.init.uniform_(self.weight_hh, -1.0, 1.0, generator=candidate_generator)
             if self.spectral_radius is not None:
                 self._scale_spectral_radius()
 
@@ -732,10 +740,8 @@ class GatedReservoirCell(ReservoirCell):
             torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
         )
         gate_scale = self.reservoir_size**-0.5
-        nn.init.uniform_(self.weight_hz, -gate_scale, gate_scale, generator=generator)
-        gate_initializer = resolve_topology(
-            self.gate_recurrent_initializer, seed=_salt_seed(self._seed_int, 0x9E3779B9 * 4)
-        )
+        nn.init.uniform_(self.weight_hz, -gate_scale, gate_scale, generator=gate_generator)
+        gate_initializer = resolve_topology(self.gate_recurrent_initializer, seed=gate_seed)
         if gate_initializer is not None:
             gate_initializer.initialize(self.weight_hz, spectral_radius=self.gate_spectral_radius)
         elif self.gate_spectral_radius is not None:
@@ -751,7 +757,7 @@ class GatedReservoirCell(ReservoirCell):
             self.bias_h = nn.Parameter(torch.empty(self.reservoir_size, **self._factory_kwargs))
             if self.bias_scaling != 0.0:
                 nn.init.uniform_(
-                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
+                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=bias_generator
                 )
             else:
                 nn.init.zeros_(self.bias_h)

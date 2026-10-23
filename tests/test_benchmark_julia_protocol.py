@@ -5,6 +5,7 @@ Run with ``RESDAG_TEST_JULIA=1`` and ``julia`` on PATH after instantiating
 that pinned project. Ordinary test runs need neither Julia nor its packages.
 """
 
+import base64
 import json
 import os
 import shutil
@@ -19,6 +20,37 @@ import pytest
 from benchmarks.rc_bench.adapters import julia_adapter
 from benchmarks.rc_bench.config import HParams, Point
 from benchmarks.rc_bench.data import lorenz, prepare_point
+
+
+def test_julia_budget_greeting_preserves_verified_blas_configuration():
+    from benchmarks.rc_bench.budget_adapters import _parse_julia_greeting
+
+    config = "LBTConfig([ILP64] libopenblas64_.dylib)\npath\twith separators"
+    versions, threads = _parse_julia_greeting(
+        ["READY", "1.12.5", "0.12.23", "1", "1", "lbt", base64.b64encode(config.encode()).decode()]
+    )
+    assert versions == {"julia": "1.12.5", "ReservoirComputing": "0.12.23"}
+    assert threads == {
+        "julia_threads": 1,
+        "blas_threads": 1,
+        "blas_vendor": "lbt",
+        "blas_config": config,
+    }
+
+
+@pytest.mark.parametrize(
+    "index,value",
+    [(0, "OLD"), (1, ""), (2, ""), (3, "2"), (4, "2"), (4, "unknown"), (5, ""), (6, "?"), (6, "")],
+)
+def test_julia_budget_greeting_rejects_missing_or_unverified_threads(index, value):
+    from benchmarks.rc_bench.budget_adapters import _parse_julia_greeting
+
+    fields = ["READY", "1.12.5", "0.12.23", "1", "1", "lbt", "T3BlbkJMQVM="]
+    fields[index] = value
+    with pytest.raises(RuntimeError):
+        _parse_julia_greeting(fields)
+    with pytest.raises(RuntimeError):
+        _parse_julia_greeting(fields[:3])
 
 
 @pytest.fixture(scope="module")
@@ -176,6 +208,26 @@ def test_real_julia_later_origin_keeps_fit_fixed_and_starts_at_unseen_sample(rea
     assert timing.rmse == pytest.approx(np.sqrt(np.mean((actual - data["series"][48:50]) ** 2)))
 
 
+def test_real_julia_budget_worker_rejects_multiple_julia_threads_before_ready(real_julia):
+    worker = Path(__file__).resolve().parents[1] / "benchmarks/julia/rc_budget.jl"
+    result = subprocess.run(
+        [
+            shutil.which("julia"),
+            f"--project={real_julia['project']}",
+            "--startup-file=no",
+            str(worker),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env=os.environ | {"JULIA_NUM_THREADS": "2"},
+        check=False,
+    )
+    assert result.returncode != 0
+    assert not result.stdout.startswith("READY")
+    assert "requires one Julia thread" in result.stderr
+
+
 @pytest.mark.parametrize("storage", ["dense", "sparse"])
 def test_real_persistent_julia_common_recipe_matches_numpy_fit_and_recurrence(real_julia, storage):
     from benchmarks.rc_bench.budget_adapters import CommonParams, JuliaBudgetAdapter
@@ -230,6 +282,10 @@ write(joinpath(@__DIR__,"Wout.bin"),ps.readout.weight)
     np.testing.assert_allclose(wout, expected, rtol=1e-7, atol=1e-8)
     adapter = JuliaBudgetAdapter(project=data["project"], storage=storage)
     try:
+        assert adapter.thread_metadata["julia_threads"] == 1
+        assert adapter.thread_metadata["blas_threads"] == 1
+        assert adapter.thread_metadata["blas_vendor"]
+        assert adapter.thread_metadata["blas_config"]
         candidate, timing = adapter.fit(
             data["series"][:46], CommonParams(20, 0.9, 0.3, 0.2, 0.1, 8, 1e-6), 1234, 3
         )

@@ -5,6 +5,16 @@
 
 include(joinpath(@__DIR__, "rc_bench.jl"))
 using SparseArrays
+using LinearAlgebra
+using Base64
+
+function budget_thread_metadata()
+    BLAS.set_num_threads(1)
+    Threads.nthreads() == 1 || error("Julia budget worker requires one Julia thread")
+    BLAS.get_num_threads() == 1 || error("Julia budget worker requires one BLAS thread")
+    return (julia_threads = Threads.nthreads(), blas_threads = BLAS.get_num_threads(),
+        blas_vendor = string(BLAS.vendor()), blas_config = string(BLAS.get_config()))
+end
 
 function budget_model(dim, width, radius, leak, density, input_scale, bias_scale, seed;
         sparse = false)
@@ -25,10 +35,13 @@ function budget_model(dim, width, radius, leak, density, input_scale, bias_scale
 end
 
 function budget_server()
+    threads = budget_thread_metadata()
     esn = nothing
     ps = nothing
     fresh = nothing
-    println("READY\t", VERSION, "\t", pkgversion(ReservoirComputing))
+    println("READY\t", VERSION, "\t", pkgversion(ReservoirComputing), "\t",
+        threads.julia_threads, "\t", threads.blas_threads, "\t",
+        threads.blas_vendor, "\t", base64encode(threads.blas_config))
     flush(stdout)
     for line in eachline(stdin)
         fields = split(line, '\t')

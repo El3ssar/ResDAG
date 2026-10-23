@@ -230,6 +230,7 @@ def test_perf_targets_json_selects_benchmark_tests() -> None:
         "benchmarks/rc_bench/adapters/reservoirpy_adapter.py",
         "benchmarks/rc_bench/budget.py",
         "benchmarks/rc_bench/budget_adapters.py",
+        "benchmarks/rc_bench/_threads.py",
         "benchmarks/julia/rc_bench.jl",
         "benchmarks/julia/rc_budget.jl",
         "benchmarks/julia/Project.toml",
@@ -242,11 +243,14 @@ def test_comparison_changes_select_physical_window_oracles(path: str) -> None:
     assert "tests/test_benchmark_protocol.py" in selected.tests
     assert "tests/test_benchmark_budget.py" in selected.tests
     assert "tests/test_benchmark_julia_protocol.py" in selected.tests
+    if path.startswith("benchmarks/rc_bench/"):
+        assert "tests/test_benchmark_threads.py" in selected.tests
 
 
 def test_budget_protocol_documentation_selects_budget_oracles() -> None:
     selected = AT.select_tests(["benchmarks/BUDGET_PROTOCOL.md"])
     assert "tests/test_benchmark_budget.py" in selected.tests
+    assert "tests/test_benchmark_threads.py" in selected.tests
 
 
 @pytest.mark.parametrize(

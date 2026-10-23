@@ -31,7 +31,7 @@ def _graph_config(graph: Any) -> dict[str, Any]:
                 "outputs": tuple(slots),
             }
         )
-    return {
+    result = {
         "inputs": tuple(
             {
                 "shape": tuple(node.shape),
@@ -45,6 +45,14 @@ def _graph_config(graph: Any) -> dict[str, Any]:
         "outputs": tuple(values[id(node)] for node in graph.outputs),
         "codegen": graph._enable_forward_codegen,
     }
+    from resdag.models._recipes import builtin_recipe
+
+    from ._codecs import _recipe_portable
+
+    recipe = builtin_recipe(graph)
+    if recipe is not None and _recipe_portable(recipe["options"]):
+        result["builtin_recipe"] = recipe
+    return result
 
 
 def _graph_decode(config: Mapping[str, Any]) -> nn.Module:
@@ -113,9 +121,12 @@ def _graph_decode(config: Mapping[str, Any]) -> nn.Module:
         outputs = config["outputs"]
         if not outputs or any(type(i) is not int or not 0 <= i < len(values) for i in outputs):
             raise ArtifactError("Invalid symbolic output reference")
-        return ESNModel(
+        graph = ESNModel(
             inputs, tuple(values[i] for i in outputs), enable_forward_codegen=config["codegen"]
         )
+        if "builtin_recipe" in config:
+            object.__setattr__(graph, "_builtin_recipe", dict(config["builtin_recipe"]))
+        return graph
     finally:
         for child, mode in modes:
             child.training = mode

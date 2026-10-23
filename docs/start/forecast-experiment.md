@@ -183,6 +183,14 @@ Two candidates over a short validation horizon are a workflow demonstration,
 not evidence of the 7–8 target. A final test that stays valid throughout remains
 a lower bound.
 
+Built-in vanilla and OTT models now search input strength, bias and recurrent
+connection density as well as width, radius, leak and regularization. Use
+`models["ott"].tune(training, ...)` for the same automatic workflow. Supply
+`search_space` to fix settings or choose different ranges. These convenient
+defaults are separate from the explicitly configured phase-five accuracy
+experiments; reproducing their reported horizons requires their recorded
+recipes and evaluation protocol.
+
 For a separate validation trajectory, supply
 `validation=(validation_trajectory, None)` while keeping the final test out of
 the call. For custom DAGs, [provide a model-building recipe](../workflows/tune.md#change-sizes-layers-or-initializers)

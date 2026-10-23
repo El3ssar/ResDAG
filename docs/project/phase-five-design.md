@@ -174,6 +174,21 @@ failed-trial reasons, complete winning recipes and exact execution snapshots.
 The final reporting follow-up and original tuning execution have separately
 recorded source hashes. Its timings are not controlled speed comparisons.
 
+These measurements used explicit model-building recipes and search spaces.
+They are not measurements of the automatic default search. The subsequent
+approved API increment brings input strength, bias and recurrent density into
+built-in vanilla and OTT tuning, while retaining the existing
+quick/balanced/thorough budgets and custom search controls. It preserves
+custom components and current workflow settings. Edited graphs keep fixed-DAG
+tuning until given an explicit rebuilding recipe. See the
+[default ranges and component policies](../reference/hpo.md#search-and-repetitions).
+
+That increment also fixes sparse workflow staging: derived CSR weights are
+rebuilt from the copied dense parameter, avoiding a PyTorch sparse-storage
+deepcopy failure. Copying leaves the live model and RNG untouched. These are
+construction and lifecycle changes; the recorded experiment recipes and
+their original execution hashes remain available separately.
+
 Run the full bounded experiment with:
 
 ```sh

@@ -33,6 +33,13 @@ from resdag.data._trajectory import is_trajectory
 from resdag.facade import ESN
 from resdag.layers.readouts import ReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
+from resdag.models._recipes import (
+    builtin_recipe,
+    erdos_renyi_options,
+    input_scaling_supported,
+    sampled_options,
+    workflow_options,
+)
 
 from ._parallel import run_jobs
 from ._provenance import bind_protocol, class_identity, resolve_trial_settings
@@ -187,38 +194,107 @@ def _isolated_seed(seed: int, device: torch.device) -> Iterator[None]:
         np.random.set_state(numpy_state)
 
 
-def _preset_recipe(template: ESN) -> Factory:
-    reference = module_reference(template.graph)
-    assert reference is not None and template.input_size is not None
-    options = copy.deepcopy(template._factory_options)
-    options["alpha"] = options.pop("readout_alpha")
-    options.pop("seed", None)
-    workflow_options = copy.deepcopy(template._workflow_options)
-    width, device, dtype = template.input_size, reference.device, reference.dtype
+def _automatic_options(model: Model | ESN) -> dict[str, Any] | None:
+    if type(model) not in (Model, ESN):
+        return None
+    if isinstance(model, ESN) and (
+        set(model._modules)
+        - {"workflow", "_pending_input_transforms", "_pending_output_transforms"}
+        or model._parameters
+        or "forward" in model.__dict__
+        or set(model._buffers) - {"_reference"}
+        or any(
+            getattr(model, key)
+            for key in (
+                "_forward_hooks",
+                "_forward_pre_hooks",
+                "_backward_hooks",
+                "_backward_pre_hooks",
+            )
+        )
+    ):
+        return None
+    if isinstance(model, ESN) and not model.is_built:
+        return model._factory_options
+    workflow = _workflow(model)
+    if type(workflow) is not Model or set(workflow._modules) != {
+        "graph",
+        "input_scalers",
+        "output_scalers",
+    }:
+        return None
+    if workflow._parameters or "forward" in workflow.__dict__:
+        return None
+    if any(
+        name != "_fitted"
+        and not name.startswith(
+            ("_history_", "_input_transform_sample_", "_output_transform_sample_")
+        )
+        for name in workflow._buffers
+    ):
+        return None
+    if any(
+        getattr(workflow, key)
+        for key in (
+            "_forward_hooks",
+            "_forward_pre_hooks",
+            "_backward_hooks",
+            "_backward_pre_hooks",
+        )
+    ):
+        return None
+    recipe = builtin_recipe(workflow.graph)
+    return None if recipe is None else recipe["options"]
 
-    def build(params: dict[str, Any], seed: int) -> ESN:
-        supplied = copy.deepcopy(options)
-        settings = copy.deepcopy(workflow_options)
+
+def _preset_recipe(template: Model | ESN) -> Factory:
+    reference = module_reference(template.graph)
+    assert reference is not None
+    metadata = builtin_recipe(template.graph)
+    assert metadata is not None
+    options = copy.deepcopy(metadata["options"])
+    options.pop("seed", None)
+    settings_template = workflow_options(_workflow(template))
+    device, dtype = reference.device, reference.dtype
+    modes = {name: module.training for name, module in template.named_modules()}
+
+    def build(params: dict[str, Any], seed: int) -> Model | ESN:
+        settings = copy.deepcopy(settings_template)
+        graph_params = {}
         for key, value in params.items():
             if key in settings:
                 settings[key] = value
             else:
-                supplied[key] = value
-        if "alpha" in params:
-            readout_options = dict(supplied.get("readout_kwargs") or {})
-            readout_options.pop("alpha", None)
-            supplied["readout_kwargs"] = readout_options
-        return ESN(input_size=width, device=device, dtype=dtype, seed=seed, **settings, **supplied)
+                graph_params[key] = value
+        supplied = sampled_options(options, graph_params)
+        supplied.update(device=device, dtype=dtype, seed=seed)
+        if isinstance(template, ESN):
+            supplied["alpha"] = supplied.pop("readout_alpha")
+            for name in ("feedback_size", "output_size", "input_size"):
+                supplied.pop(name, None)
+            settings.pop("input_names")
+            settings.pop("output_names")
+            candidate: Model | ESN = ESN(input_size=template.input_size, **settings, **supplied)
+        else:
+            from resdag.models import classic_esn, ott_esn
+
+            factory = {"classic": classic_esn, "ott": ott_esn}[metadata["family"]]
+            candidate = Model(graph=factory(**supplied), **settings)
+        candidate.train(template.training)
+        for name, module in candidate.named_modules():
+            if name in modes:
+                module.training = modes[name]
+        return candidate
 
     return build
 
 
-def _fixed_recipe(template: Model) -> Factory:
-    def build(params: dict[str, Any], seed: int) -> Model:
+def _fixed_recipe(template: Model | ESN) -> Factory:
+    def build(params: dict[str, Any], seed: int) -> Model | ESN:
         candidate = copy.deepcopy(template)
         for key, value in params.items():
             if key == "washout":
-                candidate.washout = _washout(value)
+                _workflow(candidate).washout = _washout(value)
             elif key == "alpha":
                 heads = [
                     module
@@ -244,28 +320,37 @@ def _fixed_recipe(template: Model) -> Factory:
 
 
 def _default_space(template: Model | ESN) -> SearchSpace:
+    options = _automatic_options(template)
     heads = [
         module for module in _workflow(template).graph.modules() if isinstance(module, ReadoutLayer)
     ]
     tune_alpha = bool(heads) and all(hasattr(head, "alpha") for head in heads)
-    if not isinstance(template, ESN) and not tune_alpha:
+    if options is None and not tune_alpha:
         raise ValueError(
             "No default tunable readout alpha; provide search_space and, for custom settings, factory"
         )
 
     def space(trial: optuna.Trial) -> dict[str, Any]:
         params: dict[str, Any] = (
-            {"alpha": trial.suggest_float("alpha", 1e-10, 1e-2, log=True)} if tune_alpha else {}
+            {"alpha": trial.suggest_float("alpha", 1e-12, 1e-2, log=True)} if tune_alpha else {}
         )
-        if isinstance(template, ESN):
-            size = template._factory_options["reservoir_size"]
+        if options is not None:
+            size = options["reservoir_size"]
             params.update(
                 reservoir_size=trial.suggest_int(
                     "reservoir_size", max(8, size // 2), max(8, size * 2)
                 ),
-                spectral_radius=trial.suggest_float("spectral_radius", 0.2, 1.5),
+                spectral_radius=trial.suggest_float("spectral_radius", 0.05, 1.5),
                 leak_rate=trial.suggest_float("leak_rate", 0.05, 1.0),
             )
+            if input_scaling_supported(options):
+                params["input_scaling"] = trial.suggest_float("input_scaling", 1e-3, 2.0, log=True)
+            if options.get("bias", True) and options.get("bias_initializer") is None:
+                params["bias_scaling"] = trial.suggest_float("bias_scaling", 1e-3, 1.0, log=True)
+            topology = erdos_renyi_options(options)
+            if topology is not None:
+                available = params["reservoir_size"] - (0 if topology[2] else 1)
+                params["mean_degree"] = trial.suggest_int("mean_degree", 3, min(12, available))
         return params
 
     return space
@@ -937,7 +1022,7 @@ def tune_model(
     trials, seed_count, origin_count = _PRESETS[preset]
     trials = trials if n_trials is None else _count(n_trials, "n_trials")
     origin_count = origin_count if n_origins is None else _count(n_origins, "n_origins")
-    fixed_graph = isinstance(model, Model) and factory is None
+    fixed_graph = factory is None and _automatic_options(model) is None
     if seeds is None:
         seeds = tuple(seed + i for i in range(1 if fixed_graph else seed_count))
     try:
@@ -1053,7 +1138,7 @@ def tune_model(
         else memory_context(
             workflow,
             data,
-            preset_options=template._factory_options if isinstance(template, ESN) else None,
+            preset_options=_automatic_options(template),
         )
     )
     if memory is not None and (objective is not None or pruning_objective is not None):
@@ -1090,8 +1175,9 @@ def tune_model(
                 for value in origin.history.values()
             ),
         )
+    automatic = _automatic_options(template)
     recipe = factory or (
-        _preset_recipe(template) if isinstance(template, ESN) else _fixed_recipe(template)
+        _preset_recipe(template) if automatic is not None else _fixed_recipe(template)
     )
     space = search_space or _default_space(template)
     fingerprint, _ = _protocol(
@@ -1108,6 +1194,16 @@ def tune_model(
         memory_budget=None if budget is None else asdict(budget),
         memory_estimator=_callable_identity(memory_estimator),
         fixed_graph=fixed_graph,
+        builtin_recipe=(
+            None
+            if automatic is None
+            else {
+                "version": 1,
+                "family": cast(dict[str, Any], builtin_recipe(template.graph))["family"],
+                "options": _configuration(automatic),
+                "default_space_version": 2 if search_space is None else None,
+            }
+        ),
         execution=execution,
     )
     owned = None

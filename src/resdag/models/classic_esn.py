@@ -17,8 +17,10 @@ from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
 
 from ._builder import ReadoutSpec, _esn_builder
+from ._recipes import record_recipe
 
 
+@record_recipe("classic")
 def classic_esn(
     reservoir_size: int,
     feedback_size: int,

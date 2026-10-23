@@ -68,8 +68,52 @@ All use the same `horizon`. Omitting it uses half the available validation span,
 with a minimum of one sample; changing presets does not change that horizon.
 An unsupported explicit horizon raises before any trial starts.
 
-For `rd.ESN`, the default search varies reservoir size, spectral radius, leak
-rate and readout regularization (`alpha`). Custom DAGs have the options below.
+Built-in vanilla and OTT models search reservoir size, spectral radius, leak,
+input strength, bias strength, recurrent connection density and readout
+regularization (`alpha`). The trial and repetition budgets above stay the
+same. For an OTT model, the command is identical:
+
+```python
+ott = rd.Model(
+    graph=rd.ott_esn(64, 1, 1, readout="svd", seed=7, dtype=torch.float64),
+    washout=30,
+)
+ott.tune(development, preset="quick", horizon=40, seed=7)
+ott_prediction = ott.forecast(horizon=len(test))
+assert ott_prediction.shape == test.shape
+```
+
+The automatic recipe retains the chosen initializer, activation, readout and
+current preprocessing/workflow settings. It varies only controls supported by
+that configuration: for example, it keeps a custom non-random topology and
+does not invent a bias for a bias-free reservoir. See the
+[exact default ranges](../reference/hpo.md#search-and-repetitions).
+
+An unmodified `rd.Model(graph=rd.classic_esn(...))` also gets this automatic
+recipe. If you change its layers, wiring or reservoir weights, it becomes a
+custom DAG: tuning keeps those changes and uses the fixed-DAG behavior below.
+Provide a recipe to rebuild that customized architecture.
+
+### Choose your own ranges
+
+`search_space` replaces the automatic search. Fixed values stay fixed; omitted
+settings keep the current recipe's values. For example, keep 64 units and vary
+only input strength and regularization:
+
+```python
+def narrower_search(trial):
+    return {
+        "reservoir_size": 64,
+        "input_scaling": trial.suggest_float("input_scaling", 0.05, 0.5, log=True),
+        "alpha": trial.suggest_float("alpha", 1e-9, 1e-4, log=True),
+    }
+
+model.tune(
+    development, search_space=narrower_search, preset="quick",
+    n_trials=2, horizon=40, seed=7,
+)
+assert model.forecast(horizon=len(test)).shape == test.shape
+```
 
 ### Optionally screen candidates first
 

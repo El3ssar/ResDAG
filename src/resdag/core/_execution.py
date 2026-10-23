@@ -145,7 +145,7 @@ class ExecutionPlan:
         current: list[torch.Tensor | None] = [None] * len(self.reservoirs)
         if states is not None:
             current = [states[name] for name in self.reservoir_names]
-        for op in self.operations:
+        for op, released in zip(self.operations, self.release_after):
             parents = tuple(values[i] for i in op.parents)
             if op.reservoir_index is not None:
                 index = op.reservoir_index
@@ -175,20 +175,25 @@ class ExecutionPlan:
                             f"State for '{self.reservoir_names[index]}' must match the input device "
                             "and dtype; move the explicit state together with the inputs"
                         )
-                value, current[index] = reservoir.forward_stateless(
+                returned, current[index] = reservoir.forward_stateless(
                     list(parents), state, compile=compile
                 )
-                values[op.outputs[0]] = value
+                values[op.outputs[0]] = returned
+                del feedback, state
             elif len(op.outputs) > 1:
                 returned = op.layer(*parents[0])
                 if len(returned) != len(op.outputs):
                     raise ValueError(
                         "A multi-output layer returned an unexpected number of outputs"
                     )
-                for slot, value in zip(op.outputs, returned):
-                    values[slot] = value
+                for index, slot in enumerate(op.outputs):
+                    values[slot] = returned[index]
             else:
-                values[op.outputs[0]] = op.layer(*parents)
+                returned = op.layer(*parents)
+                values[op.outputs[0]] = returned
+            for slot in released:
+                values[slot] = None
+            del parents, returned
         outputs = tuple(values[i] for i in self.output_slots)
         final: ReservoirStates = {}
         for name, state in zip(self.reservoir_names, current):

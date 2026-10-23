@@ -15,14 +15,12 @@ The reservoir-specific part is knowing when each of those is worth doing.
 ```python
 import resdag as rd
 
-model = rd.ott_esn(reservoir_size=3000, feedback_size=3, output_size=3).to("cuda")
-x = x.to("cuda")
-
-rd.ESNTrainer(model).fit((warmup.cuda(),), (train.cuda(),), {"output": target.cuda()})
-preds = model.forecast(f_warmup.cuda(), horizon=1000)   # stays on cuda
+model = rd.ESN(3000, input_size=3, device="cuda").fit(training.to("cuda"))
+preds = model.forecast(horizon=1000)   # original units, on cuda
 ```
 
-CUDA is the accelerated training backend covered by the GPU test lane. MPS
+CUDA has an optional self-hosted GPU test workflow; it was not run for this
+continuation. MPS
 does not support float64, which the algebraic solvers and some diagnostics use
 by default. For MPS inference, fit on CPU, move a float32 model and its inputs
 to `"mps"`, and validate your workload. Passing `"mps"` to device discovery
@@ -30,23 +28,21 @@ does not guarantee that every solver or diagnostic supports it.
 
 `.to("cuda")` moves parameters and buffers, including a warmed-up reservoir
 state. Device or dtype moves preserve that state's values; move the inputs to
-the same device and dtype too. A different batch size initializes a fresh
-zero state, unless you deliberately restored a state with `set_state`, in
+the same device and dtype too. A different batch size initializes the configured
+reset state (zeros by default), unless you deliberately restored a state with `set_state`, in
 which case a mismatched batch size raises instead of discarding it.
 
-**When the GPU helps.** The reservoir loop is sequential in time, so each
-timestep is one small kernel launch; the GPU only wins once those kernels
-carry real work. In practice:
-
-- **Wins from ~2k units or batched trajectories.** Speedups grow with
-  batch and reservoir size — `fit()` reaches up to ~20× at batch 16 with
-  3000-unit reservoirs, where the readout's Gram formation becomes heavy
-  GPU work.
-- **Tiny configs are launch-bound.** A single trajectory through a
-  1000-unit reservoir runs at CPU parity or slower; the GPU mostly waits.
-- As a rule of thumb, large batches, large reservoirs, or many models
-  favor the GPU; a single small model runs as fast or faster on CPU.
-  Measure your own configuration with `examples/11_gpu_benchmark.py`.
+**Measure the complete workflow.** Recurrent state depends on the previous
+timestep, limiting parallelism across time. Larger batches and reservoirs
+provide more matrix work per step, while small single-trajectory workloads
+can spend much of their time in dispatch and kernel launches. Device, dtype,
+solver and batch size all affect the crossover; there is no fixed reservoir
+size at which GPU execution is guaranteed to win. Measure representative
+fitting and forecasting with `examples/11_gpu_benchmark.py`, including device
+transfers and synchronization. Earlier GPU numbers are
+[historical measurements](benchmarks.md#archived-comparisons), not current
+release guarantees. Phase-five continuation measured CPU execution and native
+MPS correctness; it did not measure CUDA throughput.
 
 !!! note "Readout precision and GPU throughput"
     Direct readouts such as `RidgeReadoutLayer` form their normal equations
@@ -62,35 +58,51 @@ carry real work. In practice:
 
 ### Long horizons: compile the step
 
-The autoregressive forecast loop is sequential in time — one small kernel
-per step — so on the GPU a long rollout spends most of its wall-clock in
-Python and kernel-launch overhead, not arithmetic. `forecast(compile=True)`
-wraps the flat single-step engine in `torch.compile` (`mode="reduce-overhead"`,
-`fullgraph=True`), fusing the per-step work into one graph and cutting that
-overhead:
+The autoregressive loop can spend substantial time in Python and kernel
+launches. `forecast(compile=True)` unrolls chunks of the flat executor into
+`torch.compile` (`mode="reduce-overhead"`, `fullgraph=True`). For a hook-free
+symbolic graph with ordinary next-step feedback from its first output to its
+first input, the default chunk contains 64 forecast steps. This amortizes
+dispatch across the chunk rather than compiling and calling each step separately:
 
 ```python
-preds = model.forecast(f_warmup, horizon=10_000, compile=True)   # GPU: fewer, fatter launches
+preds = model.forecast(history=observed, horizon=10_000, compile=True)
 ```
 
-The default eager path is already flat and hook-free. Compiled results should
+For hook-free models, the default eager path already uses a flat executor.
+Models with PyTorch execution hooks automatically use native module calls so
+their pre-hooks, output changes and backward hooks keep ordinary PyTorch
+semantics. On backends that support compiled forecasts, `compile=True` emits
+a warning and uses compatible eager execution while hooks are registered.
+Removing the hooks restores the lean path.
+Named non-first, multiple or delayed feedback routes use the sequence executor;
+they do not use this 64-step flat rollout. Full-history execution and the
+parallel/coupled workflow backends reject `compile=True`. Check the
+[execution capabilities](../advanced/forecast-capabilities.md) for your graph.
+Compiled results should
 be compared with floating-point tolerances, especially for chaotic dynamics;
 compilation can change rounding. Warm compiled executors are reused for
-matching shapes, devices, and dtypes. `compile=True` is an opt-in speedup and
+matching shapes, devices, and dtypes. `compile=True` is an opt-in execution choice and
 transparently falls back to eager on `torch < 2.10` or a compilation failure
-(emitting a `RuntimeWarning`). It pays off for **long horizons on the GPU**;
-for short rollouts or on CPU the compile warmup can cost more than it saves, so
-leave it off. It is mutually exclusive with the differentiable
-`no_grad=False` rollout ([Train · Differentiable
+(emitting a `RuntimeWarning`). Measure cold compilation separately from repeated
+warm calls: setup can cost more than it saves, and a long horizon alone does
+not guarantee improvement. The low-level `ESNModel.forecast` API also supports
+a differentiable `no_grad=False` rollout, which is mutually exclusive with
+`compile=True` ([Train · Differentiable
 forecast](train.md#path-4-differentiable-forecast-bptt-through-the-rollout)) —
-requesting both raises.
+requesting both raises. The common `rd.ESN`/`rd.Model.forecast` workflow performs
+inference; use ordinary module calls, explicit states or the raw graph API for
+gradient-based composition.
 
 !!! tip "Compiling the teacher-forced pass too"
     Warmup and training run the teacher-forced sequence loop, which also
     accepts an opt-in `compile=True`: `reservoir(feedback, compile=True)`
     routes it through a compiled chunked scan (same `reduce-overhead` mode,
-    same eager fallback). Worth it for very long teacher-forced passes on the
-    GPU; the default is byte-for-byte the eager loop.
+    same eager fallback) when CUDA inference is eligible. CPU and MPS use
+    eager execution for this scan, as do calls requiring gradients. This
+    control belongs to the reservoir call; the common `model.fit(...)` API
+    has no `compile` option. Compare setup and repeated-call timing on your
+    own workload; the default remains the eager loop.
 
 ---
 
@@ -156,7 +168,8 @@ for xb, yb in loader:                                      # (B, T, 3), (B,)
 
 </div>
 
-`stateful=False` starts each minibatch from zeros and never changes stored
+`stateful=False` starts each minibatch from the configured initial state
+(zeros by default) and never changes stored
 reservoir states, so independent or shuffled sequences do not leak history
 into each other. The default `stateful=True` carries state for streaming;
 reset it between independent trajectories. Gradients flow *through* a frozen

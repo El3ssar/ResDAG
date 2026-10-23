@@ -11,16 +11,31 @@ initializations at three later test origins. Both source revisions replay those
 winners and unoptimized baselines on identical data; optional known Rössler
 recipes are reported separately. All horizons span at least ten Lyapunov times.
 This is a bounded capability experiment, not a guaranteed forecast-quality claim.
+
+After an intentional initializer change, assess one revision without asserting
+newly initialized weight parity::
+
+    python benchmarks/tuned_accuracy.py --mode capability --after HEAD \
+        --test-seeds 401 402 403 404 405 --artifacts-dir /tmp/fresh-capability \
+        --output capability.json
+
+Use ``--data-dir`` to admit saved ``data.json``, ``lorenz.npy`` and ``rossler.npy``
+inputs byte for byte. Capability workers use the verified policy from the
+optional benchmark requirements. This CLI is a later reproduction interface;
+it was not used for the earlier external-wrapper experiment.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import importlib.util
 import json
 import math
 import os
 import platform
+import shlex
+import shutil
 import statistics
 import subprocess
 import sys
@@ -157,8 +172,10 @@ def _imports(directory: Path, label: str) -> tuple[Any, Any]:
 
     if not Path(rd.__file__).resolve().is_relative_to(source):
         raise RuntimeError(f"Wrong source import: {rd.__file__}")
-    torch.set_num_threads(1)
-    torch.set_num_interop_threads(1)
+    if torch.get_num_threads() != 1:
+        torch.set_num_threads(1)
+    if torch.get_num_interop_threads() != 1:
+        torch.set_num_interop_threads(1)
     return rd, torch
 
 
@@ -322,7 +339,13 @@ def _tune(directory: Path, n_trials: int, quick: bool) -> None:
     )
 
 
-def _evaluate(directory: Path, label: str, quick: bool) -> None:
+def _evaluate(
+    directory: Path,
+    label: str,
+    quick: bool,
+    *,
+    test_seeds: tuple[int, ...] | None = None,
+) -> None:
     import time
 
     import numpy as np
@@ -334,6 +357,9 @@ def _evaluate(directory: Path, label: str, quick: bool) -> None:
     frozen = winner_path.read_bytes()
     winners = json.loads(frozen)["winners"]
     rows, predictions, fingerprints = [], {}, {}
+    evaluation_seeds = (
+        test_seeds if test_seeds is not None else (SMOKE_SEEDS if quick else TEST_SEEDS)
+    )
     for system in ("lorenz", "rossler"):
         protocol = _protocol(system)
         raw = torch.from_numpy(np.load(directory / f"{system}.npy").copy())
@@ -350,7 +376,7 @@ def _evaluate(directory: Path, label: str, quick: bool) -> None:
             if system == "rossler":
                 variants["known_recipe"] = _known()
             for variant, params in variants.items():
-                for seed in SMOKE_SEEDS if quick else TEST_SEEDS:
+                for seed in evaluation_seeds:
                     torch.manual_seed(918273)
                     model = _build(rd, torch, family, params, seed)
                     case = f"{system}-{family}-{variant}-seed{seed}"
@@ -362,11 +388,7 @@ def _evaluate(directory: Path, label: str, quick: bool) -> None:
                     model.fit(training)
                     fit_seconds = time.perf_counter() - started
                     fingerprints[case]["fitted"] = HELPERS._fingerprints(model)
-                    if (
-                        label == "after"
-                        and variant == "winner"
-                        and seed == (SMOKE_SEEDS[0] if quick else TEST_SEEDS[0])
-                    ):
+                    if label == "after" and variant == "winner" and seed == evaluation_seeds[0]:
                         model.save(directory / f"{system}-{family}-winner-seed{seed}.pt")
                     for origin_id, origin in enumerate(
                         protocol["test_origins"][:1] if quick else protocol["test_origins"]
@@ -466,10 +488,307 @@ def _summaries(rows: list[dict]) -> list[dict]:
     return summaries
 
 
+def _thread_helpers() -> Any:
+    """Load the existing stdlib-only policy from the live or copied runner."""
+    path = Path(__file__).parent / "rc_bench" / "_threads.py"
+    spec = importlib.util.spec_from_file_location("accuracy_thread_policy", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _capability_seeds(values: list[int] | None, quick: bool) -> tuple[int, ...]:
+    """Require an explicit full-test bank distinct from validation and smoke."""
+    if quick:
+        if values is not None and tuple(values) != SMOKE_SEEDS:
+            raise ValueError("Quick mode uses only the separate smoke seed 101")
+        return SMOKE_SEEDS
+    if not values or len(set(values)) != len(values):
+        raise ValueError("Supply a nonempty, unique --test-seeds bank")
+    if any(seed < 0 or seed >= 2**63 - 1 for seed in values):
+        raise ValueError("Test seeds must be nonnegative integers below 2**63 - 1")
+    if set(values) & set(TRAIN_SEEDS + SMOKE_SEEDS):
+        raise ValueError("Test seeds must not overlap validation or smoke seeds")
+    return tuple(values)
+
+
+def _capability_data(directory: Path, supplied: Path | None) -> dict[str, Any]:
+    """Generate observations or admit a frozen, self-consistent raw dataset."""
+    import numpy as np
+
+    if supplied is None:
+        _data(directory)
+    else:
+        for name in ("data.json", "lorenz.npy", "rossler.npy"):
+            shutil.copyfile(supplied / name, directory / name)
+    data = json.loads((directory / "data.json").read_text())
+    for system in ("lorenz", "rossler"):
+        protocol = _protocol(system)
+        raw = np.load(directory / f"{system}.npy", mmap_mode="r", allow_pickle=False)
+        if (
+            raw.dtype != np.float64
+            or raw.shape != (protocol["test"][1], 3)
+            or not np.isfinite(raw).all()
+            or data[system]["protocol"] != protocol
+            or data[system]["shape"] != list(raw.shape)
+            or data[system]["raw_sha256"] != HELPERS._digest(raw.tobytes())
+        ):
+            raise ValueError(f"Frozen {system} data, clock, shape or hash does not match")
+    return data
+
+
+def _check_immutable(directory: Path, expected: dict[str, str]) -> None:
+    for name, digest in expected.items():
+        path = directory / name
+        if not path.is_file() or HELPERS._digest(path.read_bytes()) != digest:
+            raise RuntimeError(f"Prepared experiment input changed: {name}")
+
+
+def _dependency_versions() -> dict[str, str | None]:
+    """Read installed distribution versions without importing numerical packages."""
+    observed: dict[str, str | None] = {}
+    for package in ("torch", "numpy", "scipy", "optuna", "joblib", "tsdynamics", "threadpoolctl"):
+        try:
+            observed[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            observed[package] = None
+    return observed
+
+
+def _run_capability(args: argparse.Namespace, threads: Any, seeds: tuple[int, ...]) -> None:
+    """Run one revision's existing public-HPO workers without a parity claim."""
+    directory = args.artifacts_dir.resolve()
+    output = args.output.resolve()
+    if directory.exists() and any(directory.iterdir()):
+        raise ValueError("Choose a fresh artifacts directory; existing files are never reused")
+    if output.exists():
+        raise ValueError("Choose a fresh output report")
+    if directory.is_relative_to(output):
+        raise ValueError("The output report cannot be the artifacts directory or its parent")
+    reserved = {
+        "after",
+        "runner",
+        "data.json",
+        "lorenz.npy",
+        "rossler.npy",
+        "capability-manifest.json",
+        "frozen-winners.json",
+        "after-test.json",
+        "after-test-predictions.npz",
+        "tune.log",
+        "after.log",
+        "tune-thread-policy.json",
+        "after-thread-policy.json",
+    }
+    for system in ("lorenz", "rossler"):
+        for family in ("classic", "ott"):
+            name = f"{system}-{family}"
+            reserved.add(f"{name}-tuning.json")
+            reserved.update(
+                f"{name}.sqlite3{suffix}" for suffix in ("", "-wal", "-shm", "-journal")
+            )
+            reserved.update(f"{name}-winner-seed{seed}.pt" for seed in seeds)
+    if output.is_relative_to(directory) and output.relative_to(directory).parts[0] in reserved:
+        raise ValueError("The output report collides with reserved experiment evidence")
+    if any(parent.exists() and not parent.is_dir() for parent in output.parents):
+        raise ValueError("The output report parent must be a directory")
+    dependencies = _dependency_versions()
+    directory.mkdir(parents=True, exist_ok=True)
+    source = directory / "after"
+    source.mkdir()
+    commit = HELPERS._archive(args.after, source)
+    with threads.single_thread_policy() as preparation_policy:
+        data = _capability_data(directory, args.data_dir)
+    runner = directory / "runner"
+    for relative, original in (
+        ("tuned_accuracy.py", Path(__file__)),
+        ("accuracy_regression.py", Path(HELPERS.__file__)),
+        ("rc_bench/_threads.py", Path(threads.__file__)),
+    ):
+        target = runner / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, target)
+    immutable = {
+        str(path.relative_to(directory)): HELPERS._digest(path.read_bytes())
+        for path in sorted(directory.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+    }
+    manifest = {
+        "mode": "capability",
+        "source_commit": commit,
+        "n_trials_per_study": args.n_trials,
+        "train_seeds": list(TRAIN_SEEDS[:1] if args.quick else TRAIN_SEEDS),
+        "test_seeds": list(seeds),
+        "quick": args.quick,
+        "prepared_input_sha256": immutable,
+        "preparation_thread_policy": preparation_policy,
+        "dependency_versions": dependencies,
+    }
+    HELPERS._write_json(directory / "capability-manifest.json", manifest)
+    environment = os.environ | {name: "1" for name in threads.THREAD_VARIABLES}
+    environment["PYTHONPATH"] = ""
+    frozen = None
+    for action in ("tune", "after"):
+        _check_immutable(directory, immutable)
+        if _dependency_versions() != dependencies:
+            raise RuntimeError("Installed dependency versions changed during capability execution")
+        command = [
+            sys.executable,
+            str(runner / "tuned_accuracy.py"),
+            "--mode",
+            "capability",
+            "--after",
+            commit,
+            "--worker",
+            action,
+            "--artifacts-dir",
+            str(directory),
+            "--output",
+            str(args.output.resolve()),
+            "--n-trials",
+            str(args.n_trials),
+            "--test-seeds",
+            *(str(seed) for seed in seeds),
+        ]
+        if args.quick:
+            command.append("--quick")
+        with (directory / f"{action}.log").open("w") as log:
+            subprocess.run(
+                command, env=environment, check=True, stdout=log, stderr=subprocess.STDOUT
+            )
+        if _dependency_versions() != dependencies:
+            raise RuntimeError("Installed dependency versions changed during capability execution")
+        if action == "tune":
+            frozen = HELPERS._digest((directory / "frozen-winners.json").read_bytes())
+        print(f"{action} complete", flush=True)
+    _check_immutable(directory, immutable)
+    winner_path = directory / "frozen-winners.json"
+    if frozen != HELPERS._digest(winner_path.read_bytes()):
+        raise RuntimeError("Winning parameters changed during final-test evaluation")
+    after = json.loads((directory / "after-test.json").read_text())
+    winners = json.loads(winner_path.read_text())
+    expected_studies = {
+        f"{system}-{family}" for system in ("lorenz", "rossler") for family in ("classic", "ott")
+    }
+    if (
+        winners.get("test_used_for_selection") is not False
+        or set(winners["winners"]) != expected_studies
+        or any(
+            winner["budget"]["attempts"] != args.n_trials
+            or winner["budget"]["runs_per_complete_trial"] != (1 if args.quick else 9)
+            or winner["budget"]["state_counts"]["COMPLETE"] < 1
+            or sum(winner["budget"]["state_counts"].values()) != args.n_trials
+            or any(
+                winner["budget"]["state_counts"][state]
+                for state in ("PRUNED", "RUNNING", "WAITING")
+            )
+            for winner in winners["winners"].values()
+        )
+    ):
+        raise RuntimeError("Tuning evidence does not match the declared full-check study budget")
+    expected = {
+        (system, family, variant, seed, origin)
+        for system in ("lorenz", "rossler")
+        for family in ("classic", "ott")
+        for variant in (
+            ("unoptimized", "winner", "known_recipe")
+            if system == "rossler"
+            else ("unoptimized", "winner")
+        )
+        for seed in seeds
+        for origin in range(1 if args.quick else 3)
+    }
+    observed = [
+        (row["system"], row["family"], row["variant"], row["seed"], row["origin_id"])
+        for row in after["rows"]
+    ]
+    if (
+        after["winners_sha256"] != frozen
+        or len(observed) != len(expected)
+        or set(observed) != expected
+    ):
+        raise RuntimeError(
+            "Final evaluation does not match the frozen winner and declared test cases"
+        )
+    if any(
+        row["origin_index"] != _protocol(row["system"])["test_origins"][row["origin_id"]]
+        or row["history_steps"] != row["origin_index"]
+        for row in after["rows"]
+    ):
+        raise RuntimeError("Final evaluation did not use the declared observed-history clocks")
+    reproduce = [
+        "python",
+        "benchmarks/tuned_accuracy.py",
+        "--mode",
+        "capability",
+        "--after",
+        commit,
+        "--test-seeds",
+        *(str(seed) for seed in seeds),
+        "--n-trials",
+        str(args.n_trials),
+        "--data-dir",
+        "FROZEN_DATA_DIRECTORY",
+        "--artifacts-dir",
+        "FRESH_OUTPUT_DIRECTORY",
+        "--output",
+        "capability.json",
+    ]
+    if args.quick:
+        reproduce.append("--quick")
+    report = {
+        **manifest,
+        "protocol": "explicit-factory capability; fixed training-label population std; threshold0.3 headline/0.5 secondary; winners frozen before test",
+        "data": data,
+        "frozen_winners": winners,
+        "validated_study_budgets": {
+            name: value["budget"] for name, value in winners["winners"].items()
+        },
+        "selection_integrity": {
+            "test_used_for_selection": False,
+            "winning_params_frozen_before_test": True,
+        },
+        "summaries": _summaries(after["rows"]),
+        "after": after,
+        "thread_policies": {
+            action: json.loads((directory / f"{action}-thread-policy.json").read_text())
+            for action in ("tune", "after")
+        },
+        "platform": platform.platform(),
+        "python": sys.version,
+        "timing_limit": "Recorded fit/forecast observations are not controlled speed evidence",
+        "scope": "One canonical trajectory per system; explicit test seeds do not establish independent-trajectory or historical seed novelty",
+        "reproduce_command": shlex.join(reproduce),
+        "reproduction_note": "Run from a repository checkout containing this runner; use the saved data.json/lorenz.npy/rossler.npy as FROZEN_DATA_DIRECTORY. This is a new execution, not the historical external-wrapper experiment.",
+        "artifact_files": {
+            str(path.relative_to(directory)): {
+                "sha256": HELPERS._digest(path.read_bytes()),
+                "bytes": path.stat().st_size,
+            }
+            for path in sorted(directory.rglob("*"))
+            if path.is_file() and "__pycache__" not in path.parts
+        },
+    }
+    if output.exists():
+        raise ValueError(
+            "The output report appeared during execution; existing files are never replaced"
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("x") as stream:
+        stream.write(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    print(json.dumps({"summaries": report["summaries"]}, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--before", default=HELPERS.BASELINE)
-    parser.add_argument("--after", default="0b546d6")
+    parser.add_argument("--before")
+    parser.add_argument("--after", help="Source revision; required explicitly for capability mode")
+    parser.add_argument("--mode", choices=("matched", "capability"), default="matched")
+    parser.add_argument("--test-seeds", type=int, nargs="+", help="Capability final-test seed bank")
+    parser.add_argument(
+        "--data-dir", type=Path, help="Capability frozen data.json and raw .npy inputs"
+    )
     parser.add_argument("--artifacts-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--n-trials", type=int, default=24)
@@ -478,6 +797,33 @@ def main() -> None:
     args = parser.parse_args()
     if not 1 <= args.n_trials <= 24:
         parser.error("n-trials must be between 1 and 24")
+    if args.mode == "capability":
+        if args.after is None:
+            parser.error("Capability mode requires an explicit --after source revision")
+        if args.before is not None:
+            parser.error("Capability mode accepts one source; omit --before")
+        if args.worker == "before":
+            parser.error("Capability mode evaluates only the selected after revision")
+        try:
+            seeds = _capability_seeds(args.test_seeds, args.quick)
+        except ValueError as error:
+            parser.error(str(error))
+        threads = _thread_helpers()
+        threads.bootstrap_cli()
+        if args.worker:
+            with threads.single_thread_policy() as policy:
+                if args.worker == "tune":
+                    _tune(args.artifacts_dir.resolve(), args.n_trials, args.quick)
+                else:
+                    _evaluate(args.artifacts_dir.resolve(), "after", args.quick, test_seeds=seeds)
+            HELPERS._write_json(args.artifacts_dir / f"{args.worker}-thread-policy.json", policy)
+        else:
+            _run_capability(args, threads, seeds)
+        return
+    if args.test_seeds is not None or args.data_dir is not None:
+        parser.error("--test-seeds and --data-dir are capability-mode options")
+    args.before = args.before or HELPERS.BASELINE
+    args.after = args.after or "0b546d6"
     directory = args.artifacts_dir.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     if args.worker == "tune":

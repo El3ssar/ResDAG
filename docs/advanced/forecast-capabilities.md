@@ -9,6 +9,37 @@ one frame per future tick. Built-in feature transforms, pointwise PyTorch layers
 readouts, and visible `BaseReservoirLayer` nodes support this execution. Explicit
 reservoir states carry their temporal memory between ticks.
 
+PyTorch execution hooks also apply during forecasting and explicit-state
+execution. ResDAG detects local, nested and global registrations automatically
+and uses ordinary module calls when needed. A hook on an `rd.Model` or `rd.ESN`
+sees its usual original-unit inputs and outputs; named feedback and delays use
+those modified predictions. Hook-free models retain the lean executor. On
+backends that support compiled forecasts, requesting `compile=True` with
+execution hooks emits a warning and uses eager execution. Full-history execution
+and parallel/coupled workflow backends reject `compile=True` independently of hooks.
+Hooks may change output dtype or device. In fast mode, a prehook can convert
+the next feedback frame back to the graph's required placement, just as in an
+ordinary model call. History replay uses `torch.cat` to extend each input
+prefix: normal dtype promotion applies, but frames on different devices cannot
+be concatenated. Use compatible hook placement for history replay; ResDAG does
+not move the saved prefix between devices automatically.
+
+Hooks still follow the selected temporal contract: fast execution calls the
+model on the full observed history and then one frame at a time; history
+execution replays the growing prefix. A hook that itself needs the full prefix
+should use `execution="history"`. Hooks on methods that ordinary module
+execution never calls, such as a cell's low-level `step`, are not dispatched as
+module-forward hooks. Explicit-state execution restores carried reservoir
+buffers even when a hook raises; other hook side effects follow ordinary
+PyTorch behavior.
+Recurrent modules must remain in the declared graph's named state contract.
+Explicit-state and forecast calls reject reservoirs attached outside
+`model.graph`; ordinary `model(x)` remains available. Python counters or other
+hidden mutable state inside a hook follow the hook author's own lifecycle.
+Portable checkpoints omit active execution hooks. Put behavior that must survive
+loading in a registered module, or use an explicitly trusted bundle; see
+[saving and loading](../workflows/save-load.md).
+
 ## Declare a framewise custom module
 
 Set `supports_framewise = True` when splitting along the time axis preserves the

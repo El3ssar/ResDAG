@@ -19,19 +19,23 @@ def test_sparse_cell_copy_rebuilds_from_current_weights_without_mutating_source_
     original_cache = cell._weight_hh_csr
     cached_weights = original_cache.to_dense().clone()
     with torch.no_grad():
-        cell.weight_hh.add_(0.01)
+        cell.weight_hh.values().add_(0.01)
     random_state = torch.get_rng_state().clone()
 
     clone = copy.deepcopy(cell)
 
     assert torch.equal(torch.get_rng_state(), random_state)
     assert cell._weight_hh_csr is original_cache
-    torch.testing.assert_close(original_cache.to_dense(), cached_weights, rtol=0, atol=0)
+    assert not torch.equal(original_cache.to_dense(), cached_weights)
     assert clone._weight_hh_csr.layout == torch.sparse_csr
-    assert clone.weight_hh.data_ptr() != cell.weight_hh.data_ptr()
+    assert clone.weight_hh.values().data_ptr() != cell.weight_hh.values().data_ptr()
     assert clone._weight_hh_csr.values().data_ptr() != original_cache.values().data_ptr()
-    torch.testing.assert_close(clone._weight_hh_csr.to_dense(), cell.weight_hh, rtol=0, atol=0)
-    torch.testing.assert_close(clone.weight_hh, cell.weight_hh, rtol=0, atol=0)
+    torch.testing.assert_close(
+        clone._weight_hh_csr.to_dense(), cell.weight_hh.to_dense(), rtol=0, atol=0
+    )
+    torch.testing.assert_close(
+        clone.weight_hh.to_dense(), cell.weight_hh.to_dense(), rtol=0, atol=0
+    )
 
 
 @pytest.mark.parametrize("family", ["classic", "ott", "esn"])

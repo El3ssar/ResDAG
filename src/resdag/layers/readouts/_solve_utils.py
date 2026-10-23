@@ -145,7 +145,7 @@ def _apply_with_solver_precision(
 
 # Multiplier ``k`` for the escalated, scale-aware jitter used when the initial
 # Cholesky factorisation fails. The retry uses
-# ``alpha_eff = max(alpha, k * eps(gram_dtype) * trace(gram) / F)`` — enough to
+# ``alpha_eff = max(alpha, k * eps(solve_dtype) * max(abs(diag(gram))), tiny)`` — enough to
 # push the rounding-noise-negative eigenvalues of a rank-deficient centered Gram
 # back above zero without materially perturbing a well-conditioned solve.
 _JITTER_K = 16.0
@@ -680,7 +680,8 @@ def solve_ridge(
     1. Try a Cholesky factorisation of ``gram + αI`` (fast, exact for an SPD
        system) and back-substitute.
     2. On :class:`torch.linalg.LinAlgError`, retry once with escalated,
-       scale-aware jitter ``α_eff = max(α, k · eps(dtype) · tr(gram) / F)`` —
+       scale-aware jitter
+       ``α_eff = max(α, k · eps(dtype) · max(abs(diag(gram))), tiny)`` —
        just enough to lift the rounding-noise-negative eigenvalues back above
        zero. A single warning naming the layer is emitted.
     3. If that still fails, fall back to a symmetric-eigendecomposition solve
@@ -703,11 +704,11 @@ def solve_ridge(
       under-satisfied solve (a ``float32`` *solve* dtype, or a heavily clamped
       eigh fallback).
 
-    Either check tripping emits one warning naming the layer and suggesting
-    ``gram_dtype=torch.float64`` or :class:`SVDReadoutLayer`. The Gram is now
-    formed in ``float64`` by default on every device (see
-    :func:`resolve_gram_dtype`), so this guard mostly fires when a user has
-    explicitly opted into ``gram_dtype=torch.float32`` for speed.
+    Either check tripping emits one warning naming the layer, identifying
+    which diagnostic exceeded its threshold and suggesting the appropriate
+    precision setting or :class:`SVDReadoutLayer`. These are sensitivity and
+    self-consistency checks, not measurements of prediction error. Even a
+    ``float64`` Gram and solve can be sensitive for nearly dependent features.
 
     Parameters
     ----------
@@ -758,9 +759,9 @@ def solve_ridge(
         # rounding noise (a genuine Gram is PSD), so lift the diagonal by a
         # scale-aware floor keyed to the Gram's *magnitude* — ``max|diag|`` is a
         # cheap proxy for ‖gram‖ and dominates the ~``eps·‖gram‖`` noise floor
-        # that produced the negative eigenvalue. (A ``float64`` Gram is PSD to
-        # ~``eps64·‖gram‖`` and reaches this branch only for a genuinely
-        # indefinite input.)
+        # that produced the negative eigenvalue. Nearly dependent features can
+        # lose positive definiteness through Gram-formation rounding even in
+        # float64, especially when alpha is smaller than that rounding error.
         eps = torch.finfo(gram.dtype).eps
         max_diag = float(gram.diagonal().abs().max().item())
         jitter = max(_JITTER_K * eps * max_diag, torch.finfo(gram.dtype).tiny)
@@ -869,21 +870,47 @@ def _warn_on_precision_loss(
     if (est_error is not None and est_error > _RESIDUAL_WARN_TOL) or (
         residual > _RESIDUAL_WARN_TOL
     ):
-        detail = f"residual={residual:.2e}"
+        threshold = _RESIDUAL_WARN_TOL
+        detail = []
+        issues = []
         if est_error is not None:
-            detail = f"est. precision loss={est_error:.2e}, {detail}"
-        remedy = (
-            "Fit on CPU with float64 statistics/solving, then move the fitted readout "
-            "to MPS for inference. The MPS residual is evaluated in float32."
-            if gram.device.type == "mps"
-            else "Pass gram_dtype=torch.float64 for an accurate readout, or use SVDReadoutLayer."
+            comparison = ">" if est_error > threshold else "<="
+            detail.append(
+                f"est. precision loss={est_error:.2e} ({comparison} threshold={threshold:g})"
+            )
+            if est_error > threshold:
+                issues.append(
+                    "The condition-based estimate indicates sensitivity to rounding in the "
+                    "normal equations; it is not a measured prediction error."
+                )
+        comparison = ">" if residual > threshold else "<="
+        detail.append(
+            f"normal-equations residual={residual:.2e} ({comparison} threshold={threshold:g})"
         )
+        if residual > threshold:
+            issues.append("The computed coefficients have a large normal-equations residual.")
+        if gram.device.type == "mps":
+            remedy = (
+                "Fit on CPU with float64 Gram formation and solving, then move the fitted "
+                "readout to MPS for inference. The MPS residual is evaluated in float32."
+            )
+        elif gram_dtype != torch.float64:
+            remedy = "Form the Gram in float64 (gram_dtype=torch.float64)"
+            if gram.dtype != torch.float64 or coefs.dtype != torch.float64:
+                remedy += " and solve in float64 (use_float64=True)"
+            remedy += "."
+        elif gram.dtype != torch.float64 or coefs.dtype != torch.float64:
+            remedy = "The Gram was formed in float64; solve in float64 (use_float64=True)."
+        else:
+            remedy = (
+                "The Gram and solve already use float64; normal equations can remain "
+                "sensitive for nearly dependent features."
+            )
         warnings.warn(
-            f"{layer_name}: the ridge solve is losing accuracy ({detail} > "
-            f"{_RESIDUAL_WARN_TOL:g}). The Gram matrix is ill-conditioned and "
-            f"forming it in {gram_dtype} (the default is float64 on every device) destroys "
-            f"precision the solve cannot recover — the fitted readout will "
-            f"differ from the float64 result. {remedy}",
+            f"{layer_name}: ridge accuracy diagnostics flagged potential precision loss "
+            f"({'; '.join(detail)}). {' '.join(issues)} {remedy} "
+            "Consider SVDReadoutLayer to fit the original design matrix without forming "
+            "the Gram, or review feature scaling and regularization.",
             RuntimeWarning,
             stacklevel=3,
         )

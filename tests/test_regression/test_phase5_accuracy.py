@@ -336,3 +336,97 @@ def test_tuned_report_test_summaries_censoring_and_replay_claims_recompute():
                     for row in chosen
                     if row["seed"] == int(seed)
                 )
+
+
+def test_independent_stream_capability_record_preserves_complete_test_grid_and_summaries():
+    """Recompute the public scientific table from individual forecast records."""
+    import itertools
+    import json
+    import statistics
+
+    path = PATH.parents[1] / "docs/assets/data/phase-five-capability-2026-10-23.json"
+    report = json.loads(path.read_text())
+    assert report["schema"] == "resdag.capability-evidence.v1"
+    seeds = report["protocol"]["reserved_final_initialization_seeds"]
+    assert seeds == [401, 402, 403, 404, 405]
+    assert not set(seeds) & set(report["protocol"]["training_initialization_seeds"])
+    cases = {row["case_id"]: row for row in report["case_fit_observations"]}
+    expected = {
+        (system, family, variant, seed, origin)
+        for system, family, seed, origin in itertools.product(
+            ("lorenz", "rossler"), ("classic", "ott"), seeds, range(3)
+        )
+        for variant in (
+            ("unoptimized", "winner", "known_recipe")
+            if system == "rossler"
+            else ("unoptimized", "winner")
+        )
+    }
+    observed = []
+    for row in report["final_forecasts"]:
+        case = cases[row["case_id"]]
+        system = case["system"]
+        observed.append(
+            (system, case["family"], case["variant"], case["initialization_seed"], row["origin_id"])
+        )
+        protocol = report["data_and_generator_metadata"][system]["protocol"]
+        assert row["origin_index"] == protocol["test_origins"][row["origin_id"]]
+        assert row["history_steps"] == row["origin_index"]
+        for score in row["scores"].values():
+            steps = score["steps"]
+            assert type(steps) in (int, float) and float(steps).is_integer()
+            assert 0 <= steps <= protocol["horizon_steps"]
+            assert score["right_censored"] is (steps == protocol["horizon_steps"])
+            assert score["lyapunov_times"] == pytest.approx(
+                steps * protocol["dt"] * protocol["lambda_max"]
+            )
+    assert len(cases) == len(report["case_fit_observations"]) == 50
+    assert len(observed) == len(expected) == 150
+    assert set(observed) == expected
+    for summary in report["summaries"]:
+        chosen = [
+            row
+            for row in report["final_forecasts"]
+            if all(
+                cases[row["case_id"]][key] == summary[key]
+                for key in ("system", "family", "variant")
+            )
+        ]
+        assert len(chosen) == summary["count"] == 15
+        for threshold, score in summary["scores"].items():
+            values = [row["scores"][threshold]["lyapunov_times"] for row in chosen]
+            assert score["median"] == statistics.median(values)
+            assert score["min"] == min(values)
+            assert score["max"] == max(values)
+            assert score["right_censored"] == sum(
+                row["scores"][threshold]["right_censored"] for row in chosen
+            )
+            assert score["per_seed_medians"] == {
+                str(seed): statistics.median(
+                    row["scores"][threshold]["lyapunov_times"]
+                    for row in chosen
+                    if cases[row["case_id"]]["initialization_seed"] == seed
+                )
+                for seed in seeds
+            }
+    winners = report["frozen_winners"]
+    assert set(winners) == {
+        f"{system}-{family}"
+        for system, family in itertools.product(("lorenz", "rossler"), ("classic", "ott"))
+    }
+    assert all(winner["winning_trial_state"] == "COMPLETE" for winner in winners.values())
+    budgets = [winner["budget"] for winner in winners.values()]
+    assert len(budgets) == 4
+    assert all(budget["attempts"] == 24 for budget in budgets)
+    assert all(budget["runs_per_complete_trial"] == 9 for budget in budgets)
+    assert sum(budget["state_counts"]["COMPLETE"] for budget in budgets) == 70
+    assert sum(budget["state_counts"]["FAIL"] for budget in budgets) == 26
+    assert all(
+        budget["state_counts"][state] == 0
+        for budget in budgets
+        for state in ("PRUNED", "RUNNING", "WAITING")
+    )
+    parity = report["stored_checkpoint_parity"]
+    assert parity["history_conditioned_forecasts"] == len(parity["cases"]) == 12
+    assert parity["all_prediction_bytes_identical"] is True
+    assert parity["all_fitted_tensor_fingerprints_identical"] is True

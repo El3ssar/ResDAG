@@ -40,6 +40,7 @@ from resdag.layers.readouts import (
     CholeskyReadoutLayer,
     FISTAReadoutLayer,
     IncrementalRidgeReadoutLayer,
+    LSMRReadoutLayer,
     PinvReadoutLayer,
     ReadoutLayer,
     RLSReadout,
@@ -59,6 +60,7 @@ _READOUT_REGISTRY: dict[str, type[ReadoutLayer]] = {
     "auto": AutoReadoutLayer,
     "ridge": RidgeReadoutLayer,
     "cg": CGReadoutLayer,
+    "lsmr": LSMRReadoutLayer,
     "cholesky": CholeskyReadoutLayer,
     "svd": SVDReadoutLayer,
     "pinv": PinvReadoutLayer,
@@ -242,7 +244,7 @@ def _esn_builder(
         Whether reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
         A built-in name (``"auto"``, ``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
         :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.

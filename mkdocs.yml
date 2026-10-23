@@ -185,6 +185,7 @@ nav:
           - build/layers/index.md
       - Readouts:
           - build/readouts/index.md
+          - Low-memory LSMR: reference/lsmr-readout.md
       - Architectures:
           - build/architectures/index.md
       - Initialization:
@@ -208,6 +209,7 @@ nav:
       - Tuning resources: advanced/tuning-resources.md
       - Raw HPO runner: advanced/raw-hpo.md
       - Streaming & DataLoaders: workflows/streaming.md
+      - Memory & sparse models: workflows/sparse-reservoirs.md
       - Save, load & diagrams: workflows/save-load.md
       - Scale & deploy: workflows/deploy.md
       - Benchmarks: workflows/benchmarks.md
@@ -238,6 +240,7 @@ nav:
       - Phase three design: project/phase-three-design.md
       - Phase four design: project/phase-four-design.md
       - Phase five design: project/phase-five-design.md
+      - Phase five measurements: project/phase-five-results.md
       - Single-pass training measurements: project/single-pass-training-benchmark.md
       - Graph tooling: project/graph-tooling.md
       - New ESN API: project/esn-migration.md

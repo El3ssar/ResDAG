@@ -25,6 +25,7 @@ _RUNTIME = {
     "_noise_generators",
     "_sparse_weight_key",
     "_sparse_active",
+    "_hh_structure_key",
     "_fitted_flag",
     "last_solve",
 }

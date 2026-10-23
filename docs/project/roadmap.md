@@ -17,6 +17,12 @@ and verified in [PR #463](https://github.com/El3ssar/ResDAG/pull/463), merged as
 `0b546d6`. Phase five is in progress: correct held-out comparisons and measure
 classical forecast accuracy before changing execution policies.
 The phase-four release job published **4.0.0** after full post-merge CI passed.
+The first phase-five increment was merged through
+[PR #464](https://github.com/El3ssar/ResDAG/pull/464) as `041db61`.
+Its **4.1.0** release, installed published wheel, full post-merge CI and
+documentation deployment are verified. The continuation adds compact sparse
+storage, optional matrix-free fitting, native forecast hooks and the first
+equal-time three-library comparison.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -498,20 +504,29 @@ them alone would not improve performance.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P5-01 | WIP | Correct held-out comparison windows and common prediction alignment. | Python adapters verified with real libraries and independent first-step oracles; training-target-only normalization, failed-adapter exit status, declared intercept/input/state policies, censored/divergent scores and held-out internal profiling implemented. Julia runtime verification remains pending. |
-| P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | 36 frozen regression cases plus four 24-attempt, 3-seed/3-origin tuning studies; winners and controls replayed in 150 matched before/after cases with exact forecast/tensor/score agreement. Reserved five-seed test results and supplementary bank are documented. Further trajectories, scale regimes, controlled timing/memory and competitor search budgets remain pending. |
-| P5-03 | Pending | Actual sparse/structured operators and appropriate matrix-free readouts. | Reuse Torch/SciPy operator/sparse/solver capabilities; memory scales as advertised; no mandatory hidden dense copy; save/load and numerical contracts pass. |
-| P5-04 | Pending | Profile-driven batching and compilation improvements. | Reference/fast value, state and gradient parity; measured improvement in specified workloads; setup and steady state reported separately. |
-| P5-05 | Pending | Publish speed–accuracy–memory tradeoffs against current competitors. | Reproducible commands, versions, hardware and equal search budgets; no universal unsupported superiority or GPU claim. |
+| P5-01 | Done | Correct held-out comparison windows and common prediction alignment. | Real Python and pinned Julia 1.12.5 / ReservoirComputing.jl 0.12.23 adapters pass independent first-step, ridge and recurrence oracles locally and in hosted CI. Training-only scales, declared model policies and failed-track handling remain explicit. |
+| P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | The first increment verified 150 matched tuned/control replays. The first full six-track equal-time comparison is complete: 600 tuning seconds per library/system, 2,850 eligible complete candidates and 90 reserved-seed forecasts, independently audited. Independent trajectories and broader scale regimes remain open. |
+| P5-03 | WIP | Actual sparse/structured operators and appropriate matrix-free readouts. | Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented and pass full-suite, checkpoint, gradient and hosted checks. Broader operator regimes and tighter solver/storage-aware tuning estimates remain open; automatic solver/operator policies stay unchanged. |
+| P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. Baseline profiles, structured kernels and bounded paired workflow timing are verified. Broader batch/patch scaling and cold-versus-warm compilation timing remain open. |
+| P5-05 | WIP | Publish speed–accuracy–memory tradeoffs against current competitors. | [First full comparison](phase-five-results.md#equal-tuning-time-across-libraries) and downloadable records are complete. ResDAG's state-only vanilla median is ≥10.016 LT on Lorenz and 9.628 LT on Rössler, close to both competitors; selected CPU workflows are slower. Wider hardware, model scales and independent trajectories remain pending. |
 | P5-06 | Done | Bring the broader forecasting search into built-in vanilla and OTT tuning. | Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage. |
 
-Python 3.14 warns that `torch.jit.script_method` is deprecated. The phase-five
-execution review must address that path using supported PyTorch tooling and
-verify value, state and gradient behavior before replacing it.
+Python 3.14 emits fourteen `torch.jit.script_method` deprecation warnings when
+Torch 2.10 imports its own MKLDNN helpers through the `torch.compile` backend.
+Static tracing confirmed that neither ResDAG nor its functional graph dependency
+implements that deprecated path. The existing compile correctness tests pass;
+retain the upstream warning boundary rather than replacing the graph backend
+to suppress it. ResDAG's `Standardize.inverse` export annotation remains covered
+by explicit scripting tests.
 
 ### First-increment accuracy evidence
 
-See [the full protocol and results](phase-five-design.md#first-tuning-measurements)
+These results precede the independent initialization-stream correction. They
+describe the original seeded models; newly built models require fresh checks.
+The [continuation measurements](phase-five-results.md) report the new seed bank,
+including the unresolved vanilla Rössler shortfall.
+
+See [the historical protocol and results](phase-five-design.md#historical-first-tuning-measurements)
 for fixed-training-scale scores at thresholds 0.3 and 0.5. Primary tuned medians
 are **9.11 / ≥10.02 Lyapunov times** for vanilla/OTT Lorenz and
 **7.58 / ≥10.00** for vanilla/OTT Rössler. Each uses five reserved seeds and
@@ -520,6 +535,81 @@ is **6.33** and its pooled ten-seed median **6.76**; robust 7–8 performance is
 therefore still an open goal for that recipe. Censored values are lower bounds.
 Neither these accuracy checks nor the untuned adapter smoke establishes a
 cross-library speed ranking.
+
+### Continuation decisions and verification
+
+The maintainer approved compressed weights as the only recurrent storage for
+`sparse=True`, an explicitly selected low-memory solver, and native PyTorch
+hooks during forecasting. Dense models and automatic solver choices retain
+their established behavior. See [memory and sparse models](../workflows/sparse-reservoirs.md),
+[LSMR](../reference/lsmr-readout.md) and [migration notes](../migrating.md).
+
+The [comparison protocol](../workflows/benchmarks.md#equal-tuning-time)
+uses the common vanilla model family first, equal **600-second** tuning
+budgets, three validation seeds/origins, and reserved final seeds **301–305**.
+All six winners freeze before test access. Reused trajectories are held out
+from the new studies, but are historically known; one trajectory per system
+does not establish generalization across independently generated runs.
+Incomplete or late candidates cannot win, and final build/fit failures cannot
+be disguised as short but valid forecasts.
+
+The full run completed on `1dc8cfb`: **2,850 eligible complete configurations**,
+six excluded deadline attempts, and **90 complete final forecasts**, with all
+winners frozen first. All three Lorenz medians reach ≥10.016 Lyapunov times;
+Rössler medians are **9.628 / 9.639 / 9.701** for ResDAG, ReservoirPy and
+ReservoirComputing.jl. All selected models have 1,000 units. ResDAG is slower
+in these selected CPU workflows, so this is comparable accuracy without a
+speed-superiority claim. The [measurement report](phase-five-results.md)
+retains full spread, both thresholds, timings, solver safeguards and complete
+downloadable records. Independent trajectories and broader profiling remain
+open.
+
+Final implementation/test acceptance on `1dc8cfb`: **6,267 local tests pass**
+at **93.83% coverage**; **334 installed-wheel checks** pass with two unavailable
+CUDA skips. All **205 Python modules and the typing marker** match source,
+wheel, sdist and installed package. All eight locked/latest full hosted lanes
+pass **6,018 tests each** at **91.59–91.66% coverage**. Both strict docs builds,
+six installed-TSDynamics lanes, configured CPU gates and the **76 Python / 18
+real Julia** benchmark contracts pass. See the
+[full measurement record](phase-five-results.md#verification).
+
+The new RNG fix separates ESN, gated and LIF default roles, preserves explicit
+initializer overrides, and documents changed newly seeded weights. Four fresh
+24-attempt studies completed **70 configurations** and recorded **26 failures**,
+with no pruning. Each complete configuration received three seeds × three
+validation starts; all four winners froze before reserved seeds **401–405**.
+Median horizons over 15 test forecasts are **≥10.016** for both Lorenz families,
+**4.203** for vanilla Rössler and **≥10.001** for OTT Rössler at the 0.3 limit.
+Vanilla Rössler therefore remains below the target. Full spread, controls,
+censoring, per-seed summaries and the 0.5 results are recorded separately.
+No retuning followed those tests.
+
+Stored-model checks remain separate: **12 forecasts** from four published 4.1.0
+checkpoints and their fitted tensors are byte-identical on the corrected runtime.
+Before the stream change, source `4439e29` also preserved all **150** frozen
+tuned/control forecasts and all **50** initial/fitted model fingerprints exactly.
+That historical replay does not establish equal newly seeded weights after
+the intentional stream correction.
+
+Two fresh-process ABBA runs use the same stored baseline weights in both
+revisions, 400 units, 1,501 training samples and 256 forecast steps. All forecast
+digests match. Pooled sparse-cycle fitting improves **1.11–1.13×**, forecasting
+**1.14×**, and retained tensor storage falls **1,321,042 → 37,842 bytes**.
+Sparse random storage falls **1,351,978 → 58,466 bytes**. One-thread dense
+forecasts are roughly **3–5% slower** in this workload; four-thread medians are
+about **1% faster**. Both runs, including the initially slower measurement, are
+retained. These are bounded CPU/Torch-thread observations, not native one-thread
+or process peak-RSS claims. Existing CPU gates pass unchanged; broader profiling
+remains open.
+
+The merged first increment's post-merge release run
+[passed](https://github.com/El3ssar/ResDAG/actions/runs/39950943063):
+all four Python 3.11–3.14 full suites passed **5,618 tests** per lane at
+**91.44–91.50% coverage**. The published 4.1.0 wheel's 200 runtime files
+match its release tag, and installed artifact/workflow checks passed
+**118 tests**, with two unavailable-CUDA cases skipped. New continuation
+verification will be recorded separately; those release counts do not cover
+the unmerged implementation.
 
 ## Phase 6: experiment readiness and ongoing documentation
 
@@ -544,10 +634,11 @@ cross-library speed ranking.
 | 2026-10-23 | Phase 3 initial implementation | WIP | Approved common tuner and automatic readout policy implemented and verified in [PR #461](https://github.com/El3ssar/ResDAG/pull/461): 5,231 local tests, 93.15% coverage; all eight locked/latest full hosted suites, optional integrations, strict docs, CPU gates and installed artifacts pass. Rollout pruning, staged promotion, memory budgets and raw-runner migration remain open. |
 | 2026-10-23 | Phase 3 initial merge and release | Done | PR #461 merged as `ad0f8c9`; v2.1.0 publication, full post-merge CI, actual published-wheel smoke and documentation deployment pass. |
 | 2026-10-23 | Phase 3 completion | Done | [PR #462](https://github.com/El3ssar/ResDAG/pull/462): streaming pruning, optional screening/memory admission, exact-protocol reuse and managed raw execution. 5,466 local tests at 92.98% coverage; all eight locked/latest full suites, six dynamics lanes, CPU gates, installed-wheel workflows and rendered documentation pass. Merged as `f8d7637` after final required checks; v3.0.0 publication, all post-merge tests, installed published-wheel checks and documentation deployment passed. |
-
 | 2026-10-23 | Phase 4 implementation | Done | Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,715 local tests at 93.62% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. All eight locked/latest full suites, six dynamics lanes, strict docs and configured CPU/static jobs pass on runtime head `5d8f869`. |
 | 2026-10-23 | Phase 4 merge and release | Done | PR #463 merged as `0b546d6`; v4.0.0 release job, full post-merge CI and documentation deployment pass. Actual PyPI wheel's 199 runtime files match the release tag; installed-wheel artifact/guide selection: 118 passed, two unavailable-CUDA cases skipped. Updated executable tuning guide also passes. |
 | 2026-10-23 | Phase 5 first increment | WIP | Python comparison preparation/alignment repaired; 36 frozen matched cases and four validation-only HPO studies completed. 150 matched tuned/control cases preserve exact phase-four accuracy. Primary and supplementary seed banks, censored horizons and remaining vanilla Rössler variability documented; Julia execution and broader controlled competitor comparisons remain pending. |
+| 2026-10-23 | Phase 5 first-increment merge and release | Done | PR #464 merged as `041db61`; 4.1.0 release, all post-merge Python suites, installed published-wheel workflows and documentation deployment verified. |
+| 2026-10-23 | Phase 5 execution and comparison continuation | WIP | [PR #465](https://github.com/El3ssar/ResDAG/pull/465): compact-only CSR, sparse-native construction, structured updates, opt-in LSMR, native forecast hooks and explicit tensor release implemented. Full tests, package and hosted CI pass on `1dc8cfb`; fresh initialization studies and the full six-track equal-time comparison are complete. Reporting/reproduction follow-up passes 6,328 local tests, 145 focused checks and 334 installed-wheel checks. Broader CPU profiling and independent trajectories remain open. |
 
 ## Standard tools to reuse
 

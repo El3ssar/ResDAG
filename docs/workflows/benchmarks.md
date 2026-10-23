@@ -8,7 +8,8 @@ description: Reproduce held-out reservoir forecasts, measure accuracy and runtim
 
 ## Current measurement protocol
 
-Phase five repairs the comparison harness before publishing new rankings.
+The comparison harness checks alignment, numerical precision and timing before
+publishing new rankings.
 The `heldout-v1` protocol uses raw shared data and fits normalization on the
 supervised training targets after washout. Training inputs end at index `T-1`,
 their next-sample targets end at `T`, and forecasts begin at the first unseen
@@ -40,6 +41,50 @@ An execution failure from an available adapter makes the command fail;
 unavailable optional adapters are explicit skips. The settings and random
 weights are realized by each library independently. Equal nominal settings
 alone do not establish identical numerical models or an equal tuning budget.
+
+### Equal tuning time
+
+The new headline protocol gives **each library and each system ten CPU minutes**
+to tune a vanilla ESN: ResDAG, reservoirpy and ReservoirComputing.jl on Lorenz
+and Rössler. It uses Optuna's ordinary `study.optimize`, one worker and one CPU
+thread, with the same seven controls: reservoir size, spectral radius, leak,
+input scale, random bias scale, mean degree and ridge penalty.
+
+Every complete candidate fits once for each of three initialization seeds,
+then forecasts from three validation starts using that fitted model. Adapter
+initialization and one fixed synthetic warmup are reported separately; this
+does not measure total process startup, including common CLI imports.
+Construction, fitting,
+history synchronization, rollout, scoring and Julia IPC count toward the
+budget. Failed, unfinished or deadline-overrun candidates cannot win; their
+work and actual overrun remain in the report. There are no automatic retries.
+
+All six winners are saved before reading final test values. Final evaluation
+uses five unseen seeds and three later starts, with the same training-only
+normalization, **0.3** headline and **0.5** secondary thresholds. The JSON keeps
+every seed/start, failure, divergence flag and censored horizon; the Markdown
+report shows the median and full range. This compares achievable accuracy
+under equal tuning time. Separate matched-configuration measurements compare
+throughput without confusing different winning architectures.
+
+The common model explicitly uses Gaussian recurrent weights, directed
+connectivity at `mean_degree / reservoir_size` including possible self-loops,
+dense uniform input weights and a **random uniform reservoir bias**. Initial
+memory is zero. A linear readout sees only reservoir states, with no direct
+input features or readout intercept. Native random streams, sparse-mask
+construction and direct readout solvers still differ. ResDAG's native Gram
+solver can increase the effective regularization or repair a numerically
+indefinite Gram matrix; ReservoirPy uses its symmetric Gram solve, while Julia
+uses augmented QR. Equal requested penalties therefore do not imply identical
+effective fits. The precise protocol,
+commands and accounting are in
+[`benchmarks/BUDGET_PROTOCOL.md`](https://github.com/El3ssar/ResDAG/blob/main/benchmarks/BUDGET_PROTOCOL.md).
+
+The pinned Julia environment has been executed with **Julia 1.12.5 and
+ReservoirComputing.jl 0.12.23**. Independent NumPy ridge and recurrent-update
+oracles check Float64 fitting, the first unseen forecast, history resets,
+future-data isolation and requested timing repetitions. This verifies the
+adapter; it does not establish a cross-library speed ranking.
 
 ## Archived comparisons
 
@@ -74,19 +119,11 @@ records later sweeps with their own environment and settings.
     GPU work is synchronized before the clock stops).
 
 !!! note "Archived observations (RTX 3060 laptop, vs reservoirpy)"
-    - **Training scales on the GPU.** At a 2000-unit reservoir, resdag (GPU)
-      trains **16× faster** than reservoirpy; on a 20k-step dataset it is **~2×**
-      faster. The dense-reservoir + conjugate-gradient design is built for this.
-    - **Sharper forecasts.** Over the forecast runs, resdag's short-horizon
-      error was the lowest of the four libraries (RMSE ≈ 0.3 vs ≈ 0.55 for
-      reservoirpy and ≈ 1.08 for ReservoirComputing.jl).
-    - **Honest trade-off.** For *generating* a long forecast — an inherently
-      sequential loop — reservoirpy's sparse single-step update is faster than
-      resdag's dense one on CPU/GPU. resdag wins on training throughput and
-      accuracy; reservoirpy wins on raw autoregressive generation speed. The
-      numbers below are the eager loop; `forecast(compile=True)` fuses the
-      per-step engine with `torch.compile` and recovers a chunk of that gap on
-      long GPU rollouts (see [Scale & deploy](deploy.md#long-horizons-compile-the-step)).
+    The following tables preserve the recorded timings and scores for that
+    historical setup. Their indexing, initialization and solver caveats prevent
+    using them to claim that a current library is faster or more accurate.
+    GPU suitability depends on the actual model, precision and workload;
+    no new CUDA throughput claim has been verified in this phase.
 
 ### Training vs reservoir size
 
@@ -131,18 +168,20 @@ Predictive *skill*, not speed: after an identical warmup, how many steps the clo
 
 *Valid prediction time: steps until the normalized forecast error first exceeds 0.5, also in Lyapunov times (Λt). Higher means the model stays on the true trajectory longer. Predictive skill is hyper-parameter-dependent; these use matched nominal settings (not tuned per library), so each library leads in different regimes.*
 
-*Measured on an NVIDIA RTX 3060 laptop GPU / 16-thread i7-10870H, Python 3.14, resdag 0.6.0, reservoirpy 0.4.2, ReservoirComputing.jl 0.12, torch 2.10 (cu128). Median of repeated runs; `—` = skipped (ReservoirComputing.jl is impractically slow above 1000 units). Regenerate with the commands below.*
+*Archived setup: NVIDIA RTX 3060 laptop GPU / 16-thread i7-10870H, Python 3.14, resdag 0.6.0, reservoirpy 0.4.2, ReservoirComputing.jl 0.12, torch 2.10 (cu128). Median of recorded repetitions; `—` means the old sweep did not measure that cell. Current commands below run the corrected protocol and will not reproduce these historical values.*
 
 ## What is being measured
 
-Every library builds the *same nominal architecture* — a single reservoir
-feeding a ridge-regression readout — with identical hyper-parameters (reservoir
-size, spectral radius, leak rate, connectivity, ridge regularization, `tanh`
-activation), and trains/forecasts on a **byte-identical** Lorenz-63 trajectory.
+The matched-workload harness builds a single reservoir feeding a ridge readout
+with the same nominal settings and **byte-identical** transformed data.
+Its native initializer distributions are recorded separately from the
+explicit common distributions in the equal-budget track.
 
 - **Training** runs the reservoir over the training sequence and solves for the
-  readout. resdag uses a conjugate-gradient ridge solve; reservoirpy and
-  ReservoirComputing.jl use direct solves.
+  readout. The current ResDAG adapter uses **RidgeReadoutLayer**, a direct
+  solver; reservoirpy uses `Ridge`, and Julia uses `StandardRidge`.
+  An earlier adapter used CG; those historical results do not describe the
+  current direct-solver path.
 - **Forecasting** warms the reservoir up on a seed window, then generates
   closed-loop: each prediction is fed back as the next input. This loop is
   inherently sequential in time.
@@ -153,32 +192,35 @@ garbage.
 
 ## Fairness & caveats
 
-These are honest, like-for-like comparisons, but a few real differences are
-worth stating plainly so the numbers are not over-read:
+Read the protocol and implementation choices alongside every result:
 
-- **Dense vs sparse reservoir.** resdag stores a *dense* reservoir matrix (a
-  GPU-friendly choice) and runs it as a dense mat-vec/mat-mul each step.
-  reservoirpy and ReservoirComputing.jl use *sparse* reservoirs. At low
-  connectivity and large reservoirs the sparse libraries do asymptotically less
-  arithmetic on CPU — resdag wins back the difference on the GPU and in the
-  readout solve.
+- **Connectivity and storage are separate.** ResDAG supports native sparse
+  recurrent storage through `sparse=True`. The historical/default timing
+  adapter builds a dense tensor, reservoirpy uses SciPy sparse storage, and the
+  Julia timing worker currently requests a dense matrix from its sparse
+  initializer. A sparsely connected mathematical reservoir does not imply a
+  sparse storage backend. The new equal-budget recipe records its explicit
+  storage policy separately.
 - **Precision.** CPU rows run float64 (NumPy/Julia's natural dtype); the resdag
   GPU row runs float32, the realistic choice for consumer GPUs (which run
   float64 at a small fraction of float32 throughput).
 - **Sequential forecasting is launch-bound.** The autoregressive forecast loop
   issues one tiny operation per timestep. On the GPU each step is dominated by
   kernel-launch overhead, so the eager GPU loop does **not** help long forecasts
-  at small reservoir sizes — and may be slower than CPU there. `forecast(compile=True)`
-  fuses the per-step engine with `torch.compile` to claw back launch overhead on
-  long GPU rollouts; the tables above are the eager path. resdag's GPU advantage
-  otherwise shows up in **training**, where the work batches into large matmuls.
+  at small reservoir sizes — and may be slower than CPU there.
+  `forecast(compile=True)` requests the supported compiled path; its setup cost,
+  fallback behavior and steady-state benefit depend on the graph and backend.
+  The tables above are historical eager measurements and do not establish a
+  compilation speedup. Measure both fitting and forecasting on the target device
+  before choosing it.
   See [Scale & deploy](deploy.md#gpu) for when the GPU is worth it.
-- **ReservoirComputing.jl coverage.** Its current release (v0.12, Lux-based) is
-  much slower per call than the others — seconds where resdag and reservoirpy
-  take milliseconds — so the harness skips it on the largest cells (shown as
-  `—`) to keep the sweep practical. resdag and reservoirpy cover the full range.
-  The Julia timings also exclude JIT compilation (measured after a warmup), so
-  they reflect steady-state compute, not first-call latency.
+- **ReservoirComputing.jl coverage.** The current adapter has no implicit
+  reservoir-size cap and honors the requested repeats and warmups. Julia's
+  standalone matched-workload timings are measured inside the worker after
+  warmup, excluding startup/JIT. The budget track keeps one Julia process alive
+  and reports its startup/synthetic warmup separately. Missing Julia or an
+  uninstantiated optional environment must be reported, without treating it as
+  a measured performance result.
 
 ## Reproduce
 

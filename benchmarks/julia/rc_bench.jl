@@ -16,8 +16,8 @@
 using ReservoirComputing
 using Random
 
-function parse_args()
-    a = ARGS
+function parse_args(a = ARGS)
+    origin_index = a[14] == "trajectory" ? 18 : 17
     return (
         data_path = a[1],
         dim = parse(Int, a[2]),
@@ -35,6 +35,7 @@ function parse_args()
         op = a[14],
         repeats = parse(Int, a[15]),
         warmups = parse(Int, a[16]),
+        forecast_origin = length(a) >= origin_index ? parse(Int, a[origin_index]) : parse(Int, a[5]) + 1,
     )
 end
 
@@ -77,7 +78,8 @@ end
 function do_forecast(esn, ps, st, data, cfg)
     # Python's last observed index T is Julia column T+1. The first unseen
     # target is column T+2. Synchronization starts from fresh recurrent state.
-    warm = @view data[:, (cfg.train_len - cfg.warmup + 2):(cfg.train_len + 1)]
+    origin = hasproperty(cfg, :forecast_origin) ? cfg.forecast_origin : cfg.train_len + 1
+    warm = @view data[:, (origin - cfg.warmup + 1):origin]
     warming, st_w = predict(esn, warm, ps, deepcopy(st))
     out = Matrix{Float64}(undef, cfg.dim, cfg.horizon)
     out[:, 1] = warming[:, end]  # already predicts the first unseen sample
@@ -117,9 +119,9 @@ function main()
             end
         end
         # Held-out truth starts at zero-based T+1, or Julia column T+2.
-        n = min(200, cfg.horizon, cfg.total_len - cfg.train_len - 1)
+        n = min(200, cfg.horizon, cfg.total_len - cfg.forecast_origin)
         if n > 0
-            truth = @view data[:, (cfg.train_len + 2):(cfg.train_len + 1 + n)]
+            truth = @view data[:, (cfg.forecast_origin + 1):(cfg.forecast_origin + n)]
             pred = @view out[:, 1:n]
             rmse = sqrt(sum((pred .- truth) .^ 2) / length(truth))
         end
@@ -141,4 +143,6 @@ function main()
     end
 end
 
-main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

@@ -76,6 +76,7 @@ def test_docs_only_change_runs_executable_documentation_checks() -> None:
     assert "tests/test_named_trajectory_guide.py" in sel.tests
     assert "tests/test_custom_components_guide.py" in sel.tests
     assert "tests/test_docs/test_forecast_experiment.py" in sel.tests
+    assert "tests/test_docs/test_memory_workflows.py" in sel.tests
     assert "tests/test_hpo/test_tuning_guides.py" in sel.tests
 
 
@@ -213,6 +214,16 @@ def test_golden_fixtures_select_golden_test() -> None:
         assert "tests/test_models/test_golden_forecast.py" in sel.tests, fixture
 
 
+def test_shared_quality_reference_selects_every_consumer() -> None:
+    selection = AT.select_tests(["tests/_reference_initialization.py"])
+    assert selection.mode != "none"
+    assert {
+        "tests/test_reference_initialization.py",
+        "tests/test_models/test_parallel_esn.py",
+        "tests/test_training/test_force.py",
+    } <= set(selection.tests)
+
+
 def test_perf_targets_json_selects_benchmark_tests() -> None:
     # benchmarks/targets.json holds the perf-gate floors read at runtime by the
     # perf-regression test (incl. its well-formed check). A malformed/edited
@@ -227,12 +238,37 @@ def test_perf_targets_json_selects_benchmark_tests() -> None:
     [
         "benchmarks/rc_bench/data.py",
         "benchmarks/rc_bench/adapters/reservoirpy_adapter.py",
+        "benchmarks/rc_bench/budget.py",
+        "benchmarks/rc_bench/budget_adapters.py",
+        "benchmarks/rc_bench/_threads.py",
         "benchmarks/julia/rc_bench.jl",
+        "benchmarks/julia/rc_budget.jl",
+        "benchmarks/julia/Project.toml",
+        "benchmarks/julia/Manifest.toml",
     ],
 )
 def test_comparison_changes_select_physical_window_oracles(path: str) -> None:
     selected = AT.select_tests([path])
+    assert selected.mode == "selected"
     assert "tests/test_benchmark_protocol.py" in selected.tests
+    assert "tests/test_benchmark_budget.py" in selected.tests
+    assert "tests/test_benchmark_julia_protocol.py" in selected.tests
+    if path.startswith("benchmarks/rc_bench/"):
+        assert "tests/test_benchmark_threads.py" in selected.tests
+
+
+def test_budget_protocol_documentation_selects_budget_oracles() -> None:
+    selected = AT.select_tests(["benchmarks/BUDGET_PROTOCOL.md"])
+    assert "tests/test_benchmark_budget.py" in selected.tests
+    assert "tests/test_benchmark_threads.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "path", ["docs/workflows/sparse-reservoirs.md", "docs/reference/lsmr-readout.md"]
+)
+def test_memory_workflow_documentation_selects_its_executable_recipes(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_docs/test_memory_workflows.py" in selected.tests
 
 
 @pytest.mark.parametrize(
@@ -242,11 +278,26 @@ def test_comparison_changes_select_physical_window_oracles(path: str) -> None:
         "benchmarks/tuned_accuracy.py",
         "benchmarks/results/phase-five-accuracy-2026-10-23.json",
         "benchmarks/results/phase-five-tuned-accuracy-2026-10-23.json",
+        "docs/assets/data/phase-five-capability-2026-10-23.json",
     ],
 )
 def test_accuracy_experiment_selects_its_regression_tests(path: str) -> None:
     selected = AT.select_tests([path])
     assert "tests/test_regression/test_phase5_accuracy.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "benchmarks/accuracy_regression.py",
+        "benchmarks/tuned_accuracy.py",
+        "benchmarks/rc_bench/_threads.py",
+        "benchmarks/requirements.txt",
+    ],
+)
+def test_accuracy_workers_select_capability_cli_guards(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_regression/test_tuned_capability_cli.py" in selected.tests
 
 
 def test_reusable_test_workflow_is_broad_impact() -> None:

@@ -60,7 +60,7 @@ from resdag.data._trajectory_ports import (
     validate_trajectory_ports_context,
 )
 from resdag.data.prepare import NormMethod
-from resdag.layers.readouts import AutoReadoutLayer
+from resdag.layers.readouts import AutoReadoutLayer, LSMRReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
 
 if TYPE_CHECKING:
@@ -506,6 +506,15 @@ class Model(nn.Module):
         """Predict original units with caller-managed recurrent states and gradients."""
         self._require_scaling()
         self._backend.validate_stateless(self.graph)
+        from resdag.core._hooks import call_with_states, has_execution_hooks, state_paths
+
+        if has_execution_hooks(self):
+            return cast(
+                tuple[WorkflowOutput, ReservoirStates],
+                call_with_states(
+                    self, (inputs,), states, state_paths(self, "graph."), compile=compile
+                ),
+            )
         values, was_2d = self._streams(inputs, self.input_names, self._input_widths, "inputs")
         output, final = recurrent_graph(self.graph).forward_stateless(
             *self._scaled_inputs(values), states=states, compile=compile
@@ -897,18 +906,18 @@ class Model(nn.Module):
         # Solve reports are intentionally not checkpoint state. Transfer them
         # from the successful staged fit by graph path without replacing live
         # readouts/parameters, or losing diagnostics at the state-dict commit.
-        staged_reports = {
+        staged_reports: dict[str, Any] = {
             path: layer.last_solve
             for path, layer in candidate.named_modules()
-            if isinstance(layer, AutoReadoutLayer)
+            if isinstance(layer, (AutoReadoutLayer, LSMRReadoutLayer))
         }
-        live_auto_readouts = {
+        live_solve_readouts = {
             path: layer
             for path, layer in self.graph.named_modules()
-            if isinstance(layer, AutoReadoutLayer)
+            if isinstance(layer, (AutoReadoutLayer, LSMRReadoutLayer))
         }
-        if staged_reports.keys() != live_auto_readouts.keys():
-            raise RuntimeError("Staged automatic readout paths do not match the live graph")
+        if staged_reports.keys() != live_solve_readouts.keys():
+            raise RuntimeError("Staged readout diagnostic paths do not match the live graph")
         with torch.inference_mode(False):
             self.graph.load_state_dict(candidate.state_dict())
         recurrent_graph(self.graph).reset_reservoirs()
@@ -931,7 +940,7 @@ class Model(nn.Module):
             self._fitted = torch.ones((), dtype=torch.bool, device=values[0].device)
         self._trajectory_context = trajectory_context
         object.__setattr__(self, "_trajectory_system", trajectory_system)
-        for path, layer in live_auto_readouts.items():
+        for path, layer in live_solve_readouts.items():
             layer.last_solve = staged_reports[path]
         return self
 
@@ -990,6 +999,18 @@ class Model(nn.Module):
         horizon = positive_step_count(horizon, "horizon")
         self._backend.validate_forecast(self.graph, compile=compile)
         validate_forecast_execution(self.graph, execution, compile=compile)
+        from resdag.core._hooks import (
+            eager_with_hooks,
+            forecast_owner,
+            has_execution_hooks,
+            original_outputs,
+        )
+
+        owner = forecast_owner(self)
+        hooked = has_execution_hooks(owner)
+        if hooked:
+            eager_with_hooks(compile)
+            compile = False
         plan = self._feedback_plan()
         if any(not layer.is_fitted for _, layer in self._backend.fitted_readouts(self.graph)):
             raise RuntimeError(
@@ -1112,8 +1133,9 @@ class Model(nn.Module):
             and all(lead == 1 for lead in plan.leads)
         )
         final_states = None
-        with evaluating(self):
-            if drivers and drivers[0].shape[1]:
+        output: ModelOutput
+        with evaluating(owner):
+            if not hooked and drivers and drivers[0].shape[1]:
                 drivers = tuple(
                     (
                         apply_transform(self.input_scalers[index], value)
@@ -1122,7 +1144,20 @@ class Model(nn.Module):
                     )
                     for index, value in zip(plan.driver_indices, drivers)
                 )
-            if execution == "fast" and default_route and self._feedback_scaling_matches():
+            if hooked:
+                executor = ForecastSequenceExecutor(
+                    self.graph, execution, workflow=self, owner=owner
+                )
+                output, final_states = feedback_rollout(
+                    executor,
+                    values,
+                    drivers,
+                    plan,
+                    lambda route, value: value,
+                    horizon=horizon,
+                    return_warmup=return_warmup,
+                )
+            elif execution == "fast" and default_route and self._feedback_scaling_matches():
                 output = self._backend.forecast(
                     self.graph,
                     self._scaled_inputs(values),
@@ -1152,7 +1187,11 @@ class Model(nn.Module):
                     horizon=horizon,
                     return_warmup=return_warmup,
                 )
-            result = self._outputs(output, was_2d)
+            result = (
+                original_outputs(cast(tuple[torch.Tensor, ...], output), self.output_names, was_2d)
+                if hooked
+                else self._outputs(output, was_2d)
+            )
         if not trajectory_output:
             if final_states is not None:
                 self._commit_forecast_states(final_states)

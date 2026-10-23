@@ -27,6 +27,7 @@ import torch
 from torch import nn
 
 from resdag._contracts import module_reference
+from resdag.core._hooks import forecast_as
 from resdag.core.model import ESNModel
 from resdag.core.workflow import Model, _washout
 from resdag.data._trajectory import is_trajectory
@@ -365,6 +366,7 @@ def _module_configs(model: Model) -> Any:
         "_noise_generators",
         "_sparse_weight_key",
         "_sparse_active",
+        "_hh_structure_key",
         "_fitted_flag",
         "last_solve",
     }
@@ -536,16 +538,21 @@ class _Evaluator:
                         }
                         truth = None
                         metrics: ScoreResult | None = None
-                        with origin.stream(
-                            workflow,
-                            chunk_size=self.checkpoint_interval,
-                            execution=execution,
-                            checkpoints=(
-                                tuple(range(origin.skip, origin.horizon, self.checkpoint_interval))
-                                if origin.skip
-                                else None
-                            ),
-                        ) as chunks:
+                        with (
+                            forecast_as(candidate),
+                            origin.stream(
+                                workflow,
+                                chunk_size=self.checkpoint_interval,
+                                execution=execution,
+                                checkpoints=(
+                                    tuple(
+                                        range(origin.skip, origin.horizon, self.checkpoint_interval)
+                                    )
+                                    if origin.skip
+                                    else None
+                                ),
+                            ) as chunks,
+                        ):
                             for chunk in chunks:
                                 predicted = chunk.named_predictions
                                 if truth is None:

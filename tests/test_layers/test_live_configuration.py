@@ -94,7 +94,7 @@ def test_sparse_recurrent_operator_tracks_live_weight_edits(replace):
         if replace:
             cell.weight_hh = torch.nn.Parameter(torch.eye(8) * 2, requires_grad=False)
         else:
-            cell.weight_hh.copy_(torch.eye(8) * 2)
+            cell.weight_hh.copy_((torch.eye(8) * 2).to_sparse_csr())
     after = cell._recurrent(state)
     torch.testing.assert_close(after, state * 2)
     assert not torch.equal(before, after)
@@ -107,7 +107,7 @@ def test_sparse_cache_refresh_preserves_calibration_gain_and_dtype():
     cell._has_recurrent_gain = True
     layer.double()
     with torch.no_grad():
-        cell.weight_hh.copy_(torch.eye(8, dtype=torch.float64))
+        cell.weight_hh.copy_(torch.eye(8, dtype=torch.float64).to_sparse_csr())
     state = torch.ones(1, 8, dtype=torch.float64)
     torch.testing.assert_close(cell._recurrent(state), cell._recurrent_gain.unsqueeze(0))
     assert cell._weight_hh_csr.dtype == torch.float64
@@ -122,7 +122,7 @@ def test_auto_sparse_density_change_keeps_calibration_gain(monkeypatch):
     cell._recurrent_gain = torch.full((8,), 2.0)
     cell._has_recurrent_gain = True
     with torch.no_grad():
-        cell.weight_hh.fill_(1)
+        cell.weight_hh = torch.nn.Parameter(torch.ones(8, 8), requires_grad=False)
     torch.testing.assert_close(cell._recurrent(torch.ones(1, 8)), torch.full((1, 8), 16.0))
     assert not cell.sparse
 
@@ -132,7 +132,7 @@ def test_sparse_inference_parameter_without_version_refreshes_after_mutation():
         cell = ESNCell(4, feedback_size=1, topology="simple_cycle", sparse=True, seed=7)
         state = torch.ones(1, 4)
         cell._recurrent(state)
-        cell.weight_hh.copy_(torch.eye(4) * 3)
+        cell.weight_hh.copy_((torch.eye(4) * 3).to_sparse_csr())
         torch.testing.assert_close(cell._recurrent(state), torch.full((1, 4), 3.0))
 
 
@@ -142,7 +142,8 @@ def test_sparse_operator_falls_back_to_dense_for_actual_trainable_weights(replac
     if replace:
         cell.weight_hh = torch.nn.Parameter(torch.eye(4))
     else:
-        cell.weight_hh.requires_grad_(True)
+        with pytest.warns(RuntimeWarning, match="densifying"):
+            cell.trainable = True
     state = torch.ones(1, 4)
     cell._recurrent(state).sum().backward()
     assert not cell.sparse

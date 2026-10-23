@@ -184,8 +184,12 @@ def _feedback_chunks(
     checkpoints: tuple[int, ...],
     execution: Literal["fast", "history"],
     compile: bool,
+    workflow: Any = None,
+    owner: torch.nn.Module | None = None,
 ) -> Steps:
-    executor = ForecastSequenceExecutor(graph, execution, compile=compile)
+    executor = ForecastSequenceExecutor(
+        graph, execution, compile=compile, workflow=workflow, owner=owner
+    )
     warm, states = executor.start(history)
     batch, length = history[0].shape[:2]
     if len(warm) != len(plan.leads) or any(
@@ -314,6 +318,18 @@ def forecast_stream(
     model._require_scaling()
     model._backend.validate_forecast(model.graph, compile=compile)
     validate_forecast_execution(model.graph, execution, compile=compile)
+    from resdag.core._hooks import (
+        eager_with_hooks,
+        forecast_owner,
+        has_execution_hooks,
+        original_outputs,
+    )
+
+    owner = forecast_owner(model)
+    hooked = has_execution_hooks(owner)
+    if hooked:
+        eager_with_hooks(compile)
+        compile = False
     plan = model._feedback_plan()
     if any(not layer.is_fitted for _, layer in model._backend.fitted_readouts(model.graph)):
         raise RuntimeError("Forecast requires fitted terminal readouts; call fit(training) first")
@@ -352,11 +368,11 @@ def forecast_stream(
             raise ValueError("future_inputs must match history batch and required samples")
 
     def generate() -> Generator[ForecastChunk, None, None]:
-        scaled = model._scaled_inputs(values)
+        scaled = values if hooked else model._scaled_inputs(values)
         scaled_drivers = tuple(
             (
                 apply_transform(model.input_scalers[index], value)
-                if steps and model._transform_active(output=False, index=index)
+                if not hooked and steps and model._transform_active(output=False, index=index)
                 else value
             )
             for index, value in zip(plan.driver_indices, drivers)
@@ -364,7 +380,22 @@ def forecast_stream(
         default_route = plan.routes == (FeedbackRoute(0, 0, 1),) and all(
             lead == 1 for lead in plan.leads
         )
-        if (
+        if hooked:
+            engine = _feedback_chunks(
+                model.graph,
+                values,
+                drivers,
+                plan,
+                lambda route, value: value,
+                horizon=horizon,
+                chunk_size=chunk_size,
+                checkpoints=boundaries,
+                execution=execution,
+                compile=False,
+                workflow=model,
+                owner=owner,
+            )
+        elif (
             execution == "fast"
             and isinstance(model.graph, ESNModel)
             and default_route
@@ -406,7 +437,11 @@ def forecast_stream(
         try:
             for start, outputs, states in engine:
                 final = states
-                result = model._outputs(outputs if len(outputs) != 1 else outputs[0], was_2d)
+                result = (
+                    original_outputs(outputs, model.output_names, was_2d)
+                    if hooked
+                    else model._outputs(outputs if len(outputs) != 1 else outputs[0], was_2d)
+                )
                 restored = (
                     tuple(result[name] for name in model.output_names)
                     if isinstance(result, dict)
@@ -420,7 +455,7 @@ def forecast_stream(
 
     iterator = generate()
     try:
-        with evaluating(model), torch.no_grad():
+        with evaluating(owner), torch.no_grad():
             yield iterator
     finally:
         iterator.close()

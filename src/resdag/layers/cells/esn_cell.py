@@ -32,6 +32,8 @@ from resdag.init.utils import (
 )
 from resdag.utils.general import SeedLike, coerce_seed_to_int, create_torch_generator
 
+from ._compact_recurrent import CompactRecurrentMixin, _scale_recurrent_rows
+from ._structured_recurrent import one_entry_recurrent
 from .base_cell import ReservoirCell
 
 # Sparse-CSR recurrent-matmul policy.
@@ -74,9 +76,11 @@ _SPARSE_AUTO_MIN_SIZE = _SPARSE_AUTO_MIN_SIZE_CPU
 SparseSpec = bool | Literal["auto"]
 
 # Golden-ratio offsets used to derive independent, deterministic sub-seeds from
-# the single layer-level ``seed``.  ``0x9E3779B9`` (2**32 / phi) is the classic
-# Fibonacci-hashing additive constant; doubling it gives a second, distinct
-# offset for the input-weight stream.
+# the single layer-level ``seed``. ``0x9E3779B9`` (2**32 / phi) is the classic
+# Fibonacci-hashing additive constant. Roles use feedback=0, input=2C,
+# recurrent=4C, bias=6C and initial-state=8C; noise=C and orthogonal skip=3C
+# remain separate. Named/custom fallback seeds and default Torch draws use the
+# same role seed, so changing one initializer cannot shift another role.
 #
 # ``_NOISE_SEED_OFFSET`` separates the train-mode state-noise stream from the
 # weight-init draws (historical behaviour, unchanged).  ``_INPUT_SEED_OFFSET``
@@ -87,6 +91,7 @@ SparseSpec = bool | Literal["auto"]
 # seeds never coincide.
 _NOISE_SEED_OFFSET = 0x9E3779B9
 _INPUT_SEED_OFFSET = (0x9E3779B9 * 2) % (2**63 - 1)
+_RECURRENT_SEED_OFFSET = 2 * _INPUT_SEED_OFFSET
 
 
 def _salt_seed(seed: int | None, offset: int) -> int | None:
@@ -127,7 +132,7 @@ def _identity(x: torch.Tensor) -> torch.Tensor:
     return x
 
 
-class ESNCell(ReservoirCell):
+class ESNCell(CompactRecurrentMixin, ReservoirCell):
     """
     Single-timestep leaky Echo State Network update.
 
@@ -212,62 +217,33 @@ class ESNCell(ReservoirCell):
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
     sparse : bool or {'auto'}, default=False
-        Store a CSR copy of the (frozen) recurrent matrix and use a sparse
-        matrix-vector product for the recurrent term, instead of the dense
-        ``addmm``.  For an RC-typical sparse reservoir (density ~1-10%) the CSR
-        spmv skips the structural zeros a dense BLAS kernel still multiplies, so
-        it **accelerates the per-step recurrent matmul** at large sizes (the hot
-        inner-loop kernel of warmup / teacher-forcing / forecasting) and
-        **shrinks the serialized-on-disk / matmul-operand footprint** (a 20k-unit
-        float32 recurrent matrix is ~1.6 GB dense; its CSR form at 1% density is
-        ~48 MB — the size the spmv actually touches, and the size a CSR-serialized
-        checkpoint would be).
+        ``False`` keeps a dense recurrent Parameter and the ordinary dense path.
+        ``True`` stores only CSR row indices, column indices and values as
+        persistent buffers. ``weight_hh`` then exposes a zero-copy CSR Tensor;
+        call ``weight_hh.to_dense()`` for an explicit dense inspection copy.
+        Editing ``weight_hh.values()`` updates the live operator directly.
 
-        .. warning::
+        ``"auto"`` retains the size/density heuristic: at least 1,000 units on
+        CPU or 5,000 on CUDA and density at most 0.2. This is not a calibrated
+        speed guarantee: dense can be faster on Apple Silicon CPU. Explicit
+        ``False``/``True`` always let users choose the representation.
 
-           This is **not** a live-memory reduction, and does **not** lift the
-           dense ``(reservoir_size, reservoir_size)`` memory ceiling.  The dense
-           ``weight_hh`` :class:`~torch.nn.Parameter` is *always* materialised —
-           it is the canonical, serialized form used for introspection
-           (spectral-radius, Lyapunov), ``state_dict`` save/load, and
-           ``torch.equal`` comparisons — and the CSR operator is an
-           **additional** non-persistent buffer built from it.  A sparse cell's
-           resident memory is therefore ``dense(n²) + CSR(nnz)``, i.e. slightly
-           *larger* than a dense-only cell, not smaller.  ``sparse=True`` buys
-           recurrent-matmul speed (at low density and large ``n``) and a smaller
-           matmul operand / potential checkpoint, not a smaller live model.  To
-           actually build a reservoir that does not fit dense, a future change
-           would need to make the CSR the canonical resident form and free the
-           dense ``weight_hh`` (reconstructing dense only for introspection /
-           save) — that is deliberately out of scope here.
+        CSR requires a frozen reservoir. Setting ``trainable=True`` later
+        explicitly materializes dense weights and emits a warning; freeze again
+        to restore the original sparse request. Moving to MPS uses dense weights,
+        since MPS has no CSR operator, and returning to CPU restores CSR.
+        Copying and checkpoints store only ordinary component arrays; the cached
+        CSR Tensor aliases them without another weight allocation.
 
-        Three settings:
-
-        * ``False`` (default) — always dense; byte-for-byte identical to the
-          historical cell.
-        * ``True`` — force the CSR spmv path (the caller asserts their topology
-          is sparse enough to benefit).
-        * ``"auto"`` — enable the CSR path only when the reservoir is large *and*
-          the initialized recurrent matrix is sparse (density ``<= 0.2``);
-          otherwise fall back to dense, where the dense ``addmm`` is faster.  The
-          size gate is **device-dependent** — the dense/sparse crossover is much
-          higher on a GPU (its dense BLAS is fast), so ``auto`` fires only at
-          ``reservoir_size >= 5000`` on CUDA but at ``reservoir_size >= 1000`` on
-          CPU (both measured on this repo's hardware).  This keeps ``auto`` from
-          selecting the *slower* sparse path in the ``1000 <= n < 5000`` GPU
-          regime, where dense still wins.  The decision consults the recurrent
-          weight's device, so a cell moved to GPU before the decision is re-taken
-          (e.g. on ``load_state_dict``) sees the right gate.
-
-        The sparse path requires a **frozen** reservoir: it is only valid with
-        ``trainable=False`` (sparse-CSR autograd for this update is fragile).
-        Requesting ``sparse`` together with ``trainable=True`` raises
-        ``ValueError``.  Flipping ``trainable=True`` on a live sparse cell
-        transparently drops the CSR buffer and reverts to the dense path (with a
-        ``RuntimeWarning``).  Because the dense ``weight_hh`` parameter is the
-        canonical, serialized form, save/load, spectral-radius introspection, and
-        Lyapunov analysis are unchanged, and the forecast ``compile=True`` path
-        falls back to eager (``torch.compile`` does not trace sparse tensors).
+        Native Erdős–Rényi and edge-native graph initialization avoid a dense
+        square adjacency. Sparse spectral scaling uses Arnoldi (or analytic
+        triangular spectra), with a bounded exact fallback only for sizes 1–2;
+        it raises on failed convergence instead of allocating a dense fallback.
+        Its numerical scaling can differ from dense eigvals in the last digits.
+        Custom in-place-only initializers may still need a temporary dense
+        matrix; override ``TopologyInitializer.build_sparse`` to avoid it.
+        Other graph functions may allocate dense arrays internally. Collected
+        sequence features and readout workspaces are separate memory costs.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
         name, ``(name, params)``, any matrix-building callable, a
@@ -306,17 +282,18 @@ class ESNCell(ReservoirCell):
         parameter — the recurrent (topology) matrix, the feedback and input
         weights (including the default ``uniform(-1, 1)`` draw used when no
         initializer is given), and the random bias. Accepts a plain ``int`` or
-        a :class:`torch.Generator` (an int is extracted from the generator's
-        ``initial_seed()`` for the NumPy-backed topology/named-initializer
-        path, while the generator itself drives the torch default-init draws).
+        a :class:`torch.Generator`, whose ``initial_seed()`` defines the master
+        seed without advancing the caller's generator. Independent fixed role
+        seeds drive feedback, input, recurrent weights, bias and reset state.
         With ``seed`` set, a string- or callable-form
         ``topology='erdos_renyi'`` produces the same recurrent matrix on every
         build, without the ``('erdos_renyi', {'seed': ...})`` tuple form. An
         explicit ``seed`` inside a tuple/object spec always wins over this
-        argument. When ``seed=None`` (the default), string-form graph
-        topologies and the default torch draws are still reproducible under
-        ``torch.manual_seed`` because their generators are derived from torch's
-        global RNG.
+        argument. When ``seed=None`` (the default), one master integer is drawn
+        from Torch's CPU global RNG, then every role uses its own local stream.
+        This advances the global RNG once and remains reproducible under
+        ``torch.manual_seed``. Explicit initializer RNG policies remain owned by
+        their callbacks/objects, including an explicitly bound ``seed=None``.
 
     Attributes
     ----------
@@ -325,8 +302,8 @@ class ESNCell(ReservoirCell):
     weight_input : torch.nn.Parameter or None
         Input weight matrix of shape ``(reservoir_size, input_size)``, or
         ``None`` if ``input_size`` was not provided.
-    weight_hh : torch.nn.Parameter
-        Recurrent weight matrix of shape ``(reservoir_size, reservoir_size)``.
+    weight_hh : torch.Tensor
+        Dense Parameter or frozen CSR view of the recurrent weight matrix of shape ``(reservoir_size, reservoir_size)``.
     bias_h : torch.nn.Parameter or None
         Bias vector of shape ``(reservoir_size,)``, or ``None`` if
         ``bias=False``.
@@ -448,25 +425,24 @@ class ESNCell(ReservoirCell):
         # backing field directly; the actual ``requires_grad`` freeze is applied
         # after ``_initialize_weights`` (see the block at the end of __init__).
         self._trainable = trainable
-        # Sparse-CSR recurrent-matmul config.  ``_sparse_requested`` records the
-        # user's intent (``True`` / ``False`` / ``"auto"``); ``_sparse_active``
-        # is the resolved decision (set once the recurrent matrix exists and its
-        # density is known — see ``_maybe_build_sparse_weight``).  The derived
-        # CSR operator lives in the *non-persistent* buffer ``_weight_hh_csr``
-        # (rebuilt from the dense ``weight_hh`` on load / device move), keeping
-        # the dense ``weight_hh`` parameter as the single canonical, serialized
-        # form so introspection and save/load are unchanged.
+        # Frozen sparse weights have canonical component buffers. The
+        # nonpersistent CSR tensor is only a zero-copy operator view.
         self._sparse_requested: SparseSpec = sparse
         self._sparse_active: bool = False
-        self._sparse_weight_key: tuple[int, int | None] | None = None
         self.register_buffer("_weight_hh_csr", None, persistent=False)
         self._weight_hh_csr: torch.Tensor | None
+        self._initialize_compact_buffers()
         self.seed = seed
         # Integer form threaded into the NumPy-backed topology builders and the
         # named feedback/input initializers (they take an int/None seed).  A
         # torch.Generator is reduced to its initial_seed() so the topology stays
         # a pure function of the generator.
         self._seed_int = coerce_seed_to_int(seed)
+        if self._seed_int is None:
+            # One master draw keeps optional roles independent even without an
+            # explicit seed. Device placement never changes which global RNG
+            # supplies this master; custom explicit RNG policies still win.
+            self._seed_int = int(torch.randint(0, 2**63 - 1, (1,), device="cpu").item())
         # Per-device cache of torch Generators driving the train-mode state
         # noise.  Built lazily on first use (and rebuilt after unpickling — see
         # ``__getstate__``) so the noise stream follows the state's device while
@@ -486,7 +462,7 @@ class ESNCell(ReservoirCell):
         # Initialize weight matrices
         self._initialize_weights()
         if self.initial_state_initializer is not None:
-            initial = self.weight_hh.new_empty(1, self.reservoir_size)
+            initial = self.weight_feedback.new_empty(1, self.reservoir_size)
             resolved_state = resolve_initializer(
                 self.initial_state_initializer,
                 seed=_salt_seed(self._seed_int, 4 * _INPUT_SEED_OFFSET),
@@ -503,8 +479,7 @@ class ESNCell(ReservoirCell):
         # single code path: both flip ``requires_grad_`` on *all* parameters.
         self.trainable = trainable
 
-        # Resolve the sparse-CSR decision now that ``weight_hh`` exists and its
-        # density is known, and materialise the derived CSR operator if enabled.
+        # Resolve compact storage once weights and their density are known.
         # Done after the ``trainable`` freeze so the guard sees the final state.
         self._maybe_build_sparse_weight()
         if mps_initialization:
@@ -543,6 +518,8 @@ class ESNCell(ReservoirCell):
     def trainable(self, value: bool) -> None:
         was_trainable = self._trainable
         self._trainable = bool(value)
+        if self._trainable and self._buffers.get("_hh_values") is not None:
+            self._store_dense_weight(self.weight_hh, trainable=True)
         for p in self.parameters():
             p.requires_grad_(self._trainable)
         # The sparse-CSR recurrent path is frozen-only.  A live flip to trainable
@@ -846,8 +823,7 @@ class ESNCell(ReservoirCell):
             Same tensor as output.
         """
         if self._sparse_active or self._has_recurrent_gain:
-            # Sparse CSR / calibrated recurrent path: the fused ``addmm`` has no CSR analogue, so add
-            # the precomputed projection to the sparse spmv result.  Identical
+            # Keep the measured sparse mm-plus-add route.
             # math to the dense branch (``projected_t + state @ weight_hh.T``).
             pre_activation = projected_t + self._recurrent(state)
         else:
@@ -929,20 +905,28 @@ class ESNCell(ReservoirCell):
             The recurrent contribution, shape ``(batch, reservoir_size)``.
         """
         if self._sparse_active:
-            current_key = self._current_sparse_weight_key()
-            if (
-                self.weight_hh.requires_grad
-                or current_key[1] is None
-                or getattr(self, "_sparse_weight_key", None) != current_key
-            ):
+            # Canonical CSR values are shared with their operator view: edits
+            # take effect without rebuilding, including inference tensors that
+            # have no version counter. A replaced Parameter is resolved once.
+            if self._parameters.get("weight_hh") is not None:
                 self._maybe_build_sparse_weight()
         if self._sparse_active:
-            csr = self._weight_hh_csr
-            assert csr is not None  # invariant when the sparse flag is set
+            csr = self.weight_hh
             # ``state @ W.T == (W @ state.T).T``; ``.contiguous()`` on the
             # feedback so the spmv gets a well-formed dense RHS.
-            recurrent: torch.Tensor = torch.sparse.mm(csr, state.t().contiguous())
-            result = recurrent.t()
+            columns = self._buffers["_hh_single_columns"]
+            if columns is not None and self._hh_structure_key != self._structure_key():
+                self._refresh_structured_weight()
+                columns = self._buffers["_hh_single_columns"]
+            if (
+                columns is not None
+                and state.device.type == "cpu"
+                and not torch.is_autocast_enabled("cpu")
+            ):
+                result = one_entry_recurrent(state, columns, csr.values())
+            else:
+                recurrent: torch.Tensor = torch.sparse.mm(csr, state.t().contiguous())
+                result = recurrent.t()
         else:
             result = F.linear(state, self.weight_hh)
         if self._has_recurrent_gain:
@@ -970,7 +954,8 @@ class ESNCell(ReservoirCell):
         total = w.numel()
         if total == 0:
             return 0.0
-        return float((w != 0).sum().item()) / total
+        values = w.values() if w.layout == torch.sparse_csr else w
+        return float((values != 0).sum().item()) / total
 
     def _auto_min_size(self) -> int:
         """Device-dependent size gate for the ``"auto"`` sparse decision.
@@ -1012,58 +997,78 @@ class ESNCell(ReservoirCell):
         return False
 
     def _maybe_build_sparse_weight(self) -> None:
-        """(Re)materialise the derived CSR operator from the dense ``weight_hh``.
-
-        Resolves :meth:`_should_use_sparse` and, when sparse is active, builds
-        the non-persistent :attr:`_weight_hh_csr` buffer from the current dense
-        ``weight_hh`` (matching its dtype/device).  When sparse is inactive the
-        buffer is cleared.  Idempotent and safe to call after any event that
-        changes the dense weights or moves them across devices/dtypes
-        (construction, ``load_state_dict``, ``.to()`` — see :meth:`_apply`).
-        """
+        """Resolve storage without retaining a dense and compressed copy."""
+        compressed = self._buffers.get("_hh_values")
+        if compressed is not None and compressed.device.type == "mps":
+            # MPS does not implement CSR. The explicit move requests the dense
+            # fallback; construct it on CPU without asking MPS to handle CSR.
+            crow = self._buffers["_hh_crow_indices"]
+            columns = self._buffers["_hh_col_indices"]
+            assert crow is not None and columns is not None
+            matrix = (
+                torch.sparse_csr_tensor(
+                    crow.cpu(),
+                    columns.cpu(),
+                    compressed.cpu(),
+                    size=(self.reservoir_size, self.reservoir_size),
+                )
+                .to_dense()
+                .to("mps")
+            )
+            self._store_dense_weight(matrix, trainable=self._trainable)
+            self._sparse_active = False
+            return
         self._sparse_active = self._should_use_sparse()
         if self._sparse_active:
-            self._weight_hh_csr = self.weight_hh.data.to_sparse_csr()
-            self._sparse_weight_key = self._current_sparse_weight_key()
+            if self._parameters.get("weight_hh") is not None:
+                self._store_compact_weight(self.weight_hh)
+            else:
+                self.weight_hh
+                self._refresh_structured_weight()
         else:
+            if self._buffers.get("_hh_values") is not None:
+                parameter = self._parameters.get("weight_hh")
+                if parameter is not None and parameter.layout == torch.strided:
+                    # A caller may replace/unfreeze the canonical Parameter
+                    # directly. Preserve its identity and its own grad flag.
+                    for name in ("_hh_crow_indices", "_hh_col_indices", "_hh_values"):
+                        self._buffers[name] = None
+                    self._buffers["_hh_single_columns"] = None
+                    self._hh_structure_key = None
+                else:
+                    self._store_dense_weight(self.weight_hh, trainable=self._trainable)
             self._weight_hh_csr = None
-            self._sparse_weight_key = None
-
-    def _current_sparse_weight_key(self) -> tuple[int, int | None]:
-        """Track ordinary in-place parameter edits and parameter replacement.
-
-        Inference tensors have no mutation counter. They conservatively
-        refresh before each sparse operation. Unsafe edits through ``.data``
-        bypass PyTorch version tracking and are not a supported update API.
-        """
-        try:
-            version = self.weight_hh._version
-        except RuntimeError:
-            version = None
-        return id(self.weight_hh), version
 
     def _apply(self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True) -> "ESNCell":
-        """Rebuild the derived CSR operator after a device/dtype move.
+        """Move canonical components and rebuild their zero-copy operator view.
 
-        ``nn.Module._apply`` (driven by ``.to()`` / ``.cuda()`` / ``.double()``)
-        moves the dense ``weight_hh`` parameter, but the derived
-        :attr:`_weight_hh_csr` buffer is a *separate* CSR tensor that must be
-        rebuilt from the moved dense weights so the sparse spmv runs on the right
-        device/dtype.
-
-        A device move can also *change the ``"auto"`` decision*: the size gate is
-        device-dependent (higher on CUDA), so a cell that ``auto`` sparsified on
-        CPU may need to revert to dense once moved to GPU in the
-        ``1000 <= n < 5000`` regime (and vice versa).  We therefore re-resolve the
-        whole decision via :meth:`_maybe_build_sparse_weight` for an ``"auto"``
-        request, and merely rebuild the CSR (an unconditional, device-independent
-        decision) for an explicit ``sparse=True``.
+        PyTorch's ``to_empty`` preserves the sparse pattern while leaving values
+        uninitialized. Re-resolve the requested policy after every placement.
         """
+        # The cached CSR tensor aliases these ordinary buffers. Discard the
+        # view before movement/share_memory so Torch handles only dense arrays.
+        empty_move = getattr(fn, "__module__", "") == "torch.nn.modules.module" and getattr(
+            fn, "__qualname__", ""
+        ).startswith("Module.to_empty.<locals>.")
+        indices = None
+        if empty_move and self._buffers.get("_hh_values") is not None:
+            indices = (self._buffers["_hh_crow_indices"], self._buffers["_hh_col_indices"])
+            self._buffers["_hh_crow_indices"] = None
+            self._buffers["_hh_col_indices"] = None
+        self._weight_hh_csr = None
+        self._buffers["_hh_single_columns"] = None
         super()._apply(fn, recurse=recurse)
+        if indices is not None:
+            moved_values = self._buffers["_hh_values"]
+            assert moved_values is not None
+            crow, columns = indices
+            assert crow is not None and columns is not None
+            self._buffers["_hh_crow_indices"] = crow.to(device=moved_values.device)
+            self._buffers["_hh_col_indices"] = columns.to(device=moved_values.device)
         if getattr(self, "_sparse_requested", False) == "auto":
             # Re-decide against the *new* device's gate, rebuilding/dropping CSR.
             self._maybe_build_sparse_weight()
-        elif getattr(self, "_sparse_active", False):
+        elif getattr(self, "_sparse_requested", False) is True:
             self._maybe_build_sparse_weight()
         return self
 
@@ -1077,16 +1082,9 @@ class ESNCell(ReservoirCell):
         unexpected_keys: list,
         error_msgs: list,
     ) -> None:
-        """Rebuild the derived CSR operator after loading dense ``weight_hh``.
-
-        Extends the base leak-buffer reconciliation (see the docstring on the
-        override just below the leak setters) so that, after the dense
-        ``weight_hh`` parameter has been copied in from the checkpoint, the
-        derived :attr:`_weight_hh_csr` operator is re-materialised to match.  The
-        CSR buffer is non-persistent (never in the checkpoint), so this is the
-        only place a load refreshes it.
-        """
+        """Load either canonical representation and honor destination storage."""
         self._reconcile_leak_buffer(state_dict, prefix)
+        self._prepare_compact_load(state_dict, prefix)
         self._has_intrinsic = prefix + "_intrinsic_gain" in state_dict
         self._has_recurrent_gain = prefix + "_recurrent_gain" in state_dict
         if self._has_intrinsic != (prefix + "_intrinsic_bias" in state_dict):
@@ -1094,11 +1092,13 @@ class ESNCell(ReservoirCell):
         for name in ("_intrinsic_gain", "_intrinsic_bias", "_recurrent_gain", "_initial_state"):
             key = prefix + name
             shape = (1, self.reservoir_size) if name == "_initial_state" else (self.reservoir_size,)
-            setattr(self, name, self.weight_hh.new_empty(shape) if key in state_dict else None)
+            setattr(
+                self, name, self.weight_feedback.new_empty(shape) if key in state_dict else None
+            )
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
-        # The dense ``weight_hh`` is now the checkpoint's; refresh the CSR view.
+        # Resolve destination storage after loading all canonical components.
         if hasattr(self, "_sparse_requested"):
             self._maybe_build_sparse_weight()
 
@@ -1170,22 +1170,18 @@ class ESNCell(ReservoirCell):
         return state + self.noise * epsilon
 
     def __getstate__(self) -> dict:
-        """Drop derived CSR weights and transient generators before copying.
+        """Drop the operator view and transient generators before copying.
 
-        :class:`torch.Generator` objects carry live device/RNG state that does
-        not round-trip cleanly across devices; the cache is rebuilt lazily (and
-        deterministically from ``seed``) on first use after unpickling.
-        CSR weights are a derived view of the dense parameter. PyTorch cannot
-        deepcopy their storage on all supported versions, so restore that
-        cache from the copied dense parameter instead.
+        Canonical CSR arrays are ordinary Torch buffers and deepcopy normally.
+        The view is rebuilt without allocating another set of weights.
         """
         state = self.__dict__.copy()
         state["_noise_generators"] = {}
         buffers = dict(state.get("_buffers", {}))
         if "_weight_hh_csr" in buffers:
             buffers["_weight_hh_csr"] = None
+            buffers["_hh_single_columns"] = None
             state["_buffers"] = buffers
-            state["_sparse_weight_key"] = None
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -1205,7 +1201,7 @@ class ESNCell(ReservoirCell):
             self._maybe_build_sparse_weight()
 
     # ------------------------------------------------------------------
-    # Weight initialization (verbatim from legacy ReservoirLayer)
+    # Weight initialization (independent streams per parameter role)
     # ------------------------------------------------------------------
 
     def _get_activation(self, activation: str) -> Callable[[torch.Tensor], torch.Tensor]:
@@ -1227,30 +1223,31 @@ class ESNCell(ReservoirCell):
     def _initialize_weights(self) -> None:
         """Initialize all weight matrices.
 
-        A single torch ``Generator`` (built from ``self.seed``) drives every
-        default ``nn.init`` draw — feedback, input, recurrent, then bias, in
-        that fixed order — so a given ``seed`` deterministically reproduces all
-        parameters.  Named/object initializers and topologies seed themselves
-        from the integer seed instead (see ``_seed_int``).
+        Each role has a local generator derived from the effective master
+        seed. Named/custom initializers receive the same role seed as that
+        role's default draw, with explicit spec seeds taking precedence.
+        No role depends on how many random values another role consumes.
         """
-        # One generator for all torch default draws; seeded from self.seed so
-        # the parameters are a pure function of the seed and independent of the
-        # global RNG state.  When seed is None it is derived from the global RNG
-        # so torch.manual_seed still propagates.
         target_device = torch.empty(0, **self._factory_kwargs).device
-        init_seed = self.seed
-        if isinstance(init_seed, torch.Generator) and init_seed.device != target_device:
-            init_seed = init_seed.initial_seed()
-        generator = create_torch_generator(init_seed, device=target_device)
+        feedback_generator = create_torch_generator(self._seed_int, device=target_device)
+        input_generator = create_torch_generator(
+            _salt_seed(self._seed_int, _INPUT_SEED_OFFSET), device=target_device
+        )
+        recurrent_generator = create_torch_generator(
+            _salt_seed(self._seed_int, _RECURRENT_SEED_OFFSET), device=target_device
+        )
+        bias_generator = create_torch_generator(
+            _salt_seed(self._seed_int, 3 * _INPUT_SEED_OFFSET), device=target_device
+        )
 
-        self._initialize_feedback_weights(generator)
+        self._initialize_feedback_weights(feedback_generator)
 
         if self.input_size is not None:
-            self._initialize_input_weights(generator)
+            self._initialize_input_weights(input_generator)
         else:
             self.register_parameter("weight_input", None)
 
-        self._initialize_recurrent_weights(generator)
+        self._initialize_recurrent_weights(recurrent_generator)
 
         if self._bias:
             # Random bias drawn like the feedback/input weights.  A
@@ -1266,7 +1263,7 @@ class ESNCell(ReservoirCell):
                     raise ValueError("bias_initializer must produce finite values")
             elif self.bias_scaling != 0.0:
                 nn.init.uniform_(
-                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=generator
+                    self.bias_h, -self.bias_scaling, self.bias_scaling, generator=bias_generator
                 )
             else:
                 nn.init.zeros_(self.bias_h)
@@ -1312,11 +1309,44 @@ class ESNCell(ReservoirCell):
 
     def _initialize_recurrent_weights(self, generator: torch.Generator) -> None:
         """Initialize recurrent weight matrix from topology or random."""
+        resolved = resolve_topology(
+            self.topology, seed=_salt_seed(self._seed_int, _RECURRENT_SEED_OFFSET)
+        )
+        target = torch.empty(0, **self._factory_kwargs)
+        threshold = (
+            _SPARSE_AUTO_MIN_SIZE_CUDA
+            if target.device.type == "cuda"
+            else _SPARSE_AUTO_MIN_SIZE_CPU
+        )
+        compact = self._sparse_requested is True or (
+            self._sparse_requested == "auto"
+            and not self._trainable
+            and target.device.type != "mps"
+            and self.reservoir_size >= threshold
+        )
+        if compact and resolved is not None:
+            weights = resolved.build_sparse(
+                self.reservoir_size,
+                dtype=target.dtype,
+                device=target.device,
+                spectral_radius=self.spectral_radius,
+            )
+            if (
+                weights.shape != (self.reservoir_size, self.reservoir_size)
+                or weights.layout != torch.sparse_csr
+            ):
+                raise ValueError(
+                    "build_sparse must return a square CSR tensor matching reservoir_size"
+                )
+            weights = weights.to(device=target.device, dtype=target.dtype)
+            if not bool(torch.isfinite(weights.values()).all()):
+                raise ValueError("build_sparse must return finite weights")
+            self._store_compact_weight(weights)
+            return
         self.weight_hh = nn.Parameter(
             torch.empty(self.reservoir_size, self.reservoir_size, **self._factory_kwargs)
         )
 
-        resolved = resolve_topology(self.topology, seed=self._seed_int)
         if resolved is not None:
             resolved.initialize(self.weight_hh, spectral_radius=self.spectral_radius)
         else:
@@ -1330,8 +1360,7 @@ class ESNCell(ReservoirCell):
         Delegates to the single shared
         :func:`resdag.init.topology.scale_to_spectral_radius` implementation,
         so the cell and the topology base never drift apart.  That routine
-        picks the cheapest accurate estimator (power iteration for dense
-        matrices, scipy sparse ``eigs`` for sparse ones, a tiny-N dense
+        uses dense eigvals or scipy sparse ``eigs`` for sparse ones, with a tiny-N dense
         ``eigvals`` fallback) instead of always paying for a full dense
         eigendecomposition.
         """
@@ -1361,10 +1390,10 @@ class ESNCell(ReservoirCell):
             effective = self.weight_hh.detach()
             if self._has_recurrent_gain:
                 assert self._recurrent_gain is not None
-                effective = effective * self._recurrent_gain[:, None]
+                effective = _scale_recurrent_rows(effective, self._recurrent_gain)
             if self._has_intrinsic:
                 assert self._intrinsic_gain is not None
-                effective = effective * self._intrinsic_gain[:, None]
+                effective = _scale_recurrent_rows(effective, self._intrinsic_gain)
             return estimate_spectral_radius(effective)
 
     def __repr__(self) -> str:

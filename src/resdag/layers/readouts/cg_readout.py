@@ -29,9 +29,9 @@ class CGReadoutLayer(ReadoutLayer):
     Gradient (CG) solver for fitting weights via ridge regression. The CG
     solver is:
 
-    - Memory efficient (doesn't form full normal equations matrix)
-    - GPU accelerated
-    - Numerically stable (uses float64 internally)
+    - Forms the feature-by-feature Gram matrix, then iterates on that system
+    - Uses Torch operations on the input device
+    - Configurable working precision; normal equations can still lose accuracy
     - Supports batched time-series data
 
     The solver finds weights W that minimize:
@@ -63,13 +63,14 @@ class CGReadoutLayer(ReadoutLayer):
     tol : float, default=1e-5
         Convergence tolerance for the CG solver. Must be positive. Each output
         column is considered converged when its residual-norm-squared falls
-        below ``tol**2``.
+        below ``tol**2``. This is an absolute criterion and depends on target
+        units. Use explicit tighter tolerances or normalize targets when needed.
     use_float64 : bool, default=True
         If ``True`` (default), the CG iterations on the small
         ``(in_features, in_features)`` system run in ``float64`` and the
-        result is cast back to the layer's parameter dtype.  Cheap on every
-        device — the expensive ``(N, F)`` Gram-formation matmuls stay in
-        the input dtype regardless (see ``gram_dtype``).
+        result is cast back to the layer's parameter dtype. Gram formation uses
+        the separate ``gram_dtype`` policy. Float64 support and throughput depend
+        on the device; MPS requires ``use_float64=False``.
     gram_dtype : torch.dtype, optional
         Dtype for forming the Gram matrix and right-hand side (the heavy
         ``(N, F)`` matmuls).  Default ``None`` is automatic: ``float64`` on
@@ -187,7 +188,8 @@ class CGReadoutLayer(ReadoutLayer):
         while the CG iterations on the small ``(F, F)`` system run in
         float64 when ``use_float64=True``. Pass ``gram_dtype=torch.float64``
         to also form the Gram in full precision (legacy behaviour; only
-        matters for severely ill-conditioned state matrices).
+        matters for ill-conditioned state matrices). This route forms the full
+        Gram matrix; use LSMRReadoutLayer for an opt-in matrix-free CPU solve.
         """
         if alpha < 0:
             raise ValueError(f"Alpha must be non-negative, got {alpha}")
@@ -329,7 +331,7 @@ class CGReadoutLayer(ReadoutLayer):
                 f"{converged.numel()} output column(s); the fitted readout is "
                 f"under-converged and may be inaccurate. Increase max_iter, relax "
                 f"tol, add regularization (larger alpha), or use RidgeReadoutLayer "
-                f"(direct solver) for an exact fit.",
+                f"(direct solver) after checking conditioning.",
                 RuntimeWarning,
                 stacklevel=3,
             )

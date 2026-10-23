@@ -12,6 +12,8 @@ AutoReadoutLayer
     Precision-aware automatic L2 fitting with explicit solver overrides.
 CGReadoutLayer
     Readout with Conjugate Gradient ridge regression solver.
+LSMRReadoutLayer
+    Opt-in CPU float64 matrix-free ridge fit with SciPy LSMR.
 RidgeReadoutLayer
     Direct ridge readout via Cholesky (``solver='cholesky'``) or LU
     (``solver='solve'``) factorisation of the normal equations.
@@ -64,6 +66,7 @@ from .cg_readout import CGReadoutLayer
 from .cholesky_readout import CholeskyReadoutLayer
 from .fista_readout import FISTAReadout, FISTAReadoutLayer
 from .incremental_ridge import IncrementalRidgeReadout, IncrementalRidgeReadoutLayer
+from .lsmr_readout import LSMRColumnReport, LSMRReadoutLayer, LSMRSolveReport
 from .pinv_readout import PinvReadoutLayer
 from .ridge_readout import RidgeReadoutLayer
 from .rls_readout import RLSReadout
@@ -74,6 +77,9 @@ __all__ = [
     "AutoReadoutLayer",
     "ReadoutSolveReport",
     "CGReadoutLayer",
+    "LSMRReadoutLayer",
+    "LSMRColumnReport",
+    "LSMRSolveReport",
     "RidgeReadoutLayer",
     "CholeskyReadoutLayer",
     "SVDReadoutLayer",

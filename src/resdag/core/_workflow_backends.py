@@ -283,6 +283,9 @@ class WorkflowBackend:
             self.validate_stateless(graph)
 
     def validate_stateless(self, graph: nn.Module) -> None:
+        if self.kind == "symbolic":
+            cast(ESNModel, graph)._get_execution_plan()
+            return
         if self.kind == "coupled":
             aggregator = cast("CoupledEnsembleESNModel", graph).aggregator_module
             if aggregator is not None and any(

@@ -34,6 +34,7 @@ from resdag.metrics import valid_prediction_time
 from resdag.models import classic_esn, parallel_esn
 from resdag.models.parallel_esn import ParallelESNModel, _patch_gather_index
 from resdag.training import ESNTrainer
+from tests._reference_initialization import sequential_uniform_initializers
 
 
 def _parallel(**kwargs) -> ParallelESNModel:
@@ -294,23 +295,32 @@ class TestForecast:
     def test_parallel_beats_comparable_global_reservoir(self, ks_data: torch.Tensor) -> None:
         """Parallel VPT clearly exceeds a single global reservoir of comparable size.
 
-        A single ``D``-wide global reservoir cannot capture KS's high-dimensional
-        chaos at ``D=64`` (its VPT collapses to ~1 step regardless of ``N``),
-        while the parallel local-state model holds the attractor for a couple of
-        Lyapunov times — the whole point of Pathak et al. (2018).
+        Compare two fixed reference reservoirs on the same KS trajectory. The
+        local-state model must exceed the global reference and the declared
+        absolute floor; this does not rank every possible global architecture.
         """
         s = _split(ks_data)
 
-        # Parallel: P=16 patches x N=300 units, with the factory's tuned defaults
-        # (input_scaling=0.1 keeps the tanh reservoir out of saturation).
-        pmodel = _parallel(input_dim=64, core_width=4, halo=6, reservoir_size=300, seed=0)
+        # Keep the historical materialized reservoir for this algorithm-quality
+        # regression. Default streams intentionally changed; a seed alone no
+        # longer identifies these reference weights. The explicit callbacks
+        # preserve the same seed, matrices and unchanged accuracy floor.
+        # Parallel: P=16 patches x N=300, input_scaling=0.1.
+        pmodel = _parallel(
+            input_dim=64,
+            core_width=4,
+            halo=6,
+            reservoir_size=300,
+            seed=0,
+            **sequential_uniform_initializers(300, 16, 0, named_feedback=True),
+        )
         pmodel.fit(s["warmup"], s["train_in"], s["train_tgt"])
         pred_p = pmodel.forecast(s["test_warm"], horizon=s["test_len"])
         vpt_p = valid_prediction_time(pred_p, s["test_truth"])
 
-        # Global: a single wide reservoir (larger than any *one* patch's reservoir)
-        # trained on the same data.  N=2000 is generous and tractable; a global
-        # reservoir simply cannot forecast D=64 KS, so a bigger N does not help.
+        # Global: a fixed wider reservoir, larger than each patch's reservoir,
+        # trained on the same data. This is one specified baseline, not a claim
+        # that increasing or tuning a global reservoir can never help.
         gmodel = classic_esn(
             reservoir_size=2000,
             feedback_size=64,
@@ -318,6 +328,7 @@ class TestForecast:
             spectral_radius=0.6,
             readout_alpha=1e-4,
             seed=0,
+            **sequential_uniform_initializers(2000, 64, 0),
         ).double()
         trainer = ESNTrainer(gmodel)
         trainer.fit(
@@ -333,8 +344,8 @@ class TestForecast:
         assert vpt_p > vpt_g
         assert vpt_p >= 5 * max(vpt_g, 1)
         # And it holds the KS attractor for a couple of Lyapunov times
-        # (~93 steps/Lt on the L=22 domain); >= 100 steps is a safe floor well
-        # below the ~244 the tuned defaults reach on this split.
+        # (~93 steps/Lt on the L=22 domain). This bound belongs to the frozen
+        # reference weights, not every random reservoir drawn by the defaults.
         assert vpt_p >= 100
 
 

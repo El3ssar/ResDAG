@@ -5,6 +5,19 @@ The committed cross-library tables are historical. New runs use the explicit
 Correcting the harness does not validate old accuracy rankings or speed ratios.
 See [phase 5 of the roadmap](../docs/project/roadmap.md).
 
+For the new **equal tuning time** track, see [the complete protocol](BUDGET_PROTOCOL.md).
+It compares vanilla ESNs in all three libraries on Lorenz and Rössler with
+600 seconds of CPU tuning per library/system, then five reserved seeds and
+three forecast starts. It records late and failed attempts and freezes all
+winners before test access. This is separate from the matched-setting timing
+sweeps below. Run it from the repository root:
+
+```sh
+python -m benchmarks.rc_bench.budget \
+  --data-dir /tmp/resdag-comparison-data \
+  --output-dir /tmp/resdag-comparison-results
+```
+
 An extensible, re-runnable harness that compares resdag against other reservoir
 -computing libraries on **matched nominal ESN settings and identical data**, then
 renders speedup tables (relative to reservoirpy).

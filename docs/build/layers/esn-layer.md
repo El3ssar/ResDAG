@@ -83,11 +83,16 @@ assert torch.equal(a.bias_h, b.bias_h)
 `seed` accepts a plain `int` or a `torch.Generator` (handy for threading a
 per-trial generator from an HPO loop); a generator is reduced to its
 `initial_seed()`, so `seed=7` and `seed=torch.Generator().manual_seed(7)`
-agree. An explicit seed inside a `(name, {"seed": ...})` spec always wins
-over the layer `seed`. With `seed=None` (the default) the reservoir is still
-reproducible under a global `torch.manual_seed`, because every generator —
-NumPy (graph topologies) and torch (weight draws) — is derived from torch's
-global RNG.
+agree without advancing that generator or Torch's global RNG. Feedback,
+input, recurrent, bias and reset-state initialization use separate local
+streams: changing an optional input or one initializer does not shift the
+other roles. An explicit seed inside a `(name, {"seed": ...})` spec always
+wins over the layer `seed`; custom initializer-owned RNGs keep their own
+policy. With `seed=None` (the default), the cell draws one master seed from
+Torch's CPU global RNG, then derives every local role from that value.
+`torch.manual_seed` therefore reproduces construction. Newly seeded weights
+changed when these streams were separated; see the
+[migration notes](../../migrating.md#independent-initialization-streams).
 
 !!! note "Device-native draws"
     The torch-native weight draws (the default `uniform(-1, 1)` path and the
@@ -99,15 +104,15 @@ global RNG.
 
 ## State
 
-The state persists across `forward` calls. It silently re-initializes to
-zeros when the incoming batch size, device, or dtype changes, and it is
+The state persists across `forward` calls. It re-initializes from the configured
+initial state (zeros by default) when the incoming batch size, device, or dtype changes, and it is
 detached between calls, so gradients never cross a `forward`-call
 boundary. The full contract is described in
 [the concepts page](../../start/concepts.md); the API in brief:
 
 ```python
 reservoir.reset_state()              # forget; lazily re-initialized next forward
-reservoir.reset_state(batch_size=4)  # explicit zero state
+reservoir.reset_state(batch_size=4)  # configured initial state for four examples
 reservoir.get_state()                # clone of (batch, reservoir_size), or None
 reservoir.set_state(saved)           # restore a checkpoint
 reservoir.set_random_state()         # standard-normal state
@@ -119,9 +124,9 @@ Like every reservoir family, `ESNLayer` splits the work in two: an
 `ESNCell` owns the weights and the single-step update, while the layer
 owns the sequence loop and the state. The loop's fast path calls
 `project_inputs` once to precompute $W_{fb}x + W_{in}u + b$ for every
-timestep, then a fused `step` per timestep — three kernel launches per
-step instead of six, which accounts for most of the GPU speedup over a
-naive loop. Attribute access
+timestep, then evaluates the recurrent update at each step. This avoids
+repeating the input projections inside the loop. Kernel counts and performance
+depend on the backend, compilation settings and workload. Attribute access
 delegates to the cell, so `reservoir.weight_hh` and
 `reservoir.spectral_radius` work directly.
 

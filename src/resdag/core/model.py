@@ -351,9 +351,23 @@ class ESNModel(ps.SymbolicModel):
         Separate instances may share weights, but sharing their recurrent
         state would make predictions depend on sequence chunk boundaries.
         """
-        return self._get_execution_plan(require_explicit_state=False).run_sequence(
-            inputs, states, compile=compile
-        )
+        from resdag.core._hooks import call_with_states, has_execution_hooks
+
+        plan = self._get_execution_plan(require_explicit_state=False)
+        if has_execution_hooks(self):
+            plan.validate_reservoir_visibility()
+            plan.validate_inputs(inputs)
+            return cast(
+                tuple[ModelOutput, ReservoirStates],
+                call_with_states(
+                    self,
+                    inputs,
+                    states,
+                    dict(zip(plan.reservoir_names, plan.reservoir_names)),
+                    compile=compile,
+                ),
+            )
+        return plan.run_sequence(inputs, states, compile=compile)
 
     def as_module(self, *, stateful: bool = False) -> "ReservoirModelModule":
         """Wrap the complete trained graph for a larger PyTorch pipeline.
@@ -906,6 +920,11 @@ class ESNModel(ps.SymbolicModel):
         change (e.g. via :meth:`add_output`).
         """
         validate_fast_plan(self._get_execution_plan())
+        from resdag.core._flat_inference import build_hook_step
+        from resdag.core._hooks import has_execution_hooks
+
+        if has_execution_hooks(self):
+            return build_hook_step(self)
         cache: tuple[tuple[SymbolicData, ...], FlatStep] | None = getattr(
             self, "_flat_step_cache", None
         )
@@ -998,8 +1017,11 @@ class ESNModel(ps.SymbolicModel):
         warmup streams, ``initial_feedback=prediction[:, -1:]`` and ``reset=False``
         (plus the corresponding future drivers).
 
-        Autoregressive steps use a cached flat execution plan. Module forward
-        hooks run during warmup but do not fire for these flat steps.
+        Hook-free autoregressive steps use a cached flat execution plan. When
+        PyTorch execution hooks are registered, native module calls preserve
+        their behavior during warmup and generated steps. Hooks added or removed
+        after an earlier forecast take effect automatically. Registered hooks
+        select eager compatible execution when ``compile=True`` is requested.
         Custom non-reservoir operations must declare ``supports_framewise=True``.
         Whole-sequence custom operations can use the common ``Model`` wrapper's
         ``forecast(execution="history")`` instead.

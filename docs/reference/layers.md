@@ -49,6 +49,9 @@ For automatic fitting, solver overrides and diagnostics, start with the
         - LegendreDelayLayer
         - TorchRecurrentLayer
 
+The opt-in [LSMR readout and its solve reports](lsmr-readout.md#api) have a
+dedicated API reference and memory/device guide.
+
 ::: resdag.layers.readouts
     options:
       members:

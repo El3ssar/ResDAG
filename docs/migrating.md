@@ -30,6 +30,58 @@ a ridge readout, a warmup, a forecast. What differs is the *mental model*:
 The rest of this page maps concepts and API surface side by side, then walks
 the same Lorenz forecast through all three libraries.
 
+## Phase-five compact weights and PyTorch hooks
+
+For `sparse=True`, recurrent weights now live only in compressed component
+buffers. `cell.weight_hh` is a CSR Tensor view rather than a dense Parameter;
+use `.to_dense()` for explicit inspection and `.values()` for existing edge
+updates. State dictionaries store compressed arrays instead of a dense square
+matrix. Dense models retain their existing representation. See
+[memory and sparse models](workflows/sparse-reservoirs.md) for initialization,
+device, numerical and trainability details.
+
+Forecasting now honors native PyTorch hooks, including output-changing hooks on
+layers and the outer model. Models with hooks use a compatible execution path;
+hook-free models retain the lean path. `compile=True` with relevant hooks warns
+and uses eager execution. Existing forecasts that relied on hooks being ignored
+can change. Put recurrent memory in declared DAG nodes so explicit state and
+checkpointing can track it; arbitrary Python state hidden in hooks is not a
+model-state interface. See [execution capabilities](advanced/forecast-capabilities.md).
+
+`readout="lsmr"` is a new explicit low-memory CPU solver. Existing solver defaults
+remain unchanged; [its guide](reference/lsmr-readout.md) explains convergence and
+accelerator transfers.
+
+### Independent initialization streams
+
+New ESN, continuous, Euler, edge-of-stability, residual ESN, gated reservoir and
+LIF models now use separate random streams for feedback, external inputs,
+recurrent weights and bias, including the gated cell's candidate and gate roles.
+Previously, mixing a named or custom initializer with a default could
+restart the same random sequence: a bias could repeat a feedback prefix, or
+recurrent weights could reuse feedback draws. Changing one role no longer
+shifts the other roles, even when an optional input is added or removed.
+
+**New seeded models can have different weights and forecast results.** This
+includes graph-based recurrent initializers, whose fallback seed now belongs
+to the recurrent role. Repeat comparisons and tuning for newly constructed
+models; do not treat older accuracy measurements as evidence for these new
+initializations. Loading an existing checkpoint keeps its materialized weights
+and reservoir state; it does not replace them with new seeded draws.
+
+An integer seed fixes every local role without consuming the global RNG.
+Passing a `torch.Generator` now uses its `initial_seed()` without advancing it,
+matching the named-initializer convention. With `seed=None`, the cell draws
+one master integer from Torch's CPU global RNG and derives its local roles
+from that value; `torch.manual_seed` still reproduces construction. Explicit
+initializer seeds, including an explicitly bound `seed=None`, and RNGs owned
+by custom initializer objects or callbacks keep their own policies. The
+standalone `create_torch_generator` utility still returns and advances an
+explicitly supplied generator when callers use it for draws.
+Advancing a generator does not change its `initial_seed()`. For distinct models
+within one experiment, pass different integer seeds or use
+[`SeedStreams`](advanced/custom-components.md#give-branches-independent-repeatable-seeds).
+
 ## Phase-four training and persistence changes
 
 The common `rd.ESN` and `rd.Model` now support `model.save("run.pt")` and

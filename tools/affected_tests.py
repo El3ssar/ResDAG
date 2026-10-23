@@ -146,7 +146,7 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_custom_components_guide.py",
         "tests/test_artifact_guides.py",
         "tests/test_examples_smoke.py",
-        "tests/test_docs/test_forecast_experiment.py",
+        "tests/test_docs/",
         "tests/test_hpo/test_tuning_guides.py",
     ),
     # These recipes execute Markdown rather than importing artifact modules
@@ -165,14 +165,43 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
     # Perf-gate floors read by the perf-regression test (incl. its well-formed
     # check): a malformed/edited targets.json must run those tests on the PR.
     "benchmarks/targets.json": ("tests/test_benchmarks/",),
-    "benchmarks/rc_bench/": ("tests/test_benchmark_protocol.py",),
-    "benchmarks/julia/rc_bench.jl": ("tests/test_benchmark_protocol.py",),
-    "benchmarks/accuracy_regression.py": ("tests/test_regression/test_phase5_accuracy.py",),
-    "benchmarks/tuned_accuracy.py": ("tests/test_regression/test_phase5_accuracy.py",),
+    "benchmarks/rc_bench/": (
+        "tests/test_benchmark_protocol.py",
+        "tests/test_benchmark_budget.py",
+        "tests/test_benchmark_julia_protocol.py",
+        "tests/test_benchmark_threads.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
+    ),
+    "benchmarks/julia/": (
+        "tests/test_benchmark_protocol.py",
+        "tests/test_benchmark_budget.py",
+        "tests/test_benchmark_julia_protocol.py",
+    ),
+    "benchmarks/BUDGET_PROTOCOL.md": (
+        "tests/test_benchmark_budget.py",
+        "tests/test_benchmark_threads.py",
+    ),
+    "benchmarks/requirements.txt": (
+        "tests/test_benchmark_protocol.py",
+        "tests/test_benchmark_budget.py",
+        "tests/test_benchmark_threads.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
+    ),
+    "benchmarks/accuracy_regression.py": (
+        "tests/test_regression/test_phase5_accuracy.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
+    ),
+    "benchmarks/tuned_accuracy.py": (
+        "tests/test_regression/test_phase5_accuracy.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
+    ),
     "benchmarks/results/phase-five-accuracy-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),
     "benchmarks/results/phase-five-tuned-accuracy-2026-10-23.json": (
+        "tests/test_regression/test_phase5_accuracy.py",
+    ),
+    "docs/assets/data/phase-five-capability-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),
     # The regen script and the golden-spec helper module both define the golden
@@ -181,6 +210,11 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
     # Regenerated golden fixtures (the documented "regen + new .npz, no src
     # change" workflow) must re-run the golden regression test.
     "tests/fixtures/golden_forecast/": ("tests/test_models/test_golden_forecast.py",),
+    "tests/_reference_initialization.py": (
+        "tests/test_reference_initialization.py",
+        "tests/test_models/test_parallel_esn.py",
+        "tests/test_training/test_force.py",
+    ),
 }
 # Preserve the generic documentation checks while adding the complete artifact
 # and diagram suites for the canonical persistence recipe.

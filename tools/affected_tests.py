@@ -170,6 +170,7 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_benchmark_budget.py",
         "tests/test_benchmark_julia_protocol.py",
         "tests/test_benchmark_threads.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
     ),
     "benchmarks/julia/": (
         "tests/test_benchmark_protocol.py",
@@ -184,13 +185,23 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_benchmark_protocol.py",
         "tests/test_benchmark_budget.py",
         "tests/test_benchmark_threads.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
     ),
-    "benchmarks/accuracy_regression.py": ("tests/test_regression/test_phase5_accuracy.py",),
-    "benchmarks/tuned_accuracy.py": ("tests/test_regression/test_phase5_accuracy.py",),
+    "benchmarks/accuracy_regression.py": (
+        "tests/test_regression/test_phase5_accuracy.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
+    ),
+    "benchmarks/tuned_accuracy.py": (
+        "tests/test_regression/test_phase5_accuracy.py",
+        "tests/test_regression/test_tuned_capability_cli.py",
+    ),
     "benchmarks/results/phase-five-accuracy-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),
     "benchmarks/results/phase-five-tuned-accuracy-2026-10-23.json": (
+        "tests/test_regression/test_phase5_accuracy.py",
+    ),
+    "docs/assets/data/phase-five-capability-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),
     # The regen script and the golden-spec helper module both define the golden

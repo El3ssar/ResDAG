@@ -278,11 +278,26 @@ def test_memory_workflow_documentation_selects_its_executable_recipes(path: str)
         "benchmarks/tuned_accuracy.py",
         "benchmarks/results/phase-five-accuracy-2026-10-23.json",
         "benchmarks/results/phase-five-tuned-accuracy-2026-10-23.json",
+        "docs/assets/data/phase-five-capability-2026-10-23.json",
     ],
 )
 def test_accuracy_experiment_selects_its_regression_tests(path: str) -> None:
     selected = AT.select_tests([path])
     assert "tests/test_regression/test_phase5_accuracy.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "benchmarks/accuracy_regression.py",
+        "benchmarks/tuned_accuracy.py",
+        "benchmarks/rc_bench/_threads.py",
+        "benchmarks/requirements.txt",
+    ],
+)
+def test_accuracy_workers_select_capability_cli_guards(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_regression/test_tuned_capability_cli.py" in selected.tests
 
 
 def test_reusable_test_workflow_is_broad_impact() -> None:

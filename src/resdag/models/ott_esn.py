@@ -103,7 +103,7 @@ def ott_esn(
         If True, reservoir weights are trainable via backpropagation.
     readout : str or type[ReadoutLayer], default="ridge"
         A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``) or a
+        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
         :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
         solver options go in ``readout_kwargs``.
     readout_alpha : float, default=1e-6

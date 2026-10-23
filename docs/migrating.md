@@ -78,6 +78,9 @@ initializer seeds, including an explicitly bound `seed=None`, and RNGs owned
 by custom initializer objects or callbacks keep their own policies. The
 standalone `create_torch_generator` utility still returns and advances an
 explicitly supplied generator when callers use it for draws.
+Advancing a generator does not change its `initial_seed()`. For distinct models
+within one experiment, pass different integer seeds or use
+[`SeedStreams`](advanced/custom-components.md#give-branches-independent-repeatable-seeds).
 
 ## Phase-four training and persistence changes
 

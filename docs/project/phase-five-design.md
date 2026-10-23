@@ -9,6 +9,13 @@ model interface. A faster fit does not establish an accurate forecast. Keep
 training speed, forecasting speed, numerical agreement and forecast skill as
 separate measurements.
 
+!!! note "Current measurements"
+    The first-increment results below precede the correction to independent
+    initialization streams. The [continuation report](phase-five-results.md)
+    records fresh tuning on the corrected streams, saved-model parity and
+    measured execution costs. Newly seeded models can differ from the
+    historical results on this page.
+
 ## Agreed accuracy target
 
 The maintainer approved these choices on 23 October 2026:
@@ -119,7 +126,7 @@ compilation separately from fit and forecast. A setup cost must not disappear
 inside an untimed preparation step. Memory results must identify what was
 measured and whether inputs, solver workspaces and compilation are included.
 
-## First tuning measurements
+## Historical first tuning measurements
 
 Four bounded searches used the existing `Model.tune` workflow and Optuna TPE:
 vanilla and OTT models on both systems. Each attempted **24 configurations**,
@@ -183,11 +190,12 @@ custom components and current workflow settings. Edited graphs keep fixed-DAG
 tuning until given an explicit rebuilding recipe. See the
 [default ranges and component policies](../reference/hpo.md#search-and-repetitions).
 
-That increment also fixes sparse workflow staging: derived CSR weights are
-rebuilt from the copied dense parameter, avoiding a PyTorch sparse-storage
-deepcopy failure. Copying leaves the live model and RNG untouched. These are
-construction and lifecycle changes; the recorded experiment recipes and
-their original execution hashes remain available separately.
+That increment also fixed sparse workflow staging: at that version, derived
+CSR weights were rebuilt from the copied dense parameter, avoiding a PyTorch
+sparse-storage deepcopy failure. The continuation replaces that duplicate
+representation with [compressed-only storage](../workflows/sparse-reservoirs.md).
+The recorded experiment recipes and their original execution hashes remain
+available separately.
 
 Run the full bounded experiment with:
 
@@ -205,9 +213,12 @@ forecast; their cached training tail ends earlier.
 
 - Any change to public metrics or the model/state/solver contracts.
 - Sparse/dense selection policies or a new compilation default after profiling.
-- Final cross-library search budgets and the benchmark matrix before a long
-  comparison run. Equal candidate counts and equal elapsed-time budgets answer
-  different questions; neither proves universal superiority.
+- Changes to the approved cross-library budget or model family. The first
+  comparison uses vanilla ESNs on both systems, **600 tuning seconds per
+  library/system**, then five reserved seeds and three starts. Different
+  budgets or broader scale regimes need agreement before another long run.
+  Neither equal candidate counts nor equal elapsed time proves universal
+  superiority.
 
 Use standard Torch/SciPy operators, Optuna and existing benchmark timing tools.
 The first increment makes no CUDA performance or cross-library ranking claim.

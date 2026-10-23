@@ -51,8 +51,10 @@ thread, with the same seven controls: reservoir size, spectral radius, leak,
 input scale, random bias scale, mean degree and ridge penalty.
 
 Every complete candidate fits once for each of three initialization seeds,
-then forecasts from three validation starts using that fitted model. Startup
-and one fixed synthetic warmup are reported separately. Construction, fitting,
+then forecasts from three validation starts using that fitted model. Adapter
+initialization and one fixed synthetic warmup are reported separately; this
+does not measure total process startup, including common CLI imports.
+Construction, fitting,
 history synchronization, rollout, scoring and Julia IPC count toward the
 budget. Failed, unfinished or deadline-overrun candidates cannot win; their
 work and actual overrun remain in the report. There are no automatic retries.
@@ -70,7 +72,11 @@ connectivity at `mean_degree / reservoir_size` including possible self-loops,
 dense uniform input weights and a **random uniform reservoir bias**. Initial
 memory is zero. A linear readout sees only reservoir states, with no direct
 input features or readout intercept. Native random streams, sparse-mask
-construction and direct readout solvers still differ. The precise protocol,
+construction and direct readout solvers still differ. ResDAG's native Gram
+solver can increase the effective regularization or repair a numerically
+indefinite Gram matrix; ReservoirPy uses its symmetric Gram solve, while Julia
+uses augmented QR. Equal requested penalties therefore do not imply identical
+effective fits. The precise protocol,
 commands and accounting are in
 [`benchmarks/BUDGET_PROTOCOL.md`](https://github.com/El3ssar/ResDAG/blob/main/benchmarks/BUDGET_PROTOCOL.md).
 
@@ -201,10 +207,12 @@ Read the protocol and implementation choices alongside every result:
 - **Sequential forecasting is launch-bound.** The autoregressive forecast loop
   issues one tiny operation per timestep. On the GPU each step is dominated by
   kernel-launch overhead, so the eager GPU loop does **not** help long forecasts
-  at small reservoir sizes — and may be slower than CPU there. `forecast(compile=True)`
-  fuses the per-step engine with `torch.compile` to claw back launch overhead on
-  long GPU rollouts; the tables above are historical eager measurements. Measure
-  both fitting and forecasting on the target device before choosing it.
+  at small reservoir sizes — and may be slower than CPU there.
+  `forecast(compile=True)` requests the supported compiled path; its setup cost,
+  fallback behavior and steady-state benefit depend on the graph and backend.
+  The tables above are historical eager measurements and do not establish a
+  compilation speedup. Measure both fitting and forecasting on the target device
+  before choosing it.
   See [Scale & deploy](deploy.md#gpu) for when the GPU is worth it.
 - **ReservoirComputing.jl coverage.** The current adapter has no implicit
   reservoir-size cap and honors the requested repeats and warmups. Julia's

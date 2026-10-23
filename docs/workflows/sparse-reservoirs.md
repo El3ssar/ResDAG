@@ -50,6 +50,9 @@ reservoir to earlier layers. Setting `cell.trainable = True` explicitly expands
 the recurrent weights into a dense Parameter and warns about that allocation;
 create an optimizer after changing the set of trainable parameters. Freezing
 again restores the original sparse request.
+`model.requires_grad_(True)` affects registered Parameters; compressed recurrent
+buffers remain fixed. Set `cell.trainable = True` first when the recurrent
+connections themselves must become trainable.
 
 CSR is available on CPU and supported CUDA devices. MPS uses dense weights;
 moving a model to MPS can therefore increase its memory requirement. Returning

@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v5.0.1 (2026-10-23)
+
+### Bug Fixes
+
+- **ci**: Select evidence checks for every CPU result record
+  ([#466](https://github.com/El3ssar/ResDAG/pull/466),
+  [`3b34005`](https://github.com/El3ssar/ResDAG/commit/3b34005efd93a2f6573ecd96c9a5b23daecdf547))
+
+### Performance Improvements
+
+- **cpu**: Remove repeated sequence views and solve diagnostics
+  ([#466](https://github.com/El3ssar/ResDAG/pull/466),
+  [`3b34005`](https://github.com/El3ssar/ResDAG/commit/3b34005efd93a2f6573ecd96c9a5b23daecdf547))
+
+- **cpu**: Reuse diagnostics and normalize sparse cycles analytically
+  ([#466](https://github.com/El3ssar/ResDAG/pull/466),
+  [`3b34005`](https://github.com/El3ssar/ResDAG/commit/3b34005efd93a2f6573ecd96c9a5b23daecdf547))
+
+- **cpu**: Reuse readout diagnostics and normalize sparse cycles analytically
+  ([#466](https://github.com/El3ssar/ResDAG/pull/466),
+  [`3b34005`](https://github.com/El3ssar/ResDAG/commit/3b34005efd93a2f6573ecd96c9a5b23daecdf547))
+
+
 ## v5.0.0 (2026-10-23)
 
 ### Bug Fixes

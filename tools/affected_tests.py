@@ -199,6 +199,11 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
     # Regenerated golden fixtures (the documented "regen + new .npz, no src
     # change" workflow) must re-run the golden regression test.
     "tests/fixtures/golden_forecast/": ("tests/test_models/test_golden_forecast.py",),
+    "tests/_reference_initialization.py": (
+        "tests/test_reference_initialization.py",
+        "tests/test_models/test_parallel_esn.py",
+        "tests/test_training/test_force.py",
+    ),
 }
 # Preserve the generic documentation checks while adding the complete artifact
 # and diagram suites for the canonical persistence recipe.

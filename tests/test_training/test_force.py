@@ -33,6 +33,7 @@ from resdag.core import ESNModel
 from resdag.layers import Concatenate, ESNLayer, RidgeReadoutLayer
 from resdag.models import classic_esn, headless_esn
 from resdag.training import ESNTrainer
+from tests._reference_initialization import sequential_uniform_initializers
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,6 +59,8 @@ def _force_model(
     spectral_radius: float = 1.5,
     bias: bool = False,
     seed: int = 0,
+    *,
+    reference_initialization: bool = False,
 ) -> tuple[torch.nn.Module, RLSReadout]:
     """Build a feedback-only ``classic_esn`` with an ``RLSReadout`` head (float64).
 
@@ -74,6 +77,11 @@ def _force_model(
         readout_name="output",
         readout_bias=bias,
         seed=seed,
+        **(
+            sequential_uniform_initializers(reservoir_size, 1, seed)
+            if reference_initialization
+            else {}
+        ),
     ).double()
     readout = next(m for _, m in model.named_modules() if isinstance(m, RLSReadout))
     return model, readout
@@ -216,7 +224,9 @@ def _force_and_ridge_generation(
     target_std = float(continuation.std().item())
 
     # --- FORCE (closed-loop online RLS) ---
-    model, _ = _force_model(reservoir_size, spectral_radius, seed=seed)
+    model, _ = _force_model(
+        reservoir_size, spectral_radius, seed=seed, reference_initialization=True
+    )
     trainer = ESNTrainer(model)
     train_out = trainer.fit_force(
         warmup_inputs=(target[:, :warmup, :],),
@@ -241,6 +251,7 @@ def _force_and_ridge_generation(
         readout_name="output",
         readout_bias=False,
         seed=seed,
+        **sequential_uniform_initializers(reservoir_size, 1, seed),
     ).double()
     base_trainer = ESNTrainer(baseline)
     base_trainer.fit(
@@ -270,6 +281,11 @@ class TestGenerationQuality:
     that difference and made an unsupported relative-ratio assertion pass.
     Absolute FORCE bounds below are unchanged. Chaotic-reservoir stability is
     tested independently in TestClosedLoopStability.
+
+    The original four-seed weight fixtures are pinned through explicit public
+    initializers so the initialization stream correction cannot weaken this
+    algorithm-quality regression. Fresh default-model capability is evaluated
+    separately; these fixed fixtures do not establish that capability.
     """
 
     @pytest.mark.parametrize("seed", [0, 1, 2, 3])

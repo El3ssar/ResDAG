@@ -30,11 +30,13 @@ and diagonal/self-connections are permitted. Nominal density is
 `mean_degree / reservoir_size`. Input weights are dense independent uniform
 draws in `[-input_scale, input_scale]`. Reservoir bias is a **random vector**
 of uniform draws in `[-bias_scale, bias_scale]`, not a constant offset.
-The ResDAG recipe explicitly selects its uniform bias initializer so the
-existing salted bias seed is separate from the input-weight seed. This avoids
-reusing the beginning of the input generator's stream; public model defaults
-are unchanged. ReservoirPy spawns separate input/recurrent/bias streams; Julia
-advances its native generator between the component draws.
+The ResDAG recipe explicitly selects its uniform bias initializer, using the
+independent bias stream. The corresponding library fix also separates default
+initialization roles: newly created models can differ for old seeds, while
+saved models retain their stored weights. See the
+[migration notes](../docs/migrating.md#independent-initialization-streams). ReservoirPy
+spawns separate input/recurrent/bias streams; Julia advances its native generator
+between the component draws.
 
 Native random streams and sparse-mask construction differ. ResDAG's explicit
 callback uses independent Bernoulli edges, reservoirpy uses its native SciPy

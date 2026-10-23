@@ -214,6 +214,16 @@ def test_golden_fixtures_select_golden_test() -> None:
         assert "tests/test_models/test_golden_forecast.py" in sel.tests, fixture
 
 
+def test_shared_quality_reference_selects_every_consumer() -> None:
+    selection = AT.select_tests(["tests/_reference_initialization.py"])
+    assert selection.mode != "none"
+    assert {
+        "tests/test_reference_initialization.py",
+        "tests/test_models/test_parallel_esn.py",
+        "tests/test_training/test_force.py",
+    } <= set(selection.tests)
+
+
 def test_perf_targets_json_selects_benchmark_tests() -> None:
     # benchmarks/targets.json holds the perf-gate floors read at runtime by the
     # perf-regression test (incl. its well-formed check). A malformed/edited

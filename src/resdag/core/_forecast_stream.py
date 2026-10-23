@@ -356,7 +356,7 @@ def forecast_stream(
         scaled_drivers = tuple(
             (
                 apply_transform(model.input_scalers[index], value)
-                if model._transform_active(output=False, index=index)
+                if steps and model._transform_active(output=False, index=index)
                 else value
             )
             for index, value in zip(plan.driver_indices, drivers)

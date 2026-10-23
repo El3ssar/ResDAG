@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from math import isfinite
 from typing import Any, Literal
+from uuid import uuid4
 
 import optuna
 from optuna.trial import TrialState
@@ -26,6 +27,28 @@ from .storage import _close_storage, resolve_storage
 __all__ = ["apply_warm_start", "transfer_trials", "export_best_config"]
 
 logger = logging.getLogger(__name__)
+
+_STUDY_CHALLENGE_KEY = "resdag_transfer_identity_check_v1"
+
+
+def _require_distinct_studies(study: optuna.Study, source: optuna.Study) -> None:
+    """Detect aliases with public storage-backed metadata, including copied studies.
+
+    Optuna exposes no public Study storage identity. Write a fresh challenge to
+    the destination and see whether the source observes it. A new challenge on
+    every check distinguishes independent studies even when ``copy_study`` has
+    cloned their metadata. No private storage IDs or credential-bearing URLs
+    are inspected. The final read fails closed if another check interferes.
+    """
+    if study is source:
+        raise ValueError("Source and destination refer to the same study")
+    challenge = uuid4().hex
+    study.set_user_attr(_STUDY_CHALLENGE_KEY, challenge)
+    source_challenge = source.user_attrs.get(_STUDY_CHALLENGE_KEY)
+    if study.user_attrs.get(_STUDY_CHALLENGE_KEY) != challenge:
+        raise RuntimeError("Concurrent study identity check; retry the transfer")
+    if source_challenge == challenge:
+        raise ValueError("Source and destination refer to the same study")
 
 
 def apply_warm_start(
@@ -158,6 +181,7 @@ def transfer_trials(
     if mode not in ("reevaluate", "scores"):
         raise ValueError("mode must be 'reevaluate' or 'scores'")
     with _source_study(transfer_from) as source:
+        _require_distinct_studies(study, source)
         source_protocol = source.user_attrs.get(PROTOCOL_KEY)
         if mode == "scores":
             if (

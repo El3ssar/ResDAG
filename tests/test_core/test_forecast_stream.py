@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from resdag import ESNModel, Model, RidgeReadoutLayer, reservoir_input
+from resdag import ESNModel, Model, RidgeReadoutLayer, SVDReadoutLayer, reservoir_input
 from resdag.core._feedback import Feedback
 from resdag.core._forecast_capabilities import ForecastSequenceExecutor
 from resdag.core._forecast_stream import forecast_stream, raw_forecast_stream
@@ -45,6 +45,45 @@ def _collect(model, history=None, **kwargs):
         name: torch.cat([chunk.named_predictions[name] for chunk in chunks], dim=-2)
         for name in model.output_names
     }, chunks
+
+
+class _NonemptyUnitTransform(nn.Module):
+    supports_framewise = True
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("scale", torch.ones(1, dtype=torch.float64))
+
+    def fit(self, training):
+        return self
+
+    def forward(self, value):
+        assert value.shape[-2] > 0, "Valid framewise transforms need not accept empty sequences"
+        return value * self.scale
+
+    def inverse(self, value):
+        return value / self.scale
+
+
+@pytest.mark.parametrize("execution", ["fast", "history"])
+@pytest.mark.parametrize("supplied", [False, True])
+def test_zero_required_driver_frames_do_not_call_custom_preprocessing(execution, supplied):
+    state, forcing = (reservoir_input(1, dtype=torch.float64) for _ in range(2))
+    head = SVDReadoutLayer(2, 1, alpha=0).double()(Concatenate()(state, forcing))
+    model = Model(
+        inputs={"state": state, "driver": forcing},
+        outputs={"prediction": head},
+        prediction_lead=3,
+        feedback=[Feedback("prediction", "state", 3)],
+        input_transforms={"driver": _NonemptyUnitTransform()},
+        washout=0,
+    )
+    data = torch.arange(30, dtype=torch.float64)[:, None]
+    model.fit({"state": data, "driver": data * 2}, data + 3)
+    kwargs = {"future_inputs": {"driver": data[:0]}} if supplied else {}
+    expected = copy.deepcopy(model).forecast(horizon=2, execution=execution, **kwargs)
+    actual, _ = _collect(model, horizon=2, execution=execution, chunk_size=1, **kwargs)
+    torch.testing.assert_close(actual["prediction"], expected)
 
 
 @pytest.mark.parametrize("lead,delay", [(1, 1), (2, 2), (3, 3), (1, 2), (2, 1)])

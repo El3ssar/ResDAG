@@ -229,10 +229,26 @@ _DATA_DEP_MAP["docs/workflows/save-load.md"] = (
 )
 # These files share a name prefix, rather than a directory. Register their
 # exact paths and retain the ordinary executable documentation checks.
-for _cpu_record in ("accuracy", "auto", "compile", "interleaved", "storage", "workflows"):
+for _cpu_record in (
+    "accuracy",
+    "auto",
+    "compile",
+    "interleaved",
+    "recurrence",
+    "storage",
+    "workflows",
+):
     _DATA_DEP_MAP[f"docs/assets/data/phase-five-cpu-{_cpu_record}-2026-10-23.json"] = (
         *_DATA_DEP_MAP["docs/"],
         "tests/test_regression/test_cpu_workflow_evidence.py",
+    )
+for _report, _evidence_test in (
+    ("parallel-cpu", "test_parallel_cpu_evidence.py"),
+    ("independent-trajectories", "test_independent_trajectory_evidence.py"),
+):
+    _DATA_DEP_MAP[f"docs/assets/data/phase-five-{_report}-2026-10-23.json"] = (
+        *_DATA_DEP_MAP["docs/"],
+        f"tests/test_regression/{_evidence_test}",
     )
 
 

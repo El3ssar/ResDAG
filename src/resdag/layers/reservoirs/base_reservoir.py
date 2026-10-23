@@ -746,7 +746,9 @@ class BaseReservoirLayer(nn.Module, ABC):
         # backprop through this call's already-freed graph.  This data-dependent
         # ``grad_fn`` branch lives here, in the wrapper, never inside the pure
         # loop of ``forward_stateless``.
-        if self.detach_state_between_calls and new_state.grad_fn is not None:
+        if self.detach_state_between_calls and (
+            torch.compiler.is_compiling() or new_state.grad_fn is not None
+        ):
             new_state = new_state.detach()
 
         self.state = new_state

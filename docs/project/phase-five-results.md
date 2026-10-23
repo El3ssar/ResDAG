@@ -12,7 +12,170 @@ changes cost or save. PR #465's implementation is released in
 The [roadmap](roadmap.md#phase-5-speed-memory-and-comparisons) tracks the CPU
 follow-up and remaining work; each measurement identifies its own source revision.
 
+## Current all-PyTorch closeout
+
+The latest checks cover composition inside a trainable PyTorch network,
+parallel CPU forecasting, independent-trajectory accuracy and saved-experiment
+replay. Model execution stays entirely in PyTorch. CPU teacher-forced
+compilation and the private SciPy recurrence backend are not added.
+
+An encoder → fitted reservoir → prediction head passes independent tensor and
+finite-difference gradient checks, repeated optimizer updates, explicit-state
+chunking and standard state-dictionary reload. Vanilla, OTT and named multi-head
+graphs also pass full-graph forward/backward capture with PyTorch's AOT eager
+backend. CPU and native MPS forward/backward checks reject host scalar reads
+and cross-device tensor operations in the tested hot path. These establish
+composition correctness; AOT eager capture and MPS checks do not measure CUDA
+throughput. CUDA is unavailable on this host.
+
+The acceptance tests found integration defects. CPU autocast could request
+an unsupported low-precision CSR multiplication; that operation now uses the
+stored weight precision on the same device, preserving gradients through the
+surrounding mixed-precision network. Full-graph capture could fail while
+inspecting the stored state's `grad_fn`; the compile-aware guard now detaches
+only carried state under the existing default. Current-call gradients and
+explicit cross-call gradient retention remain covered.
+Hosted Torch 2.10 checks on Python 3.11–3.13 also exposed evaluation of a
+typing union inside the preprocessing getter. Quoting that typing-only argument
+preserves its eager identity operation and lets Dynamo capture the forward
+graph; all four compiled cases and the full pipeline selection pass in an
+isolated Python 3.13/Torch 2.10 reproduction.
+
+The [experiment guide](../start/forecast-experiment.md) now saves resolved
+settings, versions, split identities, artifact hashes and exact replay data.
+Its verification command loads the saved models and reproduces predictions
+and scores without integrating a system, tuning or fitting again. Recorded
+timings remain observations from the original run.
+
+### Parallel CPU forecast
+
+The adopted single-frame path removes redundant sequence-wrapper work during
+closed-loop forecasting in the built-in parallel model. It keeps the original
+projection and recurrent arithmetic, warmup and state semantics. Hooks,
+overridden methods, custom activations/readouts, autocast and non-CPU devices
+use the ordinary compatible path.
+
+Two fresh-process ABBA blocks compare frozen source snapshots differing only
+in this parallel implementation. The four synthetic workloads use float64,
+150 units per patch, 501 training observations, 100 washout/history observations
+and a 129-step forecast; patch core width is four and halo width six. Torch and
+native pools are verified at one thread. Construction is outside the clock;
+public fit and history-plus-forecast calls are inside it.
+
+All **64 timed fit/forecast pairs and 32 discarded warmup pairs** retain exact
+fitted tensors, fit states, complete predictions and final forecast states
+across variants. Each block contains four fresh processes in ABBA order, with
+one warmup and two timed repetitions per case/process. The ratios below divide
+the block's pooled baseline median by its candidate median; two blocks are
+descriptive process observations, not confidence intervals.
+
+| Batch / patches | Forecast ratio, block 1 / block 2 | Fit control ratio, block 1 / block 2 |
+| --- | ---: | ---: |
+| 1 / 8 | 1.098 / 1.055 | 0.981 / 1.004 |
+| 1 / 64 | 1.041 / 1.078 | 0.973 / 1.015 |
+| 4 / 8 | 1.096 / 1.096 | 0.956 / 0.982 |
+| 4 / 64 | 1.023 / 1.041 | 0.929 / 0.996 |
+
+Forecast elapsed time falls by about **2–9%** in these workloads. Fitting
+does not use the new path: its unchanged control varies from about 1.5% faster
+to 7.6% slower. Read these small forecast gains with that control variation in
+mind. This is bounded parallel-forecast evidence, not a universal training
+improvement or a cross-library speed ranking. All 96 workflows also preserve
+their exactness hashes from the earlier run before the typing-only compiler
+fix. The earlier parallel patch-scaling failure was not reproduced with the
+current benchmark recipe; its threshold is unchanged.
+
+[Download every sample, exactness hash, frozen source and replay script](../assets/data/phase-five-parallel-cpu-2026-10-23.json).
+
+### Independent trajectories
+
+Six previously selected recipes were frozen before generating ten new
+trajectories: five initial conditions for each system. Each recipe/system is
+refitted on each trajectory's own training prefix with three new reservoir
+seeds, then evaluated at three nonoverlapping forecast origins. There is no
+new hyperparameter search or winner selection. All **90 fits and 270 forecasts**
+complete with finite predictions; no failed runs are excluded.
+
+The four primary recipes come from the corrected-initialization capability
+study. At the main 0.3 normalized-error threshold, the preregistered aggregate
+is the **median of the five trajectory medians**; each trajectory median contains
+nine seed/origin forecasts. The independent unit is a trajectory, not each of
+the 45 nested forecasts. Full individual ranges include censored lower bounds.
+Each recipe retains its own selected size and settings; this is not an
+architecture ablation with matched hyperparameters.
+
+| Primary recipe | Median at 0.3, Lyapunov times | Individual range at 0.3 | Forecasts reaching the test limit at 0.3 | Median at 0.5 |
+| --- | ---: | ---: | ---: | ---: |
+| Lorenz, friendly vanilla | 5.995 | 1.902–≥10.016 | 6 / 45 | 6.810 |
+| Lorenz, OTT | ≥10.016 | 6.575–≥10.016 | 35 / 45 | ≥10.016 |
+| Rössler, friendly vanilla | 6.326 | 2.505–≥10.001 | 7 / 45 | 7.144 |
+| Rössler, OTT | ≥10.001 | 4.193–≥10.001 | 25 / 45 | ≥10.001 |
+
+The two secondary state-only vanilla recipes from the common-family comparison
+reach the ten-Lyapunov-time median limit on both systems. They use different
+feature/solver policies and remain separate from the primary friendly recipes.
+This demonstrates sensitivity to the chosen recipe; it does not replace the
+negative friendly-vanilla results. The 7–8-time typical-performance target is
+still unmet for those two frozen friendly recipes. OTT meets the median target
+in this study, although individual forecasts can be shorter.
+
+These are robustness checks of frozen **recipes refitted on independent runs**,
+not zero-shot transfer of one trained reservoir to a new initial condition.
+They do not compare competitor accuracy on this new bank or establish that an
+implementation change caused the vanilla shortfall. Previously inspected
+forecast banks remain distinct from these new observations.
+
+A paired regression for the initial implementation separately repeats the same
+90 fits and 270 forecasts on clean baseline `eb70bf11`, using the sealed
+observations and initial weights.
+Every fitted-tensor fingerprint, complete prediction, final state and score
+matches exactly. This second pass adds no tuning or test-based selection.
+
+The preregistered runtime was frozen before the release-metadata rebase. Its
+version literal is 5.0.0. Subsequent changes update that literal to 5.0.1,
+tighten a parallel-only custom-readout guard unused by these six recipes, and
+quote the preprocessing getter's typing-only cast for older compiler support.
+The public record retains the original source and every subsequent source
+bridge; it does not relabel the frozen capture as a later checkout.
+
+On the final corrected runtime, a separate replay loads all **90 original
+fitted checkpoints** and reproduces all **270 forecasts** exactly, including
+complete prediction bytes, final states and both scores. Every fitted tensor
+fingerprint also matches; the common graph's nonpersistent post-fit state is
+restored by the original teacher-forced input prefix. This replay performs no
+readout solve, fitting, integration or tuning. Two stopped restore-setup attempts
+are retained separately; neither found a forecast discrepancy or contributes
+to the original study's scores.
+
+[Download all 270 scores, lossless error traces, trajectory summaries, paired regression and reproduction inputs](../assets/data/phase-five-independent-trajectories-2026-10-23.json).
+
+### Closeout verification
+
+The implementation is in [PR #467](https://github.com/El3ssar/ResDAG/pull/467).
+The initial `3493889` checks identified the older-Python/Torch 2.10 graph-capture
+failure described above. Corrected runtime `941cd8bf` passes all eight full
+locked/latest hosted suites, including the previously failing combinations.
+These package checks cover the corrected candidate source; its wheel
+retains the base version 5.0.1 and is not the previously published 5.0.1 artifact.
+The final tracker update changes prose only.
+
+| Check | Result |
+| --- | --- |
+| Complete corrected-source local suite | **6,509 passed**, 245 skipped, 13 benchmark cases deselected; **93.86% coverage** against the unchanged 90% floor. Compiler acceptance cases isolate their caches rather than changing Torch's global recompile limit. |
+| Configured local CPU gates | **Four passed**, four unavailable-device skips, one deselected; thresholds unchanged. |
+| Clean candidate package | **110 installed-wheel checks passed**, three unavailable-CUDA skips, plus all eight common-workflow guide blocks. All **205 runtime modules**, the typing marker, **209 RECORD entries** and actual installed import origins verify against the frozen source and sdist. |
+| Minimum optional dependency | **13 experiment checks pass** with an actual isolated **TSDynamics 6.0.2** install, including fresh-process exact trajectory replay. |
+| Older Python / minimum Torch | Python **3.13.16 / Torch 2.10.0** reproduces all four original graph-capture failures; the corrected source passes all **34 pipeline checks**, including those four cases, with three unavailable-CUDA skips. |
+| Static and documentation | Configured Ruff/Black checks and whole-package mypy (**205 modules**) pass. Strict MkDocs passes; all four changed pages were visually inspected, and all three new downloadable records match their served bytes. |
+| Hosted full compatibility | Python **3.11–3.14** passes in both the [locked run](https://github.com/El3ssar/ResDAG/actions/runs/40031742992) and [latest-dependency run](https://github.com/El3ssar/ResDAG/actions/runs/40031748258). Each of the eight full lanes passes **6,256 tests**, with 498 skips and 13 benchmark cases deselected; coverage is **91.65–91.70%** against the existing 90% floor. |
+| Hosted integrations and gates | All **six** TSDynamics lanes pass **322 checks** each, with seven intentional skips. CPU gates, **103** Python comparison/protocol checks, **18** real pinned Julia checks, static checks and strict documentation pass. |
+
 ## CPU follow-up
+
+PR #466 is merged as `3b34005` and released in
+[v5.0.1](https://github.com/El3ssar/ResDAG/releases/tag/v5.0.1).
+All four post-merge full suites, three TSDynamics lanes, the published-wheel
+fit/forecast/save/load replay and live documentation deployment pass.
 
 The adopted CPU changes reuse AutoReadout residual diagnostics when its admitted
 Gram solution is unchanged, while recomputing them after a fallback replaces the
@@ -151,6 +314,83 @@ observations and do not establish final adopted-runtime speed. Compilation
 remains opt-in. [Readout records](../assets/data/phase-five-cpu-auto-2026-10-23.json)
 and [compile records](../assets/data/phase-five-cpu-compile-2026-10-23.json) retain
 their raw samples, diagnostics, native settings and warnings.
+
+## CPU recurrence investigation
+
+After merging PR #466 as `3b34005`, we profiled the complete public fit and
+history-plus-forecast workflows before choosing the next optimization. These
+experiments use fresh synthetic development data and fixed saved weights;
+they are neither another accuracy search nor a new comparison with competitors.
+
+On this Apple M5, recurrence is the main cost. In a separate instrumented
+1,000-unit, batch-one dense fit, recurrent multiplication accounts for 54.7%
+of Torch self CPU time and tanh for 20.1%. The successful Ridge solve costs
+about 26 ms, versus about 25 ms for a direct SciPy diagnostic without ResDAG's
+guards. Transactional model copying accounts for roughly 1–1.6 ms in cProfile.
+Removing numerical guards or failed-fit isolation would miss the main cost.
+Profiler times identify work; the latency measurements below come from
+uninstrumented public calls.
+
+### Optional sparse CPU execution candidate
+
+A private prototype substitutes SciPy CSR multiplication for Torch CSR
+multiplication, leaving projection, activation, leak, scaling, training and
+forecast commands unchanged. Both processes use the same 1,000-unit matrix
+with 6,070 stored connections, float64, batch one, 10,001 observations,
+500 washout/history steps and a 553-step forecast. The fixed readout is Ridge,
+not AutoReadout. Construction is outside the clock; fit includes preprocessing,
+the complete training prefix and transactional commit. Forecast includes history
+replay. Lazy SciPy operator construction and every Tensor/NumPy bridge are
+inside the measured calls.
+
+Each fresh process runs four ABBA rounds after one discarded warmup per mode.
+The ratios use the eight nearest AB/BA pairs within that process. Brackets
+show their full observed range, not confidence intervals.
+
+| Process | Sparse fit, Torch → SciPy | Paired fit ratio | History + forecast, Torch → SciPy | Paired forecast ratio |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 531.84 → 171.67 ms | 3.108 [3.061–3.125] | 60.01 → 21.23 ms | 2.822 [2.776–2.885] |
+| 2 | 528.04 → 173.07 ms | 3.053 [3.005–3.081] | 59.21 → 21.38 ms | 2.764 [2.138–2.873] |
+
+All 32 timed workflows have byte-identical fitted coefficients, complete
+predictions and final states across the two modes and processes. Warmups ran
+but were not fingerprinted separately. These are two processes on one host,
+not independent machines or evidence about Lorenz/Rössler forecast skill.
+Native thread limits are verified at one; power/thermal and process CPU/wall
+receipts are retained. API thread limits do not measure operating-system
+thread occupancy or CPU frequency.
+
+**This backend was not adopted.** The maintainer chose to keep model execution
+entirely in PyTorch. The private diagnostic remains useful cost attribution;
+it does not establish production cache ownership, live weight/index updates,
+serialization, device changes, gradients, PyTorch transforms, autocast or
+compilation behavior. The current storage and execution defaults remain
+unchanged.
+
+### Dense batch candidate and rejected alternatives
+
+At batch four, replacing one matrix multiplication with four matrix-vector
+multiplications improves public fit by 1.775×/1.798× and forecast by
+1.929×/1.956× in the two processes. However, the changed reduction order produces
+substantially different fitted coefficients and closed-loop predictions on
+this poorly conditioned synthetic fixture. This candidate is not adopted.
+Those differences do not score physical-system accuracy, but they preclude
+calling the change numerically identical.
+
+At batch one, matrix-vector multiplication and transposing the dense equation
+provide no measured primitive benefit. Reusing tanh output storage also gives
+no meaningful gain in the bounded allocation probe. Torch CSR is slower than
+dense in the initial 1,000-unit public profile; compressed storage alone is
+not a speed guarantee. Sequential profile rows are not a paired storage
+comparison.
+
+[Download raw timings, hashes, source manifests and diagnostic scripts](../assets/data/phase-five-cpu-recurrence-2026-10-23.json).
+The earlier cross-library CPU gap remains open until an adopted implementation
+is measured on the same comparison protocol. Extending CPU teacher-forced
+compilation is deferred: its startup and maintenance costs are not justified
+by established workflow gains. The next work prioritizes standard PyTorch
+fit/forecast performance and composition inside larger GPU models, preserving
+gradients and device placement. CPU measurements do not establish GPU throughput.
 
 ## Forecast accuracy after independent initialization
 

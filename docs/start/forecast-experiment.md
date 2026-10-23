@@ -55,9 +55,10 @@ models = {
 }
 ```
 
-Both have 192 reservoir units. The OTT model adds squared state features;
-the vanilla model uses ordinary reservoir states. These are starting settings,
-not tuned accuracy recipes.
+Both have 192 reservoir units and give the readout the observed input alongside
+the reservoir features. Vanilla uses the states unchanged; OTT squares every
+other state before concatenation, keeping the same feature count. These are
+starting settings, not tuned accuracy recipes.
 
 ## Or connect your own DAG
 
@@ -215,12 +216,37 @@ for registered custom components, trusted notebook bundles and device mapping.
 ## Try Rössler or a larger reservoir
 
 The runnable script generates data, evaluates all three models, saves their
-diagrams and portable checkpoints, and checks reload parity:
+diagrams and portable checkpoints, and checks reload parity.
+
+Run these commands from a ResDAG checkout. The complete script is
+[examples/17_forecast_experiment.py](https://github.com/El3ssar/ResDAG/blob/main/examples/17_forecast_experiment.py).
 
 ```sh
 python examples/17_forecast_experiment.py --system lorenz --output lorenz-run
 python examples/17_forecast_experiment.py --system rossler --reservoir-size 400 --output rossler-run
 ```
+
+Each run also writes `experiment.json` and `replay-data.pt`. The manifest records
+the resolved arguments, system and integration settings, dependency versions,
+actual data/split identities, metric definitions, model configurations and
+artifact hashes. The Torch data file retains the exact training observations,
+clocked history, future truth and original predictions. Use a separate output
+directory for each experiment.
+
+Verify a saved run with:
+
+```sh
+python examples/17_forecast_experiment.py --verify lorenz-run/experiment.json
+```
+
+Verification checks the files and time alignment, reconstructs the saved
+TSDynamics history, loads the models, and compares complete forecasts and
+recomputed scores exactly. It performs no new integration, fitting or tuning.
+It needs the existing `dynamics` extra to reconstruct the clocked history;
+diagrams are checked as saved files without rendering them again. Original
+timings remain recorded observations; replay does not verify performance.
+Versions are recorded so numerical differences after changing software,
+precision or hardware can be investigated rather than hidden by a tolerance.
 
 The script uses canonical Rössler parameters `(a, b, c) = (0.2, 0.2, 5.7)` and
 an approximate largest exponent of 0.0714. Its default evaluation window covers

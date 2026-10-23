@@ -39,18 +39,16 @@ from .base_cell import ReservoirCell
 # Sparse-CSR recurrent-matmul policy.
 #
 # ``sparse="auto"`` opts a *frozen* reservoir into a CSR ``weight_hh`` spmv only
-# when both gates are met: the reservoir is large enough that the dense
-# ``addmm`` actually dominates the per-step cost, *and* the recurrent matrix is
-# sparse enough that a CSR spmv beats it.  Below either threshold the dense
-# ``addmm`` is faster (its BLAS kernel has no per-nonzero overhead), so ``auto``
-# stays dense there.  Explicit ``sparse=True`` bypasses these gates (the caller
-# has asserted their topology is sparse); ``sparse=False`` (the default) is
-# always dense and byte-for-byte unchanged.
+# when both size and density gates are met. These are fixed heuristics, not a
+# hardware calibration or a guarantee that CSR is faster. Explicit
+# ``sparse=True`` bypasses these gates and requests compressed storage;
+# ``sparse=False`` (the default) always stays dense.
 #
 # The size gate is **device-dependent**, because the dense-``addmm``/CSR-spmv
 # crossover is: a GPU's dense BLAS is far faster per FLOP than a CPU's, so the
 # reservoir must be much larger before the structural-zero savings of a CSR spmv
-# pay off there.  Measured on this repo's hardware (recurrent matmul, batch=1):
+# pay off there. Historical recurrent-matmul measurements (batch=1) informed
+# these gates:
 #
 #   * CPU float64 — sparse wins from N~1000 at RC densities (N=2000/1%: ~14x,
 #     N=5000/1%: ~24x); dense wins for N<1000.  ``auto`` fires at N>=1000.
@@ -60,9 +58,10 @@ from .base_cell import ReservoirCell
 #     N>=5000 on CUDA, so it never selects the slower sparse path in the
 #     1000<=N<5000 GPU regime.
 #
-# Both thresholds are deliberately conservative so ``auto`` never regresses the
-# default path on either device.  The density gate is shared (sparse only helps
-# a genuinely sparse matrix on any device).
+# These historical observations do not generalize to every CPU/backend. On an
+# Apple M5, subsequent complete 1,000-unit float64 workflows were slower with
+# Torch CSR than dense recurrence. Keep the established gates explicit and
+# benchmark actual workloads before choosing storage for speed.
 _SPARSE_AUTO_MIN_SIZE_CPU = 1000
 _SPARSE_AUTO_MIN_SIZE_CUDA = 5000
 _SPARSE_AUTO_MAX_DENSITY = 0.2
@@ -867,6 +866,10 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         torch.Tensor
             The leaky-blended state.
         """
+        if self._sparse_active and state.device.type == "cpu" and torch.is_autocast_enabled("cpu"):
+            # Both direct cell calls and projected steps use the CPU CSR
+            # kernel's supported precision for the carried state and leak.
+            state = state.to(dtype=new_state.dtype)
         if self._is_vector_leak:
             leak_vec = self._leak_rate_vec
             assert leak_vec is not None  # invariant when the vector flag is set
@@ -924,8 +927,16 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
                 and not torch.is_autocast_enabled("cpu")
             ):
                 result = one_entry_recurrent(state, columns, csr.values())
+            elif state.device.type == "cpu" and torch.is_autocast_enabled("cpu"):
+                # CPU CSR has no low-precision matmul kernel. Retain the
+                # stored weight precision for this operation while allowing
+                # the surrounding encoder/readout to use ordinary autocast.
+                # The cast stays on-device and preserves upstream gradients.
+                with torch.autocast("cpu", enabled=False):
+                    recurrent = torch.sparse.mm(csr, state.to(dtype=csr.dtype).t().contiguous())
+                    result = recurrent.t()
             else:
-                recurrent: torch.Tensor = torch.sparse.mm(csr, state.t().contiguous())
+                recurrent = torch.sparse.mm(csr, state.t().contiguous())
                 result = recurrent.t()
         else:
             result = F.linear(state, self.weight_hh)
@@ -980,8 +991,8 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         ``"auto"`` enables the CSR path only when the reservoir is large enough
         (``reservoir_size >= self._auto_min_size()`` — a **device-dependent**
         floor, higher on CUDA where the dense BLAS is faster) *and* the recurrent
-        matrix is sparse enough (density ``<= _SPARSE_AUTO_MAX_DENSITY``) for a
-        CSR spmv to beat the dense ``addmm`` on that device.  A ``trainable``
+        matrix meets the density gate (``<= _SPARSE_AUTO_MAX_DENSITY``). These
+        are fixed heuristics, not a measured speed guarantee. A ``trainable``
         reservoir is always dense (the constructor rejects ``sparse=True`` +
         ``trainable``; ``"auto"`` and a live re-freeze route here).
         """

@@ -217,6 +217,57 @@ numerical checks pass. Unsafe or unsupported decompositions use a reported,
 configurable CPU float64 bridge. You can also fit on CPU and move the model
 with `model.float().to("mps")`. See [solver controls](../guides/readout-solvers.md).
 
+### Train the surrounding network
+
+After fitting the RC block, ordinary Torch optimizers can train the encoder and
+prediction head. The reservoir and algebraically fitted readout stay frozen
+unless you explicitly make them trainable. Construct the optimizer after fitting
+or building the model, so every parameter is registered.
+
+Reset the reservoir before unrelated training windows. Calls otherwise carry
+memory, with gradients detached at each ordinary call boundary. For gradients
+across chunks of one sequence, use `forward_stateless(..., states=...)` and
+carry the returned state yourself.
+
+The following uses standard PyTorch mixed precision and gradient scaling:
+
+```python
+import copy
+
+amp_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+amp_pipeline = copy.deepcopy(pipeline).to(device=amp_device, dtype=torch.float32)
+amp_optimizer = torch.optim.Adam(amp_pipeline.parameters(), lr=1e-3)
+amp_scaler = torch.amp.GradScaler("cuda", enabled=amp_device.type == "cuda")
+amp_dtype = torch.float16 if amp_device.type == "cuda" else torch.bfloat16
+amp_batch = train[-20:].unsqueeze(0).to(device=amp_device, dtype=torch.float32)
+amp_target = amp_batch[..., :1]
+
+for _ in range(2):
+    amp_pipeline[1].reset_state()
+    amp_optimizer.zero_grad(set_to_none=True)
+    with torch.autocast(amp_device.type, dtype=amp_dtype):
+        amp_prediction = amp_pipeline(amp_batch)
+        amp_loss = torch.nn.functional.mse_loss(amp_prediction.float(), amp_target)
+    amp_scaler.scale(amp_loss).backward()
+    amp_scaler.step(amp_optimizer)
+    amp_scaler.update()
+```
+
+CPU CSR multiplication has no low-precision kernel. Under CPU autocast, a
+sparse ESN therefore computes its recurrent multiplication and carried state
+in its stored weight precision; the surrounding encoder and head still use
+autocast. No tensor moves to another device for this operation. Explicitly
+stored low-precision CSR weights still require a matching supported Torch kernel.
+
+Standard `torch.compile(pipeline)` is separate from the reservoir forecast's
+`compile=True` shortcut. The surrounding network's forward and backward can
+be captured together; ordinary calls still detach stored state between calls.
+The forecast shortcut remains inference-only. Full-graph capture and compiled
+backward are tested for the built-in vanilla, OTT and named custom DAG examples
+with the AOT eager backend. This checks compiler compatibility, not CUDA
+throughput. Measure cold setup and warm execution on your actual device and
+check forecast accuracy when changing precision.
+
 ## Capture the surrounding pipeline with FX
 
 If a larger pipeline uses PyTorch FX, keep the reservoir as one module call.
@@ -251,8 +302,9 @@ general deployment export are not supported; see the
   `CoupledEnsembleESNModel` graphs. Their original low-level APIs remain available.
 - Automatic next-sample targets require one unambiguous input/output pair.
   Several heads need explicit named targets; their predictions are returned
-  as a dictionary. Expose each algebraically fitted readout as a named output;
-  an intermediate head can also feed a downstream reservoir.
+  as a dictionary. Internal fitted readouts can stay hidden from predictions:
+  provide their targets through `fit(..., readout_targets={...})`, as shown in
+  [training internal readouts](../workflows/train.md#internal-readouts-without-extra-prediction-outputs).
 - Default feedback connects the first output to the first input. Custom
   [named routes](feedback.md) support fanout and explicit delays. Inputs
   without a feedback route need future driver values.

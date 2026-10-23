@@ -305,7 +305,8 @@ class Model(nn.Module):
     @property
     def preprocessing(self) -> NormMethod | None:
         """The fallback policy; explicit transform overrides apply independently."""
-        return cast(NormMethod | None, self._preprocessing)
+        # Keep typing-only unions out of the captured forward graph.
+        return cast("NormMethod | None", self._preprocessing)
 
     def _custom_transform_schema(self) -> tuple[Any, ...]:
         return tuple(

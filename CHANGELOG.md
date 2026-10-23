@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v5.0.0 (2026-10-23)
+
+### Bug Fixes
+
+- Isolate initialization roles and verify native benchmark limits
+  ([#465](https://github.com/El3ssar/ResDAG/pull/465),
+  [`18f78c8`](https://github.com/El3ssar/ResDAG/commit/18f78c83f37469fb941da0fd48cc223b7ea24b9c))
+
+### Features
+
+- Add compact reservoirs and verified forecast execution
+  ([#465](https://github.com/El3ssar/ResDAG/pull/465),
+  [`18f78c8`](https://github.com/El3ssar/ResDAG/commit/18f78c83f37469fb941da0fd48cc223b7ea24b9c))
+
+- Add compact reservoirs, LSMR and verified forecast hooks
+  ([#465](https://github.com/El3ssar/ResDAG/pull/465),
+  [`18f78c8`](https://github.com/El3ssar/ResDAG/commit/18f78c83f37469fb941da0fd48cc223b7ea24b9c))
+
+### Testing
+
+- Preserve fixed reservoir quality anchors across seed changes
+  ([#465](https://github.com/El3ssar/ResDAG/pull/465),
+  [`18f78c8`](https://github.com/El3ssar/ResDAG/commit/18f78c83f37469fb941da0fd48cc223b7ea24b9c))
+
+
 ## v4.1.0 (2026-10-23)
 
 ### Bug Fixes

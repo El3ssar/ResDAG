@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v3.0.0 (2026-10-23)
+
+### Features
+
+- **hpo**: Complete streaming pruning and resource-aware tuning
+  ([#462](https://github.com/El3ssar/ResDAG/pull/462),
+  [`f8d7637`](https://github.com/El3ssar/ResDAG/commit/f8d7637efbe34aeedc788bf044c05a449dfeafde))
+
+### Breaking Changes
+
+- **hpo**: Raw HPO counts new attempts per call, reevaluates transferred settings by default, and
+  keeps sampling, storage, pruning and callbacks in the parent process.
+
+
 ## v2.1.0 (2026-10-22)
 
 ### Features

@@ -2,6 +2,34 @@
 
 <!-- version list -->
 
+## v4.1.0 (2026-10-23)
+
+### Bug Fixes
+
+- **benchmarks**: Validate held-out forecasts and tuned RC accuracy
+  ([#464](https://github.com/El3ssar/ResDAG/pull/464),
+  [`041db61`](https://github.com/El3ssar/ResDAG/commit/041db61765573c936af0a5f69843d0da64b45ae1))
+
+- **ci**: Run tuning guide for documentation changes
+  ([#464](https://github.com/El3ssar/ResDAG/pull/464),
+  [`041db61`](https://github.com/El3ssar/ResDAG/commit/041db61765573c936af0a5f69843d0da64b45ae1))
+
+### Documentation
+
+- Keep tuning parameter names readable ([#464](https://github.com/El3ssar/ResDAG/pull/464),
+  [`041db61`](https://github.com/El3ssar/ResDAG/commit/041db61765573c936af0a5f69843d0da64b45ae1))
+
+### Features
+
+- **hpo**: Broaden built-in forecast tuning defaults
+  ([#464](https://github.com/El3ssar/ResDAG/pull/464),
+  [`041db61`](https://github.com/El3ssar/ResDAG/commit/041db61765573c936af0a5f69843d0da64b45ae1))
+
+- **hpo**: Broaden preset tuning and validate held-out RC accuracy
+  ([#464](https://github.com/El3ssar/ResDAG/pull/464),
+  [`041db61`](https://github.com/El3ssar/ResDAG/commit/041db61765573c936af0a5f69843d0da64b45ae1))
+
+
 ## v4.0.0 (2026-10-23)
 
 ### Features

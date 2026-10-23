@@ -82,7 +82,7 @@ after its acceptance checks pass and its public behavior is documented.
 | 3. Reliable automatic tuning | Done | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies, streaming pruning, optional screening/memory budgets, protocol-safe reuse and fitted winners pass local/package/hosted verification. Completion PR #462 merged as `f8d7637`. |
 | 4. Model artifacts, diagrams and efficient training | Done | Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work. | Fresh-process load/forecast parity, diagrams and one-pass training oracles pass across supported graph families. PR #463 merged as `0b546d6`. |
 | 5. Performance and competitive evidence | WIP | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. First increment repairs chronological windows and establishes classical accuracy baselines. |
-| 6. Experiments and release readiness | WIP | Stable experiment recipes, executable documentation and migration guidance. | End-to-end experiments run from clean installed packages with recorded environments and artifacts; published-release verification follows merge. |
+| 6. Experiments and release readiness | Done | Stable experiment recipes, executable documentation and migration guidance. | Clean candidate packages, exact experiment replay, executable guides and full hosted compatibility pass in PR #467. Published-package and deployment verification follow merge and release. |
 
 Phase four is merged under the approved artifact/state contract. Phase five
 starts with [the agreed measurement design](phase-five-design.md).
@@ -541,13 +541,17 @@ updates, carried/explicit state, ordinary state-dictionary reload, CPU mixed
 precision and full-graph AOT eager forward/backward capture. CPU and native MPS
 hot-path checks reject host scalar reads and cross-device tensors. CUDA cases
 remain skipped on this host; these checks do not establish GPU throughput.
-The implementation fixes CPU CSR autocast precision and compiled carried-state
-detachment without adding an execution backend or CPU scan compiler.
+The implementation fixes CPU CSR autocast precision, compiled carried-state
+detachment and an older-Python/Torch typing-union capture failure. Execution
+remains in PyTorch.
 
 The parallel CPU forecast specialization preserves the same recurrent
 arithmetic and falls back for hooks and custom behavior. Its public raw-data
 report binds frozen sources and all prediction/state hashes. A custom-readout
 multiple-inheritance regression protects the fallback as well.
+Two fresh-process ABBA blocks measure **2–9% lower forecast elapsed time** in
+the tested workloads. The unchanged fit control varies from 1.5% faster to
+7.6% slower, so the small forecast gains retain that measurement caveat.
 
 The independent-trajectory study freezes six existing recipes, then runs
 **90 fits and 270 forecasts** on ten new trajectories with no tuning. Primary
@@ -557,12 +561,21 @@ below the 7–8 target. Two secondary state-only vanilla recipes reach the media
 test limit, but do not replace the primary results. Repeating all 90 fits and
 270 forecasts on clean `eb70bf11` gives identical fitted tensors, complete
 predictions, states and scores. See the [current closeout results](phase-five-results.md#current-all-pytorch-closeout).
+An additional corrected-runtime replay loads all 90 original fitted checkpoints
+and reproduces all 270 forecasts, states, scores and error traces exactly,
+without another fit or readout solve.
 
 The runnable experiment now writes a resolved manifest and exact replay data.
 Verification reloads saved DAGs and recomputes predictions/scores without
 reintegration, tuning or fitting; it does not remeasure the original timings.
-Clean-wheel and hosted acceptance are tracked separately from accuracy and
-controlled performance measurements.
+Candidate runtime `941cd8bf` passes **6,509 local tests at 93.86% coverage**,
+all eight full locked/latest Python 3.11–3.14 hosted suites, six optional
+dynamics lanes, CPU gates, real Julia protocol checks and strict docs.
+Clean-wheel acceptance passes 110 checks and all eight common-workflow guide
+blocks; minimum TSDynamics 6.0.2 passes 13 exact experiment checks.
+These verification results remain separate from accuracy and controlled
+performance measurements. Phase five's wider CPU and vanilla-robustness goals
+remain open; the current experiment candidate is ready for review.
 
 ### First-increment accuracy evidence
 
@@ -670,10 +683,13 @@ the unmerged implementation.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P6-01 | WIP | Canonical generate → split → tune/fit → forecast → evaluate → save → PyTorch integration guide. | End-to-end, trajectory and forecast-experiment guides execute in tests. Clean-wheel acceptance passes 110 checks with three unavailable-CUDA skips, including tuning, fresh-process reload and the larger trainable pipeline; all eight common-workflow Python blocks execute as written. Final hosted checks remain required. |
-| P6-02 | WIP | Progressive customization guides and generated capability facts. | Initializer, cell, preprocessing, solver and graph recipes have executable examples. Current workflow/default guidance and rendered navigation are reconciled; the consolidated installed-package path passes. Final hosted docs acceptance remains required. |
-| P6-03 | WIP | Bounded executable docs/examples in CI, optional compatibility and release artifact checks. | Independent encoder → RC → head gradient/optimizer/state/device oracles, CPU mixed precision and full-graph forward/backward capture are implemented. Clean-wheel parity covers all 205 modules, the typing marker, 209 RECORD entries and actual installed import origins. Existing docs, locked/latest and dynamics lanes remain in place; final full-suite/hosted results are being recorded. |
-| P6-04 | WIP | Stable experiment configurations, manifests and migration notes. | Resolved example settings, environment/data/split identities and output hashes are saved with exact replay observations. Thirteen example checks, including fresh-process replay without integration/fitting/tuning and corrupt/misaligned artifact rejection, pass against the clean wheel. Portable custom components, migration notes and persisted tuning studies remain covered; final hosted acceptance is required. |
+| P6-01 | Done | Canonical generate → split → tune/fit → forecast → evaluate → save → PyTorch integration guide. | End-to-end, trajectory and forecast-experiment guides execute in tests. Clean-wheel acceptance passes 110 checks with three unavailable-CUDA skips, including tuning, fresh-process reload and the larger trainable pipeline; all eight common-workflow Python blocks execute as written. Full locked/latest hosted suites pass. |
+| P6-02 | Done | Progressive customization guides and generated capability facts. | Initializer, cell, preprocessing, solver and graph recipes have executable examples. Current workflow/default guidance and rendered navigation are reconciled; the consolidated installed-package path passes. Four changed pages are visually checked, all three new evidence downloads match served bytes, and hosted strict docs pass. |
+| P6-03 | Done | Bounded executable docs/examples in CI, optional compatibility and release artifact checks. | Independent encoder → RC → head gradient/optimizer/state/device oracles, CPU mixed precision and full-graph forward/backward capture pass. Clean-wheel parity covers all 205 modules, the typing marker, 209 RECORD entries and installed import origins. Verification: 6,509 local tests at 93.86% coverage, all eight full hosted suites, six dynamics lanes, CPU/protocol gates and strict docs pass. |
+| P6-04 | Done | Stable experiment configurations, manifests and migration notes. | Resolved example settings, environment/data/split identities and output hashes are saved with exact replay observations. Thirteen example checks, including fresh-process replay without integration/fitting/tuning and corrupt/misaligned artifact rejection, pass against the clean wheel and minimum TSDynamics 6.0.2. Portable custom components, migration notes and persisted tuning studies remain covered; full hosted acceptance passes. |
+
+These are candidate-readiness checks for PR #467. Verification of the actual
+published package and deployed documentation follows merge and release.
 
 ## Completion log
 
@@ -698,7 +714,7 @@ the unmerged implementation.
 | 2026-10-23 | Phase 5 CPU follow-up | Done | [PR #466](https://github.com/El3ssar/ResDAG/pull/466), merged as `3b34005`: unchanged-solution AutoReadout residual reuse and analytic CSR cycle/zero/complex-value fixes. Rejected the timestep-view and driver-slicing rewrites after inconclusive timing; all candidate samples remain available. All 30 frozen forecasts are byte-identical. Final verification: 6,410 local tests at 93.85% coverage, 960 installed-wheel checks, all eight locked/latest full suites (6,160 passes each), six dynamics lanes, CPU gates, 103 Python protocol checks, 18 real Julia checks and strict docs pass. Post-merge release verification is recorded separately. |
 | 2026-10-23 | Phase 5 CPU follow-up merge and release | Done | [v5.0.1](https://github.com/El3ssar/ResDAG/releases/tag/v5.0.1), release commit `eb70bf11`: all four post-merge full suites pass 6,160 tests each at 91.62–91.69% coverage; three dynamics lanes pass 315 tests each. Published wheel, sdist and tag match all 205 modules plus the typing marker, 209 wheel RECORD entries verify, and an isolated installed-wheel fit/forecast/save/load replay is exact. Release documentation and actual Pages deployment pass; all eight live JSON records match the published source. |
 | 2026-10-23 | Phase 5 CPU throughput | WIP | Profiled public fit/history/forecast workflows and matched recurrence/readout work on frozen synthetic development inputs with controlled native threads. Recurrence dominates; solver guards and transactional copies are smaller costs. A private SciPy CSR bridge improves full sparse fit by about 3× and forecasting by about 2.8× in two fresh processes, with exact outputs in this fixture; the maintainer declined adopting that backend. Four per-row dense GEMVs improve batch-four timing but change fitted results substantially and are not adopted. CPU teacher-forced compilation is deferred after reviewing its priority and costs. Continue with all-PyTorch execution and measured improvements to ordinary workflows and larger-model GPU composition. The existing cross-library CPU gap remains open. |
-| 2026-10-24 | All-PyTorch closeout and experiment readiness | WIP | Larger-network optimizer/gradient/state/device acceptance, CPU CSR autocast and full-graph compatibility fixes, guarded parallel forecasting and exact experiment replay are implemented. Independent trajectories: 90 fits / 270 forecasts; all fitted tensors, complete predictions, states and scores match the clean baseline. Friendly vanilla robustness and the comparative CPU speed gap remain open. Hosted minimum-Torch checks found a typing-union graph-capture failure on Python 3.11–3.13; its quoted-cast fix passes a local 3.13 reproduction and refreshed clean-wheel checks. Final replay, measurements and hosted acceptance are being recorded. |
+| 2026-10-24 | All-PyTorch closeout and experiment readiness | Done | [PR #467](https://github.com/El3ssar/ResDAG/pull/467), runtime `941cd8bf`: larger-network gradient/optimizer/state/device acceptance, CPU CSR autocast and full-graph compatibility repairs, guarded parallel forecasting and exact experiment replay pass. Independent study: 90 fits / 270 forecasts, exact paired baseline and corrected-runtime checkpoint replay. Verification: 6,509 local tests at 93.86% coverage, 110 clean-wheel checks plus eight guide blocks, minimum TSDynamics replay, all eight full hosted suites, six dynamics lanes, CPU/protocol/real-Julia gates and strict rendered docs. Phase five's friendly vanilla robustness and comparative CPU speed gap remain open. Candidate is unmerged; published-release verification follows merge. |
 
 ## Standard tools to reuse
 

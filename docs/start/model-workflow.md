@@ -302,8 +302,9 @@ general deployment export are not supported; see the
   `CoupledEnsembleESNModel` graphs. Their original low-level APIs remain available.
 - Automatic next-sample targets require one unambiguous input/output pair.
   Several heads need explicit named targets; their predictions are returned
-  as a dictionary. Expose each algebraically fitted readout as a named output;
-  an intermediate head can also feed a downstream reservoir.
+  as a dictionary. Internal fitted readouts can stay hidden from predictions:
+  provide their targets through `fit(..., readout_targets={...})`, as shown in
+  [training internal readouts](../workflows/train.md#internal-readouts-without-extra-prediction-outputs).
 - Default feedback connects the first output to the first input. Custom
   [named routes](feedback.md) support fanout and explicit delays. Inputs
   without a feedback route need future driver values.

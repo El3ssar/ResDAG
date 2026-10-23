@@ -153,19 +153,22 @@ to the original study's scores.
 
 The implementation is in [PR #467](https://github.com/El3ssar/ResDAG/pull/467).
 The initial `3493889` checks identified the older-Python/Torch 2.10 graph-capture
-failure described above; final hosted acceptance follows its quoted-cast fix.
+failure described above. Corrected runtime `941cd8bf` passes all eight full
+locked/latest hosted suites, including the previously failing combinations.
 These package checks cover the corrected candidate source; its wheel
 retains the base version 5.0.1 and is not the previously published 5.0.1 artifact.
 The final tracker update changes prose only.
 
 | Check | Result |
 | --- | --- |
-| Complete local suite before the typing-only follow-up | **6,509 passed**, 245 skipped, 13 benchmark cases deselected; **93.86% coverage** against the unchanged 90% floor. Final corrected-source replay is being recorded. Compiler acceptance cases isolate their caches rather than changing Torch's global recompile limit. |
+| Complete corrected-source local suite | **6,509 passed**, 245 skipped, 13 benchmark cases deselected; **93.86% coverage** against the unchanged 90% floor. Compiler acceptance cases isolate their caches rather than changing Torch's global recompile limit. |
 | Configured local CPU gates | **Four passed**, four unavailable-device skips, one deselected; thresholds unchanged. |
 | Clean candidate package | **110 installed-wheel checks passed**, three unavailable-CUDA skips, plus all eight common-workflow guide blocks. All **205 runtime modules**, the typing marker, **209 RECORD entries** and actual installed import origins verify against the frozen source and sdist. |
 | Minimum optional dependency | **13 experiment checks pass** with an actual isolated **TSDynamics 6.0.2** install, including fresh-process exact trajectory replay. |
 | Older Python / minimum Torch | Python **3.13.16 / Torch 2.10.0** reproduces all four original graph-capture failures; the corrected source passes all **34 pipeline checks**, including those four cases, with three unavailable-CUDA skips. |
-| Static and documentation | Ruff/Black and whole-package mypy (**205 modules**) pass. Strict MkDocs passes; all four changed pages were visually inspected, and all three new downloadable records match their served bytes. |
+| Static and documentation | Configured Ruff/Black checks and whole-package mypy (**205 modules**) pass. Strict MkDocs passes; all four changed pages were visually inspected, and all three new downloadable records match their served bytes. |
+| Hosted full compatibility | Python **3.11–3.14** passes in both the [locked run](https://github.com/El3ssar/ResDAG/actions/runs/40031742992) and [latest-dependency run](https://github.com/El3ssar/ResDAG/actions/runs/40031748258). Each of the eight full lanes passes **6,256 tests**, with 498 skips and 13 benchmark cases deselected; coverage is **91.65–91.70%** against the existing 90% floor. |
+| Hosted integrations and gates | All **six** TSDynamics lanes pass **322 checks** each, with seven intentional skips. CPU gates, **103** Python comparison/protocol checks, **18** real pinned Julia checks, static checks and strict documentation pass. |
 
 ## CPU follow-up
 

@@ -82,3 +82,32 @@ def test_cuda_generator_same_backend_preserves_current_stream(tmp_path, trusted)
     assert torch.equal(restored.generator.get_state(), generator.get_state())
     x = torch.zeros(8, device="cuda")
     torch.testing.assert_close(model(x), restored(x), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("trusted", [False, True])
+def test_generator_object_identity_preserves_shared_stream(tmp_path, trusted):
+    class Shared(nn.Module):
+        def __init__(self, left, right):
+            super().__init__()
+            self.left, self.right = left, right
+
+        def forward(self, x):
+            return (
+                x
+                + torch.rand(x.shape, generator=self.left)
+                + torch.rand(x.shape, generator=self.right)
+            )
+
+    register_component(
+        f"test.generator_recipes.Shared.{trusted}",
+        Shared,
+        encode=lambda m: {"left": m.left, "right": m.right},
+        decode=lambda c: Shared(**c),
+    )
+    generator = torch.Generator().manual_seed(73)
+    model = Shared(generator, generator)
+    save_model(model, tmp_path / "shared.pt", trusted=trusted)
+    restored = load(tmp_path / "shared.pt", trusted=trusted)
+    assert restored.left is restored.right
+    x = torch.zeros(7)
+    torch.testing.assert_close(model(x), restored(x), rtol=0, atol=0)

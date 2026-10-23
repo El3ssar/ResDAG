@@ -94,6 +94,7 @@ class _Encoder:
         self.records: dict[str, Any] = {}
         self.identities: dict[int, str] = {}
         self.active: set[int] = set()
+        self.generator_configs: dict[int, dict[str, Any]] = {}
 
     def encode(self, value: Any) -> Any:
         if value is None or type(value) in (bool, int, str, bytes):
@@ -120,7 +121,9 @@ class _Encoder:
         if value is Ellipsis:
             return {"tag": "ellipsis"}
         if isinstance(value, torch.Generator):
-            return {"tag": "generator", **_generator_config(value)}
+            if id(value) not in self.generator_configs:
+                self.generator_configs[id(value)] = {"tag": "generator", **_generator_config(value)}
+            return self.generator_configs[id(value)]
         if isinstance(value, (tuple, list)):
             return {
                 "tag": "tuple" if isinstance(value, tuple) else "list",
@@ -178,6 +181,7 @@ class _Decoder:
                 )
         self.objects: dict[str, Any] = {}
         self.active: set[str] = set()
+        self.generators: dict[int, torch.Generator] = {}
 
     def decode(self, value: Any) -> Any:
         if not isinstance(value, dict) or not isinstance(value.get("tag"), str):
@@ -203,7 +207,9 @@ class _Decoder:
         if tag == "slice":
             return slice(*(self.decode(v) for v in value["value"]))
         if tag == "generator":
-            return _restore_generator(value)
+            if id(value) not in self.generators:
+                self.generators[id(value)] = _restore_generator(value)
+            return self.generators[id(value)]
         if tag in ("tuple", "list"):
             children = [self.decode(v) for v in value["value"]]
             return tuple(children) if tag == "tuple" else children

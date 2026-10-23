@@ -380,7 +380,8 @@ by default, as approved by the maintainer.
 
 ### Current verification record
 
-Phase-four source is implemented and under final acceptance checks. Current
+Phase-four source is implemented in [PR #463](https://github.com/El3ssar/ResDAG/pull/463)
+and under final acceptance checks. Current
 local evidence on 23 October 2026:
 
 | Check | Result |
@@ -389,10 +390,10 @@ local evidence on 23 October 2026:
 | Independent numerical/structural training checks | Manual ridge/LMNT recurrence, cascade/branch/merge, temporal prefix, target support, final state, forecasts, hooks, liveness and failed-refit isolation pass. |
 | Fixed CPU cascade workload | Depth eight: median **236.195 → 30.915 ms**, paired **7.64×** speedup; depth one essentially unchanged. Weights/states bit-identical in all pairs. [Full measurements](single-pass-training-benchmark.md). |
 | CPU CI performance selection | **Four passed**, four unavailable-device skips, one deselected; thresholds unchanged. |
-| Clean package | Wheel/sdist match all **199 runtime files** and exclude local coordination notes; isolated installed-wheel artifact tests and all **ten guide examples** pass. Final package manifest is refreshed after the remaining generator portability check. |
+| Clean package | Wheel/sdist match all **199 runtime files** and exclude local coordination notes; isolated installed-wheel artifact tests and all **ten guide examples** pass. The package manifest is refreshed after the final generator portability checks. |
 | Artifacts/integration | Portable and explicit trusted loading, all graph families, independent fresh-process heterogeneous DAGs, custom codecs, original units, memory/RNG, aliases, real TSDynamics clocks and native MPS-to-CPU mapping verified. |
 | Static/docs | Ruff/Black, whole-package mypy (**198 Python modules**), lock validation, actionlint and strict MkDocs pass. Rendered save/load guide and DAG preview inspected. |
-| Hosted checks | Phase-four required/full and latest-dependency verification pending on its own PR. Phase-three PR #462 and its post-merge release workflow passed. |
+| Hosted checks | Full required and latest-dependency verification is running on [PR #463](https://github.com/El3ssar/ResDAG/pull/463). Phase-three PR #462 and its post-merge release workflow passed. |
 
 ### SQ-01: one-pass training of cascaded-readout DAGs
 

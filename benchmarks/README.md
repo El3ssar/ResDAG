@@ -1,9 +1,11 @@
 # Reservoir-computing library benchmark
 
-The committed cross-library tables are historical. New runs use the explicit
+The older cross-library tables in this directory are historical. New runs use the explicit
 `heldout-v1` protocol below; old JSON files retain their historical semantics.
 Correcting the harness does not validate old accuracy rankings or speed ratios.
-See [phase 5 of the roadmap](../docs/project/roadmap.md).
+The [current equal-time results](../docs/project/phase-five-results.md#equal-tuning-time-across-libraries)
+report the completed six-track study. See [phase 5 of the roadmap](../docs/project/roadmap.md)
+for remaining work.
 
 For the new **equal tuning time** track, see [the complete protocol](BUDGET_PROTOCOL.md).
 It compares vanilla ESNs in all three libraries on Lorenz and Rössler with
@@ -17,6 +19,13 @@ python -m benchmarks.rc_bench.budget \
   --data-dir /tmp/resdag-comparison-data \
   --output-dir /tmp/resdag-comparison-results
 ```
+
+For CPU implementation changes, use the separate
+[fixed-weight workflow protocol](CPU_PROTOCOL.md). It compares isolated source
+revisions with the same saved weights and synthetic data, times public
+`Model.fit` and `Model.forecast`, and checks full prediction/state hashes.
+Its optional storage profile compares dense and CSR representations of the
+same matrices. These measurements do not run a new accuracy search.
 
 An extensible, re-runnable harness that compares resdag against other reservoir
 -computing libraries on **matched nominal ESN settings and identical data**, then
@@ -63,7 +72,7 @@ all bounds below are zero-based and half-open:
 
 Every new result records `meta.protocol="heldout-v1"`, exact point bounds,
 normalization statistics, dependency availability and both thresholds. These
-single-seed nominal-setting sweeps are protocol smoke checks, not the planned
+single-seed nominal-setting sweeps are protocol smoke checks, separate from the completed
 multi-seed/origin, equal-search-budget comparison or proof of a 7–8 Lyapunov-time
 median. Adapters use dense input connections, zero reservoir bias and no readout
 intercept; matrices

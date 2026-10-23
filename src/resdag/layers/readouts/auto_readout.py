@@ -318,9 +318,11 @@ class AutoReadoutLayer(ReadoutLayer):
             bridge("MPS does not support float64")
 
         problem: LeastSquaresProblem | None = None
+        residuals: tuple[float, float] | None = None
 
         def prepare() -> tuple[torch.Tensor, torch.Tensor]:
-            nonlocal problem
+            nonlocal problem, residuals
+            residuals = None
             problem = build_least_squares_problem(
                 states.to(device=device),
                 targets.to(device=device),
@@ -356,9 +358,9 @@ class AutoReadoutLayer(ReadoutLayer):
                     bridge(f"{device.type} does not implement a required {method} operation")
                     x, y = prepare()
                     coefs, condition, roundoff = self._gram_solve(x, y, dual=method == "dual")
-                residual, _ = self._residuals(x, y, coefs)
+                residuals = self._residuals(x, y, coefs)
                 tol = math.sqrt(torch.finfo(dtype).eps)
-                safe = math.isfinite(roundoff) and roundoff <= tol and residual <= tol
+                safe = math.isfinite(roundoff) and roundoff <= tol and residuals[0] <= tol
                 if not safe:
                     reason = f"{method} normal equations failed the precision/conditioning guard"
                     if requested != "auto":
@@ -373,6 +375,8 @@ class AutoReadoutLayer(ReadoutLayer):
                 reasons.append(str(exc))
                 method = "qr" if x.shape[0] >= x.shape[1] else "svd"
         if method in ("qr", "svd"):
+            # A decomposition replaces any rejected normal-equations coefficients.
+            residuals = None
             if device.type == "mps":
                 bridge(f"MPS {method} requires a stable CPU decomposition")
                 x, y = prepare()
@@ -397,7 +401,10 @@ class AutoReadoutLayer(ReadoutLayer):
             raise RuntimeError(
                 "AutoReadoutLayer produced non-finite coefficients; rescale the data."
             )
-        residual, prediction_residual = self._residuals(x, y, coefs)
+        # Reuse the admission diagnostics when the Gram solution is unchanged.
+        if residuals is None:
+            residuals = self._residuals(x, y, coefs)
+        residual, prediction_residual = residuals
         precision_warning = None
         if (
             self.alpha > 0

@@ -85,7 +85,7 @@ jobs:
         run: python -m pip install -r benchmarks/requirements.txt
 
       - name: Check comparison windows and real Python adapters
-        run: pytest --no-cov -q tests/test_benchmark_protocol.py tests/test_benchmark_budget.py tests/test_benchmark_threads.py
+        run: pytest --no-cov -q tests/test_benchmark_protocol.py tests/test_benchmark_budget.py tests/test_benchmark_threads.py tests/test_cpu_workflows.py
 
       - name: Render held-out Python comparison smoke report
         # This bounded run verifies both real Python adapters and the reporting

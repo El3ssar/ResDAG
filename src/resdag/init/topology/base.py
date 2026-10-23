@@ -25,6 +25,7 @@ resdag.layers.ESNLayer : Uses topologies for weight initialization.
 """
 
 import inspect
+import math
 import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Callable, cast
@@ -55,11 +56,14 @@ _EIGS_NCV = 48
 def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     """Estimate the spectral radius (largest ``|eigenvalue|``) of a matrix.
 
-    Dense matrices use :func:`torch.linalg.eigvals`. Large matrices with
-    density at most 0.1 use SciPy's sparse Arnoldi solver (``which="LM"``)
-    on a CPU CSR copy, falling back to the dense eigensolver if unavailable
-    or unsuccessful. Arnoldi is an iterative numerical approximation; requesting
-    several dominant eigenvalues reduces sensitivity to clustered spectra.
+    Dense inputs use :func:`torch.linalg.eigvals`, or SciPy's sparse Arnoldi
+    solver (``which="LM"``) for large matrices with density at most 0.1, with
+    a dense fallback if Arnoldi is unavailable or unsuccessful. CSR inputs use
+    analytic zero, triangular and weighted-cycle cases when applicable, then
+    Arnoldi; failure raises without allocating a dense fallback. Only CSR sizes
+    1--2 use a bounded dense solve. Arnoldi is an iterative numerical
+    approximation; requesting several dominant eigenvalues reduces sensitivity
+    to clustered spectra.
 
     A stationary power-iteration estimate does not establish that the dominant
     eigenspace was found, so it is never used for automatic spectral scaling.
@@ -84,6 +88,10 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1] or matrix.shape[0] == 0:
         raise ValueError("matrix must be a non-empty square matrix.")
     values = matrix.values() if matrix.layout == torch.sparse_csr else matrix
+    if matrix.layout == torch.sparse_csr and matrix.is_complex():
+        # Some Torch complex operations inspect the view's sparse parent for
+        # strides. An independent O(nnz) value tensor keeps validation strided.
+        values = values.clone()
     if not bool(torch.isfinite(values).all()):
         raise ValueError("matrix must contain only finite values.")
     # MPS has no complex eigvals or complex power-iteration support. Radius
@@ -96,15 +104,19 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     if matrix.layout == torch.sparse_csr:
         if n <= 2:
             return _dense_eigvals_radius(matrix.to_dense())
-        if matrix._nnz() == 0:
+        # Stored CSR slots can remain after in-place zeroing or a zero target.
+        if matrix._nnz() == 0 or not bool((values != 0).any()):
             return 0.0
         rows = torch.repeat_interleave(
             torch.arange(n, device=matrix.device), matrix.crow_indices().diff()
         )
         columns = matrix.col_indices()
         if bool((columns >= rows).all()) or bool((columns <= rows).all()):
-            diagonal = matrix.values()[columns == rows]
+            diagonal = values[columns == rows]
             return float(diagonal.abs().max().item()) if diagonal.numel() else 0.0
+        radius = _functional_csr_radius(matrix)
+        if radius is not None:
+            return radius
         radius = _sparse_eigs_radius(matrix)
         if radius is None:
             raise RuntimeError(
@@ -124,6 +136,74 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     # A stationary power estimate can belong to a subdominant eigenspace.
     # Dense scaling therefore uses the eigensolver, never that heuristic.
     return _dense_eigvals_radius(matrix)
+
+
+def _functional_csr_radius(matrix: torch.Tensor) -> float | None:
+    """Measure CSR functional graphs analytically, including trees and zero edges.
+
+    With at most one stored entry per row, each nonzero strongly connected
+    component is either a directed weighted cycle or a singleton without a
+    self-loop. A length-k cycle satisfies ``lambda**k = product(weights)``;
+    incoming trees and terminal rows contribute only zero eigenvalues. Work
+    and temporary storage are linear, with no eigensolve or dense square.
+    """
+    if not bool((matrix.crow_indices().diff() <= 1).all()):
+        return None
+    try:
+        import scipy.sparse as sp
+        from scipy.sparse.csgraph import connected_components
+    except ImportError:
+        return None
+
+    # Promote before taking complex magnitudes, and keep SciPy's connectivity
+    # arrays independent: eliminate_zeros must not mutate the caller's indices.
+    dtype = torch.complex128 if matrix.is_complex() else torch.float64
+    tensor_values = matrix.values().detach()
+    if matrix.is_complex():
+        tensor_values = tensor_values.clone()
+    values = tensor_values.to(device="cpu", dtype=dtype).numpy()
+    columns = matrix.col_indices().detach().cpu().numpy()
+    pointers = matrix.crow_indices().detach().cpu().numpy()
+    graph = sp.csr_matrix(
+        (np.where(values != 0, 1.0, 0.0), columns, pointers),
+        shape=tuple(matrix.shape),
+        copy=True,
+    )
+    graph.eliminate_zeros()
+    _, labels = connected_components(graph, directed=True, connection="strong")
+    rows = np.repeat(np.arange(matrix.shape[0]), np.diff(pointers))
+    cycles: dict[int, list[float | complex]] = {}
+    for row, column, value in zip(rows, columns, values.tolist()):
+        if value != 0 and labels[row] == labels[column]:
+            cycles.setdefault(int(labels[row]), []).append(value)
+
+    radius = 0.0
+    for weights in cycles.values():
+        # Preserve a constant magnitude exactly, including signed permutations
+        # and the ordinary simple-cycle builder, rather than exp(log(weight)).
+        magnitudes = []
+        for weight in weights:
+            try:
+                magnitudes.append(abs(weight))
+            except OverflowError:
+                magnitudes.append(math.inf)
+        if math.isfinite(magnitudes[0]) and all(value == magnitudes[0] for value in magnitudes):
+            candidate = magnitudes[0]
+        else:
+            logarithms = []
+            for weight in weights:
+                if isinstance(weight, complex):
+                    scale = max(abs(weight.real), abs(weight.imag))
+                    ratio = min(abs(weight.real), abs(weight.imag)) / scale
+                    logarithms.append(math.log(scale) + 0.5 * math.log1p(ratio * ratio))
+                else:
+                    logarithms.append(math.log(abs(weight)))
+            try:
+                candidate = math.exp(math.fsum(logarithms) / len(weights))
+            except OverflowError:
+                candidate = math.inf
+        radius = max(radius, candidate)
+    return float(radius)
 
 
 def _dense_eigvals_radius(matrix: torch.Tensor) -> float:
@@ -156,8 +236,9 @@ def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
     pairs. This is an iterative estimate, subject to the solver tolerance. A small
     cluster (``k > 1``) is requested rather than ``k=1`` because ARPACK can lock
     onto a sub-dominant Ritz value and miss the true largest when the top
-    eigenvalues are near-degenerate. Returns ``None`` when scipy is unavailable
-    or the iteration fails, so the caller can fall back.
+    eigenvalues are near-degenerate. Returns ``None`` when SciPy is unavailable
+    or the iteration fails. Dense callers can fall back to dense eigvals; CSR
+    callers raise without a dense allocation.
 
     Parameters
     ----------
@@ -218,10 +299,11 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
     """Rescale a square matrix so its spectral radius equals ``target_radius``.
 
     The current spectral radius is obtained from
-    :func:`estimate_spectral_radius`, which picks the exact dense ``eigvals``
-    or scipy ``eigs`` for large sparse matrices, with a dense fallback.  Returns the matrix unchanged when its current
-    measured spectral radius is zero — e.g. the ``zero`` topology or a
-    nilpotent matrix.
+    :func:`estimate_spectral_radius`, which uses analytic structured-CSR cases,
+    dense ``eigvals`` or sparse Arnoldi. General CSR failure raises without a
+    dense fallback; dense inputs retain their dense fallback. Returns the
+    matrix unchanged when its current measured spectral radius is zero — e.g.
+    the ``zero`` topology or a nilpotent matrix.
 
     This is the single shared rescale implementation used by both
     :class:`GraphTopology`/:class:`MatrixTopology` and
@@ -584,8 +666,7 @@ class GraphTopology(TopologyInitializer):
             adjacency = np.asarray(adjacency_builder(n, **self.graph_kwargs))
             if adjacency.shape != (n, n):
                 raise ValueError(
-                    f"Dense adjacency builder produced shape {adjacency.shape}, "
-                    f"expected ({n}, {n})"
+                    f"Dense adjacency builder produced shape {adjacency.shape}, expected ({n}, {n})"
                 )
             return adjacency
 

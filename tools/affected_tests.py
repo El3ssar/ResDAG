@@ -195,6 +195,10 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_regression/test_phase5_accuracy.py",
         "tests/test_regression/test_tuned_capability_cli.py",
     ),
+    "benchmarks/cpu_workflows.py": (
+        "tests/test_cpu_workflows.py",
+        "tests/test_regression/test_cpu_workflow_evidence.py",
+    ),
     "benchmarks/results/phase-five-accuracy-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),
@@ -223,6 +227,13 @@ _DATA_DEP_MAP["docs/workflows/save-load.md"] = (
     *_DATA_DEP_MAP["src/resdag/artifacts/"],
     "tests/test_core/test_diagrams.py",
 )
+# These files share a name prefix, rather than a directory. Register their
+# exact paths and retain the ordinary executable documentation checks.
+for _cpu_record in ("accuracy", "auto", "compile", "interleaved", "storage", "workflows"):
+    _DATA_DEP_MAP[f"docs/assets/data/phase-five-cpu-{_cpu_record}-2026-10-23.json"] = (
+        *_DATA_DEP_MAP["docs/"],
+        "tests/test_regression/test_cpu_workflow_evidence.py",
+    )
 
 
 def _expand_test_target(target: str) -> set[str]:
@@ -247,7 +258,7 @@ def _expand_test_target(target: str) -> set[str]:
 def _data_dep_tests(rel_path: str) -> set[str]:
     """Test targets a changed non-source file selects via ``_DATA_DEP_MAP``.
 
-    Matches an exact path first, then the longest matching directory prefix.
+    Matches an exact path first, then the first matching directory prefix.
     """
     targets: tuple[str, ...] | None = _DATA_DEP_MAP.get(rel_path)
     if targets is None:

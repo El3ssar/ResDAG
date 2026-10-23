@@ -79,6 +79,67 @@ def test_primal_and_dual_choose_smaller_system():
         assert layer.last_solve.roundoff_estimate is not None
 
 
+@pytest.mark.parametrize("shape,method", [((80, 7), "primal"), ((7, 80), "dual")])
+@pytest.mark.parametrize("forced", [False, True])
+def test_gram_admission_reuses_residuals_for_solve_report(monkeypatch, shape, method, forced):
+    x, y = _data(*shape)
+    layer = AutoReadoutLayer(
+        shape[1], 2, bias=False, alpha=0.2, solver=method if forced else "auto"
+    ).double()
+    original = layer._residuals
+    evaluated = []
+
+    def observe_residuals(x, y, coefs):
+        result = original(x, y, coefs)
+        evaluated.append(result)
+        return result
+
+    monkeypatch.setattr(layer, "_residuals", observe_residuals)
+    layer.fit(x, y)
+
+    assert layer.last_solve.solver == method
+    assert len(evaluated) == 1
+    assert (
+        layer.last_solve.relative_optimality_residual,
+        layer.last_solve.relative_prediction_residual,
+    ) == evaluated[0]
+    expected, _ = _reference(x, y, layer.alpha, False)
+    torch.testing.assert_close(layer.weight.T, expected, rtol=2e-9, atol=2e-11)
+
+
+@pytest.mark.parametrize("shape,method", [((80, 7), "qr"), ((7, 80), "svd")])
+def test_gram_fallback_diagnostics_use_final_decomposition_coefficients(monkeypatch, shape, method):
+    x, y = _data(*shape)
+    layer = AutoReadoutLayer(shape[1], 2, bias=False, alpha=0.2).double()
+    original = layer._residuals
+    evaluated = []
+
+    def rejected_gram(x, y, *, dual):
+        return x.new_zeros((x.shape[1], y.shape[1])), 1.0, math.inf
+
+    def observe_residuals(x, y, coefs):
+        result = original(x, y, coefs)
+        evaluated.append((coefs.clone(), result))
+        return result
+
+    monkeypatch.setattr(layer, "_gram_solve", rejected_gram)
+    monkeypatch.setattr(layer, "_residuals", observe_residuals)
+    layer.fit(x, y)
+
+    assert layer.last_solve.solver == method
+    assert any("guard" in reason for reason in layer.last_solve.fallback_reasons)
+    assert len(evaluated) == 2
+    assert evaluated[0][0].count_nonzero() == 0
+    assert evaluated[1][0].count_nonzero() > 0
+    torch.testing.assert_close(evaluated[1][0], layer.weight.T, rtol=0, atol=0)
+    assert (
+        layer.last_solve.relative_optimality_residual,
+        layer.last_solve.relative_prediction_residual,
+    ) == evaluated[1][1]
+    expected, _ = _reference(x, y, layer.alpha, False)
+    torch.testing.assert_close(layer.weight.T, expected, rtol=2e-9, atol=2e-11)
+
+
 @pytest.mark.parametrize("alpha", [0.0, 1e-18, 0.3])
 def test_rank_deficiency_preserves_l2_solution(alpha):
     x, y = _data(40, 4)

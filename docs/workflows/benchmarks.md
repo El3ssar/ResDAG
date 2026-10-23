@@ -86,15 +86,50 @@ oracles check Float64 fitting, the first unseen forecast, history resets,
 future-data isolation and requested timing repetitions. This verifies the
 adapter; it does not establish a cross-library speed ranking.
 
+## CPU implementation checks
+
+Use the paired CPU harness when changing execution code:
+
+```sh
+python benchmarks/cpu_workflows.py --before BASE_COMMIT --after HEAD \
+  --reservoir-forward --artifacts-dir /tmp/resdag-cpu-workflows
+```
+
+Run it from a repository checkout after installing `benchmarks/requirements.txt`.
+Each revision loads the same baseline weights and synthetic observations.
+Public `Model.fit` timing includes preprocessing, graph staging, warmup and
+the readout solve; `Model.forecast` includes history synchronization and
+returning predictions in their original units. Construction, external cloning
+and correctness hashing are outside the timers. No hooks alter execution.
+
+Two fresh-process **ABBA** blocks compare the old and new implementation,
+with seven timed repetitions per process after warmup. The report keeps raw
+samples, process medians, paired ratios and their spread. Torch and native
+BLAS thread settings are set to one and verified; this is not a measurement
+of operating-system thread occupancy.
+
+The default matrix includes vanilla, OTT, cycle and sparse random reservoirs,
+plus batches 1, 4 and 16. `--profile storage` compares the same ER weights as
+dense and CSR matrices at 400, 1,000 and 2,000 units. Predictions must agree
+exactly between revisions within each case. Cross-storage differences are
+reported separately because multiplication order can change roundoff.
+`--profile smoke` is a small execution check, not performance evidence.
+
+See the [complete CPU protocol](https://github.com/El3ssar/ResDAG/blob/main/benchmarks/CPU_PROTOCOL.md)
+for dimensions, timing boundaries and commands. These are implementation
+checks; the [forecast accuracy results](../project/phase-five-results.md)
+remain a separate experiment. Automatic storage and compilation defaults
+are unchanged.
+
 ## Archived comparisons
 
-!!! warning "Historical results; current comparisons are pending"
+!!! warning "Historical results; use the current comparison separately"
     These tables are archived measurements, not evidence for the current
     release. The phase-one audit found mismatched forecast indexing and
     unsupported optional adapter paths in the comparison harness. Treat its
-    accuracy rankings and cross-library speed ratios as unverified until the
-    aligned workloads are rerun. The [roadmap](../project/roadmap.md#phase-5-speed-memory-and-comparisons)
-    tracks the corrected speed–accuracy study. Internal CPU regression gates
+    accuracy rankings and cross-library speed ratios as unverified. The
+    [current equal-time comparison](../project/phase-five-results.md#equal-tuning-time-across-libraries)
+    reports the completed aligned study separately. Internal CPU regression gates
     compare ResDAG execution paths and do not establish superiority to another library.
 
 The historical measurements below compare ResDAG 0.6.0 head-to-head with two

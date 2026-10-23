@@ -144,7 +144,15 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_trajectory_guide.py",
         "tests/test_named_trajectory_guide.py",
         "tests/test_custom_components_guide.py",
+        "tests/test_artifact_guides.py",
         "tests/test_examples_smoke.py",
+    ),
+    # These recipes execute Markdown rather than importing artifact modules
+    # directly, so their source dependency is invisible to static imports.
+    "src/resdag/artifacts/": ("tests/test_artifacts/", "tests/test_artifact_guides.py"),
+    "src/resdag/core/_diagram.py": (
+        "tests/test_core/test_diagrams.py",
+        "tests/test_artifact_guides.py",
     ),
     "hooks/": ("tests/test_init/test_correctness_contracts.py",),
     "examples/": ("tests/test_examples_smoke.py",),
@@ -158,6 +166,13 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
     # change" workflow) must re-run the golden regression test.
     "tests/fixtures/golden_forecast/": ("tests/test_models/test_golden_forecast.py",),
 }
+# Preserve the generic documentation checks while adding the complete artifact
+# and diagram suites for the canonical persistence recipe.
+_DATA_DEP_MAP["docs/workflows/save-load.md"] = (
+    *_DATA_DEP_MAP["docs/"],
+    *_DATA_DEP_MAP["src/resdag/artifacts/"],
+    "tests/test_core/test_diagrams.py",
+)
 
 
 def _expand_test_target(target: str) -> set[str]:

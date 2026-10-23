@@ -281,3 +281,34 @@ def test_documentation_changes_select_executable_catalog(changed):
 def test_example_body_changes_select_example_checks():
     selection = AT.select_tests(["examples/10_hpo.py"])
     assert "tests/test_examples_smoke.py" in selection.tests
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "src/resdag/artifacts/__init__.py",
+        "src/resdag/artifacts/_api.py",
+        "src/resdag/artifacts/_models.py",
+        "src/resdag/artifacts/_codecs.py",
+        "src/resdag/artifacts/_registry.py",
+        "docs/workflows/save-load.md",
+    ],
+)
+def test_artifact_sources_and_guide_select_roundtrips_and_executable_recipe(changed):
+    selection = AT.select_tests([changed])
+    artifact_tests = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "tests/test_artifacts").glob("test_*.py")
+    }
+    assert artifact_tests
+    assert artifact_tests <= set(selection.tests)
+    assert "tests/test_artifact_guides.py" in selection.tests
+    if changed.startswith("docs/"):
+        assert "tests/test_core/test_diagrams.py" in selection.tests
+        assert "tests/test_workflow_guide.py" in selection.tests
+
+
+def test_diagram_source_also_selects_its_rendered_guide():
+    selection = AT.select_tests(["src/resdag/core/_diagram.py"])
+    assert "tests/test_artifact_guides.py" in selection.tests
+    assert "tests/test_core/test_diagrams.py" in selection.tests

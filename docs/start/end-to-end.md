@@ -56,24 +56,23 @@ period. [Automatic tuning](../workflows/tune.md) handles the validation split,
 candidate comparison and final refit. Matched speed–accuracy comparisons remain
 in [roadmap phase five](../project/roadmap.md).
 
-## 3. Save and restore a Torch state checkpoint
+## 3. Save and restore the complete model
 
 ```python
-torch.save(model.state_dict(), "trained-state.pt")
-restored = rd.ESN(**options)
-restored.load_state_dict(torch.load("trained-state.pt", weights_only=True, map_location="cpu"))
+model.save("trained.pt")
+restored = rd.load("trained.pt", map_location="cpu")
 restored_prediction = restored.forecast(horizon=len(truth))
 torch.testing.assert_close(restored_prediction, prediction, rtol=0, atol=0)
+model.save("model.svg")  # diagram; requires the optional visualization tools
 ```
 
-This includes fitted weights, scaling, observed history and model metadata.
-Use the same preset settings when constructing the destination. Its signal
-count is restored automatically. Custom `Model` state checkpoints require a
-matching graph. A checkpoint does not resume an in-progress delayed rollout.
-
-Complete architecture loading without reconstruction and `save("model.svg")`
-are tracked in phase four. The current public checkpoint path uses standard
-PyTorch serialization.
+The checkpoint includes the architecture, fitted weights, preprocessing,
+observed history and ordinary-forward reservoir memory. You do not reconstruct
+the DAG. Forecasts replay their supplied or saved history; a checkpoint does
+not resume an in-progress delayed rollout. See [save and load](../workflows/save-load.md)
+for custom components, notebook bundles and diagram formats. Standard
+`state_dict()` remains available for larger PyTorch pipelines that already own
+the architecture.
 
 ## 4. Put it inside a larger PyTorch model
 

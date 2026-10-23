@@ -1755,9 +1755,13 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+artifacts = [
+    { name = "cloudpickle" },
+]
 dev = [
     { name = "basedpyright" },
     { name = "black" },
+    { name = "cloudpickle" },
     { name = "editables" },
     { name = "graphviz" },
     { name = "hatchling" },
@@ -1800,6 +1804,8 @@ dev = [
 requires-dist = [
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.37.1" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=25.12.0" },
+    { name = "cloudpickle", marker = "extra == 'artifacts'", specifier = ">=3.1.2" },
+    { name = "cloudpickle", marker = "extra == 'dev'", specifier = ">=3.1.2" },
     { name = "editables", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "graphviz", marker = "extra == 'dev'", specifier = ">=0.21" },
     { name = "graphviz", marker = "extra == 'docs'", specifier = ">=0.21" },
@@ -1827,7 +1833,7 @@ requires-dist = [
     { name = "torchdiffeq", marker = "extra == 'ode'", specifier = ">=0.2.0" },
     { name = "tsdynamics", marker = "python_full_version >= '3.12' and extra == 'dynamics'", specifier = ">=6.0.2,<7" },
 ]
-provides-extras = ["dev", "docs", "dynamics", "hpo", "ode", "viz"]
+provides-extras = ["artifacts", "dev", "docs", "dynamics", "hpo", "ode", "viz"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "resdag", extras = ["dev"] }]

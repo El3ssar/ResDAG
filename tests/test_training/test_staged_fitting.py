@@ -56,7 +56,7 @@ def test_recurrent_cascade_matches_known_stagewise_solution(nested_upstream, dow
     assert all(not module._forward_pre_hooks for module in (upstream, middle, final))
 
 
-def test_direct_readout_chain_preserves_single_warmup_and_training_pass():
+def test_direct_readout_chain_uses_one_combined_warmup_training_prefix():
     x = rd.reservoir_input(1, dtype=torch.float64)
     upstream = RidgeReadoutLayer(1, 1, alpha=0, bias=False, name="upstream").double()
     final = RidgeReadoutLayer(1, 1, alpha=0, bias=False, name="output").double()
@@ -69,7 +69,7 @@ def test_direct_readout_chain_preserves_single_warmup_and_training_pass():
         rd.ESNTrainer(model).fit(warmup, train, {"upstream": 2 * train, "output": 6 * train})
     finally:
         handle.remove()
-    assert calls == [3, 7]
+    assert calls == [10]
     torch.testing.assert_close(upstream.weight, torch.full_like(upstream.weight, 2))
     torch.testing.assert_close(final.weight, torch.full_like(final.weight, 3))
 

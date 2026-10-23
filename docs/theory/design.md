@@ -76,27 +76,22 @@ buffers? Three reasons:
 
 ## The trainer is a hook
 
-For terminal heads, `ESNTrainer.fit` resets the reservoirs, runs a
-teacher-forced warmup, and fits the readouts during one training pass.
-Each readout gets a `forward_pre_hook` that fits it on the tensor about to
-enter its `forward`. Direct readout-to-readout chains also fit in this
-single pass because the symbolic graph calls them in dependency order.
+`ESNTrainer.fit` resets recurrence once and evaluates a continuous
+warmup-plus-training prefix in topological order. Each readout's pre-hook fits
+only the training suffix, then its normal forward computes fitted outputs for
+the complete prefix. A downstream reservoir consequently warms up with the
+fitted upstream mapping and continues through training without replaying any
+upstream nodes. Each reservoir consumes its samples once; shared branches are
+cached until their last consumer.
 
-When a readout feeds another reservoir, that reservoir must warm up using
-the **fitted** upstream mapping. The trainer therefore splits fitting into
-stages at these recurrent dependencies. Each stage resets and replays the
-warmup, then fits only its readouts; previously fitted readouts keep their
-weights. This avoids fitting downstream heads on states synchronized by
-random, unfitted upstream weights. The final stored states correspond to
-the last stage's training pass. Multiple stages cost additional forward
-passes; ordinary single-stage graphs retain their original execution path.
-
-Declare recurrent dependencies as separate functional graph nodes or use
-standard `torch.nn.Sequential` containers, whose child order is explicit.
-Custom modules that hide both readouts and reservoirs are rejected before
-fitting: their internal execution order cannot be inferred from registered
-children. `fit_stream` still requires independent incremental
-readouts; it cannot replay a consumed stream for staged fitting.
+Normal PyTorch calls preserve module hooks. Declare dependencies as separate
+functional graph nodes or use standard `torch.nn.Sequential` containers.
+Opaque custom containers mixing readouts and reservoirs are rejected because
+their internal ordering cannot be inferred safely. The common `Model.fit`
+also supports internal targets without exposing additional outputs and stages
+the fit before committing. See [training](../workflows/train.md).
+`fit_stream` has its own independent incremental-readout contract; it cannot
+retroactively refit upstream heads after consuming their downstream inputs.
 
 ## Registries, but callables first
 

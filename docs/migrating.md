@@ -30,6 +30,33 @@ a ridge readout, a warmup, a forecast. What differs is the *mental model*:
 The rest of this page maps concepts and API surface side by side, then walks
 the same Lorenz forecast through all three libraries.
 
+## Phase-four training and persistence changes
+
+The common `rd.ESN` and `rd.Model` now support `model.save("run.pt")` and
+`rd.load("run.pt")`, including the complete graph. Use `.svg`, `.png`, `.pdf`
+or `.dot` for diagrams. Portable custom components need registration; optional
+notebook-code bundles require explicit `trusted=True` at save and load.
+See [save and load](workflows/save-load.md).
+
+Batch fitting evaluates one continuous warmup-plus-training prefix. Readout
+regression still excludes warmup, and downstream reservoirs use fitted upstream
+outputs throughout the prefix. Temporal layers now see one sequence instead of
+a separate warmup call and training call. Ordinary hooks consequently observe
+one combined graph call. Stochastic layers, including reservoir noise and dropout, follow the new traversal order,
+so old noisy-training results can change even for the same seed; new seeded
+runs remain repeatable. Custom outer `ESNModel.forward` bodies are rejected
+rather than bypassed; put custom behavior in graph operations or module hooks.
+
+A readout object may fan out from one invocation but cannot occupy several
+fitted graph positions. Use distinct readout instances there. Internal readouts
+can receive `readout_targets={"name": values}` without becoming public outputs.
+The raw trainer mutates in place; the common workflow commits a fit only after
+it succeeds. `fit_stream` retains its independent incremental-readout contract.
+
+Raw `plot_model(save_path=...)` now infers the suffix and returns the saved path;
+without a path it returns a notebook-displayable source. It no longer opens a
+system viewer or silently writes SVG when a PNG filename was requested.
+
 ## Forecast timing after v0.11
 
 The default low-level forecast now starts at the **immediate unseen sample**

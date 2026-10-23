@@ -973,13 +973,8 @@ class TestESNTrainerIncrementalRidge:
         with pytest.raises(RuntimeError, match="is not fitted"):
             model(torch.randn(2, 30, 1))
 
-    def test_fit_resets_guard_flag_on_warmup_exception(self) -> None:
-        """The warmup bypass flag is reset even if the warmup pass raises.
-
-        Uses ``try/finally`` in the shared context manager, so a failure mid-warmup
-        must not leave the readout stuck with ``_allow_unfitted_forward=True``
-        (which would silently disable the guard for all later inference).
-        """
+    def test_fit_restores_guard_hooks_and_forward_after_graph_prehook_failure(self) -> None:
+        """A failed combined-prefix call restores the model's normal dispatcher."""
         torch.manual_seed(0)
 
         feedback = Input(shape=(10, 1))
@@ -988,23 +983,36 @@ class TestESNTrainerIncrementalRidge:
         model = ESNModel(feedback, readout)
         readout_layer = model.IncrementalRidgeReadoutLayer_1
 
-        original_warmup = model.warmup
+        absent = object()
+        original_forward = model.__dict__.get("forward", absent)
+        original_active = model.__dict__.get("_resdag_fitting_execution_active", absent)
+        original_hooks = dict(model._forward_pre_hooks)
 
         def _boom(*_args, **_kwargs):
-            raise ValueError("synthetic warmup failure")
+            raise ValueError("synthetic graph prehook failure")
 
-        model.warmup = _boom  # type: ignore[method-assign]
+        def _compiled(*_args, **_kwargs):
+            raise AssertionError("Fitting must temporarily bypass a cached compiled call")
+
+        model._compiled_call_impl = _compiled
+        handle = model.register_forward_pre_hook(_boom)
         try:
-            with pytest.raises(ValueError, match="synthetic warmup failure"):
+            with pytest.raises(ValueError, match="synthetic graph prehook failure"):
                 ESNTrainer(model).fit(
                     warmup_inputs=(torch.randn(2, 40, 1),),
                     train_inputs=(torch.randn(2, 80, 1),),
                     targets={"output": torch.randn(2, 80, 1)},
                 )
         finally:
-            model.warmup = original_warmup  # type: ignore[method-assign]
+            handle.remove()
 
         assert readout_layer._allow_unfitted_forward is False
+        assert not readout_layer._forward_pre_hooks
+        assert dict(model._forward_pre_hooks) == original_hooks
+        assert model.__dict__.get("forward", absent) is original_forward
+        assert model.__dict__.get("_resdag_fitting_execution_active", absent) is original_active
+        assert model._compiled_call_impl is _compiled
+        assert not readout_layer.is_fitted
 
 
 class TestESNTrainerGPU:

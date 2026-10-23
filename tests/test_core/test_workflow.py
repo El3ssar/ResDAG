@@ -110,13 +110,13 @@ def test_stateless_outputs_keep_original_units_states_and_upstream_gradients():
     assert bool((all_gradient != 0).any())
 
 
-def test_internal_readouts_are_rejected_before_mutation():
+def test_missing_internal_readout_targets_are_rejected_before_mutation():
     x = reservoir_input(1, dtype=torch.float64)
     a = RidgeReadoutLayer(1, 1, name="internal").double()(x)
     b = RidgeReadoutLayer(1, 1, name="terminal").double()(a)
     model = Model(inputs={"state": x}, outputs={"result": b}, washout=1)
     before = copy.deepcopy(model.state_dict())
-    with pytest.raises(ValueError, match="no internal fitted readouts"):
+    with pytest.raises(ValueError, match="Provide readout_targets for internal fitted readouts"):
         model.fit(torch.arange(10, dtype=torch.float64)[:, None])
     _assert_state_equal(model.state_dict(), before)
 

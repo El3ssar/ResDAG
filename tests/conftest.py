@@ -11,12 +11,28 @@ Conventions
   ``benchmark`` marker (deselected by default; run with ``pytest -m benchmark``).
 """
 
+import importlib.util
+import os
+import shutil
+
 import pytest
 import torch
 
 import resdag as rd
 from resdag.core import ESNModel, reservoir_input
 from resdag.layers import CGReadoutLayer, ESNLayer
+
+
+@pytest.fixture
+def graphviz_rendering() -> None:
+    """Require real rendering in CI; local DOT-only development remains usable."""
+    available = importlib.util.find_spec("graphviz") is not None and shutil.which("dot")
+    if available:
+        return
+    message = "Rendering requires the graphviz Python package and Graphviz system executable"
+    if os.environ.get("CI", "").lower() == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 def _cuda_unavailable() -> bool:

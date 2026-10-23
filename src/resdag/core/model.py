@@ -40,7 +40,6 @@ resdag.training.ESNTrainer : Trainer for fitting readout layers.
 
 from __future__ import annotations
 
-import colorsys
 import contextlib
 import copy
 from collections.abc import Mapping
@@ -752,217 +751,26 @@ class ESNModel(ps.SymbolicModel):
         show_trainable: bool = False,
         rankdir: str = "TB",
         save_path: str | Path | None = None,
-        format: str = "svg",
+        format: str | None = None,
         **kwargs: Any,
     ) -> Any:
+        """Return a Graphviz source or export SVG/PNG/PDF/DOT, inferred by suffix.
+
+        Graph inspection does not execute layers or open a system viewer.
+        SVG/PNG/PDF require ``resdag[viz]`` and the Graphviz executable;
+        DOT works without either optional dependency.
         """
-        Visualize model architecture as a graph.
+        from resdag.core._diagram import plot_model
 
-        Parameters
-        ----------
-        show_shapes : bool, default=False
-            Show tensor shapes on edges.
-        show_trainable : bool, default=False
-            Show a padlock indicator (🔒 frozen / 🔓 trainable) on nodes
-            that have learnable parameters.
-        rankdir : {'TB', 'LR', 'BT', 'RL'}, default='TB'
-            Graph layout direction.
-        save_path : str or Path, optional
-            Render and save to this path instead of displaying.
-        format : {'svg', 'png', 'pdf'}, default='svg'
-            Output format when ``save_path`` is given.
-
-        Returns
-        -------
-        graphviz.Source or None
-            ``None`` in Jupyter (diagram already displayed). ``graphviz.Source``
-            in script/REPL (system viewer opened). DOT string if graphviz is
-            not installed.
-
-        Notes
-        -----
-        Requires the ``graphviz`` Python package and system binary.
-        ``pip install graphviz`` and ``apt install graphviz``.
-        """
-        # ── Palette ───────────────────────────────────────────────────────────
-        _FONT = "#1A2332"
-        _EDGE = "#8B9CB6"
-        _FONTS = "Helvetica Neue,Helvetica,Arial,sans-serif"
-
-        # ── Helpers ───────────────────────────────────────────────────────────
-        node_to_name: dict[Any, str] = getattr(self, "_node_to_layer_name", {})
-
-        def _is_jupyter() -> bool:
-            try:
-                return bool(get_ipython().__class__.__name__ == "ZMQInteractiveShell")  # type: ignore[name-defined]
-            except NameError:
-                return False
-
-        def _get_node_label(node: Any) -> str:
-            if node in node_to_name:
-                return node_to_name[node]
-            for i, inp in enumerate(self.inputs):
-                if node is inp:
-                    return f"Input_{i + 1}"
-            return f"node_{id(node)}"
-
-        def _get_shape_str(node: Any) -> str:
-            if hasattr(node, "shape") and isinstance(node.shape, torch.Size):
-                return str(tuple(node.shape))
-            return ""
-
-        def _trainable_status(module: Any) -> bool | None:
-            if hasattr(module, "trainable"):
-                return bool(module.trainable)
-            params = list(module.parameters())
-            return None if not params else any(p.requires_grad for p in params)
-
-        def _build_dot() -> str:
-            nodes: dict[str, tuple[str, str, Any, bool, bool]] = {}
-            edges: list[tuple[str, str, str]] = []
-
-            for i, inp in enumerate(self.inputs):
-                nodes[f"Input_{i + 1}"] = ("Input", _get_shape_str(inp), None, True, False)
-
-            for node, layer_name in node_to_name.items():
-                module = getattr(node, "layer", None)
-                cls_name = (
-                    type(module).__name__ if module is not None else layer_name.rsplit("_", 1)[0]
-                )
-                nodes[layer_name] = (cls_name, _get_shape_str(node), module, False, False)
-                for parent in getattr(node, "_parents", []):
-                    edge_label = _get_shape_str(parent) if show_shapes else ""
-                    edges.append((_get_node_label(parent), layer_name, edge_label))
-
-            for out in self.outputs:
-                out_name = _get_node_label(out)
-                if out_name in nodes:
-                    cls_name, shape_str, module, is_input, _ = nodes[out_name]
-                    nodes[out_name] = (cls_name, shape_str, module, is_input, True)
-
-            # Assign hues via golden ratio over sorted unique class names.
-            # Golden ratio on sequential *indices* guarantees maximal perceptual
-            # separation — the only correct way to avoid adjacent colors.
-            # Sorting makes assignment deterministic regardless of graph order.
-            sorted_classes = sorted({cls for cls, *_ in nodes.values()})
-            _hues = {cls: (i * 0.618033988749895) % 1.0 for i, cls in enumerate(sorted_classes)}
-
-            def _hex(r: float, g: float, b: float) -> str:
-                return f"#{int(r * 255):02X}{int(g * 255):02X}{int(b * 255):02X}"
-
-            def _color_for(cls_name: str) -> tuple[str, str]:
-                hue = _hues.get(cls_name, 0.0)
-                fill = _hex(*colorsys.hsv_to_rgb(hue, 0.20, 0.97))
-                border = _hex(*colorsys.hsv_to_rgb(hue, 0.82, 0.52))
-                return fill, border
-
-            lines = [
-                "digraph ESNModel {",
-                "  bgcolor=white;",
-                f"  rankdir={rankdir};",
-                "  splines=true;",
-                "  nodesep=0.6;",
-                "  ranksep=0.8;",
-                "  pad=0.4;",
-                f'  graph [fontname="{_FONTS}"];',
-                f'  node [fontname="{_FONTS}", penwidth=1.5];',
-                f'  edge [color="{_EDGE}", penwidth=1.2, arrowsize=0.7, arrowhead=vee,'
-                f' fontname="{_FONTS}", fontcolor="{_EDGE}", fontsize=9];',
-            ]
-
-            for name, (cls_name, shape_str, module, is_input, is_output) in nodes.items():
-                lock = ""
-                if show_trainable and module is not None:
-                    status = _trainable_status(module)
-                    if status is not None:
-                        lock = " \U0001f513" if status else " \U0001f512"
-                label = f'"{cls_name}{lock}"'
-                if show_shapes and shape_str:
-                    label = f'"{cls_name}{lock}\\n{shape_str}"'
-
-                fill, border = _color_for(cls_name)
-                node_shape = "ellipse" if is_input else "box"
-                style = (
-                    "filled"
-                    if is_input
-                    else ("filled,rounded,bold" if is_output else "filled,rounded")
-                )
-                lines.append(
-                    f'  "{name}" [label={label}, shape={node_shape},'
-                    f' style="{style}", fillcolor="{fill}", color="{border}",'
-                    f' fontcolor="{_FONT}"];'
-                )
-
-            for from_name, to_name, edge_label in edges:
-                if edge_label:
-                    lines.append(f'  "{from_name}" -> "{to_name}" [label="{edge_label}"];')
-                else:
-                    lines.append(f'  "{from_name}" -> "{to_name}";')
-
-            lines.append("}")
-            return "\n".join(lines)
-
-        # ── Rendering ─────────────────────────────────────────────────────────
-        def _print_dot_fallback(reason: str) -> str:
-            print(reason)
-            print("DOT source (paste at https://dreampuf.github.io/GraphvizOnline/):")
-            dot_src = _build_dot()
-            print(dot_src)
-            return dot_src
-
-        try:
-            try:
-                import graphviz
-            except ImportError as exc:
-                # graphviz is an optional dependency; the Python package may be
-                # absent. Re-raise with an actionable install hint (the outer
-                # handler turns any ImportError into the printable DOT fallback).
-                raise ImportError(
-                    "graphviz Python package not installed; install it with "
-                    "`pip install resdag[viz]` or `pip install graphviz` "
-                    "(the system binary is also required: e.g. apt install graphviz)."
-                ) from exc
-
-            dot_src = _build_dot()
-            src = graphviz.Source(dot_src)
-
-            if save_path is not None:
-                save_path = Path(save_path)
-                try:
-                    src.render(str(save_path.with_suffix("")), format=format, cleanup=True)
-                except graphviz.ExecutableNotFound:
-                    return _print_dot_fallback(
-                        "graphviz system binary not found: install it "
-                        "(e.g. apt install graphviz) or render the DOT source below."
-                    )
-                print(f"Saved to {save_path.with_suffix('.' + format)}")
-                return src
-
-            if _is_jupyter():
-                from IPython.display import SVG
-                from IPython.display import display as ipy_display
-
-                try:
-                    svg = src.pipe(format="svg").decode("utf-8")
-                except graphviz.ExecutableNotFound:
-                    return _print_dot_fallback(
-                        "graphviz system binary not found: install it "
-                        "(e.g. apt install graphviz) or render the DOT source below."
-                    )
-                ipy_display(SVG(svg))
-                return None  # prevent double-display from cell output
-
-            try:
-                src.view(cleanup=True)
-            except Exception:
-                pass
-            return src
-
-        except ImportError as exc:
-            return _print_dot_fallback(
-                f"{exc} pip install resdag[viz] (or pip install graphviz) "
-                f"&& apt install graphviz, or render the DOT source below."
-            )
+        return plot_model(
+            self,
+            save_path=save_path,
+            format=format,
+            show_shapes=show_shapes,
+            show_trainable=show_trainable,
+            rankdir=rankdir,
+            **kwargs,
+        )
 
     def warmup(
         self,

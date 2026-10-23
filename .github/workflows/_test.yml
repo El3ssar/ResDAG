@@ -101,6 +101,15 @@ jobs:
             echo "mode=full" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Ensure Graphviz rendering tools
+        if: ${{ inputs.force-full || steps.select.outputs.mode != 'none' }}
+        run: |
+          if ! command -v dot >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y graphviz
+          fi
+          dot -V
+
       - name: Tests (full suite + coverage)
         if: ${{ inputs.force-full || steps.select.outputs.mode == 'full' }}
         run: pytest -q --cov=resdag --cov-report=xml --cov-report=term
@@ -158,3 +167,4 @@ jobs:
           tests/test_hpo/test_tuning_completion.py
           tests/test_hpo/test_tuning_completion_review.py
           tests/test_hpo/test_tuning_guides.py
+          tests/test_artifacts/test_trajectory_roundtrip.py

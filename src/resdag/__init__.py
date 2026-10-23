@@ -86,6 +86,7 @@ import importlib
 from typing import Any
 
 from . import core, data, datasets, ensemble, init, layers, metrics, models, training, utils
+from .artifacts import ArtifactError, ComponentCodec, load, register_component
 
 # Convenience imports for common use cases
 from .core import (
@@ -205,6 +206,10 @@ from .utils.states import esp_index
 __version__ = "3.0.0"
 
 __all__ = [
+    "ArtifactError",
+    "ComponentCodec",
+    "load",
+    "register_component",
     # Modules
     "core",
     "data",

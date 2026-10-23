@@ -6,6 +6,7 @@ workflow's sole registered graph, including its parameters, hooks and states.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -40,7 +41,7 @@ def _symbolic_interface(graph: ESNModel) -> BackendInterface:
     )
 
 
-def _terminal_names(graph: ESNModel) -> tuple[str, ...]:
+def _terminal_names(graph: ESNModel, *, allow_internal: bool = False) -> tuple[str, ...]:
     graph._get_execution_plan(require_explicit_state=False)
     terminals = [node.layer for node in graph.outputs]
     readouts = [
@@ -49,7 +50,10 @@ def _terminal_names(graph: ESNModel) -> tuple[str, ...]:
     if (
         not all(isinstance(layer, ReadoutLayer) for layer in terminals)
         or len({id(layer) for layer in terminals}) != len(terminals)
-        or {id(layer) for layer in terminals} != {id(layer) for _, layer in readouts}
+        or (
+            not allow_internal
+            and {id(layer) for layer in terminals} != {id(layer) for _, layer in readouts}
+        )
     ):
         raise ValueError(
             "Model.fit currently requires one distinct terminal readout per output "
@@ -148,11 +152,67 @@ class WorkflowBackend:
         )
 
     def validate_fit(self, graph: nn.Module) -> None:
+        from resdag.training import ESNTrainer
+
+        for _, member in self._fitting_members(graph):
+            _terminal_names(member, allow_internal=True)
+            # Reject ambiguous invocation order before fitting even staged
+            # preprocessing modules, rather than discovering it during execution.
+            ESNTrainer(member)._fitting_plan()
+
+    def _fitting_members(self, graph: nn.Module) -> tuple[tuple[str, ESNModel], ...]:
         if self.kind == "symbolic":
-            _terminal_names(cast(ESNModel, graph))
-        elif self.kind == "coupled":
-            for member in cast("CoupledEnsembleESNModel", graph)._iter_models():
-                _terminal_names(member)
+            return (("", cast(ESNModel, graph)),)
+        if self.kind == "coupled":
+            return tuple(
+                (f"models.{index}.", member)
+                for index, member in enumerate(
+                    cast("CoupledEnsembleESNModel", graph)._iter_models()
+                )
+            )
+        return ()
+
+    def internal_readouts(self, graph: nn.Module) -> tuple[tuple[str, ReadoutLayer], ...]:
+        """Stable target names for fitted heads that are not public outputs."""
+        from resdag.training import ESNTrainer
+
+        result: list[tuple[str, ReadoutLayer]] = []
+        for prefix, member in self._fitting_members(graph):
+            terminals = {id(node.layer) for node in member.outputs}
+            result.extend(
+                (prefix + name, layer)
+                for name, layer in ESNTrainer(member)._discover_readouts()
+                if id(layer) not in terminals
+            )
+        return tuple(result)
+
+    def fit_prefix(
+        self,
+        graph: nn.Module,
+        inputs: tuple[torch.Tensor, ...],
+        targets: tuple[torch.Tensor, ...],
+        *,
+        fit_start: int,
+        readout_targets: Mapping[str, torch.Tensor],
+    ) -> None:
+        """Fit each member on one continuous prefix, keeping caller data owned."""
+        if self.kind == "parallel":
+            cast("ParallelESNModel", graph).fit(
+                inputs[0][:, :fit_start], inputs[0][:, fit_start:], targets[0]
+            )
+            return
+        from resdag.training import ESNTrainer
+
+        for prefix, member in self._fitting_members(graph):
+            terminal_targets = dict(zip(_terminal_names(member, allow_internal=True), targets))
+            internal = {
+                name.removeprefix(prefix): value
+                for name, value in readout_targets.items()
+                if not prefix or name.startswith(prefix)
+            }
+            ESNTrainer(member)._fit_complete_prefix(
+                inputs, {**internal, **terminal_targets}, fit_start=fit_start
+            )
 
     def fitted_readouts(self, graph: nn.Module) -> tuple[tuple[str, ReadoutLayer], ...]:
         """Heads owned by the algebraic fitting workflow, excluding aggregators."""

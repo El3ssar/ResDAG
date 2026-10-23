@@ -76,6 +76,7 @@ def test_docs_only_change_runs_executable_documentation_checks() -> None:
     assert "tests/test_named_trajectory_guide.py" in sel.tests
     assert "tests/test_custom_components_guide.py" in sel.tests
     assert "tests/test_docs/test_forecast_experiment.py" in sel.tests
+    assert "tests/test_hpo/test_tuning_guides.py" in sel.tests
 
 
 def test_forecast_example_change_runs_its_body_not_only_its_import() -> None:

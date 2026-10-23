@@ -147,6 +147,7 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_artifact_guides.py",
         "tests/test_examples_smoke.py",
         "tests/test_docs/test_forecast_experiment.py",
+        "tests/test_hpo/test_tuning_guides.py",
     ),
     # These recipes execute Markdown rather than importing artifact modules
     # directly, so their source dependency is invisible to static imports.

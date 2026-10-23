@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v4.0.0 (2026-10-23)
+
+### Features
+
+- **core**: Add complete artifacts and single-pass DAG training
+  ([`0b546d6`](https://github.com/El3ssar/ResDAG/commit/0b546d6725ab9ce945ec0ec580500c6590a54ab7))
+
+### Breaking Changes
+
+- **core**: Batch fitting evaluates the complete warmup/training prefix in one call; temporal-layer
+  behavior and stochastic draw order can change. Reused readout invocations and custom outer
+  ESNModel.forward bodies fail clearly. Diagram exports infer suffixes and return paths without
+  opening a viewer.
+
+
 ## v3.0.0 (2026-10-23)
 
 ### Features

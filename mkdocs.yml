@@ -207,6 +207,7 @@ nav:
       - Tuning resources: advanced/tuning-resources.md
       - Raw HPO runner: advanced/raw-hpo.md
       - Streaming & DataLoaders: workflows/streaming.md
+      - Save, load & diagrams: workflows/save-load.md
       - Scale & deploy: workflows/deploy.md
       - Benchmarks: workflows/benchmarks.md
   - Migrating: migrating.md
@@ -221,6 +222,7 @@ nav:
       - Top level: reference/top-level.md
       - Facade: reference/facade.md
       - Core: reference/core.md
+      - Model artifacts: reference/artifacts.md
       - Layers: reference/layers.md
       - Initialization: reference/init.md
       - Training: reference/training.md
@@ -233,6 +235,8 @@ nav:
       - Roadmap: project/roadmap.md
       - Phase two design: project/phase-two-design.md
       - Phase three design: project/phase-three-design.md
+      - Phase four design: project/phase-four-design.md
+      - Single-pass training measurements: project/single-pass-training-benchmark.md
       - Graph tooling: project/graph-tooling.md
       - New ESN API: project/esn-migration.md
       - Citation: project/citation.md

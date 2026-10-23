@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import operator
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
@@ -59,13 +60,12 @@ from resdag.data._trajectory_ports import (
     validate_trajectory_ports_context,
 )
 from resdag.data.prepare import NormMethod
-from resdag.layers.readouts import AutoReadoutLayer, ReadoutLayer
+from resdag.layers.readouts import AutoReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
 
 if TYPE_CHECKING:
     from tsdynamics.data import Trajectory
 
-    from resdag.ensemble.coupled import CoupledEnsembleESNModel
 
 Streams = torch.Tensor | Mapping[str, torch.Tensor]
 WorkflowOutput = torch.Tensor | dict[str, torch.Tensor]
@@ -109,9 +109,9 @@ class Model(nn.Module):
 
     ``fit(series)`` learns future prediction for one input/output of equal
     width. ``fit(inputs, targets={output_name: tensor})`` instead fits explicit,
-    time-aligned targets; all streams include the same washout prefix. Only
-    declared readout heads are fitted. Declared intermediate heads may feed
-    later reservoirs; internal fitted heads require the lower-level trainer.
+    time-aligned targets; all streams include the same washout prefix. Declared intermediate heads may feed
+    later reservoirs; ``readout_targets`` supervises internal fitted heads
+    without adding them to public outputs.
 
     ``forward`` accepts floating Torch tensors, preserves 2-D/3-D layout and
     gradients, applies fitted scaling and returns original units. Calls carry
@@ -134,7 +134,8 @@ class Model(nn.Module):
     ``state_dict`` includes scaling, ordered port metadata and the observed tail;
     reconstruct the same DAG before loading. ``tune`` compares candidates and
     installs a refitted winner; its report exposes the Optuna study. Complete
-    artifact loading and diagram exports are later roadmap increments.
+    ``save("run.pt")`` and ``rd.load`` preserve the complete model; diagram
+    suffixes export its declared structure without running it.
 
     With the optional ``dynamics`` extra, bare or named TSDynamics trajectories
     use one shared observed clock. Explicit targets are aligned to each head's
@@ -364,6 +365,13 @@ class Model(nn.Module):
             validate_widths=validate_widths,
         )
 
+    @property
+    def internal_readout_names(self) -> tuple[str, ...]:
+        """Target keys for internal fitted heads, without exposing extra predictions."""
+        self._validate_ports()
+        self._backend.validate_fit(self.graph)
+        return tuple(name for name, _ in self._backend.internal_readouts(self.graph))
+
     def _requires_complete_history(self) -> bool:
         if self._backend.kind == "parallel":
             return False
@@ -372,50 +380,6 @@ class Model(nn.Module):
         except ValueError:
             return True
         return False
-
-    def _fit_complete_history(
-        self,
-        candidate: nn.Module,
-        inputs: tuple[torch.Tensor, ...],
-        targets: tuple[torch.Tensor, ...],
-        fit_start: int,
-    ) -> None:
-        """Fit terminal heads from temporal features evaluated on the full prefix."""
-        members = (
-            (cast(ESNModel, candidate),)
-            if self._backend.kind == "symbolic"
-            else tuple(cast("CoupledEnsembleESNModel", candidate)._iter_models())
-        )
-        for member in members:
-            member.reset_reservoirs()
-            hooks = []
-            try:
-                for node, target in zip(member.outputs, targets):
-                    readout = cast(ReadoutLayer, node.layer)
-
-                    def capture(
-                        layer: nn.Module,
-                        args: tuple[torch.Tensor, ...],
-                        *,
-                        head: ReadoutLayer = readout,
-                        expected: torch.Tensor = target,
-                    ) -> None:
-                        if (
-                            len(args) != 1
-                            or not isinstance(args[0], torch.Tensor)
-                            or args[0].shape != (*inputs[0].shape[:2], head.in_features)
-                        ):
-                            raise ValueError(
-                                "Temporal fitting requires terminal features preserving "
-                                "the complete input batch/time axes"
-                            )
-                        head.fit(args[0][:, fit_start:], expected)
-
-                    hooks.append(readout.register_forward_pre_hook(capture))
-                member(*inputs)
-            finally:
-                for hook in hooks:
-                    hook.remove()
 
     def _commit_forecast_states(self, states: ReservoirStates) -> None:
         """Store evolved state without turning it into a user-pinned restore."""
@@ -564,6 +528,77 @@ class Model(nn.Module):
         """Restore ordinary-forward reservoir states, not delayed-rollout queues."""
         recurrent_graph(self.graph).set_state(states, strict=strict)
 
+    def plot_model(
+        self,
+        *,
+        save_path: str | Path | None = None,
+        format: str | None = None,
+        show_shapes: bool = True,
+        show_trainable: bool = False,
+        rankdir: str = "LR",
+    ) -> Any:
+        """Display a DAG in notebooks or export SVG/PNG/PDF/DOT without running it."""
+        from resdag.core._diagram import plot_model
+
+        self._validate_ports()
+        return plot_model(
+            self,
+            save_path=save_path,
+            format=format,
+            show_shapes=show_shapes,
+            show_trainable=show_trainable,
+            rankdir=rankdir,
+        )
+
+    @property
+    def save_formats(self) -> tuple[str, ...]:
+        """Supported complete-model checkpoint and diagram suffixes."""
+        return ("pt", "pth", "svg", "png", "pdf", "dot")
+
+    def save(
+        self,
+        path: str | Path,
+        *,
+        format: str | None = None,
+        include_state: bool = True,
+        trusted: bool = False,
+        metadata: Mapping[str, Any] | None = None,
+        **diagram_options: Any,
+    ) -> Any:
+        """Save a complete loadable model (.pt/.pth) or a diagram by suffix.
+
+        ``rd.load(path)`` reconstructs checkpoints without a prebuilt DAG.
+        Current ordinary-forward memory is included by default. Set
+        ``trusted=True`` only to bundle notebook-defined Python code; loading
+        such a bundle also requires explicit trust. Diagram formats are
+        SVG/PNG/PDF/DOT and accept :meth:`plot_model` options.
+        """
+        destination = Path(path)
+        suffix = destination.suffix.lower().lstrip(".")
+        if format is not None and not isinstance(format, str):
+            raise TypeError("format must be a string or None")
+        selected = format.lower() if isinstance(format, str) else suffix or "pt"
+        if selected not in self.save_formats or (suffix and suffix != selected):
+            raise ValueError(f"Save format/suffix must agree and be one of {self.save_formats}")
+        if not suffix:
+            destination = destination.with_suffix(f".{selected}")
+        if selected not in ("pt", "pth"):
+            if trusted or metadata is not None or not include_state:
+                raise ValueError(
+                    "trusted, metadata and include_state options apply to model checkpoints"
+                )
+            return self.plot_model(save_path=destination, format=selected, **diagram_options)
+        if diagram_options:
+            raise TypeError(
+                f"Diagram options cannot be used with a model checkpoint: {list(diagram_options)}"
+            )
+        from resdag.artifacts import save_model
+
+        self._validate_ports()
+        return save_model(
+            self, destination, include_state=include_state, trusted=trusted, metadata=metadata
+        )
+
     def tune(
         self,
         training: Streams | Trajectory | Mapping[str, Trajectory],
@@ -606,8 +641,10 @@ class Model(nn.Module):
         self,
         training: Streams | Trajectory | Mapping[str, Trajectory],
         targets: Streams | Trajectory | Mapping[str, Trajectory] | None = None,
+        *,
+        readout_targets: Mapping[str, torch.Tensor] | None = None,
     ) -> Model:
-        """Fit terminal heads transactionally and retain the original observed tail.
+        """Fit public and internal heads transactionally and retain the original observed tail.
 
         Implicit supervision pairs input ``t`` with observation
         ``t + prediction_lead`` and retains the complete observed tail.
@@ -622,6 +659,13 @@ class Model(nn.Module):
         endpoint are held out before interpolation. The cached tail includes the
         final observed inputs, even after the last supervised origin. Tensor
         refitting clears trajectory defaults on success.
+
+        ``readout_targets={"stage1": tensor}`` supervises internal readouts
+        without exposing them as outputs. Keys use the readout's ``name`` or
+        graph path; coupled members use ``models.<index>.<name>``. Tensors share
+        the complete input time axis, including washout, and express the desired
+        internal output units without automatic output scaling. For trajectory
+        inputs, align these tensors to the prepared shared input grid.
         """
         self._validate_ports()
         implicit = targets is None
@@ -656,6 +700,7 @@ class Model(nn.Module):
                 implicit=implicit,
                 trajectory_context=prepared.context,
                 trajectory_system=prepared.output_systems,
+                readout_targets=readout_targets,
             )
         if is_trajectory(targets) or has_trajectory_port(targets):
             raise TypeError(
@@ -705,6 +750,7 @@ class Model(nn.Module):
             supervised_start=0,
             supervised_stop=stop,
             implicit=implicit,
+            readout_targets=readout_targets,
         )
 
     def _fit_prepared(
@@ -715,6 +761,7 @@ class Model(nn.Module):
         supervised_start: int,
         supervised_stop: int,
         implicit: bool = False,
+        readout_targets: Mapping[str, torch.Tensor] | None = None,
         trajectory_context: dict[str, Any] | None = None,
         trajectory_system: tuple[Any, ...] | None = None,
     ) -> Model:
@@ -748,6 +795,30 @@ class Model(nn.Module):
             for value in target_values
         ):
             raise ValueError("Prepared targets must match the admitted origin window and layout")
+        internal_heads = self._backend.internal_readouts(self.graph)
+        internal_targets: dict[str, torch.Tensor] = {}
+        if internal_heads:
+            if readout_targets is None:
+                raise ValueError(
+                    "Provide readout_targets for internal fitted readouts; "
+                    f"expected {[name for name, _ in internal_heads]}"
+                )
+            internal_values, internal_2d = self._streams(
+                readout_targets,
+                tuple(name for name, _ in internal_heads),
+                tuple(head.out_features for _, head in internal_heads),
+                "readout_targets",
+                finite=True,
+            )
+            if internal_2d != was_2d or any(
+                value.shape[:2] != values[0].shape[:2] for value in internal_values
+            ):
+                raise ValueError("readout_targets must share the complete input batch/time axes")
+            internal_targets = dict(zip((name for name, _ in internal_heads), internal_values))
+        elif readout_targets is not None and (
+            not isinstance(readout_targets, Mapping) or len(readout_targets)
+        ):
+            raise ValueError("This graph has no internal fitted readouts for readout_targets")
         fit_start = max(self.washout, supervised_start)
         train_inputs = tuple(value[:, :supervised_stop] for value in values)
         target_values = tuple(value[:, fit_start - supervised_start :] for value in target_values)
@@ -806,15 +877,16 @@ class Model(nn.Module):
                 if isinstance(layer, BaseReservoirLayer) and layer.state is not None
             }
             candidate = copy.deepcopy(self.graph, transient_states)
-            if complete_history:
-                self._fit_complete_history(candidate, scaled, scaled_targets, fit_start)
-            else:
-                self._backend.fit(
-                    candidate,
-                    tuple(value[:, :fit_start] for value in scaled),
-                    tuple(value[:, fit_start:] for value in scaled),
-                    scaled_targets,
-                )
+            self._backend.fit_prefix(
+                candidate,
+                scaled,
+                scaled_targets,
+                fit_start=fit_start,
+                readout_targets={
+                    name: value[:, fit_start:supervised_stop]
+                    for name, value in internal_targets.items()
+                },
+            )
         history = []
         tail_length = self.washout + self._feedback_plan(validate_widths=False).required_history
         with torch.inference_mode(False), torch.no_grad():

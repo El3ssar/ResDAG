@@ -96,46 +96,23 @@ requesting both raises.
 
 ## Persistence
 
-There are two ways to persist a model. **State-dict** (`save`/`load`)
-stores weights only — compact and the safe choice for long-term archival
-— but the architecture is **not** serialized, so you keep a build
-function and load into a fresh instance:
+The common `rd.ESN` and `rd.Model` workflow saves a complete model by default:
 
 ```python
-def build():                       # same factory call = same architecture
-    return rd.ott_esn(reservoir_size=500, feedback_size=3, output_size=3)
-
-model.save("model.pt")                                   # weights + metadata
-restored = rd.ESNModel.load_from_file("model.pt", model=build(), map_location="cpu")
-
-model.save("ckpt.pt", include_states=True, epoch=10, val_mse=0.012)
-restored.load("ckpt.pt", load_states=True)               # weights + live states
+model = rd.ESN(reservoir_size=500, seed=7).fit(series)
+model.save("run.pt")
+restored = rd.load("run.pt", map_location="cpu")
+prediction = restored.forecast(horizon=1000)
+model.save("run.svg")
 ```
 
-`include_states=True` makes checkpoints resumable mid-sequence: warm up,
-save, and a later process can `load(..., load_states=True)` and call
-`forecast(..., reset=False)` to continue exactly where this one stopped.
-Metadata is a plain `torch.load` payload — inspectable without building
-the model.
-
-**Whole-model** (`save_full`/`load_full`) serializes everything — the
-graph, weights, and reservoir states — in one file, so there is no build
-function to keep in sync:
-
-```python
-model.save_full("model_full.pt", epoch=10)               # everything
-restored = rd.ESNModel.load_full("model_full.pt")        # no rebuild needed
-restored.forecast(f_warmup, horizon=1000)
-```
-
-This rides on the pickling support added in `pytorch-symbolic` 1.2.
-`load_full` unpickles arbitrary objects (`weights_only=False`), so only
-open files you trust — for sharing weights publicly, prefer the state-dict
-form. One constraint: any custom callable you pass as a `topology`,
-`*_initializer`, or `activation` spec must be importable (a module-level
-`def`, not a `lambda`) for the model to pickle; string, tuple, and
-registered-object specs always work. `CoupledEnsembleESNModel` exposes the
-same `save_full`/`load_full` pair.
+The checkpoint describes the graph and includes fitted preprocessing, observed
+history and current reservoir memory. A larger PyTorch application can instead
+save `model.state_dict()` and load it into a matching architecture. Ordinary
+forward memory supports continuing a stream; autonomous forecasts reconstruct
+delayed feedback queues from history each call. Saving reservoir tensors alone
+does not preserve a forecast cursor. See the [complete persistence guide](save-load.md)
+for registered components, explicitly trusted notebook bundles and formats.
 
 ## Inside a larger pipeline
 

@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
 from functools import partial
 from numbers import Integral, Real
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
@@ -410,6 +411,35 @@ class ESN(nn.Module):
         self._attach(candidate, width)
         self._device_pinned = self._dtype_pinned = True
         return self
+
+    @property
+    def save_formats(self) -> tuple[str, ...]:
+        """Supported complete-model checkpoint and diagram suffixes."""
+        return ("pt", "pth", "svg", "png", "pdf", "dot")
+
+    def save(self, path: str | Path, **options: Any) -> Any:
+        """Save this complete preset or a DAG diagram, selected by suffix."""
+        workflow = self._require_workflow()
+        suffix = Path(path).suffix.lower().lstrip(".")
+        requested_format = options.get("format")
+        if requested_format is not None and not isinstance(requested_format, str):
+            raise TypeError("format must be a string or None")
+        selected = requested_format.lower() if requested_format else suffix or "pt"
+        if selected not in ("pt", "pth"):
+            return workflow.save(path, **options)
+        from resdag.artifacts import save_model
+
+        format = options.pop("format", None)
+        if format is not None and format.lower() not in ("pt", "pth"):
+            raise ValueError("Model checkpoint format must be pt or pth")
+        if suffix and suffix != selected:
+            raise ValueError("Save format and suffix must agree")
+        destination = Path(path) if suffix else Path(path).with_suffix(f".{selected}")
+        return save_model(self, destination, **options)
+
+    def plot_model(self, **options: Any) -> Any:
+        """Display or export the preset DAG without running it."""
+        return self._require_workflow().plot_model(**options)
 
     def tune(
         self,

@@ -50,17 +50,25 @@ rd.ESNTrainer(model).fit(
    tensors, targets must match train in sequence length, and every
    readout needs a key in `targets` (a missing key raises; an extra one
    warns).
-2. Resets all reservoir states, then runs one teacher-forced pass over
-   `warmup_inputs` to synchronize them.
-3. Registers a pre-hook on every readout in the model.
-4. Runs a forward pass over `train_inputs`. When each readout
-   executes, its hook fits it on the tensor entering it (by conjugate
-   gradient, for `CGReadoutLayer`). In multi-readout DAGs, downstream
-   layers therefore receive outputs from already-fitted readouts, in
-   dependency order. If a fitted readout feeds another reservoir, the trainer
-   starts a new stage: it resets the states, repeats warmup with that readout's
-   fitted weights, then fits the downstream readouts. Parallel readouts and
-   readouts connected through algebraic layers still share a single pass.
+2. Owns one concatenated warmup-plus-training prefix and resets reservoir
+   states once.
+3. Visits graph operations in dependency order. Each reservoir processes the
+   complete prefix once, carrying its state across the warmup/training boundary.
+4. At each readout, fits on **training rows only**, then applies the fitted
+   mapping to the entire prefix. Downstream reservoirs therefore receive the
+   fitted upstream predictions during both warmup and training.
+5. Reuses branch results and releases cached values after their last consumer.
+   It never replays the whole graph for a later readout. Normal PyTorch hooks
+   still run. A standard `nn.Sequential` can express nested dependencies;
+   opaque custom containers mixing readouts and reservoirs are rejected.
+
+Warmup contributes recurrent context, not regression rows. Sequence-dependent
+layers see the uninterrupted prefix too. Compared with the former replaying
+trainer, stochastic layers, including reservoir noise, consume random draws in
+a different order; seeded runs remain repeatable, but old noisy-fit results may change. Ordinary
+deterministic, framewise cascades retain numerical parity. Temporal graphs use
+the corrected full-prefix features. See the
+[controlled depth benchmark](../project/single-pass-training-benchmark.md).
 
 **Multi-readout models** need one key per readout `name`:
 
@@ -71,6 +79,46 @@ rd.ESNTrainer(model).fit(
     targets={"position": pos_target, "velocity": vel_target},
 )
 ```
+
+### Internal readouts without extra prediction outputs
+
+Use `rd.Model.fit` for automatic input/output scaling and failed-refit isolation.
+An internal head can have its own supervision without becoming a public output:
+
+```python
+import torch
+import resdag as rd
+
+x = rd.reservoir_input(1, dtype=torch.float64)
+hidden = rd.SVDReadoutLayer(1, 1, name="stage1").double()(x)
+states = rd.ESNLayer(12, feedback_size=1, seed=7, dtype=torch.float64)(hidden)
+y = rd.RidgeReadoutLayer(12, 1, alpha=1e-3).double()(states)
+model = rd.Model(inputs={"signal": x}, outputs={"prediction": y}, washout=10)
+
+series = torch.sin(torch.linspace(0, 12, 150, dtype=torch.float64))[:, None]
+inputs, final_values = series[:-1], series[1:]
+model.fit(inputs, targets=final_values, readout_targets={"stage1": 2 * inputs})
+forecast = model.forecast(horizon=20)  # one tensor: only the declared prediction
+assert forecast.shape == (20, 1)
+assert model.internal_readout_names == ("stage1",)
+```
+
+Internal targets use the internal head's desired output units, unchanged by
+public output scaling. Include the same full time axis as the inputs, including
+warmup; `fit` discards the warmup labels. With implicit next-value targets it
+also excludes the unsupervised final input origin. Choose explicit readout
+`name`s for convenient keys; unnamed heads use their graph paths. Coupled
+members use `models.0.stage1`, `models.1.stage1`, and so on. Missing, extra,
+nonfinite or incorrectly shaped internal targets fail before fitting.
+
+For trajectory inputs, internal target tensors must already match the prepared
+shared input clock. Keep reservoirs as separate functional nodes for forecasting;
+reservoirs nested inside containers support ordinary stateful calls and fitting,
+but cannot currently use the explicit-state forecast engine.
+
+The raw `ESNTrainer` changes its graph in place if a later readout fails.
+The common `Model.fit` stages the complete fit and commits only on success,
+preserving the live model and caller input tensors after failure.
 
 **What `alpha` does.** Each `CGReadoutLayer` solves
 $\min_W \lVert XW - Y \rVert^2 + \alpha \lVert W \rVert^2$; `alpha` is

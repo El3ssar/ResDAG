@@ -23,6 +23,13 @@ uv run pytest --no-cov -q    # full suite, including golden forecast regressions
 `docs` (MkDocs + the figure pipeline) as needed — e.g. `uv sync --locked --extra dev
 --extra docs` or `pip install -e ".[dev,docs]"`.
 
+Rendered diagram checks also need the Graphviz system executable: install it
+with `brew install graphviz` on macOS or `sudo apt-get install graphviz` on
+Debian/Ubuntu, then verify `dot -V`. The development extra supplies its Python
+package. Local tests skip only checks that require rendering when these tools
+are unavailable; DOT export and error checks still run. CI provisions Graphviz
+and treats missing rendering tools as a failure.
+
 ## Quality gate
 
 Run before pushing:

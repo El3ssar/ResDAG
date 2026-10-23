@@ -1,17 +1,22 @@
 """One execution description shared by sequence and forecast inference.
 
-Only ``_symbolic_operations`` reads third-party private graph metadata. The
-rest of ResDAG works with immutable operations and explicit reservoir states.
+Small adapters isolate third-party graph and generated-forward metadata. The
+execution paths work with immutable operations and explicit value slots.
 """
 
 from __future__ import annotations
+import __future__
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import lru_cache
+from types import CodeType, MethodType
 from typing import TYPE_CHECKING, Any, Protocol
 
 import torch
 import torch.nn as nn
+from pytorch_symbolic.symbolic_model import SymbolicModel
 
 from resdag._contracts import module_reference, validate_sequence_inputs
 from resdag.layers.reservoirs import BaseReservoirLayer
@@ -61,6 +66,37 @@ class ExecutionPlan:
     reservoirs: tuple[BaseReservoirLayer, ...]
     reservoir_names: tuple[str, ...]
     n_values: int
+    release_after: tuple[tuple[int, ...], ...]
+
+    def run_stateful_sequence(self, inputs: tuple[torch.Tensor, ...]) -> ModelOutput:
+        """Call each graph operation normally, releasing values at their last use.
+
+        Unlike explicit-state inference, this path preserves reservoir,
+        container and readout hooks and the modules' ordinary stored states.
+        Batch fitting uses it under ``no_grad`` so discarded feature tensors
+        do not remain reachable through an autograd graph.
+        """
+        self.validate_inputs(inputs)
+        values: list[Any] = [None] * self.n_values
+        values[: len(inputs)] = inputs
+        for op, released in zip(self.operations, self.release_after):
+            parents = tuple(values[index] for index in op.parents)
+            if len(op.outputs) > 1:
+                returned = op.layer(*parents[0])
+                if len(returned) != len(op.outputs):
+                    raise ValueError(
+                        "A multi-output layer returned an unexpected number of outputs"
+                    )
+                for index, slot in enumerate(op.outputs):
+                    values[slot] = returned[index]
+            else:
+                returned = op.layer(*parents)
+                values[op.outputs[0]] = returned
+            for slot in released:
+                values[slot] = None
+            del parents, returned
+        outputs = tuple(values[index] for index in self.output_slots)
+        return outputs[0] if len(outputs) == 1 else outputs
 
     def validate_reservoir_visibility(self) -> None:
         """Reject recurrent descendants added to ordinary nodes after plan caching."""
@@ -162,6 +198,83 @@ class ExecutionPlan:
         return result, final
 
 
+@contextmanager
+def stateful_execution(model: nn.Module, plan: ExecutionPlan) -> Iterator[None]:
+    """Use a fitting executor through the model's real ``nn.Module.__call__``.
+
+    A temporary forward keeps model/global hooks in PyTorch's own dispatcher.
+    Temporarily bypass ``Module.compile`` too: its cached callable must not
+    execute an older forward instead of the fitting plan. Restore the exact
+    prior instance attributes even when a pre-hook or fitting operation fails.
+    Fitting the same mutable model recursively or concurrently is unsupported.
+    """
+    active = "_resdag_fitting_execution_active"
+    if getattr(model, active, False):
+        raise RuntimeError("Cannot recursively fit the same reservoir model")
+    missing = object()
+    previous = {
+        name: model.__dict__.get(name, missing)
+        for name in ("forward", "_compiled_call_impl", active)
+    }
+
+    def forward(module: nn.Module, *inputs: torch.Tensor) -> ModelOutput:
+        return plan.run_stateful_sequence(inputs)
+
+    model.forward = MethodType(forward, model)
+    model.__dict__["_compiled_call_impl"] = None
+    model.__dict__[active] = True
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is missing:
+                model.__dict__.pop(name, None)
+            else:
+                model.__dict__[name] = value
+
+
+@lru_cache(maxsize=128)
+def _generated_forward_code(source: str) -> CodeType | None:
+    """Inspect generated code without executing source or retaining a model."""
+    flags = SymbolicModel.forward.__code__.co_flags & __future__.annotations.compiler_flag
+    compiled = compile(source, "<string>", "exec", flags=flags, dont_inherit=True)
+    return next(
+        (
+            value
+            for value in compiled.co_consts
+            if isinstance(value, CodeType) and value.co_name == "forward"
+        ),
+        None,
+    )
+
+
+def validate_fitting_forward(model: ESNModel) -> None:
+    """Accept declared-DAG forwards, rejecting customized outer bodies early.
+
+    Keep the symbolic library's generated-forward metadata adaptation here.
+    Comparing code supports deepcopy and pickle reconstruction without relying
+    on a method object's identity from the time a model was constructed.
+    """
+    forward = model.forward
+    function = getattr(forward, "__func__", None)
+    if getattr(forward, "__self__", None) is model:
+        if function is SymbolicModel.forward:
+            return
+        if getattr(model, "_enable_forward_codegen", False):
+            source = getattr(model, "_generated_forward_source", "")
+            try:
+                expected = _generated_forward_code(source)
+            except (SyntaxError, ValueError, TypeError):
+                expected = None
+            if expected is not None and getattr(function, "__code__", None) == expected:
+                return
+    raise ValueError(
+        "Single-pass fitting cannot bypass a custom top-level forward body. "
+        "Put customization inside declared graph operations or ordinary module hooks, "
+        "and keep the standard ESNModel forward."
+    )
+
+
 def _symbolic_operations(
     model: ESNModel,
 ) -> tuple[tuple[Any, nn.Module, tuple[Any, ...], tuple[Any, ...]], ...]:
@@ -229,11 +342,23 @@ def build_execution_plan(model: ESNModel) -> ExecutionPlan:
                 reservoir_index=reservoir_index,
             )
         )
+    model_output_slots = tuple(slots[id(node)] for node in model.outputs)
+    retained = set(model_output_slots)
+    last_use = {slot: index for index, op in enumerate(operations) for slot in op.parents}
+    release_after: list[list[int]] = [[] for _ in operations]
+    for slot, index in last_use.items():
+        if slot not in retained:
+            release_after[index].append(slot)
+    for index, op in enumerate(operations):
+        for slot in op.outputs:
+            if slot not in last_use and slot not in retained:
+                release_after[index].append(slot)
     return ExecutionPlan(
         operations=tuple(operations),
         input_features=tuple(int(node.shape[-1]) for node in input_nodes),
-        output_slots=tuple(slots[id(node)] for node in model.outputs),
+        output_slots=model_output_slots,
         reservoirs=tuple(reservoirs),
         reservoir_names=tuple(reservoir_names),
         n_values=len(slots),
+        release_after=tuple(tuple(indices) for indices in release_after),
     )

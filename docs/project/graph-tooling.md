@@ -17,7 +17,7 @@ attributes to build, fit or run a model.
 | PyTorch `nn.Module` | Own layers, parameters and buffers; compose trained models inside larger networks. | Supported by `rd.Model`, with carried recurrent state and original-unit predictions. |
 | PyTorch FX | Capture or transform the surrounding network while keeping the reservoir as one module call. | Use a leaf tracer, shown below. Direct tracing through the entire workflow is unsupported. |
 | `torch.export` | Produce a tensor computation graph for deployment when a module satisfies export's constraints. | No general ResDAG export guarantee. A stateful workflow, its fitting logic and its Python metadata are not a deployment graph contract. |
-| Graphviz/DOT | Render the declared architecture. | Existing graph plotting remains available. Unified diagram saves belong to phase four. |
+| Graphviz/DOT | Render the declared architecture. | Unified `Model.save`/`ESN.save` exports SVG/PNG/PDF/DOT with named ports, preprocessing and delayed feedback; inspection executes no layers. |
 
 Replacing functional construction with FX would require tracing a computation
 before recovering the reservoir-specific ports, fitting stages and state

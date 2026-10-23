@@ -49,6 +49,9 @@ Issues = "https://github.com/El3ssar/ResDAG/issues"
 # lint/format/test tool versions.
 [project.optional-dependencies]
 hpo = ["optuna>=3.0.0", "joblib>=1.5.3"]
+# Optional explicitly trusted bundles for notebook-defined Python components.
+# Normal portable model artifacts use Torch and need no additional dependency.
+artifacts = ["cloudpickle>=3.1.2"]
 # Optional dynamical-systems stack: Model accepts/returns named, timestamped
 # TSDynamics trajectories; `resdag.metrics.largest_lyapunov` also uses
 # `tsdynamics` to estimate Lyapunov exponents from a data series or a built-in
@@ -64,7 +67,7 @@ dynamics = ["tsdynamics>=6.0.2,<7; python_version >= '3.12'"]
 # `torchdiffeq` behind a guarded ImportError pointing here. The fixed-step
 # solvers — the default and the compilable path — never need this extra.
 ode = ["torchdiffeq>=0.2.0"]
-# Optional visualization stack: only `ESNModel.plot_model` imports `graphviz`,
+# Optional visualization stack: rendered model diagrams lazily import `graphviz`,
 # and it does so lazily with a friendly ImportError, so the runtime install
 # stays lean. Requires the graphviz *system* binary too (e.g. apt install graphviz).
 viz = ["graphviz>=0.21"]
@@ -79,6 +82,7 @@ dev = [
     "mypy>=1.0.0",
     "optuna>=4.0.0",
     "graphviz>=0.21",
+    "cloudpickle>=3.1.2",  # exercise opt-in notebook artifact bundles in CI
 ]
 docs = [
     "mkdocs>=1.6",

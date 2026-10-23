@@ -139,8 +139,8 @@ Both families use the same original-unit forward calls, carried state,
 explicit-state calls, dtype/device moves and state dictionaries as symbolic
 graphs. Rebuild the same architecture before loading a state dictionary,
 including custom aggregator settings. Its schema checks structural facts,
-not arbitrary Python configuration. Complete architecture reconstruction
-from one saved file remains phase four.
+not arbitrary Python configuration. Use `model.save("run.pt")` and `rd.load("run.pt")` for complete architecture
+reconstruction; see [save and load](../workflows/save-load.md).
 
 ## Give several heads explicit targets
 
@@ -208,8 +208,8 @@ That path leaves stored reservoir state unchanged.
 Move the complete model with ordinary `.to(device)` or `.double()` calls;
 fitted scaling statistics move with it. Scaling and the graph are included in
 `state_dict()`. As with ordinary PyTorch checkpoints, loading a state dict still
-requires a compatible model architecture. Loading a complete model without
-rebuilding its graph remains [phase four](../project/roadmap.md#phase-4-diagrams-and-complete-model-artifacts).
+requires a compatible model architecture. Use `model.save("run.pt")` and `rd.load("run.pt")` to restore a complete
+model without rebuilding its graph; see [save and load](../workflows/save-load.md).
 
 On Apple MPS, `AutoReadoutLayer` uses supported float32 operations when its
 numerical checks pass. Unsafe or unsupported decompositions use a reported,

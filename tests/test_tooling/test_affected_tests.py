@@ -75,6 +75,13 @@ def test_docs_only_change_runs_executable_documentation_checks() -> None:
     assert "tests/test_trajectory_guide.py" in sel.tests
     assert "tests/test_named_trajectory_guide.py" in sel.tests
     assert "tests/test_custom_components_guide.py" in sel.tests
+    assert "tests/test_docs/test_forecast_experiment.py" in sel.tests
+
+
+def test_forecast_example_change_runs_its_body_not_only_its_import() -> None:
+    selected = AT.select_tests(["examples/17_forecast_experiment.py"])
+    assert "tests/test_examples_smoke.py" in selected.tests
+    assert "tests/test_docs/test_forecast_experiment.py" in selected.tests
 
 
 def test_changed_test_file_is_always_selected() -> None:
@@ -212,6 +219,33 @@ def test_perf_targets_json_selects_benchmark_tests() -> None:
     sel = AT.select_tests(["benchmarks/targets.json"])
     assert sel.mode != "none"
     assert "tests/test_benchmarks/test_perf_regression.py" in sel.tests
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "benchmarks/rc_bench/data.py",
+        "benchmarks/rc_bench/adapters/reservoirpy_adapter.py",
+        "benchmarks/julia/rc_bench.jl",
+    ],
+)
+def test_comparison_changes_select_physical_window_oracles(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_benchmark_protocol.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "benchmarks/accuracy_regression.py",
+        "benchmarks/tuned_accuracy.py",
+        "benchmarks/results/phase-five-accuracy-2026-10-23.json",
+        "benchmarks/results/phase-five-tuned-accuracy-2026-10-23.json",
+    ],
+)
+def test_accuracy_experiment_selects_its_regression_tests(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_regression/test_phase5_accuracy.py" in selected.tests
 
 
 def test_reusable_test_workflow_is_broad_impact() -> None:

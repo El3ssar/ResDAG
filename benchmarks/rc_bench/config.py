@@ -23,7 +23,8 @@ class HParams:
     ridge: float = 1e-6  # L2 readout regularization
     activation: str = "tanh"
     seed: int = 1234
-    vpt_threshold: float = 0.5  # normalized error threshold for valid prediction time
+    vpt_threshold: float = 0.3  # headline, normalized with fixed training scales
+    secondary_vpt_threshold: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -31,9 +32,30 @@ class Point:
     """One concrete configuration in a sweep."""
 
     reservoir_size: int = 1000
-    train_len: int = 5000  # timesteps used to fit the readout
+    train_len: int = 5000  # training inputs, including the washed-out prefix
     warmup: int = 200  # transient discarded before fitting / before generating
     horizon: int = 1000  # autoregressive forecast length
+
+    def __post_init__(self) -> None:
+        for name in ("reservoir_size", "train_len", "warmup", "horizon"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.warmup >= self.train_len:
+            raise ValueError("warmup must be smaller than train_len")
+
+    @property
+    def forecast_start(self) -> int:
+        """Index of the first observation never admitted to training."""
+        return self.train_len + 1
+
+    @property
+    def history_start(self) -> int:
+        return self.forecast_start - self.warmup
+
+    @property
+    def series_len(self) -> int:
+        return self.forecast_start + self.horizon
 
     @property
     def label(self) -> str:

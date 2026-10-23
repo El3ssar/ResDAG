@@ -21,7 +21,8 @@ This is part of [phase two](../project/roadmap.md#phase-2-one-functional-workflo
 The common interface supports the `ESN` preset, symbolic, parallel and coupled
 graphs. Raw `ESNModel` and factories remain useful building blocks.
 [Unified tuning](../workflows/tune.md) is available for presets and custom DAGs.
-Complete model/diagram saves remain a later roadmap phase.
+[Complete model saves, automatic loading and diagram exports](../workflows/save-load.md)
+are available through the same interface.
 
 ## Build, fit and forecast
 

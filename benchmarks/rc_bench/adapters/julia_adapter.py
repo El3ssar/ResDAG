@@ -49,6 +49,7 @@ class ReservoirComputingJLAdapter(Adapter):
     def _run(
         self, series: np.ndarray, hp: HParams, point: Point, op: str, repeats: int, warmups: int
     ) -> RunResult:
+        self._validate_policy(hp)
         with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
             data_path = f.name
             np.ascontiguousarray(series, dtype="<f8").tofile(data_path)
@@ -94,44 +95,19 @@ class ReservoirComputingJLAdapter(Adapter):
         finally:
             Path(data_path).unlink(missing_ok=True)
 
-    # ReservoirComputing.jl (v0.12, Lux-based) has high per-call cost and low
-    # run-to-run variance, and every subprocess re-pays Julia's JIT compile in
-    # the discarded warmup. Cap the timed repeats so it doesn't dominate the
-    # whole sweep; one post-warmup run is plenty here.
-    _MAX_REPEATS = 1
-    # ...and skip cells where it is impractically slow (it scales far worse than
-    # the others — ~24 s at N=1000, minutes beyond). These show as "—" in the
-    # tables; resdag and reservoirpy still cover the full range.
-    _MAX_N = 1000
-    _MAX_TRAIN_LEN = 10000
-
-    def _skip_reason(self, point: Point) -> str | None:
-        if point.reservoir_size > self._MAX_N:
-            return f"skipped: N={point.reservoir_size} > {self._MAX_N} (RC.jl too slow)"
-        if point.train_len > self._MAX_TRAIN_LEN:
-            return f"skipped: train_len={point.train_len} > {self._MAX_TRAIN_LEN} (RC.jl too slow)"
-        return None
+    @staticmethod
+    def _validate_policy(hp: HParams) -> None:
+        if hp.activation != "tanh":
+            raise ValueError("The Julia worker currently supports activation='tanh' only")
 
     def time_train(self, series, hp, point, repeats, warmups) -> RunResult:
-        skip = self._skip_reason(point)
-        if skip:
-            return RunResult(times=[], info={"skipped": skip})
-        return self._run(
-            series, hp, point, "train", min(repeats, self._MAX_REPEATS), max(warmups, 1)
-        )
+        return self._run(series, hp, point, "train", repeats, warmups)
 
     def time_forecast(self, series, hp, point, repeats, warmups) -> RunResult:
-        skip = self._skip_reason(point)
-        if skip:
-            return RunResult(times=[], info={"skipped": skip})
-        return self._run(
-            series, hp, point, "forecast", min(repeats, self._MAX_REPEATS), max(warmups, 1)
-        )
+        return self._run(series, hp, point, "forecast", repeats, warmups)
 
     def predict_trajectory(self, series, hp, point) -> np.ndarray:
-        skip = self._skip_reason(point)
-        if skip:
-            raise RuntimeError(skip)
+        self._validate_policy(hp)
         with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
             data_path = f.name
             np.ascontiguousarray(series, dtype="<f8").tofile(data_path)

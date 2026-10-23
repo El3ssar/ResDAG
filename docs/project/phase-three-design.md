@@ -4,14 +4,14 @@ description: Agreed tuning experience, numerical safeguards and implementation p
 
 # Phase three: reliable tuning
 
-**Status: Done — completion PR awaiting merge.** The
+**Status: Done — merged and released in 3.0.0.** The
 [roadmap](roadmap.md#phase-3-tuning-and-automatic-solver-policy) records the
 implementation and verification. The common `model.tune(...)` lifecycle,
 joblib execution and automatic readout are released in 2.1.0. The continuation
 adds forecast-generation pruning, optional screening and memory planning, and
 safe raw-runner reuse. All local and locked/latest hosted acceptance gates pass
-in [PR #462](https://github.com/El3ssar/ResDAG/pull/462). Its publication remains
-separate from the released 2.1.0 increment.
+in [PR #462](https://github.com/El3ssar/ResDAG/pull/462), merged as `f8d7637`.
+Release publication, post-merge CI and installed-package verification passed.
 
 ## Approved experience
 

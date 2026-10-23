@@ -1,10 +1,12 @@
 """resdag adapter (CPU and GPU).
 
-Builds a *matched* ESN: reservoir states -> ridge readout, no input
+Builds a nominally matched ESN: reservoir states -> ridge readout, no input
 concatenation, mirroring reservoirpy's ``Reservoir >> Ridge`` and
 ReservoirComputing.jl's ``ESN``. CPU runs float64 (to match the NumPy/Julia
 baselines); GPU runs float32 (the realistic GPU dtype — consumer cards run
 float64 at a small fraction of float32 throughput).
+Input connections are dense and recurrent bias is zero across adapters.
+Weights are sampled independently; numerical solver behavior can differ.
 
 The readout is :class:`RidgeReadoutLayer` (direct Cholesky solve) — the class
 directly comparable to reservoirpy's ``Ridge`` and ReservoirComputing.jl's
@@ -64,21 +66,27 @@ class _ResdagBase(Adapter):
         from resdag.layers import ESNLayer
         from resdag.layers.readouts import RidgeReadoutLayer
 
-        torch.manual_seed(hp.seed)
         dtype = torch.float64 if self._dtype_name == "float64" else torch.float32
 
-        inp = ps.Input((1, hp.dim))
-        res = ESNLayer(
-            reservoir_size=point.reservoir_size,
-            feedback_size=hp.dim,
-            spectral_radius=hp.spectral_radius,
-            leak_rate=hp.leak_rate,
-            activation=hp.activation,
-            topology=("erdos_renyi", {"p": hp.connectivity}),
-        )(inp)
-        out = RidgeReadoutLayer(point.reservoir_size, hp.dim, alpha=hp.ridge, name="output")(res)
-        model = ESNModel(inp, out)
-        model = model.to(device=self._torch_device, dtype=dtype)
+        with torch.device(self._torch_device):
+            inp = ps.Input((1, hp.dim), dtype=dtype)
+            res = ESNLayer(
+                reservoir_size=point.reservoir_size,
+                feedback_size=hp.dim,
+                bias=False,
+                spectral_radius=hp.spectral_radius,
+                leak_rate=hp.leak_rate,
+                activation=hp.activation,
+                topology=("erdos_renyi", {"p": hp.connectivity}),
+                feedback_initializer=("uniform", {"input_scaling": hp.input_scaling}),
+                seed=hp.seed,
+                device=self._torch_device,
+                dtype=dtype,
+            )(inp)
+            readout = RidgeReadoutLayer(
+                point.reservoir_size, hp.dim, alpha=hp.ridge, bias=False, name="output"
+            ).to(device=self._torch_device, dtype=dtype)
+            model = ESNModel(inp, readout(res))
         return model, dtype
 
     def _tensor(self, arr: np.ndarray, dtype):
@@ -95,9 +103,10 @@ class _ResdagBase(Adapter):
     def _fit(self, model, dtype, series: np.ndarray, point: Point):
         from resdag.training import ESNTrainer
 
-        warm = self._tensor(series[: point.warmup], dtype)
-        x = self._tensor(series[point.warmup : point.train_len], dtype)
-        y = self._tensor(series[point.warmup + 1 : point.train_len + 1], dtype)
+        x_all, y_all = self._train_window(series, point)
+        warm = self._tensor(x_all[: point.warmup], dtype)
+        x = self._tensor(x_all[point.warmup :], dtype)
+        y = self._tensor(y_all[point.warmup :], dtype)
         ESNTrainer(model).fit(warmup_inputs=(warm,), train_inputs=(x,), targets={"output": y})
 
     def time_train(self, series, hp, point, repeats, warmups) -> RunResult:
@@ -119,7 +128,7 @@ class _ResdagBase(Adapter):
 
         model, dtype = self._build(hp, point)
         self._fit(model, dtype, series, point)
-        warm = self._tensor(series[: point.warmup], dtype)
+        warm = self._tensor(self._forecast_history(series, point), dtype)
 
         def setup():
             model.reset_reservoirs()
@@ -147,7 +156,7 @@ class _ResdagBase(Adapter):
 
         model, dtype = self._build(hp, point)
         self._fit(model, dtype, series, point)
-        warm = self._tensor(series[: point.warmup], dtype)
+        warm = self._tensor(self._forecast_history(series, point), dtype)
         model.reset_reservoirs()
         with torch.no_grad():
             out = model.forecast(warm, horizon=point.horizon)

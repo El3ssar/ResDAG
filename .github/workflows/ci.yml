@@ -81,15 +81,19 @@ jobs:
       - name: Benchmarks (CPU) — gate on benchmarks/targets.json
         run: pytest -m benchmark --no-cov -q tests/test_benchmarks tests/test_performance
 
-      - name: Re-render cross-library REPORT.md (resdag-only, deterministic)
-        # reservoirpy / ReservoirComputing.jl are not installed in CI, so this
-        # renders resdag-only rows and smoke-checks the reporting pipeline.
-        # Internal pytest gates above enforce numerical/performance regression
-        # checks; these rows do not establish cross-library superiority. The
-        # committed REPORT.md (full cross-library matrix) is regenerated on the
-        # benchmark machine where the external libraries are present.
+      - name: Install pinned optional Python comparison dependency
+        run: python -m pip install -r benchmarks/requirements.txt
+
+      - name: Check comparison windows and real Python adapters
+        run: pytest --no-cov -q tests/test_benchmark_protocol.py
+
+      - name: Render held-out Python comparison smoke report
+        # This bounded run verifies both real Python adapters and the reporting
+        # pipeline. It is one seed at untuned settings, not a ranking or an
+        # equal-budget search. Julia remains an explicitly optional local lane.
+        # Existing internal timing gates run before installing comparison deps.
         working-directory: benchmarks
-        run: python -m rc_bench.run --quick --report --out results/ci-latest.json
+        run: python -m rc_bench.run --quick --only resdag-cpu reservoirpy --report --out results/ci-latest.json
 
       - name: Upload benchmark report
         if: always()

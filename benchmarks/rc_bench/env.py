@@ -82,9 +82,7 @@ def _julia_version() -> str | None:
     if shutil.which("julia") is None:
         return None
     try:
-        out = subprocess.run(
-            ["julia", "--version"], capture_output=True, text=True, check=True
-        )
+        out = subprocess.run(["julia", "--version"], capture_output=True, text=True, check=True)
         # "julia version 1.12.5"
         return out.stdout.strip().split()[-1]
     except Exception:

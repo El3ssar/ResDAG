@@ -172,6 +172,7 @@ nav:
       - First forecast: start/first-forecast.md
       - Train, save and integrate: start/end-to-end.md
       - Common model workflow: start/model-workflow.md
+      - Measure a forecast: start/forecast-experiment.md
       - Feedback and timing: start/feedback.md
       - TSDynamics trajectories: start/trajectory-workflow.md
       - Named trajectories: start/named-trajectories.md
@@ -236,6 +237,7 @@ nav:
       - Phase two design: project/phase-two-design.md
       - Phase three design: project/phase-three-design.md
       - Phase four design: project/phase-four-design.md
+      - Phase five design: project/phase-five-design.md
       - Single-pass training measurements: project/single-pass-training-benchmark.md
       - Graph tooling: project/graph-tooling.md
       - New ESN API: project/esn-migration.md

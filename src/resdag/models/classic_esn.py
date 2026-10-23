@@ -6,7 +6,7 @@ reservoir output before the readout layer.
 
 See Also
 --------
-:func:`resdag.models.ott_esn` : OTT (Open Temporal Topology) ESN variant
+:func:`resdag.models.ott_esn` : ESN with selectively squared reservoir states
 :func:`resdag.models.linear_esn` : Linear ESN variant
 :func:`resdag.models.headless_esn` : Headless ESN (no readout)
 """

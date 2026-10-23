@@ -60,6 +60,7 @@ def _readouts() -> None:
         "ReadoutLayer",
         "AutoReadoutLayer",
         "CGReadoutLayer",
+        "LSMRReadoutLayer",
         "RidgeReadoutLayer",
         "CholeskyReadoutLayer",
         "SVDReadoutLayer",
@@ -243,8 +244,21 @@ def _cell_decode(cls: type, config: Mapping[str, Any]) -> nn.Module:
             self, weight: torch.Tensor, spectral_radius: float | None = None
         ) -> torch.Tensor:
             with torch.no_grad():
-                weight.copy_(self.tensor)
+                weight.copy_(
+                    self.tensor.to_dense() if self.tensor.layout != torch.strided else self.tensor
+                )
             return weight
+
+        def build_sparse(
+            self,
+            n: int,
+            *,
+            dtype: torch.dtype,
+            device: torch.device,
+            spectral_radius: float | None = None,
+        ) -> torch.Tensor:
+            tensor = self.tensor.to(device=device, dtype=dtype)
+            return tensor if tensor.layout == torch.sparse_csr else tensor.to_sparse_csr()
 
     kwargs, weights = dict(config["kwargs"]), config["weights"]
     if cls.__name__ not in ("NGCell", "TorchRecurrentCell"):
@@ -255,6 +269,13 @@ def _cell_decode(cls: type, config: Mapping[str, Any]) -> nn.Module:
             kwargs["input_initializer"] = TensorInput(weights["weight_input"])
         if cls.__name__ != "LegendreDelayCell":
             recurrent = weights.get("weight_hh", weights.get("weight_rec"))
+            if recurrent is None and "_hh_values" in weights:
+                recurrent = torch.sparse_csr_tensor(
+                    weights["_hh_crow_indices"],
+                    weights["_hh_col_indices"],
+                    weights["_hh_values"],
+                    size=(kwargs["reservoir_size"], kwargs["reservoir_size"]),
+                )
             kwargs["recurrent_initializer"] = TensorTopology(recurrent)
             kwargs["spectral_radius"] = None
         if cls.__name__ == "CoRNNCell":

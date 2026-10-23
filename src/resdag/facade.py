@@ -488,6 +488,17 @@ class ESN(nn.Module):
         states: Mapping[str, torch.Tensor] | None = None,
         compile: bool = False,
     ) -> tuple[torch.Tensor, ReservoirStates]:
+        from resdag.core._hooks import call_with_states, has_execution_hooks, state_paths
+
+        if has_execution_hooks(self):
+            workflow = self._require_workflow()
+            workflow._backend.validate_stateless(workflow.graph)
+            return cast(
+                tuple[torch.Tensor, ReservoirStates],
+                call_with_states(
+                    self, (inputs,), states, state_paths(self, "workflow.graph."), compile=compile
+                ),
+            )
         output, final = self._require_workflow().forward_stateless(
             inputs, states=states, compile=compile
         )
@@ -504,18 +515,21 @@ class ESN(nn.Module):
         execution: Literal["fast", "history"] = "fast",
         return_type: Literal["auto", "tensor", "trajectory"] = "auto",
     ) -> torch.Tensor | Trajectory:
-        return cast(
-            "torch.Tensor | Trajectory",
-            self._require_workflow().forecast(
-                history,
-                horizon=horizon,
-                future_inputs=future_inputs,
-                return_warmup=return_warmup,
-                compile=compile,
-                return_type=return_type,
-                execution=execution,
-            ),
-        )
+        from resdag.core._hooks import forecast_as
+
+        with forecast_as(self):
+            return cast(
+                "torch.Tensor | Trajectory",
+                self._require_workflow().forecast(
+                    history,
+                    horizon=horizon,
+                    future_inputs=future_inputs,
+                    return_warmup=return_warmup,
+                    compile=compile,
+                    return_type=return_type,
+                    execution=execution,
+                ),
+            )
 
     def reset_state(self) -> None:
         self._require_workflow().reset_state()

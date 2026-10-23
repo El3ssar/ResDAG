@@ -103,7 +103,34 @@ class FlatStep:
     source: str
     n_inputs: int
     n_outputs: int
+    supports_compile: bool = True
     _compiled_chunks: dict[tuple[Any, ...], ChunkStepFn] = field(default_factory=dict, repr=False)
+
+
+def build_hook_step(model: ESNModel) -> FlatStep:
+    """Use native Module calls when hooks make direct forward calls insufficient."""
+    from resdag.core._hooks import call_with_states
+
+    plan = model._get_execution_plan()
+    paths = dict(zip(plan.reservoir_names, plan.reservoir_names))
+
+    def step(
+        inputs: tuple[torch.Tensor, ...], states: list[torch.Tensor]
+    ) -> tuple[tuple[torch.Tensor, ...], list[torch.Tensor]]:
+        output, final = call_with_states(
+            model, inputs, dict(zip(plan.reservoir_names, states)), paths
+        )
+        values = output if isinstance(output, tuple) else (output,)
+        return values, [final[name] for name in plan.reservoir_names]
+
+    return FlatStep(
+        step,
+        list(plan.reservoirs),
+        "# native PyTorch hook dispatch",
+        len(plan.input_features),
+        len(plan.output_slots),
+        supports_compile=False,
+    )
 
 
 def build_flat_step(model: ESNModel) -> FlatStep:
@@ -273,6 +300,12 @@ def resolve_chunk_step(
         The warm compiled chunk step, or ``None`` to fall back to eager.
     """
     import warnings
+
+    if not flat.supports_compile:
+        from resdag.core._hooks import eager_with_hooks
+
+        eager_with_hooks(True)
+        return None
 
     if torch.__version__ < _MIN_COMPILE_TORCH:
         warnings.warn(

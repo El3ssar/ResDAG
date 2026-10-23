@@ -79,7 +79,8 @@ def prepare_point(series: np.ndarray, point: Point) -> tuple[np.ndarray, dict]:
 
     Adapter._validate_series(series, point.series_len)
     scale_start = point.warmup + 1
-    observed = series[scale_start : point.forecast_start]
+    train_stop = point.train_len + 1
+    observed = series[scale_start:train_stop]
     mean = observed.mean(axis=0)
     std = observed.std(axis=0)
     std = np.where(std == 0, 1.0, std)
@@ -88,12 +89,12 @@ def prepare_point(series: np.ndarray, point: Point) -> tuple[np.ndarray, dict]:
         "version": "heldout-v1",
         "bounds": "zero-based, half-open",
         "train_inputs": [0, point.train_len],
-        "train_targets": [1, point.forecast_start],
+        "train_targets": [1, train_stop],
         "readout_input_rows": [point.warmup, point.train_len],
         "forecast_history": [point.history_start, point.forecast_start],
         "forecast_truth": [point.forecast_start, point.series_len],
         "normalization": {
-            "fit_rows": [scale_start, point.forecast_start],
+            "fit_rows": [scale_start, train_stop],
             "mean": mean.tolist(),
             "scale": std.tolist(),
             "ddof": 0,

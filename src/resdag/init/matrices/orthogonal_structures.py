@@ -1,8 +1,8 @@
 """Signed permutations and products of Householder reflections.
 
-Both return ordinary dense tensors for compatibility with reservoir cells.
-Their mathematical structure does not imply sparse or implicit recurrent
-execution: storage and dense matrix-vector multiplication remain O(n²).
+Direct calls return ordinary dense tensors. Sparse ESN construction recognizes
+the signed-permutation builder and constructs/applies its compact operator in
+linear storage/work. General Householder products remain dense.
 """
 
 import torch
@@ -27,8 +27,10 @@ def signed_permutation(
     singular values and eigenvalue magnitudes equal ``abs(gain)``. These
     matrices preserve norm for ``abs(gain)=1`` while allowing signed cycles
     instead of mixing every state coordinate as a dense Haar draw does.
-    Setup is O(n²) because the returned tensor is dense. The permutation and
-    signs use a local device RNG when ``seed`` is given.
+    A direct call is O(n²) because the returned tensor is dense. Using this
+    registered initializer in an ESN with ``sparse=True`` constructs the
+    compressed weights directly in O(n) storage and uses a CPU gather update.
+    The permutation and signs use a local device RNG when ``seed`` is given.
 
     Parameters
     ----------
@@ -48,8 +50,8 @@ def signed_permutation(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` matrix. The output is not an implicit or sparse
-        operator; recurrent application still costs O(n²).
+        Dense ``(n, n)`` matrix for direct callers. Sparse ESN initialization
+        bypasses this dense materialization while preserving the same draws.
 
     Raises
     ------

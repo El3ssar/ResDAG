@@ -284,7 +284,12 @@ def test_internal_profile_uses_heldout_history_and_truth(monkeypatch):
         20,
         "cpu",
         HParams(dim=1),
-        internal_cells.CellPoint(**point.__dict__),
+        internal_cells.CellPoint(
+            reservoir_size=point.reservoir_size,
+            train_len=point.train_len,
+            warmup=point.warmup,
+            horizon=point.horizon,
+        ),
         np.arange(point.series_len, dtype=float)[:, None],
         2,
         1,

@@ -76,6 +76,7 @@ def test_docs_only_change_runs_executable_documentation_checks() -> None:
     assert "tests/test_named_trajectory_guide.py" in sel.tests
     assert "tests/test_custom_components_guide.py" in sel.tests
     assert "tests/test_docs/test_forecast_experiment.py" in sel.tests
+    assert "tests/test_docs/test_memory_workflows.py" in sel.tests
     assert "tests/test_hpo/test_tuning_guides.py" in sel.tests
 
 
@@ -227,12 +228,33 @@ def test_perf_targets_json_selects_benchmark_tests() -> None:
     [
         "benchmarks/rc_bench/data.py",
         "benchmarks/rc_bench/adapters/reservoirpy_adapter.py",
+        "benchmarks/rc_bench/budget.py",
+        "benchmarks/rc_bench/budget_adapters.py",
         "benchmarks/julia/rc_bench.jl",
+        "benchmarks/julia/rc_budget.jl",
+        "benchmarks/julia/Project.toml",
+        "benchmarks/julia/Manifest.toml",
     ],
 )
 def test_comparison_changes_select_physical_window_oracles(path: str) -> None:
     selected = AT.select_tests([path])
+    assert selected.mode == "selected"
     assert "tests/test_benchmark_protocol.py" in selected.tests
+    assert "tests/test_benchmark_budget.py" in selected.tests
+    assert "tests/test_benchmark_julia_protocol.py" in selected.tests
+
+
+def test_budget_protocol_documentation_selects_budget_oracles() -> None:
+    selected = AT.select_tests(["benchmarks/BUDGET_PROTOCOL.md"])
+    assert "tests/test_benchmark_budget.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "path", ["docs/workflows/sparse-reservoirs.md", "docs/reference/lsmr-readout.md"]
+)
+def test_memory_workflow_documentation_selects_its_executable_recipes(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_docs/test_memory_workflows.py" in selected.tests
 
 
 @pytest.mark.parametrize(

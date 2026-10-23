@@ -15,7 +15,7 @@ resdag.core.ESNModel : Base ESN model used as sub-models.
 from collections.abc import Iterator, Mapping
 from itertools import chain
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import torch
 import torch.nn as nn
@@ -331,6 +331,18 @@ class CoupledEnsembleESNModel(nn.Module):
                 f"missing={sorted(names - set(states))}, "
                 f"unexpected={sorted(set(states) - names)}"
             )
+        from resdag.core._hooks import call_with_states, has_execution_hooks, state_paths
+
+        if has_execution_hooks(self):
+            paths = state_paths(self)
+            if set(paths) != names:
+                raise ValueError(
+                    "Explicit-state execution cannot thread hidden aggregator reservoirs"
+                )
+            return cast(
+                tuple[torch.Tensor, ReservoirStates],
+                call_with_states(self, inputs, states, paths, compile=compile),
+            )
         outputs = []
         final: ReservoirStates = {}
         for index, model in enumerate(self._iter_models()):
@@ -609,6 +621,19 @@ class CoupledEnsembleESNModel(nn.Module):
             initial_feedback=initial_feedback,
             alignment=alignment,
         )
+        from resdag.core._hooks import has_execution_hooks
+
+        if has_execution_hooks(self):
+            return self._forecast_with_hooks(
+                warmup_inputs,
+                drivers,
+                horizon=horizon,
+                boundary=boundary,
+                initial_feedback=initial_feedback,
+                reset=reset,
+                return_warmup=return_warmup,
+                return_individuals=return_individuals,
+            )
         batch_size = warmup_inputs[0].shape[0]
         device, dtype = self._reference_device_dtype()
         warmup_outputs_per_model = [
@@ -675,6 +700,101 @@ class CoupledEnsembleESNModel(nn.Module):
         if individual_outputs is not None:
             return forecast_outputs, individual_outputs
         return forecast_outputs
+
+    def _forecast_with_hooks(
+        self,
+        history: tuple[torch.Tensor, ...],
+        drivers: tuple[torch.Tensor, ...],
+        *,
+        horizon: int,
+        boundary: bool,
+        initial_feedback: torch.Tensor | None,
+        reset: bool,
+        return_warmup: bool,
+        return_individuals: bool,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Keep native ensemble/member/aggregator dispatch with explicit states."""
+        from resdag.core._hooks import call_with_states, state_paths
+
+        paths = state_paths(self)
+        expected = {
+            f"models.{index}.{name}"
+            for index, member in enumerate(self._iter_models())
+            for name in member._get_execution_plan().reservoir_names
+        }
+        if set(paths) != expected:
+            raise ValueError(
+                "Hook-compatible forecasting cannot thread reservoirs hidden in the "
+                "aggregator or outside member graphs; use a feed-forward aggregator "
+                "and visible recurrent graph nodes."
+            )
+        layers = dict(self.named_modules())
+        states = (
+            None
+            if reset
+            else {
+                name: (
+                    layer.state.clone()
+                    if layer.state is not None
+                    else layer.cell.init_state(
+                        history[0].shape[0], history[0].device, history[0].dtype
+                    )
+                )
+                for name, path in paths.items()
+                if isinstance((layer := layers[path]), BaseReservoirLayer)
+            }
+        )
+        captured: list[torch.Tensor | None] = [None] * self.n_models
+        handles = []
+
+        def capture(index: int) -> Callable:
+            def hook(
+                module: torch.nn.Module, args: tuple[torch.Tensor, ...], output: torch.Tensor
+            ) -> None:
+                captured[index] = output.clone()
+
+            return hook
+
+        try:
+            if return_individuals:
+                handles = [
+                    model.register_forward_hook(capture(i))
+                    for i, model in enumerate(self._iter_models())
+                ]
+            warm, states = call_with_states(self, history, states, paths)
+            current = initial_feedback if initial_feedback is not None else warm[:, -1:]
+            outputs = []
+            individuals: list[list[torch.Tensor]] = [[] for _ in self.models]
+            if boundary:
+                outputs.append(current.clone())
+                if return_individuals:
+                    for values, value in zip(individuals, captured):
+                        assert value is not None
+                        values.append(value[:, -1:].clone())
+            for tick in range(horizon - int(boundary)):
+                inputs = (current, *(driver[:, tick : tick + 1] for driver in drivers))
+                current, states = call_with_states(self, inputs, states, paths)
+                outputs.append(current.clone())
+                if return_individuals:
+                    for values, value in zip(individuals, captured):
+                        assert value is not None
+                        values.append(value.clone())
+            for name, path in paths.items():
+                layer = layers[path]
+                assert isinstance(layer, BaseReservoirLayer)
+                layer.state = states[name].clone()
+                layer._state_user_set = False
+            result = torch.cat(outputs, dim=1)
+            if return_warmup:
+                result = torch.cat((warm[:, :-1] if boundary else warm, result), dim=1)
+            return (
+                (result, [torch.cat(values, dim=1) for values in individuals])
+                if return_individuals
+                else result
+            )
+        finally:
+            for handle in handles:
+                handle.remove()
 
     # ------------------------------------------------------------------
     # Persistence

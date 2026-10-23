@@ -30,6 +30,28 @@ a ridge readout, a warmup, a forecast. What differs is the *mental model*:
 The rest of this page maps concepts and API surface side by side, then walks
 the same Lorenz forecast through all three libraries.
 
+## Phase-five compact weights and PyTorch hooks
+
+For `sparse=True`, recurrent weights now live only in compressed component
+buffers. `cell.weight_hh` is a CSR Tensor view rather than a dense Parameter;
+use `.to_dense()` for explicit inspection and `.values()` for existing edge
+updates. State dictionaries store compressed arrays instead of a dense square
+matrix. Dense models retain their existing representation. See
+[memory and sparse models](workflows/sparse-reservoirs.md) for initialization,
+device, numerical and trainability details.
+
+Forecasting now honors native PyTorch hooks, including output-changing hooks on
+layers and the outer model. Models with hooks use a compatible execution path;
+hook-free models retain the lean path. `compile=True` with relevant hooks warns
+and uses eager execution. Existing forecasts that relied on hooks being ignored
+can change. Put recurrent memory in declared DAG nodes so explicit state and
+checkpointing can track it; arbitrary Python state hidden in hooks is not a
+model-state interface. See [execution capabilities](advanced/forecast-capabilities.md).
+
+`readout="lsmr"` is a new explicit low-memory CPU solver. Existing solver defaults
+remain unchanged; [its guide](reference/lsmr-readout.md) explains convergence and
+accelerator transfers.
+
 ## Phase-four training and persistence changes
 
 The common `rd.ESN` and `rd.Model` now support `model.save("run.pt")` and

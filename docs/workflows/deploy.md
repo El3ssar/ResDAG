@@ -73,7 +73,12 @@ overhead:
 preds = model.forecast(f_warmup, horizon=10_000, compile=True)   # GPU: fewer, fatter launches
 ```
 
-The default eager path is already flat and hook-free. Compiled results should
+For hook-free models, the default eager path already uses a flat executor.
+Models with PyTorch execution hooks automatically use native module calls so
+their pre-hooks, output changes and backward hooks keep ordinary PyTorch
+semantics. `compile=True` emits a warning and uses compatible eager execution
+while hooks are registered. Removing the hooks restores the lean path.
+Compiled results should
 be compared with floating-point tolerances, especially for chaotic dynamics;
 compilation can change rounding. Warm compiled executors are reused for
 matching shapes, devices, and dtypes. `compile=True` is an opt-in speedup and

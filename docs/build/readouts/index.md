@@ -44,7 +44,7 @@ model = rd.classic_esn(
 )
 ```
 
-Names are `auto`, `ridge`, `cholesky`, `cg`, `svd`, `pinv`, `incremental`, `rls`, and
+Names are `auto`, `ridge`, `cholesky`, `cg`, `lsmr`, `svd`, `pinv`, `incremental`, `rls`, and
 `fista`; a `ReadoutLayer` subclass also works. `readout_kwargs` passes additional
 constructor options and can override `alpha`, `bias`, and `name`. Input/output
 widths are fixed by the architecture. The pseudoinverse solver has no ridge
@@ -66,6 +66,12 @@ ridge form their Gram in the solve dtype (`float64` by default) on every
 device. Setting `gram_dtype=torch.float32` explicitly can speed up a
 well-conditioned CUDA fit, but can lose accuracy for correlated states. CG's
 automatic Gram dtype remains input precision on CUDA and solve precision on CPU.
+
+For an explicit iterative fit without a feature-by-feature Gram matrix, choose
+[`readout="lsmr"`](../../reference/lsmr-readout.md). It uses SciPy on CPU in
+float64, preserves the ridge penalty and unpenalized intercept, and reports
+per-output convergence. Accelerator inputs use a warned CPU bridge. It retains
+the feature matrix, so this is distinct from streaming over a long sequence.
 
 ## Stable fits and streaming checkpoints
 

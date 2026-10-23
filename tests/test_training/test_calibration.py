@@ -344,7 +344,10 @@ def test_spectral_radius_property_tracks_both_calibration_gains_and_checkpoints(
     report = calibrate_flow_control(layer, x, learning_rate=0.1, epochs=3)
     assert layer.spectral_radius_achieved == pytest.approx(report.spectral_radius_after, rel=1e-12)
     calibrate_intrinsic_plasticity(layer, x, target_std=0.3)
-    effective = layer.cell._intrinsic_gain[:, None] * layer.cell._recurrent_gain[:, None] * original
+    oracle_weight = original.to_dense() if sparse else original
+    effective = (
+        layer.cell._intrinsic_gain[:, None] * layer.cell._recurrent_gain[:, None] * oracle_weight
+    )
     expected = torch.linalg.eigvals(effective).abs().max().item()
     assert layer.spectral_radius_achieved == pytest.approx(expected, rel=1e-12)
     torch.testing.assert_close(layer.weight_hh, original, atol=0, rtol=0)

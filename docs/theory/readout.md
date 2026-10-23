@@ -56,6 +56,7 @@ allocate an unused feature-by-feature Gram matrix.
 | `RidgeReadoutLayer` / `ridge` | Cholesky, or explicit `solver="solve"` for LU | Regularized, well-conditioned batch fitting |
 | `CholeskyReadoutLayer` / `cholesky` | Direct Cholesky ridge | You want that method by name |
 | `CGReadoutLayer` / `cg` | Iterative conjugate gradient on a full Gram matrix | Iterative fitting is preferable for your feature width and tolerance |
+| `LSMRReadoutLayer` / `lsmr` | SciPy iterative least squares through matrix/vector products | An explicit CPU float64 fit without a feature-by-feature matrix |
 | `SVDReadoutLayer` / `svd` | Design-matrix SVD with ridge filter factors | Correlated or rank-deficient features; more features than samples |
 | `PinvReadoutLayer` / `pinv` | Least squares / pseudoinverse with an `rcond` cutoff | Unregularized least squares with explicit rank tolerance |
 | `IncrementalRidgeReadoutLayer` / `incremental` | Merge chunk statistics, then solve once | The complete feature sequence does not fit in memory |
@@ -109,6 +110,13 @@ output columns together with separate step sizes, warns on under-convergence,
 and checks its absolute residual tolerance every ten iterations. Increasing
 `max_iter` or changing `tol` trades work against the quality of that approximate
 solve. Compare predictions as well as residuals before choosing it for speed.
+
+LSMR instead applies the design and its transpose through a linear operator,
+centering bounded row blocks when fitting an intercept. Its damping is
+`sqrt(alpha)`, preserving the same ridge objective. It uses relative stopping
+tests, per-output target scaling, and fails explicitly on iteration or condition
+limits. The feature matrix remains resident and accelerator fitting requires a
+warned CPU bridge; see the [LSMR guide](../reference/lsmr-readout.md).
 
 FISTA uses an exact Gram eigenvalue by default. Optional `power_iters>0` estimates
 curvature more cheaply, but an estimate plus a fixed margin is not a guaranteed

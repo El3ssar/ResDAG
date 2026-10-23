@@ -77,23 +77,13 @@ class ESNLayer(BaseReservoirLayer):
         If ``True``, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
     sparse : bool or {'auto'}, default=False
-        Store a CSR copy of the frozen recurrent matrix and use a sparse
-        matrix-vector product for the recurrent term (instead of the dense
-        ``addmm``).  For RC-typical sparse reservoirs (density ~1-10%) this
-        accelerates the recurrent matmul at large sizes and shrinks the
-        matmul-operand / serialized-checkpoint footprint.  It does **not** reduce
-        live memory: the dense ``weight_hh`` parameter stays resident as the
-        canonical form, so a sparse cell's live footprint is ``dense(n²) +
-        CSR(nnz)`` — slightly larger than dense-only, not smaller (no
-        memory-ceiling lift).  ``False`` (default) keeps the dense path
-        byte-for-byte unchanged; ``True`` forces the CSR path; ``"auto"`` enables
-        it only for large, sparse reservoirs, with a **device-dependent** size
-        gate (``reservoir_size >= 1000`` on CPU, ``>= 5000`` on CUDA, where the
-        dense/sparse crossover is higher) and density ``<= 0.2``.  Requires
-        ``trainable=False``; the dense math is preserved exactly (forecasts match
-        the dense path to floating-point tolerance).  See
-        :class:`~resdag.layers.cells.esn_cell.ESNCell` for the full contract,
-        including the memory caveat.
+        ``False`` keeps dense recurrent weights. ``True`` stores frozen weights
+        only as compressed CSR components; ``weight_hh`` is a zero-copy CSR view.
+        Use ``weight_hh.to_dense()`` for explicit inspection. ``"auto"`` uses
+        size/density heuristics, not hardware calibration. Compact storage saves
+        recurrent-weight memory but does not guarantee faster execution or remove
+        sequence/readout allocations. See :class:`~resdag.layers.cells.ESNCell`
+        for initialization, numerical, device and trainability boundaries.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
         name, ``(name, params)``, any matrix-building callable

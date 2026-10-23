@@ -35,6 +35,7 @@ class Point:
     train_len: int = 5000  # training inputs, including the washed-out prefix
     warmup: int = 200  # transient discarded before fitting / before generating
     horizon: int = 1000  # autoregressive forecast length
+    origin: int | None = None  # first unseen index; fitting remains fixed at train_len
 
     def __post_init__(self) -> None:
         for name in ("reservoir_size", "train_len", "warmup", "horizon"):
@@ -43,11 +44,17 @@ class Point:
                 raise ValueError(f"{name} must be a positive integer")
         if self.warmup >= self.train_len:
             raise ValueError("warmup must be smaller than train_len")
+        if self.origin is not None and (
+            isinstance(self.origin, bool)
+            or not isinstance(self.origin, int)
+            or self.origin < self.train_len + 1
+        ):
+            raise ValueError("origin must be an integer at or after train_len + 1")
 
     @property
     def forecast_start(self) -> int:
         """Index of the first observation never admitted to training."""
-        return self.train_len + 1
+        return self.train_len + 1 if self.origin is None else self.origin
 
     @property
     def history_start(self) -> int:

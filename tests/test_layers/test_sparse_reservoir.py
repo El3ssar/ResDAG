@@ -1,30 +1,9 @@
-"""Sparse CSR ``weight_hh`` path for frozen reservoirs (Phase 14).
+"""Frozen sparse recurrence has canonical compact CSR storage.
 
-Verifies the opt-in ``sparse`` flag on :class:`~resdag.layers.cells.esn_cell.ESNCell`
-and :class:`~resdag.layers.ESNLayer`:
-
-* **Parity** — a sparse cell computes the recurrent term with a CSR spmv instead
-  of the dense ``addmm``, but the two paths are the same math: the recurrent
-  state and forecast track the dense path to floating-point tolerance.
-* **Policy** — ``sparse=False`` (default) is byte-for-byte the dense path;
-  ``sparse=True`` forces CSR; ``sparse="auto"`` gates on reservoir size and
-  recurrent-matrix density.  ``sparse`` + ``trainable`` is rejected.
-* **Live toggling** — flipping ``trainable`` on a live sparse cell densifies /
-  re-sparsifies with the documented warning.
-* **Serialization** — ``state_dict`` serialises the dense ``weight_hh`` (so a
-  sparse checkpoint loads into a dense cell and vice versa) and pickle
-  (``save_full``) round-trips the CSR buffer; ``.to()`` / ``.double()`` rebuild
-  the CSR operator on the new device/dtype.
-* **Compile fallback** — ``compile=True`` degrades gracefully to eager because
-  ``torch.compile`` cannot trace sparse tensors.
-* **Storage** — the CSR *operator* (the matmul operand, and the size a
-  CSR-serialized checkpoint would be) is far smaller than an ``(n, n)`` dense
-  matrix at low density.  This is a storage fact about the CSR buffer, **not** a
-  live-cell-memory reduction: the dense ``weight_hh`` parameter stays resident as
-  the canonical form, so a sparse cell's live footprint is ``dense(n²) +
-  CSR(nnz)`` — slightly *larger* than dense-only.  The wall-clock speed claim
-  (CSR spmv vs dense ``addmm``) is timing-sensitive, so it lives behind the
-  ``benchmark`` marker (deselected from the default lane), not here.
+Dense/sparse values, states and forecasts agree within the existing floating
+point tolerances. Ordinary dense initialization stays unchanged. Checkpoints
+store ordinary CSR component arrays and placement/copying rebuilds only their
+zero-copy operator view; sparse storage contains no dense n-by-n parameter.
 """
 
 import io
@@ -95,9 +74,10 @@ class TestSparseConstruction:
         assert cell.sparse is True
         assert cell._weight_hh_csr is not None
         assert cell._weight_hh_csr.is_sparse_csr
-        # dense weight_hh is retained as the canonical form
-        assert isinstance(cell.weight_hh, torch.nn.Parameter)
-        assert torch.equal(cell._weight_hh_csr.to_dense(), cell.weight_hh.data)
+        # Frozen recurrent weights are stored only in compressed form.
+        assert cell.weight_hh.layout == torch.sparse_csr
+        assert cell._parameters["weight_hh"] is None
+        assert cell.weight_hh.values().data_ptr() == cell._hh_values.data_ptr()
 
     def test_sparse_true_forces_even_below_auto_gates(self) -> None:
         """Explicit ``sparse=True`` bypasses the size/density ``auto`` gates."""
@@ -271,7 +251,10 @@ class TestParity:
         )
         dense = ESNLayer(**common, sparse=False).double()
         sparse = ESNLayer(**common, sparse=True).double()
-        assert torch.equal(dense.weight_hh, sparse.weight_hh)
+        # Compare execution on identical weights; sparse-native construction
+        # uses Arnoldi rather than the dense initializer's eigvals scaling.
+        sparse.load_state_dict(dense.state_dict())
+        assert torch.equal(dense.weight_hh, sparse.weight_hh.to_dense())
 
         state = torch.randn(4, 1000, dtype=torch.float64)
         rd = dense.cell._recurrent(state)
@@ -289,6 +272,7 @@ class TestParity:
         )
         dense = ESNLayer(**common, sparse=False).double()
         sparse = ESNLayer(**common, sparse=True).double()
+        sparse.load_state_dict(dense.state_dict())
         fb = torch.randn(2, 300, 3, dtype=torch.float64)
         dense.reset_state()
         sparse.reset_state()
@@ -344,15 +328,14 @@ class TestTrainableToggle:
 class TestSerialization:
     """state_dict / pickle round-trips and device/dtype moves."""
 
-    def test_state_dict_serializes_dense_weight(self) -> None:
-        """The CSR buffer is non-persistent; ``weight_hh`` serialises dense."""
+    def test_state_dict_serializes_compact_components_only(self) -> None:
         layer = ESNLayer(1000, feedback_size=3, topology="erdos_renyi", sparse=True)
         sd = layer.state_dict()
-        keys = [k for k in sd if k.endswith("weight_hh")]
-        assert keys, "weight_hh must appear in state_dict"
-        for k in keys:
-            assert sd[k].layout == torch.strided  # dense, not CSR
-        # the non-persistent CSR buffer is absent
+        assert not any(k.endswith("weight_hh") for k in sd)
+        assert all(
+            "cell." + key in sd for key in ("_hh_crow_indices", "_hh_col_indices", "_hh_values")
+        )
+        assert all(tensor.layout == torch.strided for tensor in sd.values())
         assert not any(k.endswith("_weight_hh_csr") for k in sd)
 
     def test_state_dict_round_trip_sparse_to_sparse(self) -> None:
@@ -360,7 +343,7 @@ class TestSerialization:
         b = ESNLayer(1000, feedback_size=3, topology="erdos_renyi", seed=2, sparse=True)
         b.load_state_dict(a.state_dict())
         assert b.sparse is True
-        assert torch.equal(a.weight_hh, b.weight_hh)
+        assert torch.equal(a.weight_hh.to_dense(), b.weight_hh.to_dense())
         assert torch.equal(a.cell._weight_hh_csr.to_dense(), b.cell._weight_hh_csr.to_dense())
 
     def test_state_dict_cross_mode_sparse_to_dense(self) -> None:
@@ -369,7 +352,7 @@ class TestSerialization:
         dense = ESNLayer(1000, feedback_size=3, topology="erdos_renyi", seed=2, sparse=False)
         dense.load_state_dict(sparse.state_dict())
         assert dense.sparse is False
-        assert torch.equal(dense.weight_hh, sparse.weight_hh)
+        assert torch.equal(dense.weight_hh, sparse.weight_hh.to_dense())
 
     def test_state_dict_cross_mode_dense_to_sparse(self) -> None:
         """A dense checkpoint loads into a sparse cell and rebuilds the CSR view."""
@@ -377,7 +360,7 @@ class TestSerialization:
         sparse = ESNLayer(1000, feedback_size=3, topology="erdos_renyi", seed=2, sparse=True)
         sparse.load_state_dict(dense.state_dict())
         assert sparse.sparse is True
-        assert torch.equal(sparse.weight_hh, dense.weight_hh)
+        assert torch.equal(sparse.weight_hh.to_dense(), dense.weight_hh)
         assert torch.equal(sparse.cell._weight_hh_csr.to_dense(), dense.weight_hh.data)
 
     def test_pickle_round_trip_preserves_csr(self) -> None:
@@ -389,7 +372,7 @@ class TestSerialization:
         restored = torch.load(buf, weights_only=False)
         assert restored.sparse is True
         assert restored.cell._weight_hh_csr.is_sparse_csr
-        assert torch.equal(restored.weight_hh, layer.weight_hh)
+        assert torch.equal(restored.weight_hh.to_dense(), layer.weight_hh.to_dense())
         # and it still runs
         fb = torch.randn(1, 10, 3)
         assert torch.allclose(restored(fb), layer(fb))
@@ -401,7 +384,7 @@ class TestSerialization:
         layer = layer.double()
         assert layer.sparse is True
         assert layer.cell._weight_hh_csr.dtype == torch.float64
-        assert torch.equal(layer.cell._weight_hh_csr.to_dense(), layer.weight_hh.data)
+        assert torch.equal(layer.cell._weight_hh_csr.to_dense(), layer.weight_hh.to_dense())
 
 
 class TestModelIntegration:
@@ -466,23 +449,10 @@ def _storage_bytes(t: torch.Tensor) -> int:
 
 
 class TestStorage:
-    """Deterministic storage facts about the CSR operator (no wall-clock).
-
-    These assert *what is actually measured* — the byte size of the CSR buffer
-    vs a dense ``(n, n)`` matrix — and the honest live-memory relationship (the
-    dense ``weight_hh`` stays resident, so the CSR is *additional* storage).  The
-    wall-clock speed claim lives in :class:`TestSpmvSpeed` behind the
-    ``benchmark`` marker, because timing is machine-load-sensitive.
-    """
+    """Deterministic compressed storage contracts; timing remains opt-in."""
 
     def test_csr_operator_smaller_than_dense_at_low_density(self) -> None:
-        """At n=5000, density≈1%, the CSR *operator* is far smaller than dense.
-
-        This is a fact about the CSR buffer (the matmul operand, and the size a
-        CSR-serialized checkpoint would be), **not** about live cell memory — the
-        dense ``weight_hh`` remains resident alongside it (see
-        :meth:`test_sparse_cell_live_memory_exceeds_dense`).
-        """
+        """At 1% density, actual recurrent storage is over ten times smaller."""
         layer = ESNLayer(
             5000,
             feedback_size=3,
@@ -491,46 +461,27 @@ class TestStorage:
             seed=0,
             sparse=True,
         )
-        dense_bytes = _storage_bytes(layer.weight_hh.data)
+        dense_bytes = layer.reservoir_size**2 * layer.weight_hh.element_size()
         csr_bytes = _storage_bytes(layer.cell._weight_hh_csr)
         # CSR must be at least 10x smaller than the dense (n,n) matrix at 1%.
         assert csr_bytes < dense_bytes / 10
 
-    def test_sparse_cell_live_memory_exceeds_dense(self) -> None:
-        """Honest memory accounting: a sparse cell is *larger* live than dense.
-
-        ``sparse=True`` does **not** lift the memory ceiling: the canonical dense
-        ``weight_hh`` parameter is always materialised, and the CSR buffer is an
-        *additional* non-persistent operator built from it.  So the sparse cell's
-        resident recurrent storage is ``dense(n²) + CSR(nnz)`` — strictly greater
-        than the dense-only cell's ``dense(n²)``.  This test pins that reality so
-        the feature's memory claim can never silently regress into overstatement.
-        """
+    def test_sparse_cell_has_only_compact_recurrent_storage(self) -> None:
         common = dict(
-            reservoir_size=2000,
-            feedback_size=3,
-            topology=("erdos_renyi", {"p": 0.01}),
-            spectral_radius=0.9,
-            seed=0,
+            reservoir_size=2000, feedback_size=3, topology=("erdos_renyi", {"p": 0.01}), seed=0
         )
         dense = ESNCell(**common, sparse=False)
         sparse = ESNCell(**common, sparse=True)
-
-        def resident(cell: ESNCell) -> int:
-            total = sum(_storage_bytes(p.data) for p in cell.parameters())
-            for buf in cell.buffers():
-                if buf is not None:
-                    total += _storage_bytes(buf)
-            return total
-
-        dense_bytes = resident(dense)
-        sparse_bytes = resident(sparse)
-        # The sparse cell carries the same dense weight_hh PLUS the CSR buffer,
-        # so it is strictly larger, by exactly the CSR operator's size.
-        assert sparse_bytes > dense_bytes
-        assert sparse._weight_hh_csr is not None
-        csr_bytes = _storage_bytes(sparse._weight_hh_csr)
-        assert sparse_bytes - dense_bytes == csr_bytes
+        assert sparse._parameters["weight_hh"] is None
+        assert sparse.weight_hh.layout == torch.sparse_csr
+        assert sparse._hh_values.data_ptr() == sparse.weight_hh.values().data_ptr()
+        compact = _storage_bytes(sparse.weight_hh)
+        assert compact < _storage_bytes(dense.weight_hh) / 10
+        buffers = list(sparse.named_buffers())
+        assert not any(
+            tuple(value.shape) == (2000, 2000) and value.layout == torch.strided
+            for _, value in buffers
+        )
 
 
 @pytest.mark.benchmark

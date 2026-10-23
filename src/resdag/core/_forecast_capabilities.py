@@ -286,6 +286,8 @@ class ForecastSequenceExecutor:
         execution: ForecastExecution = "fast",
         *,
         compile: bool = False,
+        workflow: Any = None,
+        owner: nn.Module | None = None,
     ) -> None:
         validate_forecast_execution(graph, execution, compile=compile)
         from resdag.core._workflow_backends import workflow_backend
@@ -296,15 +298,43 @@ class ForecastSequenceExecutor:
         self._graph = cast(ReservoirModelProtocol, graph)
         self._execution = execution
         self._compile = compile
+        self._workflow = workflow
+        self._owner: Any = owner
         self._history: tuple[torch.Tensor, ...] | None = None
         self._initial_states: ReservoirStates | None = None
         self._states: ReservoirStates | None = None
         self._layout: tuple[tuple[int, int, torch.device, torch.dtype], ...] | None = None
 
+    def _validate_inputs(self, inputs: tuple[torch.Tensor, ...]) -> bool:
+        from resdag.core._hooks import has_execution_hooks
+
+        native = self._owner is not None or has_execution_hooks(cast(nn.Module, self._graph))
+        if native and len(inputs) == len(self._input_features):
+            # Native prehooks may reconcile feedback placement with other
+            # ports or parameters. Validate structure before dispatch, leaving
+            # those conversions to the same hooks as ordinary module calls.
+            for value, width in zip(inputs, self._input_features):
+                validate_sequence_inputs((value,), feature_sizes=(width,), allow_empty=False)
+            if any(value.shape[:2] != inputs[0].shape[:2] for value in inputs):
+                raise ValueError("Forecast inputs must share batch size and timesteps")
+        else:
+            validate_sequence_inputs(inputs, feature_sizes=self._input_features, allow_empty=False)
+        return native
+
     def _run(
         self, inputs: tuple[torch.Tensor, ...], states: Mapping[str, torch.Tensor] | None
     ) -> tuple[tuple[torch.Tensor, ...], ReservoirStates]:
-        output, final = self._graph.forward_stateless(*inputs, states=states, compile=self._compile)
+        if self._owner is None:
+            output, final = self._graph.forward_stateless(
+                *inputs, states=states, compile=self._compile
+            )
+        else:
+            supplied = (
+                inputs[0] if len(inputs) == 1 else dict(zip(self._workflow.input_names, inputs))
+            )
+            output, final = self._owner.forward_stateless(supplied, states=states)
+            if isinstance(output, dict):
+                output = tuple(output[name] for name in self._workflow.output_names)
         outputs = output if isinstance(output, tuple) else (output,)
         if len(outputs) != len(self._output_features) or any(
             not isinstance(value, torch.Tensor)
@@ -322,7 +352,7 @@ class ForecastSequenceExecutor:
         states: Mapping[str, torch.Tensor] | None = None,
     ) -> tuple[tuple[torch.Tensor, ...], ReservoirStates]:
         """Evaluate full observed history without changing stored graph state."""
-        validate_sequence_inputs(inputs, feature_sizes=self._input_features, allow_empty=False)
+        self._validate_inputs(inputs)
         initial = None if states is None else {key: value.clone() for key, value in states.items()}
         outputs, final = self._run(inputs, initial)
         self._initial_states, self._states = initial, final
@@ -340,11 +370,16 @@ class ForecastSequenceExecutor:
         """Consume one input frame and return its complete-prefix prediction."""
         if self._history is None or self._layout is None:
             raise RuntimeError("Call start(history) before advancing a forecast executor")
-        validate_sequence_inputs(inputs, feature_sizes=self._input_features, allow_empty=False)
+        native = self._validate_inputs(inputs)
         layout = tuple(
             (value.shape[0], value.shape[-1], value.device, value.dtype) for value in inputs
         )
-        if layout != self._layout or any(value.shape[1] != 1 for value in inputs):
+        same_layout = (
+            tuple(value[:2] for value in layout) == tuple(value[:2] for value in self._layout)
+            if native
+            else layout == self._layout
+        )
+        if not same_layout or any(value.shape[1] != 1 for value in inputs):
             raise ValueError("Forecast advance requires one frame per original input stream")
         if self._execution == "history":
             prefix = tuple(torch.cat((old, new), 1) for old, new in zip(self._history, inputs))

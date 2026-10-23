@@ -244,6 +244,13 @@ class ParallelESNModel(torch.nn.Module):
         validate_sequence_inputs(
             inputs, feature_sizes=(self.input_dim,), reference=module_reference(self)
         )
+        from resdag.core._hooks import call_with_states, has_execution_hooks
+
+        if has_execution_hooks(self):
+            return cast(
+                tuple[torch.Tensor, ReservoirStates],
+                call_with_states(self, inputs, states, {"reservoir": "reservoir"}, compile=compile),
+            )
         series = inputs[0]
         patches = self.window(series)
         if states is None:
@@ -500,8 +507,11 @@ class ParallelESNModel(torch.nn.Module):
             )
         if not self.readout.is_fitted:
             raise ValueError("forecast() requires a fitted readout; call fit() first.")
+        from resdag.core._hooks import has_execution_hooks
+
+        forward = self if has_execution_hooks(self) else self.forward
         with torch.no_grad():
-            warmup_outputs = self.forward(warmup, reset=reset)
+            warmup_outputs = forward(warmup, reset=reset)
             current = (
                 initial_feedback if initial_feedback is not None else warmup_outputs[:, -1:, :]
             )
@@ -515,7 +525,7 @@ class ParallelESNModel(torch.nn.Module):
             if boundary:
                 outputs[:, :1, :] = current
             for t in range(int(boundary), horizon):
-                current = self.forward(current)
+                current = forward(current)
                 outputs[:, t : t + 1, :] = current
             if return_warmup:
                 prefix = warmup_outputs[:, :-1, :] if boundary else warmup_outputs

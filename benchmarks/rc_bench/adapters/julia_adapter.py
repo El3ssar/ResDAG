@@ -74,6 +74,7 @@ class ReservoirComputingJLAdapter(Adapter):
                 op,
                 str(repeats),
                 str(warmups),
+                str(point.forecast_start),
             ]
             proc = subprocess.run(args, capture_output=True, text=True)
             if proc.returncode != 0:
@@ -134,6 +135,7 @@ class ReservoirComputingJLAdapter(Adapter):
                 "1",
                 "0",
                 out_path,
+                str(point.forecast_start),
             ]
             proc = subprocess.run(args, capture_output=True, text=True)
             if proc.returncode != 0:

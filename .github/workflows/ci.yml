@@ -85,12 +85,12 @@ jobs:
         run: python -m pip install -r benchmarks/requirements.txt
 
       - name: Check comparison windows and real Python adapters
-        run: pytest --no-cov -q tests/test_benchmark_protocol.py
+        run: pytest --no-cov -q tests/test_benchmark_protocol.py tests/test_benchmark_budget.py
 
       - name: Render held-out Python comparison smoke report
         # This bounded run verifies both real Python adapters and the reporting
         # pipeline. It is one seed at untuned settings, not a ranking or an
-        # equal-budget search. Julia remains an explicitly optional local lane.
+        # equal-budget search. Julia has a separate optional protocol job below.
         # Existing internal timing gates run before installing comparison deps.
         working-directory: benchmarks
         run: python -m rc_bench.run --quick --only resdag-cpu reservoirpy --report --out results/ci-latest.json
@@ -104,3 +104,67 @@ jobs:
             benchmarks/results/REPORT.md
             benchmarks/results/ci-latest.json
           if-no-files-found: warn
+
+  julia-protocol:
+    # Real Julia correctness oracles share the benchmark opt-in policy. They do
+    # not replace the existing CPU timing gates or claim comparative rankings.
+    if: >-
+      ${{ github.event_name == 'schedule'
+          || github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'pull_request'
+              && contains(github.event.pull_request.labels.*.name, 'benchmark')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      RESDAG_TEST_JULIA: "1"
+      RESDAG_JULIA_PROJECT: ${{ github.workspace }}/benchmarks/julia
+      JULIA_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      JULIA_NUM_PRECOMPILE_TASKS: "1"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          python-version: "3.12"
+
+      - name: Read pinned Julia version
+        id: julia-version
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          manifest = tomllib.loads(Path("benchmarks/julia/Manifest.toml").read_text())
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"version={manifest['julia_version']}", file=output)
+          PY
+
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ steps.julia-version.outputs.version }}
+
+      - uses: julia-actions/cache@v3
+        with:
+          cache-name: julia-protocol-${{ steps.julia-version.outputs.version }}-${{ hashFiles('benchmarks/julia/Manifest.toml') }}
+          # Fork pull requests need no cache-deletion permission.
+          delete-old-caches: "false"
+
+      - name: Instantiate pinned Julia environment
+        run: |
+          julia --startup-file=no --project=benchmarks/julia -e '
+            using Pkg, LinearAlgebra
+            BLAS.set_num_threads(1)
+            Pkg.instantiate(; allow_autoprecomp=false, julia_version_strict=true)
+            Pkg.precompile()
+          '
+          git diff --exit-code -- benchmarks/julia/Project.toml benchmarks/julia/Manifest.toml
+
+      - name: Check real pinned Julia fit and autonomous forecast protocols
+        run: pytest --no-cov -q tests/test_benchmark_julia_protocol.py

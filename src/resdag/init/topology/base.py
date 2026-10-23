@@ -83,7 +83,8 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     """
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1] or matrix.shape[0] == 0:
         raise ValueError("matrix must be a non-empty square matrix.")
-    if not bool(torch.isfinite(matrix).all()):
+    values = matrix.values() if matrix.layout == torch.sparse_csr else matrix
+    if not bool(torch.isfinite(values).all()):
         raise ValueError("matrix must contain only finite values.")
     # MPS has no complex eigvals or complex power-iteration support. Radius
     # measurement is an initialization/diagnostic operation, so use the CPU
@@ -91,6 +92,26 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     if matrix.device.type == "mps":
         return estimate_spectral_radius(matrix.detach().cpu())
     n = matrix.shape[0]
+
+    if matrix.layout == torch.sparse_csr:
+        if n <= 2:
+            return _dense_eigvals_radius(matrix.to_dense())
+        if matrix._nnz() == 0:
+            return 0.0
+        rows = torch.repeat_interleave(
+            torch.arange(n, device=matrix.device), matrix.crow_indices().diff()
+        )
+        columns = matrix.col_indices()
+        if bool((columns >= rows).all()) or bool((columns <= rows).all()):
+            diagonal = matrix.values()[columns == rows]
+            return float(diagonal.abs().max().item()) if diagonal.numel() else 0.0
+        radius = _sparse_eigs_radius(matrix)
+        if radius is None:
+            raise RuntimeError(
+                "Sparse spectral-radius estimation did not converge; no dense fallback was "
+                "allocated. Use a prescaled initializer or omit automatic spectral scaling."
+            )
+        return radius
 
     if n <= _DENSE_EIGVALS_MAX_N:
         return _dense_eigvals_radius(matrix)
@@ -160,9 +181,19 @@ def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
     if n <= 2:
         return None
 
-    work_dtype = torch.complex128 if matrix.is_complex() else torch.float64
-    dense = matrix.detach().to(device="cpu", dtype=work_dtype).numpy()
-    sparse = sp.csr_matrix(dense)
+    # A real 3-by-3 Arnoldi solve can request only one Ritz value. Some
+    # ARPACK versions return a spurious zero when its dominant mode is a
+    # complex conjugate pair. Complex arithmetic represents that mode with
+    # one Ritz value and keeps the solve sparse.
+    work_dtype = torch.complex128 if matrix.is_complex() or n == 3 else torch.float64
+    work = matrix.detach().to(device="cpu", dtype=work_dtype)
+    if work.layout == torch.sparse_csr:
+        sparse = sp.csr_matrix(
+            (work.values().numpy(), work.col_indices().numpy(), work.crow_indices().numpy()),
+            shape=tuple(work.shape),
+        )
+    else:
+        sparse = sp.csr_matrix(work.numpy())
     k = min(_EIGS_K, n - 2)
     ncv = min(n, max(2 * k + 1, _EIGS_NCV))
 
@@ -215,7 +246,11 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
     if current_radius > 0.0:
         # Normalize before multiplying: target/current may overflow in the
         # matrix dtype even when the normalized matrix is representable.
-        matrix = (matrix / current_radius) * target_radius
+        if matrix.layout == torch.sparse_csr:
+            matrix = matrix.clone()
+            matrix.values().div_(current_radius).mul_(target_radius)
+        else:
+            matrix = (matrix / current_radius) * target_radius
     elif target_radius > 0.0:
         # A nilpotent (all-eigenvalues-zero, e.g. the pure ``delay_line``) or
         # all-zero matrix cannot be rescaled to a nonzero radius — scaling a zero
@@ -302,6 +337,24 @@ class TopologyInitializer(ABC):
     # None preserves the historical registration policy. A configured policy
     # can explicitly skip estimation, or opt into scaling a prescaled builder.
     rescale: bool | None = None
+
+    def build_sparse(
+        self,
+        n: int,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+        spectral_radius: float | None = None,
+    ) -> torch.Tensor:
+        """Build CSR weights; override to avoid a dense initialization scratch.
+
+        Existing in-place custom initializers remain usable. Their default
+        implementation needs a temporary dense matrix, released after conversion.
+        GraphTopology builds directly from edges, including bounded ER draws.
+        """
+        dense = torch.empty(n, n, dtype=dtype, device=device)
+        self.initialize(dense, spectral_radius=spectral_radius)
+        return dense.to_sparse_csr()
 
     @abstractmethod
     def initialize(
@@ -470,6 +523,33 @@ class GraphTopology(TopologyInitializer):
             weight.copy_(weight_data)
 
         return weight
+
+    def build_sparse(
+        self,
+        n: int,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+        spectral_radius: float | None = None,
+    ) -> torch.Tensor:
+        """Build from graph edges without a dense Torch adjacency allocation."""
+        from resdag.init.graphs._sparse import sparse_adjacency
+
+        adjacency = sparse_adjacency(self.graph_func, n, self.graph_kwargs)
+        result = torch.sparse_csr_tensor(
+            torch.as_tensor(adjacency.indptr, dtype=torch.int64, device=device),
+            torch.as_tensor(adjacency.indices, dtype=torch.int64, device=device),
+            torch.as_tensor(adjacency.data, dtype=dtype, device=device),
+            size=(n, n),
+        )
+        if spectral_radius is not None and self.rescale is not False:
+            if self.prescaled and self.rescale is None:
+                _warn_prescaled_override(
+                    getattr(self.graph_func, "__name__", repr(self.graph_func)), spectral_radius
+                )
+            else:
+                result = scale_to_spectral_radius(result, spectral_radius)
+        return result
 
     def _build_adjacency(self, n: int) -> np.ndarray:
         """Build the ``(n, n)`` adjacency matrix for the wrapped graph function.
@@ -650,6 +730,44 @@ class MatrixTopology(TopologyInitializer):
             raise TypeError("rescale must be True, False, or None")
         self.rescale = rescale
 
+    def build_sparse(
+        self,
+        n: int,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+        spectral_radius: float | None = None,
+    ) -> torch.Tensor:
+        """Accept registered builders returning CSR/SciPy sparse data.
+
+        Build-style callables need no dense destination. In-place callables
+        allocate their scratch tensor lazily through the shared convention.
+        """
+        from ._structured import known_matrix_csr
+
+        matrix = known_matrix_csr(
+            self.matrix_func, n, self.matrix_kwargs, dtype=dtype, device=device
+        )
+        if matrix is None:
+            reference = torch.empty(0, device=device, dtype=dtype)
+            result = _call_matrix_builder(
+                self.matrix_func,
+                reference,
+                (n,),
+                self.matrix_kwargs,
+                seed=self.seed,
+                scratch_shape=(n, n),
+            )
+            matrix = _coerce_to_matrix(result, (n, n), device, dtype, compact=True)
+        if spectral_radius is not None and self.rescale is not False:
+            if self.prescaled and self.rescale is None:
+                _warn_prescaled_override(
+                    getattr(self.matrix_func, "__name__", repr(self.matrix_func)), spectral_radius
+                )
+            else:
+                matrix = scale_to_spectral_radius(matrix, spectral_radius)
+        return matrix
+
     def initialize(
         self,
         weight: torch.Tensor,
@@ -767,6 +885,7 @@ def _call_matrix_builder(
     build_args: tuple[Any, ...],
     kwargs: dict[str, Any],
     seed: int | None = None,
+    scratch_shape: tuple[int, int] | None = None,
 ) -> Any:
     """Call ``fn`` in build style, falling back to in-place style.
 
@@ -815,7 +934,11 @@ def _call_matrix_builder(
     try:
         return fn(*build_args, **build_kwargs)
     except (TypeError, AttributeError) as build_err:
-        scratch = torch.empty_like(weight, memory_format=torch.contiguous_format)
+        scratch = (
+            torch.empty_like(weight, memory_format=torch.contiguous_format)
+            if scratch_shape is None
+            else torch.empty(scratch_shape, device=weight.device, dtype=weight.dtype)
+        )
         inplace_kwargs = kwargs
         if seed is not None and "generator" not in kwargs and _accepts_generator(fn):
             generator = create_torch_generator(seed, device=scratch.device)
@@ -839,13 +962,29 @@ def _coerce_to_matrix(
     expected_shape: tuple[int, int],
     device: torch.device,
     dtype: torch.dtype,
+    *,
+    compact: bool = False,
 ) -> torch.Tensor:
     """Convert a builder's return value into a validated torch matrix.
 
     Accepts ``torch.Tensor``, ``numpy.ndarray`` (or anything ``np.asarray``
     understands, e.g. nested lists), and ``networkx`` graphs.
     """
-    if isinstance(result, (nx.Graph, nx.DiGraph)):
+    import scipy.sparse as sp
+
+    if isinstance(result, (nx.Graph, nx.DiGraph)) and compact:
+        result = nx.to_scipy_sparse_array(
+            result, nodelist=sorted(result.nodes()), weight="weight", dtype=np.float64
+        )
+    if sp.issparse(result):
+        sparse = result.tocsr()
+        matrix = torch.sparse_csr_tensor(
+            torch.as_tensor(sparse.indptr, dtype=torch.int64),
+            torch.as_tensor(sparse.indices, dtype=torch.int64),
+            torch.as_tensor(sparse.data),
+            size=sparse.shape,
+        )
+    elif isinstance(result, (nx.Graph, nx.DiGraph)):
         adjacency = nx.to_numpy_array(
             result,
             nodelist=sorted(result.nodes()),
@@ -875,4 +1014,11 @@ def _coerce_to_matrix(
             f"Matrix builder produced shape {tuple(matrix.shape)}, expected {expected_shape}."
         )
 
+    if compact:
+        if matrix.layout != torch.sparse_csr:
+            matrix = matrix.to_sparse_csr()
+        if not bool(torch.isfinite(matrix.values()).all()):
+            raise ValueError("Matrix builder must produce finite weights")
+    elif matrix.layout != torch.strided:
+        matrix = matrix.to_dense()
     return matrix.to(device=device, dtype=dtype)

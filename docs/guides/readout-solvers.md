@@ -8,6 +8,12 @@ A readout learns how to turn reservoir features into predictions. Start with
 the automatic readout: `rd.ESN` uses it by default. You can choose every
 algorithm and precision setting explicitly when an experiment needs them.
 
+When a feature-by-feature matrix would be too large, the optional
+[`readout="lsmr"` route](../reference/lsmr-readout.md) performs an iterative CPU
+float64 fit without forming a Gram matrix. Select it explicitly; automatic
+selection below remains unchanged. Its convergence controls and device bridge
+are documented separately.
+
 ## Start with an automatic fit
 
 ```python

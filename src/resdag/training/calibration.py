@@ -126,6 +126,9 @@ def _prepare(
         raise ValueError("warmup must leave at least one calibration timestep")
     if any(not bool(torch.isfinite(p).all()) for p in cell.parameters()):
         raise ValueError("reservoir parameters must be finite")
+    compact_values = cell._buffers.get("_hh_values")
+    if compact_values is not None and not bool(torch.isfinite(compact_values).all()):
+        raise ValueError("reservoir parameters must be finite")
     for name in ("_intrinsic_gain", "_intrinsic_bias", "_recurrent_gain", "_initial_state"):
         value = getattr(cell, name)
         if value is not None and not bool(torch.isfinite(value).all()):
@@ -139,7 +142,9 @@ def _prepare(
 def _buffer(cell: ESNCell, name: str, default: float) -> Tensor:
     value = getattr(cell, name)
     return (
-        cell.weight_hh.new_full((cell.reservoir_size,), default) if value is None else value.clone()
+        cell.weight_feedback.new_full((cell.reservoir_size,), default)
+        if value is None
+        else value.clone()
     )
 
 
@@ -346,7 +351,9 @@ def calibrate_flow_control(
         raise ValueError(
             "apply flow control before intrinsic plasticity, using an unadapted tanh activation"
         )
-    if not bool((data.cell.weight_hh != 0).any()):
+    weights = data.cell.weight_hh
+    stored_values = weights.values() if weights.layout == torch.sparse_csr else weights
+    if not bool((stored_values != 0).any()):
         raise ValueError("flow control cannot adapt an all-zero recurrent matrix")
     gain = _buffer(data.cell, "_recurrent_gain", 1.0)
     if not bool((gain > 0).all()):
@@ -354,7 +361,9 @@ def calibrate_flow_control(
     ones = gain.new_ones(gain.shape)
     zeros = gain.new_zeros(gain.shape)
     before = _stats(data, ones, zeros, gain)
-    radius_before = estimate_spectral_radius(data.cell.weight_hh * gain[:, None])
+    from resdag.layers.cells._compact_recurrent import _scale_recurrent_rows
+
+    radius_before = estimate_spectral_radius(_scale_recurrent_rows(data.cell.weight_hh, gain))
     finite = gain.new_tensor(True, dtype=torch.bool)
     for _ in range(epochs):
         state = data.initial_state.clone()
@@ -372,7 +381,7 @@ def calibrate_flow_control(
     if not bool(finite):
         raise RuntimeError("flow control diverged; reduce learning_rate or input scale")
     after = _stats(data, ones, zeros, gain)
-    radius_after = estimate_spectral_radius(data.cell.weight_hh * gain[:, None])
+    radius_after = estimate_spectral_radius(_scale_recurrent_rows(data.cell.weight_hh, gain))
     report = _report(data, "flow_control", before, after, radius_before, radius_after)
     data.cell._recurrent_gain = gain.detach()
     data.cell._has_recurrent_gain = True

@@ -17,6 +17,12 @@ and verified in [PR #463](https://github.com/El3ssar/ResDAG/pull/463), merged as
 `0b546d6`. Phase five is in progress: correct held-out comparisons and measure
 classical forecast accuracy before changing execution policies.
 The phase-four release job published **4.0.0** after full post-merge CI passed.
+The first phase-five increment was merged through
+[PR #464](https://github.com/El3ssar/ResDAG/pull/464) as `041db61`.
+Its **4.1.0** release, installed published wheel, full post-merge CI and
+documentation deployment are verified. The continuation adds compact sparse
+storage, optional matrix-free fitting, native forecast hooks and the first
+equal-time three-library comparison.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -498,11 +504,11 @@ them alone would not improve performance.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P5-01 | WIP | Correct held-out comparison windows and common prediction alignment. | Python adapters verified with real libraries and independent first-step oracles; training-target-only normalization, failed-adapter exit status, declared intercept/input/state policies, censored/divergent scores and held-out internal profiling implemented. Julia runtime verification remains pending. |
-| P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | 36 frozen regression cases plus four 24-attempt, 3-seed/3-origin tuning studies; winners and controls replayed in 150 matched before/after cases with exact forecast/tensor/score agreement. Reserved five-seed test results and supplementary bank are documented. Further trajectories, scale regimes, controlled timing/memory and competitor search budgets remain pending. |
-| P5-03 | Pending | Actual sparse/structured operators and appropriate matrix-free readouts. | Reuse Torch/SciPy operator/sparse/solver capabilities; memory scales as advertised; no mandatory hidden dense copy; save/load and numerical contracts pass. |
-| P5-04 | Pending | Profile-driven batching and compilation improvements. | Reference/fast value, state and gradient parity; measured improvement in specified workloads; setup and steady state reported separately. |
-| P5-05 | Pending | Publish speed–accuracy–memory tradeoffs against current competitors. | Reproducible commands, versions, hardware and equal search budgets; no universal unsupported superiority or GPU claim. |
+| P5-01 | WIP | Correct held-out comparison windows and common prediction alignment. | Real Python and pinned Julia 1.12.5 / ReservoirComputing.jl 0.12.23 adapters pass independent first-step, ridge and recurrence oracles. Optional hosted Julia verification added; hosted acceptance is pending. Training-only scales, declared model policies and failed-track handling remain explicit. |
+| P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | The first increment verified 150 matched tuned/control replays. The approved continuation compares vanilla ESNs on both systems, ten CPU tuning minutes per library/system, then five reserved seeds × three starts. Winners freeze before final-test access. Independent trajectories and broader scale regimes remain open. |
+| P5-03 | WIP | Actual sparse/structured operators and appropriate matrix-free readouts. | Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented. Focused ownership, lifecycle, numerical, gradient and checkpoint tests pass. Full-suite, controlled timing and hosted acceptance are in progress; automatic solver/operator policies stay unchanged. |
+| P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. Baseline operator profiles and paired structured-kernel measurements are retained; final workflow timing and compilation modernization remain open. |
+| P5-05 | WIP | Publish speed–accuracy–memory tradeoffs against current competitors. | Shared equal-time runner and reproducible protocol implemented with recorded versions, hardware, timing, source fingerprints and memory limitations. Full scientific comparison and published results are pending. |
 | P5-06 | Done | Bring the broader forecasting search into built-in vanilla and OTT tuning. | Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage. |
 
 Python 3.14 warns that `torch.jit.script_method` is deprecated. The phase-five
@@ -520,6 +526,32 @@ is **6.33** and its pooled ten-seed median **6.76**; robust 7–8 performance is
 therefore still an open goal for that recipe. Censored values are lower bounds.
 Neither these accuracy checks nor the untuned adapter smoke establishes a
 cross-library speed ranking.
+
+### Continuation decisions and verification
+
+The maintainer approved compressed weights as the only recurrent storage for
+`sparse=True`, an explicitly selected low-memory solver, and native PyTorch
+hooks during forecasting. Dense models and automatic solver choices retain
+their established behavior. See [memory and sparse models](../workflows/sparse-reservoirs.md),
+[LSMR](../reference/lsmr-readout.md) and [migration notes](../migrating.md).
+
+The [comparison protocol](../workflows/benchmarks.md#equal-tuning-time)
+uses the common vanilla model family first, equal **600-second** tuning
+budgets, three validation seeds/origins, and reserved final seeds **301–305**.
+All six winners freeze before test access. Reused trajectories are held out
+from the new studies, but are historically known; one trajectory per system
+does not establish generalization across independently generated runs.
+Incomplete or late candidates cannot win, and final build/fit failures cannot
+be disguised as short but valid forecasts.
+
+The merged first increment's post-merge release run
+[passed](https://github.com/El3ssar/ResDAG/actions/runs/39950943063):
+all four Python 3.11–3.14 full suites passed **5,618 tests** per lane at
+**91.44–91.50% coverage**. The published 4.1.0 wheel's 200 runtime files
+match its release tag, and installed artifact/workflow checks passed
+**118 tests**, with two unavailable-CUDA cases skipped. New continuation
+verification will be recorded separately; those release counts do not cover
+the unmerged implementation.
 
 ## Phase 6: experiment readiness and ongoing documentation
 
@@ -548,6 +580,8 @@ cross-library speed ranking.
 | 2026-10-23 | Phase 4 implementation | Done | Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,715 local tests at 93.62% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. All eight locked/latest full suites, six dynamics lanes, strict docs and configured CPU/static jobs pass on runtime head `5d8f869`. |
 | 2026-10-23 | Phase 4 merge and release | Done | PR #463 merged as `0b546d6`; v4.0.0 release job, full post-merge CI and documentation deployment pass. Actual PyPI wheel's 199 runtime files match the release tag; installed-wheel artifact/guide selection: 118 passed, two unavailable-CUDA cases skipped. Updated executable tuning guide also passes. |
 | 2026-10-23 | Phase 5 first increment | WIP | Python comparison preparation/alignment repaired; 36 frozen matched cases and four validation-only HPO studies completed. 150 matched tuned/control cases preserve exact phase-four accuracy. Primary and supplementary seed banks, censored horizons and remaining vanilla Rössler variability documented; Julia execution and broader controlled competitor comparisons remain pending. |
+| 2026-10-23 | Phase 5 first-increment merge and release | Done | PR #464 merged as `041db61`; 4.1.0 release, all post-merge Python suites, installed published-wheel workflows and documentation deployment verified. |
+| 2026-10-23 | Phase 5 execution and comparison continuation | WIP | Compact-only CSR, sparse-native construction, structured updates, opt-in LSMR, forecast hooks and explicit tensor release implemented. Real Julia protocol and six-track plumbing smoke pass; final regression, CI and full equal-time measurements remain in progress. |
 
 ## Standard tools to reuse
 

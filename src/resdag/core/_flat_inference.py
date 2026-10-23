@@ -525,9 +525,10 @@ def rollout(
     output_views = (
         [buffer.permute(1, 0, 2).unsqueeze(2) for buffer in forecast_buffers] if no_grad else []
     )
+    driver_views = [driver.transpose(0, 1).unsqueeze(2) for driver in drivers]
     for t in range(done, horizon):
         if has_drivers:
-            step_inputs = (current_feedback, *(d[:, t : t + 1, :] for d in drivers))
+            step_inputs = (current_feedback, *(driver[t] for driver in driver_views))
         else:
             step_inputs = (current_feedback,)
         step_outputs, states = flat.step(step_inputs, states)

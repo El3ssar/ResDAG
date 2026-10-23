@@ -460,12 +460,17 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         outputs: list[torch.Tensor] = []
         if projected is not None:
+            # Prepare the time axis once. A single-axis select then exposes
+            # exactly the same (batch, features) view without reconstructing
+            # two full-axis slices on every recurrent step.
+            time_projected = projected.transpose(0, 1)
             for t in range(seq_len):
-                output, state = self.cell.step(projected[:, t, :], state)
+                output, state = self.cell.step(time_projected[t], state)
                 outputs.append(output)
         else:
+            time_inputs = [stream.transpose(0, 1) for stream in inputs]
             for t in range(seq_len):
-                inputs_t = [stream[:, t, :] for stream in inputs]
+                inputs_t = [stream[t] for stream in time_inputs]
                 output, state = self.cell(inputs_t, state)
                 outputs.append(output)
 

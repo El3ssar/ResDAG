@@ -28,8 +28,9 @@ register_matrix_topology
 scale_to_spectral_radius
     Rescale a square matrix to a target spectral radius.
 estimate_spectral_radius
-    Estimate a matrix's largest absolute eigenvalue (power iteration / sparse
-    ``eigs`` / tiny-N dense fallback).
+    Measure the largest absolute eigenvalue using dense eigvals, sparse
+    Arnoldi or analytic triangular/weighted-cycle structure. CSR failures
+    above size two never allocate a dense fallback.
 
 Examples
 --------

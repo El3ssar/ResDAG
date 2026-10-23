@@ -195,6 +195,11 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_regression/test_phase5_accuracy.py",
         "tests/test_regression/test_tuned_capability_cli.py",
     ),
+    "benchmarks/cpu_workflows.py": (
+        "tests/test_cpu_workflows.py",
+        "tests/test_regression/test_cpu_workflow_evidence.py",
+    ),
+    "docs/assets/data/phase-five-cpu-": ("tests/test_regression/test_cpu_workflow_evidence.py",),
     "benchmarks/results/phase-five-accuracy-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),

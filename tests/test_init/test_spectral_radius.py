@@ -2,13 +2,17 @@
 
 Covers the acceptance criteria of issue #185:
 
-- power-iteration / sparse-``eigs`` spectral-radius scaling is fast (>=10x at
-  N=2000 vs dense ``eigvals`` on CPU) and accurate (within 1e-3 of dense),
+- sparse Arnoldi scaling avoids dense eigendecomposition for large sparse
+  matrices and is checked against independent dense eigenvalues,
 - ``ESNCell`` and the topology base share ONE rescale implementation,
 - ``fast_spectral_initialization`` is registered and builds at the target SR
   with no ``eigvals`` call,
 - ``ESNCell.spectral_radius_achieved`` returns the realized ``max|lambda|``,
-- the sparse path uses scipy ``eigs(k=1)`` and matches dense for small N.
+- general sparse matrices request a dominant eigenvalue cluster; triangular
+  and functional CSR graphs have separate analytic-spectrum checks.
+
+Power iteration is not used for automatic scaling. Machine-dependent speed
+assertions are benchmark-marked and retain their existing thresholds.
 """
 
 import time

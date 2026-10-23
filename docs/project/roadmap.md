@@ -506,8 +506,8 @@ them alone would not improve performance.
 | --- | --- | --- | --- |
 | P5-01 | Done | Correct held-out comparison windows and common prediction alignment. | Real Python and pinned Julia 1.12.5 / ReservoirComputing.jl 0.12.23 adapters pass independent first-step, ridge and recurrence oracles locally and in hosted CI. Training-only scales, declared model policies and failed-track handling remain explicit. |
 | P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | The first increment verified 150 matched tuned/control replays. The first full six-track equal-time comparison is complete: 600 tuning seconds per library/system, 2,850 eligible complete candidates and 90 reserved-seed forecasts, independently audited. Independent trajectories and broader scale regimes remain open. |
-| P5-03 | WIP | Actual sparse/structured operators and appropriate matrix-free readouts. | Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented and pass full-suite, checkpoint, gradient and hosted checks. Broader operator regimes and tighter solver/storage-aware tuning estimates remain open; automatic solver/operator policies stay unchanged. |
-| P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. Baseline profiles, structured kernels and bounded paired workflow timing are verified. Broader batch/patch scaling and cold-versus-warm compilation timing remain open. |
+| P5-03 | WIP | Actual sparse/structured operators and appropriate matrix-free readouts. | Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented and pass full-suite, checkpoint, gradient and hosted checks. The CPU follow-up adopts analytic CSR cycle normalization and fixes complex value views/stored zeros. Broader operator regimes and tighter solver/storage-aware tuning estimates remain open; automatic solver/operator policies stay unchanged. |
+| P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. The CPU follow-up adopts unchanged-solution AutoReadout residual reuse. Full workflow timing remains inconclusive; experimental timestep-view and driver-slicing rewrites are rejected, with all samples retained. Bounded within-process and cold/warm compile diagnostics are published; broader batch/patch scaling and controlled compilation studies remain open. |
 | P5-05 | WIP | Publish speed–accuracy–memory tradeoffs against current competitors. | [First full comparison](phase-five-results.md#equal-tuning-time-across-libraries) and downloadable records are complete. ResDAG's state-only vanilla median is ≥10.016 LT on Lorenz and 9.628 LT on Rössler, close to both competitors; selected CPU workflows are slower. Wider hardware, model scales and independent trajectories remain pending. |
 | P5-06 | Done | Bring the broader forecasting search into built-in vanilla and OTT tuning. | Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage. |
 
@@ -602,6 +602,16 @@ retained. These are bounded CPU/Torch-thread observations, not native one-thread
 or process peak-RSS claims. Existing CPU gates pass unchanged; broader profiling
 remains open.
 
+The [CPU follow-up](phase-five-results.md#cpu-follow-up) distinguishes adopted
+AutoReadout residual reuse and analytic CSR correctness fixes from rejected
+slicing experiments. The `18f78c83`/`dc695a6` matrices retain **728 timed
+executions of each operation**, plus **104 discarded warmups of each operation**.
+All case-local fitted/prediction/state hashes match, but a sharp change in
+execution conditions leaves the whole-workflow speed effect inconclusive.
+The separate within-process loop diagnostic also fails to establish a consistent
+benefit. The original sequence-loop and driver slicing are retained; these
+candidate measurements do not establish final adopted-runtime throughput.
+
 The merged first increment's post-merge release run
 [passed](https://github.com/El3ssar/ResDAG/actions/runs/39950943063):
 all four Python 3.11–3.14 full suites passed **5,618 tests** per lane at
@@ -639,6 +649,8 @@ the unmerged implementation.
 | 2026-10-23 | Phase 5 first increment | WIP | Python comparison preparation/alignment repaired; 36 frozen matched cases and four validation-only HPO studies completed. 150 matched tuned/control cases preserve exact phase-four accuracy. Primary and supplementary seed banks, censored horizons and remaining vanilla Rössler variability documented; Julia execution and broader controlled competitor comparisons remain pending. |
 | 2026-10-23 | Phase 5 first-increment merge and release | Done | PR #464 merged as `041db61`; 4.1.0 release, all post-merge Python suites, installed published-wheel workflows and documentation deployment verified. |
 | 2026-10-23 | Phase 5 execution and comparison continuation | WIP | [PR #465](https://github.com/El3ssar/ResDAG/pull/465): compact-only CSR, sparse-native construction, structured updates, opt-in LSMR, native forecast hooks and explicit tensor release implemented. Full tests, package and hosted CI pass on `1dc8cfb`; fresh initialization studies and the full six-track equal-time comparison are complete. Reporting/reproduction follow-up passes 6,328 local tests, 145 focused checks and 334 installed-wheel checks. Broader CPU profiling and independent trajectories remain open. |
+| 2026-10-23 | Phase 5 continuation merge and release | Done | PR #465 merged as `18f78c83`; [v5.0.0](https://github.com/El3ssar/ResDAG/releases/tag/v5.0.0) published from release commit `5399e466`. All four post-merge full suites pass 6,079 tests each at 91.61–91.66% coverage; three dynamics lanes pass 315 tests each. Published wheel, sdist and tag match across all 205 Python modules and the typing marker. Release and live documentation deployment pass. |
+| 2026-10-23 | Phase 5 CPU follow-up | WIP | Adopt unchanged-solution AutoReadout residual reuse and analytic CSR cycle/zero/complex-value fixes. Reject the timestep-view and driver-slicing rewrites after inconclusive full-workflow and within-process timing; retain all candidate timing samples. All 30 previously scored forecasts remain byte-identical on the final retained runtime, recorded with its complete 205-module source manifest. Original slicing and automatic execution choices remain unchanged. Wider controlled CPU/patch/compilation studies remain open. |
 
 ## Standard tools to reuse
 

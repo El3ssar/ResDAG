@@ -7,8 +7,150 @@ description: Verified initialization changes, held-out forecast skill, compact s
 
 The continuation separates three questions: whether stored models keep their
 predictions, how well newly initialized models forecast, and what the execution
-changes cost or save. These measurements cover an unreleased implementation;
-the [roadmap](roadmap.md#phase-5-speed-memory-and-comparisons) tracks remaining work.
+changes cost or save. PR #465's implementation is released in
+[v5.0.0](https://github.com/El3ssar/ResDAG/releases/tag/v5.0.0).
+The [roadmap](roadmap.md#phase-5-speed-memory-and-comparisons) tracks the CPU
+follow-up and remaining work; each measurement identifies its own source revision.
+
+## CPU follow-up
+
+The adopted CPU changes reuse AutoReadout residual diagnostics when its admitted
+Gram solution is unchanged, while recomputing them after a fallback replaces the
+coefficients. Sparse cycle normalization uses an analytic spectrum, fixing
+iterative eigensolver failures without dense allocation. The CSR fixes also
+handle complex value views and explicitly stored zero weights. Automatic storage,
+solver and compilation choices retain their established settings.
+
+The experimental timestep-view and driver-slicing rewrites in `dc695a6` were
+**rejected**: the measurements did not establish a CPU benefit. The original
+sequence-loop and driver slicing are retained. Records against `dc695a6` below
+remain historical candidate evidence; they do not measure the final adopted
+implementation's whole-workflow speed.
+
+### Retained-runtime accuracy regression
+
+All **30 previously scored ResDAG forecasts** from the equal-time comparison
+were replayed on the final retained runtime after restoring the original slicing.
+Every complete Lorenz/Rössler forecast is byte-identical, using the same frozen
+winners, five seeds and three origins. The public record identifies the source
+as `final-runtime-manifest` and includes exact hashes for all **205 runtime
+modules**, plus the manifest hash. This preserves those measured scores. It is
+regression evidence from an already inspected bank; no new tuning, timing or
+independent-trajectory claim is made.
+
+[Download the complete replay](../assets/data/phase-five-cpu-accuracy-2026-10-23.json).
+
+### Rejected-candidate public workflow timing
+
+Two fresh-process ABBA blocks compare `18f78c83` with `dc695a6` on this Apple M5
+with 24 GiB RAM, Torch 2.10 and float64 CPU tensors. Each revision explicitly
+loads the same saved weights and synthetic observations. Torch and native
+thread policies are verified at one. Seven workflow/batch cases and six
+dense/CSR cases each retain seven timed repetitions per process after warmup:
+**728 timed executions of each operation** (fit, history plus forecast and
+reservoir forward), plus **104 discarded warmups of each operation**. Every
+fitted-model, complete-prediction and final-state hash agrees
+exactly between revisions within its case.
+
+**The overall workflow speed effect is inconclusive.** During the first matrix,
+latency increased sharply within a candidate process, then remained high in
+the following baseline process. Dependency versions, source/import identities
+and observed thread settings remained the same. The cause of this change in
+execution conditions was not recorded. Every run remains included; medians
+alone cannot establish a small implementation speedup or slowdown here.
+
+Ratios below are before/after process-median times. Brackets retain the full
+range of four nearest AB/BA ratios; these are descriptive observations, not
+confidence intervals.
+
+| Workflow | Fit ratio | History + forecast ratio |
+| --- | ---: | ---: |
+| Dense classic, 400 / batch 1 | 1.091 [0.994–10.407] | 1.001 [0.941–9.639] |
+| Dense OTT, 400 / batch 1 | 1.009 [0.992–9.301] | 0.955 [0.904–8.200] |
+| Sparse cycle, 400 / batch 1 | 0.998 [0.948–6.209] | 0.971 [0.800–8.451] |
+| Sparse ER, 400 / batch 1 | 1.041 [0.935–8.671] | 1.086 [0.896–7.735] |
+| Dense classic, 1,000 / batch 1 | 1.040 [0.758–24.056] | 1.015 [0.815–25.358] |
+| Dense classic, 1,000 / batch 4 | 1.006 [0.808–1.133] | 0.982 [0.743–0.999] |
+| Dense classic, 1,000 / batch 16 | 1.029 [1.014–1.594] | 1.000 [0.921–1.570] |
+
+The storage profile uses the same ER matrices in dense and CSR form at
+400/1,000/2,000 units, expected degree six and batch one. Both representations
+remain exact across revisions; their cross-storage complete forecasts differ
+by at most **5.14e-10** on these synthetic observations. Storage timings also
+show variability, and pairs run in declared order rather than a separately
+balanced crossover experiment. They do not justify a new automatic storage rule.
+
+Two earlier attempts stopped during the first baseline worker, before a
+complete comparison: one repeated normalization of placeholder weights that
+would be replaced, and another compared dense negative-zero bits with omitted
+CSR zeros. The harness now loads saved weights before checking their logical
+identity, normalizing zero signs only for that initial recurrent comparison.
+Fitted weights, predictions, states and stored artifact bytes retain exact
+checks. The aborted attempts remain in the audit archive and contribute no
+timings to the complete diagnostic reports.
+
+[Download all workflow samples and hashes](../assets/data/phase-five-cpu-workflows-2026-10-23.json),
+[storage samples and hashes](../assets/data/phase-five-cpu-storage-2026-10-23.json).
+The [CPU protocol](https://github.com/El3ssar/ResDAG/blob/main/benchmarks/CPU_PROTOCOL.md)
+documents the reusable command, all dimensions, preprocessing, untimed work and
+process-level statistics.
+
+### Within-process loop attribution
+
+A separate diagnostic interleaves the original and candidate teacher-forced
+loop functions inside each of two fresh processes using one common runtime
+(`6b3b108`). It changes only `BaseReservoirLayer.forward_stateless`; it does
+not compare isolated revisions or separately measure the driver-slicing rewrite.
+Each case/process includes one warmup per function, then seven ABBA rounds.
+All fitted-model, complete-prediction and final-state hashes match.
+
+The following medians and full ranges use all **28 within-process paired
+ratios per case** across both processes. These repeated pairs share their
+process environment and are not independent process observations or confidence
+intervals.
+
+| Workflow | Fit ratio | History + forecast ratio |
+| --- | ---: | ---: |
+| Dense classic, 400 / batch 1 | 1.032 [0.390–1.451] | 0.893 [0.490–1.882] |
+| Dense classic, 1,000 / batch 4 | 1.003 [0.445–1.730] | 0.945 [0.313–1.511] |
+| Dense ER, 2,000 / batch 1 | 0.996 [0.793–1.642] | 1.014 [0.671–1.365] |
+
+The variation remains broad and does not establish a consistent loop speedup.
+Torch 2.10's `ATen/TensorIndexing.h` already returns the existing tensor for
+full-axis slices during ordinary eager multidimensional indexing. The rewrite
+can reduce index parsing, but its proposed removal of extra full-axis tensor
+views does not describe that eager path. Both experimental slicing rewrites
+were therefore rejected; their complete measurements remain available.
+
+[Download the within-process diagnostic](../assets/data/phase-five-cpu-interleaved-2026-10-23.json).
+
+### Adopted readout reuse and exploratory compilation
+
+A bounded AutoReadout probe fits two well-conditioned Gaussian problems with
+5,000 samples, 128/400 features, three outputs, intercept and penalty 10. Two
+fresh-process ABBA blocks, seven timed fits after warmup, gave paired median
+ratios **1.154 [1.025–1.514]** and **1.193 [1.128–1.389]**. All coefficients,
+intercepts and complete diagnostic reports match. This measures the admitted
+primal path's duplicate-diagnostic removal; it does not measure a complete
+forecast or fallback QR/SVD speed. The probed AutoReadout code is byte-identical
+to the retained implementation. The public workflow matrix above uses Ridge.
+
+An exploratory 400-unit float64 classic CPU compile probe observed a **45.54 s**
+first compiled request. Warm 257-step forecasts took **37.99 ms** versus
+**44.79 ms** eager; 1,025-step forecasts took **106.82 ms** versus **157.40 ms**.
+Both complete predictions matched exactly. The second horizon reused the same
+64-step compiled chunk cache; it is not a second cold start. One cold process
+and these synthetic signals do not establish a general compiler policy or
+chaotic-forecast accuracy. CPU teacher-forced sequences remain eager.
+
+These two probes have narrower provenance than the archived workflow harness.
+The readout probe isolates unchanged readout dependencies. Compilation used the
+then-live candidate checkout before the slicing rewrites were restored, without
+an isolated overall source manifest. Its timings remain historical candidate
+observations and do not establish final adopted-runtime speed. Compilation
+remains opt-in. [Readout records](../assets/data/phase-five-cpu-auto-2026-10-23.json)
+and [compile records](../assets/data/phase-five-cpu-compile-2026-10-23.json) retain
+their raw samples, diagnostics, native settings and warnings.
 
 ## Forecast accuracy after independent initialization
 

@@ -52,6 +52,15 @@ model-state interface. See [execution capabilities](advanced/forecast-capabiliti
 remain unchanged; [its guide](reference/lsmr-readout.md) explains convergence and
 accelerator transfers.
 
+### CPU initialization follow-up
+
+Sparse cycles and other matrices with at most one stored entry per row now use
+their analytic weighted-cycle spectrum. Large cycles can therefore normalize
+without an iterative eigensolver converging. Newly scaled weights may differ
+in their last digits from earlier successful Arnoldi estimates; saved weights
+remain unchanged. General CSR matrices still raise on an unsuccessful sparse
+estimate without allocating a dense fallback.
+
 ### Independent initialization streams
 
 New ESN, continuous, Euler, edge-of-stability, residual ESN, gated reservoir and

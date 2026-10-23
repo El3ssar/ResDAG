@@ -62,9 +62,9 @@ measured for this work.
 ## Compact does not always mean faster
 
 Dense remains the default. `sparse="auto"` currently uses size/density heuristics,
-not a hardware calibration. Dense multiplication beat CSR on the measured
-Apple Silicon CPU workloads at 400–2,000 units; other hardware and larger sizes
-have different crossovers. Choose explicitly and measure your actual batch,
+not a hardware calibration. Earlier Apple Silicon measurements include cases
+where dense multiplication beat CSR at 400–2,000 units; these observations
+do not cover every density, batch or dtype. Choose explicitly and measure your actual batch,
 precision and reservoir size. Sparse storage can still be valuable when memory
 is the binding constraint.
 
@@ -74,7 +74,21 @@ definition. Edge-native graph builders avoid a dense adjacency as well. Some
 other graph functions allocate dense NumPy arrays internally, so this is not a
 universal constant-memory initialization claim.
 
-Sparse spectral scaling uses SciPy Arnoldi or an analytic triangular spectrum.
+Sparse spectral scaling uses SciPy Arnoldi or an analytic spectrum for triangular
+matrices and matrices with at most one stored entry per row. In the latter case,
+SciPy identifies the directed cycles, whose radii are the geometric means of
+their edge magnitudes; branches contribute zero eigenvalues. This avoids
+iterative convergence failures for simple cycles and signed permutations,
+without allocating a dense square matrix. For example:
+
+```python
+cycle = rd.ESNLayer(
+    400, feedback_size=2, topology=("simple_cycle", {"weight": 0.7}),
+    spectral_radius=0.9, sparse=True, seed=7, dtype=torch.float64,
+)
+assert cycle.weight_hh.layout == torch.sparse_csr
+```
+
 Only matrices of size one or two use a bounded dense fallback. An unsuccessful
 large sparse estimate raises instead of allocating a hidden dense fallback.
 Its scaling may differ in the last digits from dense eigvals, especially when

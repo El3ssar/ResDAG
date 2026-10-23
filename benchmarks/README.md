@@ -1,12 +1,12 @@
 # Reservoir-computing library benchmark
 
-The committed cross-library tables are historical. An audit found forecast
-alignment differences and unsupported adapter paths; their accuracy rankings
-and relative timings need a corrected rerun before being cited as current
-performance evidence. See [phase 5 of the roadmap](../docs/project/roadmap.md).
+The committed cross-library tables are historical. New runs use the explicit
+`heldout-v1` protocol below; old JSON files retain their historical semantics.
+Correcting the harness does not validate old accuracy rankings or speed ratios.
+See [phase 5 of the roadmap](../docs/project/roadmap.md).
 
 An extensible, re-runnable harness that compares resdag against other reservoir
--computing libraries on **identical ESN architectures and identical data**, then
+-computing libraries on **matched nominal ESN settings and identical data**, then
 renders speedup tables (relative to reservoirpy).
 
 Currently compared:
@@ -19,12 +19,43 @@ Currently compared:
 
 ## What it measures
 
-Three contexts, all on a shared Lorenz-63 trajectory (one-step-ahead training,
+Four contexts, all on a shared Lorenz-63 trajectory (one-step-ahead training,
 then closed-loop forecasting):
 
 1. **Training vs reservoir size** — fit the ridge readout while growing the reservoir.
 2. **Training on lots of data** — fix the reservoir, grow the training sequence.
 3. **Long-horizon autoregressive forecasting** — generate ever-longer closed-loop forecasts.
+4. **Forecast precision** — contiguous valid prediction time, reported in samples and Lyapunov times.
+
+## Held-out protocol v1
+
+For training length `T`, washout/synchronization length `W` and horizon `H`,
+all bounds below are zero-based and half-open:
+
+- Training inputs are `raw[0:T]`; next-sample targets are `raw[1:T+1]`.
+  The readout ignores the first `W` input/target pairs.
+- Mean and population standard deviation come only from supervised training
+  targets, `raw[W+1:T+1]`, matching the common tuning workflow. The transform
+  is applied once per point and every adapter receives an independent copy of
+  the same transformed bytes. Constant training channels use scale one.
+- Recurrent state is reset before each forecast. Synchronization observes
+  `raw[T-W+1:T+1]`, ending at the last admitted training target.
+- The first emitted prediction is for index `T+1`; truth is
+  `raw[T+1:T+1+H]`. No test sample is supplied as feedback.
+- Valid prediction time ends at the first normalized RMS error **at or above
+  0.3**, using the fixed training scales. Threshold **0.5** is reported as a
+  secondary diagnostic in JSON. A non-finite prediction ends the valid prefix
+  and sets `diverged`; an accurate complete horizon is marked censored (a lower
+  bound, rather than a measured failure time).
+
+Every new result records `meta.protocol="heldout-v1"`, exact point bounds,
+normalization statistics, dependency availability and both thresholds. These
+single-seed nominal-setting sweeps are protocol smoke checks, not the planned
+multi-seed/origin, equal-search-budget comparison or proof of a 7–8 Lyapunov-time
+median. Adapters use dense input connections, zero reservoir bias and no readout
+intercept; matrices
+are independently sampled and solver numerics differ across libraries even
+when nominal hyperparameters match.
 
 Each cell is the median wall-clock time over several repeats (a warmup iteration
 is discarded; GPU work is `cuda.synchronize`'d before the clock stops). A
@@ -64,13 +95,12 @@ python -m rc_bench.report --in results/latest.json --out results/REPORT.md
 python -m rc_bench.run --report
 ```
 
-The CPU rows and the precision (valid-prediction-time) metrics are
-seed-deterministic, so re-running with `--report` regenerates the same tables;
-the resdag forecast rows go through the flat single-step engine (#254). Only the
-`resdag-gpu` row carries run-to-run floating-point jitter (inherent CUDA
-non-determinism), so leave the committed `results/REPORT.md` snapshot as the
-canonical cross-library record and regenerate it deliberately on the benchmark
-machine.
+CPU predictions are seed reproducible within a fixed software/hardware
+environment; measured timings vary between runs. CUDA predictions may also
+vary with nondeterministic kernels. Use a new `--out` path for corrected runs
+so historical snapshots remain intact. Available-adapter execution failures and
+malformed results make the command exit nonzero while preserving error details
+in JSON. Missing optional libraries remain explicit skips.
 
 ## Performance-regression gate (committed targets)
 
@@ -130,8 +160,12 @@ adapter is a single new file.
 
 The *nominal* architecture (size, spectral radius, leak rate, connectivity,
 ridge) is identical everywhere, but each library uses its own idiomatic
-implementation: resdag runs a **dense** reservoir + a conjugate-gradient ridge
-solve (GPU-friendly), while reservoirpy and ReservoirComputing.jl use **sparse**
-reservoirs + direct solves. CPU rows run float64; the resdag GPU row runs
+implementation: resdag runs a **dense** reservoir and a direct ridge solver;
+reservoirpy and ReservoirComputing.jl use their own reservoir operators and
+direct readout solves. CPU rows run float64; the resdag GPU row runs
 float32 (the realistic GPU dtype). These are real, documented differences — the
-tables report each library as it is actually used.
+tables report each library as it is actually used. All adapters honor the
+requested timing repeat/warmup counts; Julia startup is outside its internal
+clock, and an explicit warmup is needed to exclude compilation. The Julia
+worker still requires an installed, working compatible Julia project; protocol
+unit checks alone do not establish that its optional runtime is available.

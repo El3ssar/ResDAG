@@ -13,7 +13,10 @@ and its documentation deployment are verified. Phase three is implemented and
 verified in [PR #462](https://github.com/El3ssar/ResDAG/pull/462), merged as `f8d7637`;
 the initial tuning increment was published in **2.1.0**, and phase-three
 completion is released in **3.0.0**. Phase four, including single-pass multi-readout training (SQ-01), is implemented
-and verified in [PR #463](https://github.com/El3ssar/ResDAG/pull/463), awaiting merge.
+and verified in [PR #463](https://github.com/El3ssar/ResDAG/pull/463), merged as
+`0b546d6`. Phase five is in progress: correct held-out comparisons and measure
+classical forecast accuracy before changing execution policies.
+The phase-four release job published **4.0.0** after full post-merge CI passed.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -62,12 +65,12 @@ after its acceptance checks pass and its public behavior is documented.
 | 1. Correctness and verification | Done | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
 | 2. Unified functional model workflow | Done | One PyTorch model lifecycle for presets and custom graphs. | The same documented fit/forecast/state commands work for both; functional construction and PyTorch semantics are preserved. Tuning and complete artifacts remain phases 3 and 4. |
 | 3. Reliable automatic tuning | Done | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies, streaming pruning, optional screening/memory budgets, protocol-safe reuse and fitted winners pass local/package/hosted verification. Completion PR #462 merged as `f8d7637`. |
-| 4. Model artifacts, diagrams and efficient training | Done | Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work. | Fresh-process load/forecast parity, diagrams and one-pass training oracles pass across supported graph families. PR #463 awaits merge. |
-| 5. Performance and competitive evidence | Pending | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. |
+| 4. Model artifacts, diagrams and efficient training | Done | Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work. | Fresh-process load/forecast parity, diagrams and one-pass training oracles pass across supported graph families. PR #463 merged as `0b546d6`. |
+| 5. Performance and competitive evidence | WIP | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. First increment repairs chronological windows and establishes classical accuracy baselines. |
 | 6. Experiments and release readiness | Pending | Stable experiment recipes, executable documentation and migration guidance. | End-to-end experiments run from published packages with recorded environments and artifacts. |
 
-Phase four is implemented and verified under the approved artifact/state contract;
-its PR awaits merge.
+Phase four is merged under the approved artifact/state contract. Phase five
+starts with [the agreed measurement design](phase-five-design.md).
 Documentation and CI are part of every phase, not deferred cleanup.
 
 ## Phase 1: correctness and verification
@@ -459,6 +462,18 @@ major public API or memory-policy changes.
 
 ## Phase 5: speed, memory and comparisons
 
+The first increment fixes benchmark preparation and evaluates the same classical
+models before and after phase four. The maintainer approved **0.3** as the main
+per-step normalized RMS error limit, with **0.5** also reported. Normalization
+uses only training data. Report each seed/origin separately, then its median
+and spread; do not construct a horizon from the median error curve.
+
+The target is a **typical 7–8 Lyapunov-time forecast**, rather than one selected
+successful run. This is an experiment target, not a current capability guarantee.
+The [phase-five design](phase-five-design.md) separates accuracy regression,
+held-out tuning and cross-library comparison; public metric defaults are not
+changed by the benchmark repairs.
+
 ### Known baseline performance limits
 
 Running **all nine** existing non-GPU benchmark cases on this Apple Silicon
@@ -483,15 +498,28 @@ them alone would not improve performance.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P5-01 | Pending | Correct held-out comparison windows and common prediction alignment. | Shared data/splits and one-step timing oracles across adapters; historical tables are not treated as new measurements. |
-| P5-02 | Pending | Controlled numerical and idiomatic equal-budget benchmark tracks. | Several systems, trajectories, seeds and scale regimes; record uncertainty, initialization/compile cost, fit/forecast time and memory. |
+| P5-01 | WIP | Correct held-out comparison windows and common prediction alignment. | Python adapters verified with real libraries and independent first-step oracles; training-target-only normalization, failed-adapter exit status, declared intercept/input/state policies, censored/divergent scores and held-out internal profiling implemented. Julia runtime verification remains pending. |
+| P5-02 | WIP | Controlled numerical and idiomatic equal-budget benchmark tracks. | 36 frozen regression cases plus four 24-attempt, 3-seed/3-origin tuning studies; winners and controls replayed in 150 matched before/after cases with exact forecast/tensor/score agreement. Reserved five-seed test results and supplementary bank are documented. Further trajectories, scale regimes, controlled timing/memory and competitor search budgets remain pending. |
 | P5-03 | Pending | Actual sparse/structured operators and appropriate matrix-free readouts. | Reuse Torch/SciPy operator/sparse/solver capabilities; memory scales as advertised; no mandatory hidden dense copy; save/load and numerical contracts pass. |
 | P5-04 | Pending | Profile-driven batching and compilation improvements. | Reference/fast value, state and gradient parity; measured improvement in specified workloads; setup and steady state reported separately. |
 | P5-05 | Pending | Publish speed–accuracy–memory tradeoffs against current competitors. | Reproducible commands, versions, hardware and equal search budgets; no universal unsupported superiority or GPU claim. |
+| P5-06 | Done | Bring the broader forecasting search into built-in vanilla and OTT tuning. | Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage. |
 
 Python 3.14 warns that `torch.jit.script_method` is deprecated. The phase-five
 execution review must address that path using supported PyTorch tooling and
 verify value, state and gradient behavior before replacing it.
+
+### First-increment accuracy evidence
+
+See [the full protocol and results](phase-five-design.md#first-tuning-measurements)
+for fixed-training-scale scores at thresholds 0.3 and 0.5. Primary tuned medians
+are **9.11 / ≥10.02 Lyapunov times** for vanilla/OTT Lorenz and
+**7.58 / ≥10.00** for vanilla/OTT Rössler. Each uses five reserved seeds and
+three unseen test starting points. The supplementary vanilla Rössler median
+is **6.33** and its pooled ten-seed median **6.76**; robust 7–8 performance is
+therefore still an open goal for that recipe. Censored values are lower bounds.
+Neither these accuracy checks nor the untuned adapter smoke establishes a
+cross-library speed ranking.
 
 ## Phase 6: experiment readiness and ongoing documentation
 
@@ -517,7 +545,9 @@ verify value, state and gradient behavior before replacing it.
 | 2026-10-23 | Phase 3 initial merge and release | Done | PR #461 merged as `ad0f8c9`; v2.1.0 publication, full post-merge CI, actual published-wheel smoke and documentation deployment pass. |
 | 2026-10-23 | Phase 3 completion | Done | [PR #462](https://github.com/El3ssar/ResDAG/pull/462): streaming pruning, optional screening/memory admission, exact-protocol reuse and managed raw execution. 5,466 local tests at 92.98% coverage; all eight locked/latest full suites, six dynamics lanes, CPU gates, installed-wheel workflows and rendered documentation pass. Merged as `f8d7637` after final required checks; v3.0.0 publication, all post-merge tests, installed published-wheel checks and documentation deployment passed. |
 
-| 2026-10-23 | Phase 4 implementation | Done | Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,715 local tests at 93.62% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. All eight locked/latest full suites, six dynamics lanes, strict docs and configured CPU/static jobs pass on runtime head `5d8f869`. PR #463 awaits merge. |
+| 2026-10-23 | Phase 4 implementation | Done | Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,715 local tests at 93.62% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. All eight locked/latest full suites, six dynamics lanes, strict docs and configured CPU/static jobs pass on runtime head `5d8f869`. |
+| 2026-10-23 | Phase 4 merge and release | Done | PR #463 merged as `0b546d6`; v4.0.0 release job, full post-merge CI and documentation deployment pass. Actual PyPI wheel's 199 runtime files match the release tag; installed-wheel artifact/guide selection: 118 passed, two unavailable-CUDA cases skipped. Updated executable tuning guide also passes. |
+| 2026-10-23 | Phase 5 first increment | WIP | Python comparison preparation/alignment repaired; 36 frozen matched cases and four validation-only HPO studies completed. 150 matched tuned/control cases preserve exact phase-four accuracy. Primary and supplementary seed banks, censored horizons and remaining vanilla Rössler variability documented; Julia execution and broader controlled competitor comparisons remain pending. |
 
 ## Standard tools to reuse
 

@@ -146,6 +146,8 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_custom_components_guide.py",
         "tests/test_artifact_guides.py",
         "tests/test_examples_smoke.py",
+        "tests/test_docs/test_forecast_experiment.py",
+        "tests/test_hpo/test_tuning_guides.py",
     ),
     # These recipes execute Markdown rather than importing artifact modules
     # directly, so their source dependency is invisible to static imports.
@@ -156,9 +158,23 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
     ),
     "hooks/": ("tests/test_init/test_correctness_contracts.py",),
     "examples/": ("tests/test_examples_smoke.py",),
+    "examples/17_forecast_experiment.py": (
+        "tests/test_examples_smoke.py",
+        "tests/test_docs/test_forecast_experiment.py",
+    ),
     # Perf-gate floors read by the perf-regression test (incl. its well-formed
     # check): a malformed/edited targets.json must run those tests on the PR.
     "benchmarks/targets.json": ("tests/test_benchmarks/",),
+    "benchmarks/rc_bench/": ("tests/test_benchmark_protocol.py",),
+    "benchmarks/julia/rc_bench.jl": ("tests/test_benchmark_protocol.py",),
+    "benchmarks/accuracy_regression.py": ("tests/test_regression/test_phase5_accuracy.py",),
+    "benchmarks/tuned_accuracy.py": ("tests/test_regression/test_phase5_accuracy.py",),
+    "benchmarks/results/phase-five-accuracy-2026-10-23.json": (
+        "tests/test_regression/test_phase5_accuracy.py",
+    ),
+    "benchmarks/results/phase-five-tuned-accuracy-2026-10-23.json": (
+        "tests/test_regression/test_phase5_accuracy.py",
+    ),
     # The regen script and the golden-spec helper module both define the golden
     # forecast tolerances/specs the regression test asserts against.
     "tools/regen_golden_forecasts.py": ("tests/test_models/test_golden_forecast.py",),

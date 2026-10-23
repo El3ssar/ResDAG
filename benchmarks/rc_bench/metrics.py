@@ -5,23 +5,17 @@ closed-loop forecast tracks the true trajectory before the normalized error
 crosses a threshold. It is the standard way to compare predictive skill on
 chaotic systems and is reported both in steps and in Lyapunov times.
 
-All the numeric machinery lives in the library itself
-(:mod:`resdag.metrics`) so the benchmark and the library share **one** source
-of truth for the Lyapunov exponent and the VPT / Lyapunov-time definitions.
-This module is a thin, benchmark-shaped adapter over it: it keys ``dt`` and
-``lambda_max`` off the dataset name (Lorenz today) via the public
-:data:`resdag.utils.data.DATASET_DT` / :func:`resdag.utils.data.dataset_lambda_max`
-tables, so pointing the harness at another built-in generator generalizes for
-free.
+Lyapunov conversions/constants come from :mod:`resdag.metrics`. Benchmark VPT
+uses explicit, fixed training scales, unlike the public metric's historical
+truth-window scaling. Every forecast is scored independently, with the first
+threshold failure ending its valid prefix.
 """
 
 from __future__ import annotations
 
 import numpy as np
-import torch
 
 from resdag.metrics import steps_to_lyapunov
-from resdag.metrics import valid_prediction_time as _rd_vpt
 from resdag.utils.data import DATASET_DT, dataset_lambda_max
 
 # The generator the benchmark drives everything with (see ``rc_bench.data``).
@@ -37,20 +31,34 @@ LORENZ_LAMBDA_MAX: float = _LAMBDA
 LORENZ_DT: float = DATASET_DT[DATASET]
 
 
-def valid_prediction_time(pred: np.ndarray, truth: np.ndarray, threshold: float = 0.5) -> int:
-    """Number of steps the forecast stays valid (delegates to :mod:`resdag.metrics`).
+def valid_prediction_time(
+    pred: np.ndarray,
+    truth: np.ndarray,
+    threshold: float = 0.3,
+    *,
+    scale: np.ndarray,
+) -> int:
+    """Contiguous valid prefix for one forecast using admitted training scales.
 
-    Both arrays are ``(steps, dim)`` for a single trajectory; a singleton batch
-    axis is added so :func:`resdag.metrics.valid_prediction_time` (which works on
-    ``(batch, time, dim)`` and defines the canonical NRMSE / contiguous-valid
-    semantics) can score them. Returns the whole-step VPT.
+    Arrays have shape ``(time, features)`` and must match exactly. ``scale``
+    is a positive per-feature vector from training, never from test truth.
+    Already training-standardized inputs use ones, including constant channels.
     """
-    vpt = _rd_vpt(
-        torch.as_tensor(pred[None]),
-        torch.as_tensor(truth[None]),
-        threshold=threshold,
-    )
-    return int(vpt)
+    pred, truth, scale = (np.asarray(value, dtype=np.float64) for value in (pred, truth, scale))
+    if pred.ndim != 2 or pred.shape != truth.shape or pred.shape[1] < 1:
+        raise ValueError("predictions and truth must have matching (time, features) shapes")
+    if scale.shape != (pred.shape[1],) or not np.isfinite(scale).all() or (scale <= 0).any():
+        raise ValueError("scale must contain one positive finite training scale per feature")
+    if not np.isfinite(threshold) or threshold <= 0:
+        raise ValueError("threshold must be positive and finite")
+    if not np.isfinite(truth).all():
+        raise ValueError("truth must be finite")
+    # A model may diverge after a useful prefix. Its first non-finite error
+    # ends that prefix instead of turning the whole evaluation into an API error.
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        errors = np.hypot.reduce((pred - truth) / scale, axis=1) / np.sqrt(pred.shape[1])
+    failures = np.flatnonzero(~np.isfinite(errors) | (errors >= threshold))
+    return int(failures[0]) if len(failures) else len(pred)
 
 
 def lyapunov_times(steps: int, dt: float = LORENZ_DT, lam: float = LORENZ_LAMBDA_MAX) -> float:

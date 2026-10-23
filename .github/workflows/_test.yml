@@ -56,8 +56,8 @@ jobs:
 
       - name: Lint
         run: |
-          ruff check src/ tests/ tools/ci_environment.py
-          black --check src/ tests/ tools/ci_environment.py
+          ruff check src/ tests/ tools/ci_environment.py benchmarks/ examples/17_forecast_experiment.py
+          black --check src/ tests/ tools/ci_environment.py benchmarks/ examples/17_forecast_experiment.py
 
       - name: Type check (whole package)
         # Type-checks the entire package and must stay at zero errors. There is
@@ -149,6 +149,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           dependency-mode: ${{ inputs.dependency-mode }}
           extras: dev,hpo,dynamics
+      - name: Ensure Graphviz for executable dynamics guide
+        run: |
+          if ! command -v dot >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y graphviz
+          fi
+          dot -V
       - name: Optional dynamics integration
         run: >-
           pytest --no-cov -q tests/test_metrics/test_lyapunov.py
@@ -168,3 +175,4 @@ jobs:
           tests/test_hpo/test_tuning_completion_review.py
           tests/test_hpo/test_tuning_guides.py
           tests/test_artifacts/test_trajectory_roundtrip.py
+          tests/test_docs/test_forecast_experiment.py

@@ -1,8 +1,12 @@
 # Reproducing the benchmark artifacts
 
-Every artifact this harness writes is deterministic on a fixed machine (CPU rows
-and precision metrics are seed-deterministic; only the `resdag-gpu` row carries
-inherent CUDA floating-point jitter). Each results JSON embeds an `env` block
+Every new comparison run records the `heldout-v1` protocol from
+[`README.md`](README.md#held-out-protocol-v1): chronological held-out truth,
+training-only preprocessing/scoring scales, headline threshold 0.3 and secondary
+threshold 0.5. Historical JSON files do not acquire this protocol retroactively.
+CPU predictions are seed reproducible within a fixed environment, but wall-clock
+timings vary; CUDA kernels may introduce prediction variability too.
+Each results JSON embeds an `env` block
 (library versions, CUDA + GPU, CPU model, git SHA, shell-sourced timestamp — see
 [`rc_bench/env.py`](rc_bench/env.py)) so a file always records the machine and
 commit it came from.
@@ -43,18 +47,19 @@ The full cross-library matrix (resdag-cpu, resdag-gpu, reservoirpy, RC.jl) over
 the four contexts (train-vs-size, train-vs-data, forecast, precision):
 
 ```bash
-# run the full matrix and render the Markdown report in one deterministic step
-uv run python -m rc_bench.run --report
+# write corrected results separately, preserving historical snapshots
+uv run python -m rc_bench.run --out results/heldout-v1.json --report
 ```
 
-This writes [`results/latest.json`](results/latest.json) (with the `env` block)
-and refreshes [`results/REPORT.md`](results/REPORT.md).
+This writes `results/heldout-v1.json` (including exact per-point split and scale
+metadata) and refreshes `results/REPORT.md`. Pass `--report results/HELDOUT.md`
+to retain the historical Markdown report as well.
 
 Useful subsets:
 
 ```bash
 # quick smoke (tiny matrix)
-uv run python -m rc_bench.run --quick
+uv run python -m rc_bench.run --quick --out results/heldout-smoke.json
 
 # a single library / a single context
 uv run python -m rc_bench.run --only resdag-cpu reservoirpy --contexts forecast
@@ -110,7 +115,8 @@ pytest -m benchmark --no-cov -q tests/test_benchmarks tests/test_performance
 ## Determinism notes
 
 - CPU rows and precision (VPT) metrics are seed-deterministic — re-running `-m
-  rc_bench.run --report` regenerates the same tables.
+  rc_bench.run` reproduces predictions within a fixed environment. Timing tables
+  are measurements and are not byte deterministic.
 - The `resdag-gpu` row carries run-to-run floating-point jitter (inherent CUDA
   non-determinism); treat the committed `results/REPORT.md` as the canonical
   cross-library snapshot and regenerate it deliberately on the benchmark machine.
@@ -118,4 +124,16 @@ pytest -m benchmark --no-cov -q tests/test_benchmarks tests/test_performance
   Python process clock, so it reflects the machine that produced the artifact.
 - Reservoir sizes are capped to fit a 6 GB GPU (the dense `N×N` reservoir at
   `N=2000` float32 is ~16 MB, so headroom is ample).
+
+Run protocol regression checks from the repository root:
+
+```bash
+uv run pytest tests/test_benchmark_protocol.py --no-cov
 ```
+
+An installed ReservoirPy enables the real one-step alignment check; otherwise
+that test is an explicit skip. Available adapters returning malformed forecasts,
+wrong timing counts or runtime errors make the comparison command fail. A model
+that numerically diverges receives its valid prefix and an explicit divergence
+status instead of becoming an adapter execution error. Full-horizon accurate
+forecasts are marked censored; their reported horizon is a lower bound.

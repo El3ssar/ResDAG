@@ -7,14 +7,13 @@ on chaotic systems and — via :func:`resdag.metrics.steps_to_lyapunov` — is b
 reported in Lyapunov times so it is comparable across systems and integration
 steps.
 
-:func:`valid_prediction_time` here is the **canonical** implementation of the
-contiguous-valid-horizon / NRMSE logic.  Two other copies exist in the codebase
-for dependency-isolation reasons —
-:func:`resdag.hpo.losses.forecast_horizon` (kept out of the optional HPO stack's
-import path) and ``tests/test_models/golden_forecast.valid_prediction_time`` (so
-the base test suite never imports HPO) — and both mirror the exact same NRMSE /
-contiguous-count / batch-median semantics.  A later phase can delegate them to
-this function; they are intentionally left untouched for now.
+:func:`valid_prediction_time` defines truth-window normalization and reduction
+of per-step errors across the batch. The golden-forecast helper delegates to
+this implementation. The NumPy :func:`resdag.hpo.losses.forecast_horizon`
+retains the corresponding truth-window convention for raw HPO workflows.
+The common ``model.tune`` workflow instead fixes scales from training labels
+and aggregates individual forecast horizons. State the normalization and batch
+reduction when comparing reported horizons; these are distinct protocols.
 """
 
 from __future__ import annotations

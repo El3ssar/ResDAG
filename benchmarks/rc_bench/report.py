@@ -54,7 +54,9 @@ def _vpt_cell(cell_results: dict, key: str) -> str:
     r = cell_results.get(key)
     if not r or "error" in r or r.get("vpt") is None:
         return "—"
-    return f"{r['vpt']} steps ({r['vpt_lyap']:.1f} Λt)"
+    bound = "≥" if r.get("vpt_censored") else ""
+    status = "; diverged" if r.get("diverged") else ""
+    return f"{bound}{r['vpt']} steps ({bound}{r['vpt_lyap']:.1f} Λt{status})"
 
 
 def render_tables(results: dict, present_keys: set[str] | None = None) -> str:
@@ -88,9 +90,10 @@ def render_tables(results: dict, present_keys: set[str] | None = None) -> str:
                 row += [_cell(_median(res, k), base, k == _BASELINE) for k, _ in cols]
             lines.append("| " + " | ".join(row) + " |")
         if precision:
+            threshold = results.get("meta", {}).get("hparams", {}).get("vpt_threshold", 0.5)
             lines.append(
                 "\n*Valid prediction time: steps until the normalized forecast "
-                "error first exceeds 0.5, also in Lyapunov times (Λt). Higher = "
+                f"error reaches {threshold}, also in Lyapunov times (Λt). Higher = "
                 "the model stays on the true trajectory longer.*"
             )
         lines.append("")
@@ -105,7 +108,7 @@ def render_provenance(results: dict) -> str:
     hp = meta.get("hparams", {})
     lines: list[str] = []
     lines.append(
-        f"- **Architecture (identical across libraries):** {hp.get('dim', '?')}-D input, "
+        f"- **Nominal architecture:** {hp.get('dim', '?')}-D input, "
         f"spectral radius {hp.get('spectral_radius')}, leak rate {hp.get('leak_rate')}, "
         f"connectivity {hp.get('connectivity')}, ridge {hp.get('ridge')}, tanh activation."
     )
@@ -119,8 +122,22 @@ def render_provenance(results: dict) -> str:
     lines.append("- **Versions:** " + ", ".join(vparts) + ".")
     lines.append(
         f"- **Method:** median of {meta.get('repeats', '?')} repeats "
-        f"(1 warmup discarded), generated {meta.get('timestamp', '?')}."
+        f"({meta.get('warmups', '?')} warmups discarded), generated {meta.get('timestamp', '?')}."
     )
+    if meta.get("protocol"):
+        lines.append(
+            f"- **Protocol:** `{meta['protocol']}`; each point records exact split/scaling bounds."
+        )
+        lines.append(
+            "- **Reservoir policy:** dense input connections, zero reservoir bias, no readout intercept; "
+            "independently sampled weights and library-specific solver numerics. "
+            "`≥` marks a censored horizon; `diverged` marks non-finite predictions."
+        )
+        lines.append(
+            "- **Accuracy scale:** fixed per-channel population standard deviations from "
+            "supervised training targets after washout. Headline normalized RMS threshold 0.3; "
+            "secondary threshold 0.5 is recorded in JSON."
+        )
     return "\n".join(lines)
 
 
@@ -128,12 +145,19 @@ def render(results: dict, present_keys: set[str] | None = None) -> str:
     """Full standalone report: heading + tables + provenance."""
     meta = results.get("meta", {})
     out = ["## Reservoir-computing library benchmark\n"]
-    out.append(
-        "> **Unverified comparisons.** Forecast alignment and optional adapters "
-        "still need the corrected validation described in phase 5 of "
-        "`docs/project/roadmap.md`. These tables do not establish current "
-        "cross-library speed or accuracy superiority.\n"
-    )
+    if meta.get("protocol") == "heldout-v1":
+        out.append(
+            "> **Held-out protocol v1.** Training-only preprocessing and chronological "
+            "forecast windows replace the historical in-training windows. These nominal "
+            "settings are not an equal-budget tuned comparison or evidence of universal superiority. "
+            "Optional adapters require actual runtime verification.\n"
+        )
+    else:
+        out.append(
+            "> **Historical, unverified comparisons.** Forecast alignment and optional adapters "
+            "need the corrected validation described in phase 5 of `docs/project/roadmap.md`. "
+            "These tables do not establish current cross-library speed or accuracy superiority.\n"
+        )
     out.append(
         "Speedups are relative to **reservoirpy** (so reservoirpy = 1.00×; "
         "a value above 1× is *faster than reservoirpy*). Every library runs the "

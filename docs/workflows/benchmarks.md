@@ -1,10 +1,47 @@
 ---
-description: How resdag's training and forecasting speed compares to reservoirpy and ReservoirComputing.jl on identical Echo State Network architectures.
+description: Reproduce held-out reservoir forecasts, measure accuracy and runtime, and distinguish current protocols from historical comparison tables.
 ---
 
 <span class="nb-kicker">Work · Benchmarks</span>
 
 # Benchmarks
+
+## Current measurement protocol
+
+Phase five repairs the comparison harness before publishing new rankings.
+The `heldout-v1` protocol uses raw shared data and fits normalization on the
+supervised training targets after washout. Training inputs end at index `T-1`,
+their next-sample targets end at `T`, and forecasts begin at the first unseen
+sample, `T+1`. Every adapter receives the same transformed data.
+
+Accuracy is the uninterrupted prefix with per-step RMS error below **0.3**,
+using fixed training component scales. The report also includes **0.5**.
+Compute each seed/origin's horizon separately, then report its median and
+spread. A forecast that stays valid throughout the evaluated window gives a
+lower bound. Report actual `dt`, system parameters and the Lyapunov exponent
+when converting steps to Lyapunov times.
+
+The [forecast experiment](../start/forecast-experiment.md) shows how to build,
+draw, train, save and score vanilla, OTT and custom DAG models. Its untuned
+examples are separate from a controlled comparison. The
+[phase-five design](../project/phase-five-design.md) records the agreed
+7–8 Lyapunov-time **median target** and the remaining experiment work.
+
+Run a bounded Python-adapter smoke check from the repository:
+
+```sh
+python -m pip install -r benchmarks/requirements.txt
+cd benchmarks
+python -m rc_bench.run --quick --only resdag-cpu reservoirpy --report --out results/local-smoke.json
+```
+
+This checks both real Python adapters, chronological preparation and reporting.
+An execution failure from an available adapter makes the command fail;
+unavailable optional adapters are explicit skips. The settings and random
+weights are realized by each library independently. Equal nominal settings
+alone do not establish identical numerical models or an equal tuning budget.
+
+## Archived comparisons
 
 !!! warning "Historical results; current comparisons are pending"
     These tables are archived measurements, not evidence for the current

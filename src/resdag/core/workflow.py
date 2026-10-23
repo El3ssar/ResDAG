@@ -614,8 +614,9 @@ class Model(nn.Module):
 
         Requires ``resdag[hpo]``. The final 20% is held out while comparing
         candidates, then the winner is refitted on all supplied data. Keep a
-        separate final test set. ``factory(params, seed)`` rebuilds custom DAGs;
-        without it, sizes and weights stay fixed and alpha/washout can vary.
+        separate final test set. Built-in classic/OTT graphs have an automatic
+        rebuilding recipe. ``factory(params, seed)`` rebuilds custom DAGs;
+        without one, custom sizes and weights stay fixed and alpha/washout can vary.
         ``search_space(trial)`` uses ordinary Optuna suggestions. Advanced
         options and :attr:`tuning_report` are documented in the tuning guide.
         A failure leaves this model unchanged. Tune before creating optimizers.

@@ -1170,14 +1170,22 @@ class ESNCell(ReservoirCell):
         return state + self.noise * epsilon
 
     def __getstate__(self) -> dict:
-        """Drop the transient per-device noise generators before pickling.
+        """Drop derived CSR weights and transient generators before copying.
 
         :class:`torch.Generator` objects carry live device/RNG state that does
         not round-trip cleanly across devices; the cache is rebuilt lazily (and
         deterministically from ``seed``) on first use after unpickling.
+        CSR weights are a derived view of the dense parameter. PyTorch cannot
+        deepcopy their storage on all supported versions, so restore that
+        cache from the copied dense parameter instead.
         """
         state = self.__dict__.copy()
         state["_noise_generators"] = {}
+        buffers = dict(state.get("_buffers", {}))
+        if "_weight_hh_csr" in buffers:
+            buffers["_weight_hh_csr"] = None
+            state["_buffers"] = buffers
+            state["_sparse_weight_key"] = None
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -1193,6 +1201,8 @@ class ESNCell(ReservoirCell):
         state.setdefault("_has_intrinsic", buffers["_intrinsic_gain"] is not None)
         state.setdefault("_has_recurrent_gain", buffers["_recurrent_gain"] is not None)
         self.__dict__.update(state)
+        if hasattr(self, "_sparse_requested"):
+            self._maybe_build_sparse_weight()
 
     # ------------------------------------------------------------------
     # Weight initialization (verbatim from legacy ReservoirLayer)

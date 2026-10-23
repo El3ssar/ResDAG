@@ -42,10 +42,13 @@ class ReservoirPyAdapter(Adapter):
             sr=hp.spectral_radius,
             lr=hp.leak_rate,
             input_scaling=hp.input_scaling,
+            input_connectivity=1.0,
+            bias=0.0,
+            activation=hp.activation,
             rc_connectivity=hp.connectivity,
             seed=hp.seed,
         )
-        readout = Ridge(ridge=hp.ridge)
+        readout = Ridge(ridge=hp.ridge, fit_bias=False)
         esn = reservoir >> readout
         return esn, reservoir
 
@@ -67,7 +70,7 @@ class ReservoirPyAdapter(Adapter):
         x, y = self._train_window(series, point)
         esn, reservoir = self._build(hp, point)
         esn.fit(x, y, warmup=point.warmup)
-        warm = np.ascontiguousarray(series[: point.warmup])
+        warm = self._forecast_history(series, point)
         horizon = point.horizon
         dim = hp.dim
 
@@ -79,7 +82,8 @@ class ReservoirPyAdapter(Adapter):
             warming = model.run(warm)
             yv = warming[-1]
             gen = np.empty((horizon, dim), dtype=np.float64)
-            for t in range(horizon):
+            gen[0] = yv
+            for t in range(1, horizon):
                 yv = model(yv)
                 gen[t] = yv
             return gen
@@ -99,10 +103,11 @@ class ReservoirPyAdapter(Adapter):
         esn, reservoir = self._build(hp, point)
         esn.fit(x, y, warmup=point.warmup)
         reservoir.reset()
-        warming = esn.run(np.ascontiguousarray(series[: point.warmup]))
+        warming = esn.run(self._forecast_history(series, point))
         yv = warming[-1]
         gen = np.empty((point.horizon, hp.dim), dtype=np.float64)
-        for t in range(point.horizon):
+        gen[0] = yv
+        for t in range(1, point.horizon):
             yv = esn(yv)
             gen[t] = yv
         return gen

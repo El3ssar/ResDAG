@@ -27,9 +27,11 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 from .adapters import all_adapters
 from .config import CONTEXTS, QUICK_CONTEXTS, HParams
-from .data import lorenz
+from .data import lorenz, prepare_point
 from .env import collect_env
 from .metrics import LORENZ_DT, LORENZ_LAMBDA_MAX, lyapunov_times, valid_prediction_time
 
@@ -89,17 +91,23 @@ def main(argv: list[str] | None = None) -> int:
         "next to --out)",
     )
     args = p.parse_args(argv)
+    if args.repeats < 1 or args.warmups < 0:
+        p.error("repeats must be positive and warmups must be nonnegative")
 
     contexts = QUICK_CONTEXTS if args.quick else CONTEXTS
     if args.contexts:
         contexts = tuple(c for c in contexts if c.key in args.contexts)
+        if not contexts:
+            p.error("no matching contexts")
 
     hp = HParams()
     adapters = all_adapters(only=args.only)
     available = []
+    availability = {}
     _p("Adapters:")
     for a in adapters:
         ok, reason = a.is_available()
+        availability[a.key] = {"available": ok, "reason": reason}
         _p(f"  {a.key:20s} {'ok' if ok else f'SKIP ({reason})'}")
         if ok:
             available.append(a)
@@ -110,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     need = 0
     for c in contexts:
         for pt in c.points:
-            need = max(need, pt.train_len + 1, pt.warmup + pt.horizon + 1)
+            need = max(need, pt.series_len)
     t0 = time.perf_counter()
     _p(f"\nGenerating shared Lorenz series of {need} steps...", end=" ")
     series = lorenz(need, seed=hp.seed)
@@ -128,6 +136,22 @@ def main(argv: list[str] | None = None) -> int:
             "warmups": args.warmups,
             "series_len": len(series),
             "lyapunov": {"lambda_max": LORENZ_LAMBDA_MAX, "dt": LORENZ_DT},
+            "protocol": "heldout-v1",
+            "architecture_policy": {
+                "input_connectivity": 1.0,
+                "reservoir_bias": "zero",
+                "readout_intercept": False,
+                "weights": "independently sampled; nominal settings, not identical matrices",
+            },
+            "availability": availability,
+            "accuracy_metric": {
+                "name": "valid_prediction_time",
+                "threshold": hp.vpt_threshold,
+                "secondary_threshold": hp.secondary_vpt_threshold,
+                "normalization": "fixed per-channel population std of supervised training targets after washout",
+                "rule": "consecutive samples with normalized RMS error strictly below threshold",
+                "note": "Each point is already training-standardized, so scoring scales are ones.",
+            },
             # Full reproducibility metadata (shared schema with
             # results/internal_cells.json). The legacy ``versions``/``hardware``
             # blocks above are kept for report.py; ``env`` is the richer,
@@ -137,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         "contexts": {},
     }
 
+    failures = 0
     for ci, c in enumerate(contexts, 1):
         _p(f"\n=== [{ci}/{len(contexts)}] {c.key}: {c.title}  (metric: {c.metric}) ===")
         ctx_out = {
@@ -147,21 +172,40 @@ def main(argv: list[str] | None = None) -> int:
             "points": [],
         }
         for pt in c.points:
-            cell = {"point": pt.__dict__, "results": {}}
+            point_series, protocol = prepare_point(series, pt)
+            cell = {"point": pt.__dict__, "protocol": protocol, "results": {}}
             axis_val = getattr(pt, c.axis)
             _p(f"  {c.axis}={axis_val}  ({pt.label})")
             for a in available:
                 _p(f"    {a.label:26s} ", end="")
                 cstart = time.perf_counter()
                 try:
+                    # Isolate adapters that reuse their input array as scratch
+                    # storage while still giving every library identical bytes.
+                    adapter_series = point_series.copy()
                     if c.metric == "precision":
-                        pred = a.predict_trajectory(series, hp, pt)
-                        truth = series[pt.warmup : pt.warmup + len(pred)]
-                        vpt = valid_prediction_time(pred, truth, hp.vpt_threshold)
+                        pred = np.asarray(a.predict_trajectory(adapter_series, hp, pt))
+                        truth = a._forecast_truth(point_series, pt)
+                        if pred.shape != truth.shape:
+                            raise ValueError(
+                                "predictions must match the complete held-out truth shape"
+                            )
+                        scales = np.ones(truth.shape[1], dtype=np.float64)
+                        vpt = valid_prediction_time(pred, truth, hp.vpt_threshold, scale=scales)
+                        secondary = valid_prediction_time(
+                            pred, truth, hp.secondary_vpt_threshold, scale=scales
+                        )
+                        invalid = np.flatnonzero(~np.isfinite(pred).all(axis=1))
                         cell["results"][a.key] = {
                             "vpt": vpt,
                             "vpt_lyap": lyapunov_times(vpt),
                             "horizon": pt.horizon,
+                            "secondary_vpt": secondary,
+                            "secondary_vpt_lyap": lyapunov_times(secondary),
+                            "vpt_censored": vpt == pt.horizon,
+                            "secondary_vpt_censored": secondary == pt.horizon,
+                            "diverged": bool(len(invalid)),
+                            "first_nonfinite_step": int(invalid[0]) if len(invalid) else None,
                         }
                         wall = time.perf_counter() - cstart
                         _p(
@@ -169,12 +213,20 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     else:
                         fn = a.time_train if c.metric == "train" else a.time_forecast
-                        rr = fn(series, hp, pt, args.repeats, args.warmups)
+                        rr = fn(adapter_series, hp, pt, args.repeats, args.warmups)
+                        if "skipped" not in rr.info and (
+                            len(rr.times) != args.repeats
+                            or not all(np.isfinite(t) and t > 0 for t in rr.times)
+                        ):
+                            raise ValueError(
+                                "adapter must return the requested finite positive timings"
+                            )
                         cell["results"][a.key] = rr.as_dict()
                         wall = time.perf_counter() - cstart
                         extra = f"  rmse {rr.rmse:.3f}" if rr.rmse is not None else ""
                         _p(f"{rr.median * 1e3:9.1f} ms{extra}   (wall {wall:5.1f}s)")
                 except Exception as e:
+                    failures += 1
                     cell["results"][a.key] = {"error": str(e)}
                     _p(f"ERROR: {str(e)[:120]}")
             ctx_out["points"].append(cell)
@@ -198,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         report_path.write_text(md)
         _p(f"Wrote {report_path}")
 
-    return 0
+    return int(failures > 0)
 
 
 if __name__ == "__main__":

@@ -51,24 +51,40 @@ function build_esn(cfg)
         leak_coefficient = cfg.lr,
         init_reservoir = rand_sparse(; radius = cfg.sr, sparsity = cfg.connectivity),
         init_input = scaled_rand(; scaling = cfg.input_scaling),
-        use_bias = true,  # match reservoirpy / resdag, which use a reservoir bias
+        use_bias = false,
+        init_state = (rng, dims...) -> zeros(Float64, dims...),
     )
     ps, st = setup(rng, esn)
-    return esn, ps, st
+    # Setup initializers may return Float32 even with Float64 data. Convert all
+    # floating arrays/scalars in the standard parameter/state trees explicitly.
+    return esn, float64_tree(ps), float64_tree(st)
 end
+
+float64_tree(x::AbstractArray{<:AbstractFloat}) = Float64.(x)
+float64_tree(x::AbstractFloat) = Float64(x)
+float64_tree(x::NamedTuple) = map(float64_tree, x)
+float64_tree(x::Tuple) = map(float64_tree, x)
+float64_tree(x) = x
 
 function do_train!(esn, ps, st, data, cfg)
     train_data = @view data[:, 1:cfg.train_len]
     target_data = @view data[:, 2:(cfg.train_len + 1)]
-    ps2, st2 = train!(esn, train_data, target_data, ps, st,
+    ps2, st2 = train!(esn, train_data, target_data, ps, deepcopy(st),
         StandardRidge(cfg.ridge); washout = cfg.warmup)
     return ps2, st2
 end
 
 function do_forecast(esn, ps, st, data, cfg)
-    warm = @view data[:, 1:cfg.warmup]
-    _, st_w = predict(esn, warm, ps, st)               # teacher-forced warmup
-    out, _ = predict(esn, cfg.horizon, ps, st_w; initialdata = Vector(data[:, cfg.warmup]))
+    # Python's last observed index T is Julia column T+1. The first unseen
+    # target is column T+2. Synchronization starts from fresh recurrent state.
+    warm = @view data[:, (cfg.train_len - cfg.warmup + 2):(cfg.train_len + 1)]
+    warming, st_w = predict(esn, warm, ps, deepcopy(st))
+    out = Matrix{Float64}(undef, cfg.dim, cfg.horizon)
+    out[:, 1] = warming[:, end]  # already predicts the first unseen sample
+    for step in 2:cfg.horizon
+        next, st_w = predict(esn, @view(out[:, (step - 1):(step - 1)]), ps, st_w)
+        out[:, step] = next[:, end]
+    end
     return out
 end
 
@@ -90,7 +106,7 @@ function main()
         end
     elseif cfg.op == "forecast"
         esn, ps, st = build_esn(cfg)
-        ps, st = do_train!(esn, ps, st, data, cfg)     # train once, untimed
+        ps, _ = do_train!(esn, ps, st, data, cfg)      # retain fresh initial state
         local out
         for i in 1:(cfg.warmups + cfg.repeats)
             t0 = time_ns()
@@ -100,10 +116,10 @@ function main()
                 push!(times, dt)
             end
         end
-        # short-horizon RMSE vs ground truth (columns warmup+1 ..)
-        n = min(200, cfg.horizon, cfg.total_len - cfg.warmup)
+        # Held-out truth starts at zero-based T+1, or Julia column T+2.
+        n = min(200, cfg.horizon, cfg.total_len - cfg.train_len - 1)
         if n > 0
-            truth = @view data[:, (cfg.warmup + 1):(cfg.warmup + n)]
+            truth = @view data[:, (cfg.train_len + 2):(cfg.train_len + 1 + n)]
             pred = @view out[:, 1:n]
             rmse = sqrt(sum((pred .- truth) .^ 2) / length(truth))
         end
@@ -112,7 +128,7 @@ function main()
         # prediction to the output path (ARGS[17]) for Python to score.
         out_path = ARGS[17]
         esn, ps, st = build_esn(cfg)
-        ps, st = do_train!(esn, ps, st, data, cfg)
+        ps, _ = do_train!(esn, ps, st, data, cfg)
         out = do_forecast(esn, ps, st, data, cfg)
         write(out_path, Array{Float64}(out))
     else

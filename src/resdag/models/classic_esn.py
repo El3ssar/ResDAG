@@ -6,7 +6,7 @@ reservoir output before the readout layer.
 
 See Also
 --------
-:func:`resdag.models.ott_esn` : OTT (Open Temporal Topology) ESN variant
+:func:`resdag.models.ott_esn` : ESN with selectively squared reservoir states
 :func:`resdag.models.linear_esn` : Linear ESN variant
 :func:`resdag.models.headless_esn` : Headless ESN (no readout)
 """
@@ -17,8 +17,10 @@ from resdag.core import ESNModel
 from resdag.init.utils import InitializerSpec, TopologySpec
 
 from ._builder import ReadoutSpec, _esn_builder
+from ._recipes import record_recipe
 
 
+@record_recipe("classic")
 def classic_esn(
     reservoir_size: int,
     feedback_size: int,

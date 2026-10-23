@@ -11,8 +11,8 @@ this is a cost profile of resdag's own zoo, not a speedup table.
 
 Methodology (mirrors the cross-library harness)
 ------------------------------------------------
-* One shared, normalized Lorenz-63 trajectory (``rc_bench.data.lorenz``), same
-  seed as the cross-library run.
+* One shared raw Lorenz-63 trajectory, standardized with supervised training
+  targets after washout. Forecasts use the held-out-v1 windows.
 * Each phase is timed separately: **init** = build the model + move to device;
   **train** = warmup + algebraic ridge fit (:class:`~resdag.training.ESNTrainer`);
   **forecast** = ``horizon``-step closed-loop rollout.
@@ -56,8 +56,9 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .config import HParams
-from .data import lorenz
+from .adapters.base import Adapter
+from .config import HParams, Point
+from .data import lorenz, prepare_point
 from .env import collect_env
 
 _DEFAULT_OUT = Path(__file__).resolve().parents[1] / "results" / "internal_cells.json"
@@ -198,6 +199,7 @@ def _profile_cell(
 ) -> dict:
     """Time init / train / forecast for one family at one size on one device."""
     import torch
+
     from resdag.training import ESNTrainer
 
     dtype = torch.float64 if device == "cpu" else torch.float32
@@ -211,6 +213,13 @@ def _profile_cell(
     warm = _tensor(series[: point.warmup], dtype, device)
     x = _tensor(series[point.warmup : point.train_len], dtype, device)
     y = _tensor(series[point.warmup + 1 : point.train_len + 1], dtype, device)
+    protocol_point = Point(
+        reservoir_size=reservoir_size,
+        train_len=point.train_len,
+        warmup=point.warmup,
+        horizon=point.horizon,
+    )
+    history = _tensor(Adapter._forecast_history(series, protocol_point), dtype, device)
 
     if device == "cuda":
         torch.cuda.empty_cache()
@@ -229,9 +238,7 @@ def _profile_cell(
     # --- train: warmup + algebraic ridge fit ----------------------------------
     def train_op() -> Any:
         model.reset_reservoirs()
-        ESNTrainer(model).fit(
-            warmup_inputs=(warm,), train_inputs=(x,), targets={"output": y}
-        )
+        ESNTrainer(model).fit(warmup_inputs=(warm,), train_inputs=(x,), targets={"output": y})
         return None
 
     train_median, train_times, _ = _median_timed(train_op, repeats, warmups, sync)
@@ -240,11 +247,9 @@ def _profile_cell(
     def forecast_op() -> Any:
         model.reset_reservoirs()
         with torch.no_grad():
-            return model.forecast(warm, horizon=point.horizon)
+            return model.forecast(history, horizon=point.horizon)
 
-    forecast_median, forecast_times, last = _median_timed(
-        forecast_op, repeats, warmups, sync
-    )
+    forecast_median, forecast_times, last = _median_timed(forecast_op, repeats, warmups, sync)
 
     peak_mem_mb: float | None = None
     if device == "cuda":
@@ -254,7 +259,7 @@ def _profile_cell(
     rmse: float | None = None
     if last is not None and family != "lsm":
         pred = last.squeeze(0).detach().cpu().numpy()
-        truth = series[point.warmup : point.warmup + len(pred)]
+        truth = Adapter._forecast_truth(series, protocol_point)
         n = min(len(truth), len(pred), 200)
         if n > 0:
             rmse = float(np.sqrt(np.mean((pred[:n] - truth[:n]) ** 2)))
@@ -298,9 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="devices to run (default: cpu + cuda if available)",
     )
-    p.add_argument(
-        "--only", nargs="*", default=None, help="family keys to include (default: all)"
-    )
+    p.add_argument("--only", nargs="*", default=None, help="family keys to include (default: all)")
     p.add_argument("--repeats", type=int, default=2, help="timed repeats per phase")
     p.add_argument("--warmups", type=int, default=1, help="discarded warmup iterations")
     p.add_argument("--train-len", type=int, default=None, help="training sequence length")
@@ -328,10 +331,11 @@ def main(argv: list[str] | None = None) -> int:
         devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
     hp = HParams()
-    need = max(train_len + 1, warmup + horizon + 1) + 10
+    protocol_point = Point(train_len=train_len, warmup=warmup, horizon=horizon)
+    need = protocol_point.series_len
     t0 = time.perf_counter()
     _p(f"Generating shared Lorenz series of {need} steps...", end=" ")
-    series = lorenz(need, seed=hp.seed)
+    series, protocol = prepare_point(lorenz(need, seed=hp.seed), protocol_point)
     _p(f"done ({time.perf_counter() - t0:.1f}s)")
 
     point = CellPoint(train_len=train_len, warmup=warmup, horizon=horizon)
@@ -339,12 +343,15 @@ def main(argv: list[str] | None = None) -> int:
     _p(f"Families:  {', '.join(families)}")
     _p(f"Sizes:     {sizes}")
     _p(f"Devices:   {devices}")
-    _p(f"train_len={train_len}  warmup={warmup}  horizon={horizon}  "
-       f"repeats={args.repeats}  warmups={args.warmups}\n")
+    _p(
+        f"train_len={train_len}  warmup={warmup}  horizon={horizon}  "
+        f"repeats={args.repeats}  warmups={args.warmups}\n"
+    )
 
     results: dict = {
         "meta": {
             "kind": "internal_cells",
+            "protocol": protocol,
             "description": (
                 "resdag-internal per-family init/train/forecast cost profile "
                 "(not a cross-library comparison)"

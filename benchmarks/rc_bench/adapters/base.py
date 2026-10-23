@@ -11,9 +11,10 @@ One-step-ahead forecasting on a ``(T, dim)`` series:
 
 * training uses ``X = series[0:train_len]``, ``Y = series[1:train_len+1]`` with
   the first ``warmup`` steps washed out of the readout fit;
-* forecasting teacher-forces ``series[0:warmup]`` then generates ``horizon``
-  steps closed-loop; ground truth for the RMSE sanity metric is
-  ``series[warmup:warmup+horizon]``.
+* the final observed training target is ``series[train_len]``;
+* forecasting resets recurrent state and synchronizes on the ``warmup`` known
+  samples ending at that observation, then generates ``horizon`` closed-loop
+  predictions; the first prediction is for ``series[train_len + 1]``.
 """
 
 from __future__ import annotations
@@ -57,10 +58,24 @@ class Adapter(ABC):
     # -- shared helpers -----------------------------------------------------
     @staticmethod
     def _train_window(series: np.ndarray, point: Point) -> tuple[np.ndarray, np.ndarray]:
+        Adapter._validate_series(series, point.train_len + 1)
         x = series[: point.train_len]
         y = series[1 : point.train_len + 1]
         return np.ascontiguousarray(x), np.ascontiguousarray(y)
 
     @staticmethod
+    def _validate_series(series: np.ndarray, length: int) -> None:
+        if series.ndim != 2 or series.shape[1] < 1 or len(series) < length:
+            raise ValueError(f"series must have shape (time, features) with at least {length} rows")
+        if not np.isfinite(series).all():
+            raise ValueError("series must contain only finite observations")
+
+    @staticmethod
+    def _forecast_history(series: np.ndarray, point: Point) -> np.ndarray:
+        Adapter._validate_series(series, point.forecast_start)
+        return np.ascontiguousarray(series[point.history_start : point.forecast_start])
+
+    @staticmethod
     def _forecast_truth(series: np.ndarray, point: Point) -> np.ndarray:
-        return series[point.warmup : point.warmup + point.horizon]
+        Adapter._validate_series(series, point.series_len)
+        return np.ascontiguousarray(series[point.forecast_start : point.series_len])

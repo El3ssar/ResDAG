@@ -26,8 +26,10 @@ from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import SelectiveExponentiation
 
 from ._builder import ReadoutSpec, _esn_builder
+from ._recipes import record_recipe
 
 
+@record_recipe("ott")
 def ott_esn(
     reservoir_size: int,
     feedback_size: int,

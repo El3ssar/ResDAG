@@ -177,6 +177,40 @@ class ESNModel(ps.SymbolicModel):
         super().__init__(*args, **kwargs)
         self.reset_reservoirs()
 
+    def _apply(self, fn: Any, recurse: bool = True) -> ESNModel:
+        from resdag.models._recipes import _snapshot, builtin_recipe
+
+        recipe = builtin_recipe(self)
+        super()._apply(fn, recurse=recurse)
+        if recipe is not None:
+            conversions = (
+                "to",
+                "type",
+                "float",
+                "double",
+                "half",
+                "bfloat16",
+                "cpu",
+                "cuda",
+                "xpu",
+                "mtia",
+                "ipu",
+                "share_memory",
+                "share_memory_",
+            )
+            standard_conversion = getattr(
+                fn, "__module__", None
+            ) == "torch.nn.modules.module" and any(
+                getattr(fn, "__qualname__", "").startswith(f"Module.{name}.<locals>.")
+                for name in conversions
+            )
+            if standard_conversion:
+                recipe["snapshot"] = _snapshot(self)
+            else:
+                # to_empty and arbitrary _apply callbacks can change values.
+                self.__dict__.pop("_builtin_recipe", None)
+        return self
+
     def __deepcopy__(self, memo: dict[int, Any]) -> "ESNModel":
         """
         Deep copy preserving the model subclass and its symbolic graph.

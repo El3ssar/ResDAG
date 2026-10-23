@@ -76,16 +76,54 @@ skip count. Forecasts still receive only declared non-feedback future drivers.
 | `seed` | `0` | Sampler seed and start of the default initialization seed bank. |
 | `seeds` | preset | Explicit nonempty seed sequence; duplicates are removed. The same bank evaluates every configuration. |
 
-The ESN default space samples `reservoir_size` between half and twice its
-initial size (with a minimum bound of eight), `spectral_radius` from 0.2 to 1.5,
-`leak_rate` from 0.05 to 1.0, and `alpha` from `1e-10` to `1e-2` logarithmically.
-Use a custom search to choose other ranges and settings.
+Built-in `rd.ESN` and unmodified classic/OTT graphs wrapped in `rd.Model` use
+the following space. All presets use the same ranges; presets change the
+number of trials, seeds and starting points.
 
-Without a factory, a custom `Model` keeps its DAG and reservoir weights. The
+| Setting | Default range | Sampling |
+| --- | --- | --- |
+| <code style="white-space: nowrap">reservoir_size</code> | Half to twice the initial width, each bound at least eight | Integer |
+| <code style="white-space: nowrap">spectral_radius</code> | 0.05–1.5 | Uniform |
+| <code style="white-space: nowrap">leak_rate</code> | 0.05–1.0 | Uniform |
+| <code style="white-space: nowrap">alpha</code> | `1e-12`–`1e-2` | Logarithmic, when the readout exposes this setting |
+| <code style="white-space: nowrap">input_scaling</code> | `1e-3`–2.0 | Logarithmic, when supported by the input initializer |
+| <code style="white-space: nowrap">bias_scaling</code> | `1e-3`–1.0 | Logarithmic, when bias uses its default initializer |
+| <code style="white-space: nowrap">mean_degree</code> | Three to twelve, capped by available recurrent inputs | Integer, for the default or configured Erdős–Rényi topology |
+
+`mean_degree` is a tuning control for the automatic recipe. It controls the
+expected number of recurrent matrix entries per
+unit, including one for a permitted self-connection. It determines the
+Erdős–Rényi probability for the candidate's sampled width; the actual sampled
+connection count varies. Existing topology flags and initializer settings are
+preserved. A custom non-Erdős–Rényi topology, disabled bias or custom bias
+initializer keeps its own construction rather than being replaced merely to
+expose another search dimension.
+
+Named input initializers and `InputFeedbackInitializer` objects support the
+shared scaling control without losing their other options. Arbitrary matrix
+callables and `FunctionInitializer` objects keep their original construction;
+the tuner cannot assume that they accept or honor a scaling keyword. Supply
+an explicit factory when you want to search their own settings.
+
+`search_space` replaces the default space completely. Return only the settings
+you want to vary or fix, using ordinary Optuna suggestions for any ranges.
+Current workflow settings and custom transforms are copied into candidates;
+the winner is refitted rather than inheriting fitted transform statistics.
+
+Without a factory, a custom `Model` keeps its DAG and reservoir weights. This
+also applies when the structure or reservoir weights of a built-in graph have
+been edited after construction: automatic rebuilding must not discard edits. The
 default search varies `alpha`; supplied settings may contain only `alpha` and
 `washout`. It evaluates one initialization seed, since copying frozen weights
 does not create a different reservoir. Its readouts must support the chosen
 setting. A factory enables structural changes and multiple initialization seeds.
+
+Ordinary fitting, recurrent memory, device/dtype changes, copying and portable
+save/load retain an eligible built-in recipe. A portable graph whose initializer
+recipe contains unsupported local Python code still saves its materialized
+weights; its automatic rebuilding recipe is omitted. After loading, use a
+custom factory to tune its architecture, or a trusted bundle when you need to
+retain that local Python recipe. See [save and load](../workflows/save-load.md).
 
 Recipes can vary hidden widths, layer families, initialization and preprocessing.
 They must retain declared input/output names and widths, prediction leads,

@@ -118,12 +118,22 @@ stable project-specific name and increase the codec version when its contract
 changes. Unknown classes or versions fail with a registration remedy; the file
 does not import arbitrary Python paths. Custom subclasses require their own
 registration so custom behavior cannot silently disappear. Initializer
-registration remains the separate weight-generation extension point.
+registration remains the separate weight-generation extension point. A trained
+raw graph can restore its weights without an initializer-only callback; a
+callback without a portable codec may be omitted from that raw graph's recipe.
+Register its codec or use a trusted bundle to retain that recipe for reuse.
+Presets retain their factory recipe for tuning and reject unsupported recipe
+components instead of silently dropping them.
 
 You can provide a local `ComponentCodec` through
 `rd.load(path, custom_objects={"myproject.Gain": codec})` instead of changing
 the global registry. Its identifier, exact class and version must match.
 The decoder is application code you have explicitly installed.
+
+Portable loading restores realized weights without rerunning original initializer
+callbacks. Some structured cells still perform constructor work, such as QR
+factorization or Legendre discretization, before those weights are restored.
+Treat loading as setup work when measuring performance.
 
 ## Notebook-defined Python code
 

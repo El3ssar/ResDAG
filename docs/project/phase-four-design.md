@@ -4,7 +4,8 @@ description: Approved artifact, diagram and single-pass training contracts for p
 
 # Phase four: artifacts and efficient training
 
-Status: **WIP**. The [roadmap](roadmap.md) tracks acceptance and delivery.
+Status: **Implemented and verified**, awaiting merge in
+[PR #463](https://github.com/El3ssar/ResDAG/pull/463). The [roadmap](roadmap.md) tracks acceptance and delivery.
 Phase four includes the maintainer-requested SQ-01 training optimization as
 P4-06. Documentation and tests ship alongside each implementation.
 

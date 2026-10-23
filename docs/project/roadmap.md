@@ -12,7 +12,8 @@ The [2.0.0 release](https://github.com/El3ssar/ResDAG/releases/tag/v2.0.0)
 and its documentation deployment are verified. Phase three is implemented and
 verified in [PR #462](https://github.com/El3ssar/ResDAG/pull/462), merged as `f8d7637`;
 the initial tuning increment was published in **2.1.0**, and phase-three
-completion is released in **3.0.0**. Phase four has started, including single-pass multi-readout training (SQ-01).
+completion is released in **3.0.0**. Phase four, including single-pass multi-readout training (SQ-01), is implemented
+and verified in [PR #463](https://github.com/El3ssar/ResDAG/pull/463), awaiting merge.
 
 This is the canonical delivery tracker. Update the status, evidence and next
 step in the same pull request as the implementation. A task is **Done** only
@@ -61,11 +62,12 @@ after its acceptance checks pass and its public behavior is documented.
 | 1. Correctness and verification | Done | Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures. | Independent regression oracles pass; full supported CI, optional integration and strict docs are green. |
 | 2. Unified functional model workflow | Done | One PyTorch model lifecycle for presets and custom graphs. | The same documented fit/forecast/state commands work for both; functional construction and PyTorch semantics are preserved. Tuning and complete artifacts remain phases 3 and 4. |
 | 3. Reliable automatic tuning | Done | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies, streaming pruning, optional screening/memory budgets, protocol-safe reuse and fitted winners pass local/package/hosted verification. Completion PR #462 merged as `f8d7637`. |
-| 4. Model artifacts, diagrams and efficient training | WIP | Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work. | Fresh-process load/forecast parity, diagram correctness and one-pass numerical/structural training oracles for every supported graph family. |
+| 4. Model artifacts, diagrams and efficient training | Done | Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work. | Fresh-process load/forecast parity, diagrams and one-pass training oracles pass across supported graph families. PR #463 awaits merge. |
 | 5. Performance and competitive evidence | Pending | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. |
 | 6. Experiments and release readiness | Pending | Stable experiment recipes, executable documentation and migration guidance. | End-to-end experiments run from published packages with recorded environments and artifacts. |
 
-Phase four is in progress under the approved artifact/state contract.
+Phase four is implemented and verified under the approved artifact/state contract;
+its PR awaits merge.
 Documentation and CI are part of every phase, not deferred cleanup.
 
 ## Phase 1: correctness and verification
@@ -352,8 +354,8 @@ remains phase 5, and CUDA throughput was not measured.
 
 ## Phase 4: model artifacts, diagrams and efficient training
 
-The common `rd.Model` / `rd.ESN` interface is implemented; complete acceptance
-verification is in progress. See [the guide](../workflows/save-load.md) and
+The common `rd.Model` / `rd.ESN` interface and single-pass training are implemented
+and verified. See [the guide](../workflows/save-load.md) and
 [the agreed design](phase-four-design.md).
 
 ```python
@@ -371,29 +373,31 @@ by default, as approved by the maintainer.
 
 | ID | Status | Work | Acceptance checks |
 | --- | --- | --- | --- |
-| P4-01 | WIP | Versioned complete artifact: graph, component configuration, weights, preprocessing, metadata and optional streaming state. | Use standard PyTorch serialization and existing schema/packaging conventions where suitable; load in a fresh process without a manually built DAG. |
-| P4-02 | WIP | Generic `rd.load(...)`, version validation and custom-component reconstruction. | Presets, heterogeneous custom DAGs and registered components round-trip; custom Python code requirements are explicit; unknown versions/components fail with useful remedies. |
-| P4-03 | WIP | Save diagram as SVG, PNG, PDF or DOT with clear labels and shapes. | Reuse existing Graphviz/DOT rendering; show branches, merges, named ports and delayed feedback; export does not mutate model state/modes or open a viewer unexpectedly. |
-| P4-04 | WIP | Unified save dispatch and user documentation. | Supported suffixes are discoverable; unsupported formats fail clearly; diagram exports and model artifacts cannot be confused. |
-| P4-05 | WIP | Fresh-process and cross-device artifact verification. | Forecast and preprocessing parity after reload; CPU map-location works; unsupported artifact versions fail clearly. |
-| P4-06 / SQ-01 | WIP | Fit multiple and cascaded readouts in one topological traversal of warmup plus training. | Each reservoir consumes the full prefix once; manual coefficient/state/forecast oracles, branch reuse, last-consumer release, hook/failure cleanup and depth benchmarks. |
+| P4-01 | Done | Versioned complete artifact: graph, component configuration, weights, preprocessing, metadata and optional streaming state. | Use standard PyTorch serialization and existing schema/packaging conventions where suitable; load in a fresh process without a manually built DAG. |
+| P4-02 | Done | Generic `rd.load(...)`, version validation and custom-component reconstruction. | Presets, heterogeneous custom DAGs and registered components round-trip; custom Python code requirements are explicit; unknown versions/components fail with useful remedies. |
+| P4-03 | Done | Save diagram as SVG, PNG, PDF or DOT with clear labels and shapes. | Reuse existing Graphviz/DOT rendering; show branches, merges, named ports and delayed feedback; export does not mutate model state/modes or open a viewer unexpectedly. |
+| P4-04 | Done | Unified save dispatch and user documentation. | Supported suffixes are discoverable; unsupported formats fail clearly; diagram exports and model artifacts cannot be confused. |
+| P4-05 | Done | Fresh-process and cross-device artifact verification. | Forecast and preprocessing parity after reload; CPU map-location works; unsupported artifact versions fail clearly. |
+| P4-06 / SQ-01 | Done | Fit multiple and cascaded readouts in one topological traversal of warmup plus training. | Each reservoir consumes the full prefix once; manual coefficient/state/forecast oracles, branch reuse, last-consumer release, hook/failure cleanup and depth benchmarks. |
 
 ### Current verification record
 
-Phase-four source is implemented in [PR #463](https://github.com/El3ssar/ResDAG/pull/463)
-and under final acceptance checks. Current
-local evidence on 23 October 2026:
+Verified runtime head `5d8f869` in
+[PR #463](https://github.com/El3ssar/ResDAG/pull/463) on 23 October 2026.
+The final follow-up records results and clarifies prose; runtime source, tests,
+configuration and guide Python examples are unchanged.
 
 | Check | Result |
 | --- | --- |
-| Complete local suite | **5,680 passed**, 230 skipped, 13 deselected; **93.58% coverage**, above the unchanged 90% floor. |
+| Complete local suite | **5,715 passed**, 232 skipped, 13 deselected; **93.62% coverage**, above the unchanged 90% floor. |
 | Independent numerical/structural training checks | Manual ridge/LMNT recurrence, cascade/branch/merge, temporal prefix, target support, final state, forecasts, hooks, liveness and failed-refit isolation pass. |
 | Fixed CPU cascade workload | Depth eight: median **236.195 → 30.915 ms**, paired **7.64×** speedup; depth one essentially unchanged. Weights/states bit-identical in all pairs. [Full measurements](single-pass-training-benchmark.md). |
 | CPU CI performance selection | **Four passed**, four unavailable-device skips, one deselected; thresholds unchanged. |
-| Clean package | Wheel/sdist match all **199 runtime files** and exclude local coordination notes; isolated installed-wheel artifact tests and all **ten guide examples** pass. The package manifest is refreshed after the final generator portability checks. |
+| Clean package | All **199 runtime files** match source, wheel, sdist and the clean install; archives exclude local coordination notes. The installed artifact selection passes **112 checks**, with two actual-CUDA cases skipped; all **ten guide examples** pass. |
 | Artifacts/integration | Portable and explicit trusted loading, all graph families, independent fresh-process heterogeneous DAGs, custom codecs, original units, memory/RNG, aliases, real TSDynamics clocks and native MPS-to-CPU mapping verified. |
 | Static/docs | Ruff/Black, whole-package mypy (**198 Python modules**), lock validation, actionlint and strict MkDocs pass. Rendered save/load guide and DAG preview inspected. |
-| Hosted checks | Full required and latest-dependency verification is running on [PR #463](https://github.com/El3ssar/ResDAG/pull/463). Phase-three PR #462 and its post-merge release workflow passed. |
+| Hosted full suites | [Locked CI](https://github.com/El3ssar/ResDAG/actions/runs/39920356833) and [latest compatibility](https://github.com/El3ssar/ResDAG/actions/runs/39920358020) pass all eight Python 3.11–3.14 lanes: **5,481 passed** each, 466 skipped, 13 deselected; **91.32–91.39% coverage** against the unchanged 90% floor. |
+| Hosted integration/docs | All six installed-TSDynamics lanes pass **309 checks** each, seven skipped; locked/latest strict docs and configured lint/types/CPU jobs pass. Latest runtime includes Torch **2.14.1**, Optuna **5.0.0**, pytorch-symbolic **1.2.4** and TSDynamics **6.1.1**. |
 
 ### SQ-01: one-pass training of cascaded-readout DAGs
 
@@ -448,7 +452,7 @@ failed-fit isolation across supported graph structures.
   regression by weakening existing performance thresholds.
 
 **Scheduling.** Included in phase four at the maintainer’s request. Implementation
-and independent verification are in progress. Coordinate trainer and execution
+and independent verification are complete. Coordinate trainer and execution
 plan changes with artifact work; consult the maintainer before introducing
 major public API or memory-policy changes.
 
@@ -508,12 +512,12 @@ verify value, state and gradient behavior before replacing it.
 | 2026-10-22 | Phase 1 merge | Done | PR #458 squash-merged into `main` as `41a1744`; phase-two branch starts from that commit. |
 | 2026-10-22 | Phase 1 release | Done | Post-merge full Python 3.11–3.14 matrix, optional dynamics lanes and release job passed; [v1.1.1](https://github.com/El3ssar/ResDAG/releases/tag/v1.1.1) published. Documentation deployment passed. |
 | 2026-10-22 | Phase 2 foundations and trajectory release | Done | PR #459 merged as `d63905d`; v1.2.0 publication, full post-merge tests and documentation deployment passed. |
-| 2026-10-22 | Phase 2 completion | Done | Common native ESN/Model workflow, all graph families, explicit feedback, fast/history execution, reversible per-port transforms, named trajectories and PyTorch composition implemented and documented. PR #460 merged as `4735542`; v2.0.0 published. Full post-merge tests, actual published-wheel install/smoke and versioned documentation deployment passed. |
+| 2026-10-22 | Phase 2 completion | Done | Common native ESN/Model workflow, all graph families, explicit feedback, fast/history execution, reversible per-port transforms, named trajectories and PyTorch composition implemented and documented. PR #460 merged as `4735542`; v2.0.0 published. Full post-merge tests, actual published-wheel install/smoke and documentation deployment passed. |
 | 2026-10-23 | Phase 3 initial implementation | WIP | Approved common tuner and automatic readout policy implemented and verified in [PR #461](https://github.com/El3ssar/ResDAG/pull/461): 5,231 local tests, 93.15% coverage; all eight locked/latest full hosted suites, optional integrations, strict docs, CPU gates and installed artifacts pass. Rollout pruning, staged promotion, memory budgets and raw-runner migration remain open. |
-| 2026-10-23 | Phase 3 initial merge and release | Done | PR #461 merged as `ad0f8c9`; v2.1.0 publication, full post-merge CI, actual published-wheel smoke and versioned documentation deployment pass. |
-| 2026-10-23 | Phase 3 completion | Done | [PR #462](https://github.com/El3ssar/ResDAG/pull/462): streaming pruning, optional screening/memory admission, exact-protocol reuse and managed raw execution. 5,466 local tests at 92.98% coverage; all eight locked/latest full suites, six dynamics lanes, CPU gates, installed-wheel workflows and rendered documentation pass. Merged as `f8d7637` after final required checks; phase four is in progress. |
+| 2026-10-23 | Phase 3 initial merge and release | Done | PR #461 merged as `ad0f8c9`; v2.1.0 publication, full post-merge CI, actual published-wheel smoke and documentation deployment pass. |
+| 2026-10-23 | Phase 3 completion | Done | [PR #462](https://github.com/El3ssar/ResDAG/pull/462): streaming pruning, optional screening/memory admission, exact-protocol reuse and managed raw execution. 5,466 local tests at 92.98% coverage; all eight locked/latest full suites, six dynamics lanes, CPU gates, installed-wheel workflows and rendered documentation pass. Merged as `f8d7637` after final required checks; v3.0.0 publication, all post-merge tests, installed published-wheel checks and documentation deployment passed. |
 
-| 2026-10-23 | Phase 4 implementation | WIP | Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,680 local tests at 93.58% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. Hosted acceptance is in progress. |
+| 2026-10-23 | Phase 4 implementation | Done | Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,715 local tests at 93.62% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. All eight locked/latest full suites, six dynamics lanes, strict docs and configured CPU/static jobs pass on runtime head `5d8f869`. PR #463 awaits merge. |
 
 ## Standard tools to reuse
 

@@ -64,9 +64,10 @@ rd.ESNTrainer(model).fit(
 
 Warmup contributes recurrent context, not regression rows. Sequence-dependent
 layers see the uninterrupted prefix too. Compared with the former replaying
-trainer, stochastic layers, including reservoir noise, consume random draws in a different order; seeded
-runs remain repeatable, but old noisy-fit results may change. Deterministic
-cascades retain their fitted weights and final states. See the
+trainer, stochastic layers, including reservoir noise, consume random draws in
+a different order; seeded runs remain repeatable, but old noisy-fit results may change. Ordinary
+deterministic, framewise cascades retain numerical parity. Temporal graphs use
+the corrected full-prefix features. See the
 [controlled depth benchmark](../project/single-pass-training-benchmark.md).
 
 **Multi-readout models** need one key per readout `name`:

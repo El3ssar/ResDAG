@@ -38,7 +38,7 @@ resdag.models.classic_esn : Single global reservoir (the baseline it beats at
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -56,9 +56,36 @@ from resdag.core._persistence import (
 from resdag.core.model import ReservoirModelModule
 from resdag.init.utils import InitializerSpec, TopologySpec
 from resdag.layers import ESNLayer
+from resdag.layers.cells import ESNCell
 from resdag.layers.readouts import ReadoutLayer
+from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 
 from ._builder import ReadoutSpec, _make_readout
+
+# Keep the original implementations so later class or instance overrides use
+# ordinary module dispatch. The single-frame path skips these wrappers only.
+_FORECAST_RESERVOIR_METHODS = (
+    ("forward", BaseReservoirLayer.forward),
+    ("forward_stateless", BaseReservoirLayer.forward_stateless),
+)
+_FORECAST_CELL_METHODS = (
+    ("project_inputs", ESNCell.project_inputs),
+    ("step", ESNCell.step),
+)
+_FORECAST_MODULE_METHODS = (
+    ("_wrapped_call_impl", torch.nn.Module._wrapped_call_impl),
+    ("_call_impl", torch.nn.Module._call_impl),
+)
+_FORECAST_READOUT_FORWARD = ReadoutLayer.forward
+_FORECAST_LINEAR_FORWARD = torch.nn.Linear.forward
+
+
+def _has_original_methods(
+    module: torch.nn.Module, methods: tuple[tuple[str, Callable[..., Any]], ...]
+) -> bool:
+    return all(
+        getattr(getattr(module, name), "__func__", None) is method for name, method in methods
+    )
 
 
 def _patch_gather_index(input_dim: int, core_width: int, halo: int) -> torch.Tensor:
@@ -462,6 +489,58 @@ class ParallelESNModel(torch.nn.Module):
     # Forecasting (spatial-autoregressive, closed loop)
     # ------------------------------------------------------------------
 
+    def _can_forecast_single_frame(self) -> bool:
+        """Admit the built-in CPU wrappers whose one-frame stack is redundant."""
+        reservoir, cell, readout = self.reservoir, self.reservoir.cell, self.readout
+        if (
+            type(self) is not ParallelESNModel
+            or type(reservoir) is not ESNLayer
+            or type(cell) is not ESNCell
+            or cell.weight_feedback.device.type != "cpu"
+            or torch.is_autocast_enabled("cpu")
+            or not _has_original_methods(self, _FORECAST_PARALLEL_METHODS)
+            or not _has_original_methods(reservoir, _FORECAST_RESERVOIR_METHODS)
+            or not _has_original_methods(cell, _FORECAST_CELL_METHODS)
+            or getattr(readout.forward, "__func__", None) is not _FORECAST_READOUT_FORWARD
+            or getattr(super(ReadoutLayer, readout).forward, "__func__", None)
+            is not _FORECAST_LINEAR_FORWARD
+        ):
+            return False
+        # A custom activation or module dispatcher may inspect or mutate the
+        # features. Check the readout's delegated super().forward too: a custom
+        # MRO can insert a mutating mixin after ReadoutLayer. Such readouts need
+        # the original stack copy separating their input from stored state.
+        return cell.activation_fn is cell._get_activation(cell.activation) and all(
+            type(module).__call__ is torch.nn.Module.__call__
+            and _has_original_methods(module, _FORECAST_MODULE_METHODS)
+            and getattr(module, "_compiled_call_impl", None) is None
+            for module in (self, reservoir, readout)
+        )
+
+    def _forecast_single_frame(self, series: torch.Tensor) -> torch.Tensor:
+        """Advance admitted built-in wrappers without a one-element stack."""
+        patches = self.window(series)
+        reservoir = self.reservoir
+        reservoir._maybe_init_state(patches.shape[0], patches.device, patches.dtype)
+        assert reservoir.state is not None
+        # Keep the original 3-D projection and cell update, including their
+        # arithmetic order. Only the sequence wrapper and stack are omitted.
+        projected = reservoir.cell.project_inputs([patches])
+        assert projected is not None
+        features, state = reservoir.cell.step(projected[:, 0, :], reservoir.state)
+        if reservoir.detach_state_between_calls and (
+            torch.compiler.is_compiling() or state.grad_fn is not None
+        ):
+            state = state.detach()
+        reservoir.state = state
+        reservoir._state_user_set = False
+        cores = cast(torch.Tensor, self.readout(features.unsqueeze(1)))
+        return (
+            cores.reshape(series.shape[0], self.n_patches, 1, self.core_width)
+            .permute(0, 2, 1, 3)
+            .reshape(series.shape[0], 1, self.input_dim)
+        )
+
     def forecast(
         self,
         warmup: torch.Tensor,
@@ -509,7 +588,13 @@ class ParallelESNModel(torch.nn.Module):
             raise ValueError("forecast() requires a fitted readout; call fit() first.")
         from resdag.core._hooks import has_execution_hooks
 
-        forward = self if has_execution_hooks(self) else self.forward
+        hooked = has_execution_hooks(self)
+        forward = self if hooked else self.forward
+        advance = (
+            self._forecast_single_frame
+            if not hooked and self._can_forecast_single_frame()
+            else forward
+        )
         with torch.no_grad():
             warmup_outputs = forward(warmup, reset=reset)
             current = (
@@ -525,7 +610,7 @@ class ParallelESNModel(torch.nn.Module):
             if boundary:
                 outputs[:, :1, :] = current
             for t in range(int(boundary), horizon):
-                current = forward(current)
+                current = advance(current)
                 outputs[:, t : t + 1, :] = current
             if return_warmup:
                 prefix = warmup_outputs[:, :-1, :] if boundary else warmup_outputs
@@ -629,6 +714,12 @@ class ParallelESNModel(torch.nn.Module):
             f"halo={self.halo}, n_patches={self.n_patches}, "
             f"reservoir_size={self.reservoir.reservoir_size})"
         )
+
+
+_FORECAST_PARALLEL_METHODS = (
+    ("forward", ParallelESNModel.forward),
+    ("window", ParallelESNModel.window),
+)
 
 
 def parallel_esn(

@@ -93,13 +93,28 @@ def test_cpu_workflow_harness_change_runs_its_protocol_and_real_cli_checks() -> 
 
 
 @pytest.mark.parametrize(
-    "record", ["accuracy", "auto", "compile", "interleaved", "storage", "workflows"]
+    "record", ["accuracy", "auto", "compile", "interleaved", "recurrence", "storage", "workflows"]
 )
 def test_cpu_measurement_data_changes_run_scientific_evidence_checks(record: str) -> None:
     selected = AT.select_tests([f"docs/assets/data/phase-five-cpu-{record}-2026-10-23.json"])
     assert "tests/test_regression/test_cpu_workflow_evidence.py" in selected.tests
     assert "tests/test_workflow_guide.py" in selected.tests
     assert "tests/test_docs/test_memory_workflows.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "record,evidence_test",
+    [
+        ("parallel-cpu", "test_parallel_cpu_evidence.py"),
+        ("independent-trajectories", "test_independent_trajectory_evidence.py"),
+    ],
+)
+def test_closeout_data_changes_run_their_independent_evidence_checks(
+    record: str, evidence_test: str
+) -> None:
+    selected = AT.select_tests([f"docs/assets/data/phase-five-{record}-2026-10-23.json"])
+    assert f"tests/test_regression/{evidence_test}" in selected.tests
+    assert "tests/test_workflow_guide.py" in selected.tests
 
 
 def test_changed_test_file_is_always_selected() -> None:

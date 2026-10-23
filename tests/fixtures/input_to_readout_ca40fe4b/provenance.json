@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "source_ref": "ca40fe4b9806a97ec11813a791b6f1cb11c58d0f",
+  "source_archive_command": "git archive --format=tar ca40fe4b9806a97ec11813a791b6f1cb11c58d0f src/resdag",
+  "source_archive_sha256": "6b8888ae8f20f5abbf150fc92be56d07711091944fa64c6c076e8be1eeac89f4",
+  "python": "3.14.8",
+  "torch": "2.10.0",
+  "scope": "Authentic pre-option default ESN and Model(classic_esn) artifacts/checkpoints; five units, float64, no feature option supplied. Stored forecasts are numerical cross-platform oracles; same-host artifact versus state_dict replay is exact.",
+  "writer_source": "import json, pathlib, torch, resdag as rd\nout = pathlib.Path(__file__).parent\ntime = torch.linspace(0, 6, 54, dtype=torch.float64)\ndata = torch.stack((1 + time.sin(), -2 + 0.4 * time.cos()), -1)\noptions = dict(seed=17, dtype=torch.float64)\nmodels = {\n    \"facade\": rd.ESN(5, washout=2, **options),\n    \"classic\": rd.Model(graph=rd.classic_esn(5, 2, 2, **options), washout=2),\n}\nfor name, model in models.items():\n    model.fit(data)\n    model.save(out / (name + \".pt\"))\n    torch.save(model.state_dict(), out / (name + \"-state.pt\"))\n    torch.save(model.forecast(history=data[-9:], horizon=4), out / (name + \"-forecast.pt\"))\n    if name == \"facade\":\n        (out / \"facade-extra-state.json\").write_text(json.dumps(model.get_extra_state(), indent=2) + \"\\n\")\n(out / \"origin.json\").write_text(json.dumps({\"ref\":\"ca40fe4b9806a97ec11813a791b6f1cb11c58d0f\", \"module\":rd.__file__, \"torch\":torch.__version__}, indent=2) + \"\\n\")\n",
+  "writer_sha256": "3c379819cbc332828062808d8ec077f174ab1c6735acc35fa5a35e2175f9a394",
+  "files": {
+    "classic-forecast.pt": "9ae70c0236decb541f222ff170b6f90d44479774f349d8be0dc0b7d18a456c66",
+    "classic-state.pt": "580a6f0d6f0496ba3528d1a4d6b2778bb4ad3a07c81a676541dd0c82f3dcd878",
+    "classic.pt": "1a3ff6b464ed54d5816790b53c85b678b210e06b6f1704cea7243660cfb63e90",
+    "facade-forecast.pt": "5aee7575561da8d9cc5b1de05399d7b6db09a7c60413e257f79b6e814a5bbe3b",
+    "facade-state.pt": "77254b09e6f95c43318bd3acf23c77742bea85cba4b2ff60c03e724d430ade45",
+    "facade.pt": "93a41b9d76cce8b458e2a401aaaf6b0ff836ab5ebcf50ab8f037e19e9b6a727b"
+  }
+}

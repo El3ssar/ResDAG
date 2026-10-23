@@ -104,7 +104,9 @@ class ESN(nn.Module):
     symbolic graph is exposed by :attr:`graph`. Custom DAGs, drivers and multiple
     outputs use ``Model`` directly. ``readout``/``readout_kwargs`` expose solver
     choices; additional reservoir settings and custom initializers pass through
-    to :func:`resdag.models.classic_esn`.
+    to :func:`resdag.models.classic_esn`. ``input_to_readout=True`` includes the
+    raw input alongside reservoir states in the readout; ``False`` uses states
+    alone. Automatic tuning of this preset compares both choices by default.
 
     An untouched lazy preset adopts the first floating tensor's device/dtype.
     Explicit constructor placement or a pre-build ``to``/``double`` conversion
@@ -138,6 +140,7 @@ class ESN(nn.Module):
         activation: str = "tanh",
         bias: bool = True,
         readout_bias: bool = True,
+        input_to_readout: bool = True,
         trainable: bool = False,
         seed: int | None = None,
         device: torch.device | str | None = None,
@@ -148,6 +151,8 @@ class ESN(nn.Module):
     ) -> None:
         super().__init__()
         reservoir_size = _positive_width(reservoir_size, "reservoir_size")
+        if type(input_to_readout) is not bool:
+            raise TypeError("input_to_readout must be a bool")
         washout = _washout(washout)
         lead = prediction_leads(prediction_lead, ("output",))[0]
         connections = feedback_specs(feedback)
@@ -214,12 +219,18 @@ class ESN(nn.Module):
             "activation": activation,
             "bias": bias,
             "readout_bias": readout_bias,
+            "input_to_readout": input_to_readout,
             "trainable": trainable,
             "seed": seed,
             **reservoir_kwargs,
         }
+        # The default includes the input, including in previously saved preset
+        # configurations. Only the states-only choice changes that architecture.
+        architecture_options = dict(self._factory_options)
+        if input_to_readout:
+            architecture_options.pop("input_to_readout")
         self._architecture = (
-            _configuration(self._factory_options),
+            _configuration(architecture_options),
             tuple(
                 tuple((name, transform_schema(module, 0)) for name, module in mapping.items())
                 for mapping in overrides

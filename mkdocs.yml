@@ -241,6 +241,7 @@ nav:
       - Phase four design: project/phase-four-design.md
       - Phase five design: project/phase-five-design.md
       - Phase five measurements: project/phase-five-results.md
+      - Vanilla robustness: project/phase-five-robustness.md
       - Single-pass training measurements: project/single-pass-training-benchmark.md
       - Graph tooling: project/graph-tooling.md
       - New ESN API: project/esn-migration.md

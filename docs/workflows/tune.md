@@ -71,7 +71,10 @@ An unsupported explicit horizon raises before any trial starts.
 Built-in vanilla and OTT models search reservoir size, spectral radius, leak,
 input strength, bias strength, recurrent connection density and readout
 regularization (`alpha`). The trial and repetition budgets above stay the
-same. For an OTT model, the command is identical:
+same. Vanilla recipes also try `input_to_readout=True` and `False`: the readout
+can use current input plus reservoir memory, or memory alone. Ordinary model
+construction still defaults to `True`. OTT keeps its augmented feature layout.
+For an OTT model, the command is identical:
 
 ```python
 ott = rd.Model(

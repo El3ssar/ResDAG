@@ -322,6 +322,8 @@ def _fixed_recipe(template: Model | ESN) -> Factory:
 
 def _default_space(template: Model | ESN) -> SearchSpace:
     options = _automatic_options(template)
+    recipe = builtin_recipe(_workflow(template).graph) if options is not None else None
+    tune_input_to_readout = recipe is not None and recipe["family"] == "classic"
     heads = [
         module for module in _workflow(template).graph.modules() if isinstance(module, ReadoutLayer)
     ]
@@ -344,6 +346,10 @@ def _default_space(template: Model | ESN) -> SearchSpace:
                 spectral_radius=trial.suggest_float("spectral_radius", 0.05, 1.5),
                 leak_rate=trial.suggest_float("leak_rate", 0.05, 1.0),
             )
+            if tune_input_to_readout:
+                params["input_to_readout"] = trial.suggest_categorical(
+                    "input_to_readout", [True, False]
+                )
             if input_scaling_supported(options):
                 params["input_scaling"] = trial.suggest_float("input_scaling", 1e-3, 2.0, log=True)
             if options.get("bias", True) and options.get("bias_initializer") is None:

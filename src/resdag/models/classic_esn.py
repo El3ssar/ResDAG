@@ -42,13 +42,15 @@ def classic_esn(
     readout_bias: bool = True,
     readout_name: str = "output",
     readout_kwargs: dict[str, Any] | None = None,
+    input_to_readout: bool = True,
     # Extra reservoir kwargs
     **reservoir_kwargs: Any,
 ) -> ESNModel:
     """Build a classic Echo State Network (ESN) model.
 
-    This architecture concatenates the input with the reservoir output before
-    passing to the readout layer, following the traditional ESN design.
+    By default, this architecture concatenates the input with the reservoir
+    output before passing to the readout layer. Set ``input_to_readout=False``
+    to fit the readout on reservoir states alone.
 
     Architecture::
 
@@ -69,8 +71,9 @@ def classic_esn(
         Dimension of an optional driving (exogenous) input.  When given, the
         model takes two inputs ``(feedback, driver)`` and the driver feeds the
         reservoir alongside the autoregressive feedback.  The driver is kept out
-        of the input concatenation, so the readout ``in_features`` stays
-        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        of the input concatenation, so the readout ``in_features`` is
+        ``feedback_size + reservoir_size`` when ``input_to_readout=True`` and
+        ``reservoir_size`` otherwise. ``None`` (default) builds a
         feedback-only model, unchanged from previous behavior.
     input_initializer : InitializerSpec, optional
         Initializer for the driving-input weights.  Same accepted forms as
@@ -111,6 +114,9 @@ def classic_esn(
         Ridge regression regularization for readout.
     readout_bias : bool, default=True
         Whether to use bias in the readout.
+    input_to_readout : bool, default=True
+        Whether to append the raw feedback input to the reservoir states seen
+        by the readout. Exogenous driving inputs are never appended.
     readout_name : str, default="output"
         Name for the readout layer (used in training targets).
     readout_kwargs : dict, optional
@@ -155,13 +161,14 @@ def classic_esn(
     :func:`resdag.models.linear_esn` : Linear ESN variant
     :class:`resdag.training.ESNTrainer` : Trainer for fitting readouts
     """
-    # Classic ESN: no augmentation, concatenate the raw input back in.
+    if type(input_to_readout) is not bool:
+        raise TypeError("input_to_readout must be a bool")
     return _esn_builder(
         reservoir_size=reservoir_size,
         feedback_size=feedback_size,
         output_size=output_size,
         augment=None,
-        concat_input=True,
+        concat_input=input_to_readout,
         input_size=input_size,
         input_initializer=input_initializer,
         topology=topology,

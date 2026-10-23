@@ -1,18 +1,23 @@
 ---
-description: The textbook Echo State Network — raw input concatenated with reservoir states before a ridge readout. Jaeger (2001).
+description: A classic Echo State Network with configurable readout features.
 ---
 
 <span class="nb-kicker">Build · Architecture</span>
 
 # classic_esn
 
-The standard Echo State Network baseline. In this implementation the readout
-sees the raw input concatenated with the reservoir states, not the states
-alone.
+The standard Echo State Network baseline. Choose whether its readout uses the
+reservoir states alone or also sees the current feedback input.
 
 ## Wiring
 
 `Input → Reservoir → Concatenate(Input, States) → Readout`
+
+This is the default, `input_to_readout=True`. With `input_to_readout=False`,
+the wiring is `Input → Reservoir → Readout` and the head has
+`reservoir_size` features. Both choices use the same reservoir initialization
+for a given seed. Which predicts better depends on the data and other settings;
+the [automatic tuning workflow](../../workflows/tune.md) tries both.
 
 The feedback signal drives a tanh reservoir, then rejoins its own states at
 the concatenation, so the readout (a
@@ -57,6 +62,7 @@ truth = series[:, 1201:1401]                             # held-out continuation
 | `leak_rate` | `1.0` | `1.0` = no leak |
 | `activation` | `"tanh"` | also `"relu"`, `"sigmoid"`, `"identity"` |
 | `bias`, `trainable` | `True`, `False` | random bias on; frozen reservoir |
+| `input_to_readout` | `True` | include the current feedback input in the head; `False` uses states alone. Exogenous drivers are never appended. |
 | `readout_alpha`, `readout_bias`, `readout_name` | `1e-6`, `True`, `"output"` | ridge strength; `readout_name` keys the targets dict |
 | `readout`, `readout_kwargs` | `"ridge"`, `None` | direct Cholesky ridge by default; other solver names and options are supported |
 | `**reservoir_kwargs` | — | forwarded to `ESNLayer` (e.g. `bias_scaling`) |

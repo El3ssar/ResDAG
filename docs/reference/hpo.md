@@ -89,6 +89,7 @@ number of trials, seeds and starting points.
 | <code style="white-space: nowrap">input_scaling</code> | `1e-3`–2.0 | Logarithmic, when supported by the input initializer |
 | <code style="white-space: nowrap">bias_scaling</code> | `1e-3`–1.0 | Logarithmic, when bias uses its default initializer |
 | <code style="white-space: nowrap">mean_degree</code> | Three to twelve, capped by available recurrent inputs | Integer, for the default or configured Erdős–Rényi topology |
+| <code style="white-space: nowrap">input_to_readout</code> | `True`, `False` | Categorical, vanilla recipes only; input plus states or states alone |
 
 `mean_degree` is a tuning control for the automatic recipe. It controls the
 expected number of recurrent matrix entries per

@@ -25,7 +25,7 @@ from resdag.layers.reservoirs import BaseReservoirLayer
 if TYPE_CHECKING:
     from resdag.core.workflow import Model
 
-    from ._tuning_data import TuningData
+    from ._tuning_data import PreparedFit, TuningData
 
 __all__ = [
     "Screening",
@@ -236,6 +236,11 @@ class MemoryContext:
     Sample counts cover complete observation prefixes, including washout. The
     final refit is therefore included even when validation fits are shorter.
     Storage counts deduplicate aliases within the dataset and within the model.
+    Optional ``readout_*_samples`` describe fitted rows after washout and any
+    built-in batch expansion; the observation counts above keep their original
+    meaning. ``sequence_layout`` contains detached immutable shape facts for
+    recognized built-in execution only. Empty defaults preserve the generic
+    estimate and existing custom-estimator contracts.
     """
 
     input_shapes: Mapping[str, tuple[int, ...]]
@@ -256,6 +261,9 @@ class MemoryContext:
     retained_forecast_bytes: int = 0
     replay_history_bytes: int = 0
     forecast_samples: int = 0
+    readout_train_samples: tuple[int, ...] = ()
+    readout_refit_samples: tuple[int, ...] = ()
+    sequence_layout: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.dtype, torch.dtype) or not self.dtype.is_floating_point:
@@ -291,6 +299,14 @@ class MemoryContext:
             )
         if len(self.readout_features) != len(self.readout_outputs):
             raise ValueError("Readout feature/output widths must be paired")
+        for name in ("readout_train_samples", "readout_refit_samples"):
+            samples = tuple(_integer(n, name) for n in getattr(self, name))
+            if samples and len(samples) != len(self.readout_features):
+                raise ValueError("Readout sample counts must match the readout widths")
+            object.__setattr__(self, name, samples)
+        if not isinstance(self.sequence_layout, Mapping):
+            raise TypeError("sequence_layout must be a mapping")
+        object.__setattr__(self, "sequence_layout", _metadata(self.sequence_layout))
         if not isinstance(self.preset_options, Mapping):
             raise TypeError("preset_options must be a mapping")
         object.__setattr__(self, "preset_options", _metadata(self.preset_options))
@@ -336,6 +352,69 @@ def _storage_bytes(values: Sequence[torch.Tensor]) -> tuple[int, int]:
     return host, device
 
 
+def _parallel_layout(workflow: Model, data: TuningData) -> dict[str, Any]:
+    """Snapshot known patch-batched shapes without running or copying a model."""
+    from resdag.core._hooks import has_execution_hooks
+    from resdag.layers.cells import ESNCell
+    from resdag.layers.reservoirs import ESNLayer
+    from resdag.models.parallel_esn import ParallelESNModel
+
+    graph = workflow.graph
+    if (
+        type(graph) is not ParallelESNModel
+        or type(graph.reservoir) is not ESNLayer
+        or type(graph.reservoir.cell) is not ESNCell
+        or not isinstance(graph.readout, ReadoutLayer)
+        or has_execution_hooks(graph)
+        or any(name in graph.__dict__ for name in ("forward", "fit", "window"))
+        or any(name in graph.reservoir.__dict__ for name in ("forward", "forward_stateless"))
+        or any(
+            name in graph.reservoir.cell.__dict__ for name in ("forward", "project_inputs", "step")
+        )
+    ):
+        return {}
+    patches = graph.n_patches
+    patch_width = graph.core_width + 2 * graph.halo
+    cell = graph.reservoir.cell
+
+    def shapes(value: torch.Tensor, prepared: PreparedFit | None = None) -> dict[str, Any]:
+        batch = value.shape[0] if value.ndim == 3 else 1
+        steps = value.shape[-2]
+        folded = batch * patches
+        start = 0 if prepared is None else max(workflow.washout, prepared.supervised_start)
+        stop = steps if prepared is None else prepared.supervised_stop
+        fitted_steps = max(0, stop - start)
+        return {
+            "window": (folded, fitted_steps, patch_width),
+            "projection": (folded, fitted_steps, cell.reservoir_size),
+            "features": (folded, fitted_steps, cell.output_size),
+            "warmup_window": (folded, start, patch_width),
+            "warmup_projection": (folded, start, cell.reservoir_size),
+            "state": (folded, cell.state_size),
+            "supervised_start": 0 if prepared is None else prepared.supervised_start,
+            "supervised_stop": stop,
+            "readout_rows": folded * fitted_steps,
+        }
+
+    history = max(
+        (value for origin in data.origins for value in origin.history.values()),
+        key=lambda value: math.prod(value.shape[:-1]),
+    )
+    return {
+        "kind": "parallel",
+        "washout": workflow.washout,
+        "patches": patches,
+        "patch_width": patch_width,
+        "projection_width": cell.reservoir_size,
+        "feature_width": cell.output_size,
+        "state_width": cell.state_size,
+        "output_width": graph.readout.out_features,
+        "train": shapes(next(iter(data.train.inputs.values())), data.train),
+        "refit": shapes(next(iter(data.refit.inputs.values())), data.refit),
+        "history": shapes(history),
+    }
+
+
 def memory_context(
     workflow: Model, data: TuningData, *, preset_options: Mapping[str, Any] | None = None
 ) -> MemoryContext:
@@ -372,6 +451,7 @@ def memory_context(
             widths += module.cell.output_size + module.cell.state_size
         elif isinstance(module, torch.nn.Linear) and not isinstance(module, ReadoutLayer):
             widths += module.out_features
+    layout = _parallel_layout(workflow, data) if len(heads) == 1 else {}
     return MemoryContext(
         input_shapes={name: tuple(value.shape) for name, value in data.refit.inputs.items()},
         target_shapes={name: tuple(value.shape) for name, value in data.refit.targets.items()},
@@ -393,6 +473,9 @@ def memory_context(
             for value in origin.history.values()
         ),
         preset_options=preset_options or {},
+        readout_train_samples=(layout["train"]["readout_rows"],) if layout else (),
+        readout_refit_samples=(layout["refit"]["readout_rows"],) if layout else (),
+        sequence_layout=layout,
     )
 
 
@@ -522,28 +605,78 @@ def estimate_memory(
         options = {**context.preset_options, **params}
         width = _integer(options.get("reservoir_size", 500), "reservoir_size", minimum=1)
         inputs, output = context.input_features, context.output_features
-        features, outputs = (width + inputs,), (output,)
+        skip = options.get("input_to_readout", True)
+        if not isinstance(skip, bool):
+            raise ValueError("input_to_readout must be a bool")
+        feedback = _integer(options.get("feedback_size", inputs), "feedback_size", minimum=1)
+        features, outputs = (width + (feedback if skip else 0),), (output,)
         # Dense recurrence, feedback/input projection, vector bias/leak/state
         # and readout; no reservoir, initializer or layer is constructed here.
         model = max(
-            model, element * (width * width + width * (inputs + 3) + output * (width + inputs + 1))
+            model, element * (width * width + width * (inputs + 3) + output * (features[0] + 1))
         )
-        activation_width = width * 3 + inputs + output
+        activation_width = width * 3 + inputs + output + (feedback if skip else 0)
     resident_host = context.dataset_host_bytes + 3 * context.model_host_bytes
     resident_device = context.dataset_device_bytes + 3 * context.model_device_bytes
     model_copies = 3 * model
     fit_data = 4 * n * (context.input_features + context.output_features) * element
     trace_samples = max(n, context.forecast_samples)
     traces = 4 * trace_samples * activation_width * element
+    parallel_components: dict[str, int] = {}
+    if context.sequence_layout.get("kind") == "parallel":
+        layout = context.sequence_layout
+        patches = _integer(layout["patches"], "patches", minimum=1)
+        rows = trace_samples * patches
+        # Input and target window gathers, projected inputs, retained features
+        # and core targets all have patch-batched time axes. Retain the same
+        # conservative four-copy allowance as the general trace estimate.
+        for name, width_name in (
+            ("input_windows", "patch_width"),
+            ("target_windows", "patch_width"),
+            ("projected_inputs", "projection_width"),
+            ("features", "feature_width"),
+            ("core_targets", "output_width"),
+        ):
+            parallel_components[name] = (
+                4 * rows * _integer(layout[width_name], width_name, minimum=1) * element
+            )
+        parallel_components["recurrent_state"] = (
+            4
+            * context.batch_size
+            * patches
+            * _integer(layout["state_width"], "state_width", minimum=1)
+            * element
+        )
+        traces = max(traces, sum(parallel_components.values()))
     forecasts = 3 * max(
         context.retained_forecast_bytes,
         context.batch_size * context.output_features * element,
     )
     # QR augmentation and compact SVD, plus centered/cast inputs, inverse-norm
     # guards and factorization work arrays. Sum heads to cover retained features.
+    readout_samples = tuple(
+        max(
+            n,
+            context.readout_train_samples[index] if context.readout_train_samples else n,
+            context.readout_refit_samples[index] if context.readout_refit_samples else n,
+        )
+        for index in range(len(features))
+    )
+    if context.sequence_layout.get("kind") == "parallel":
+        layout = context.sequence_layout
+        washout = _integer(params.get("washout", layout["washout"]), "washout")
+        pooled = max(
+            layout[phase]["window"][0]
+            * max(
+                0,
+                layout[phase]["supervised_stop"] - max(washout, layout[phase]["supervised_start"]),
+            )
+            for phase in ("train", "refit")
+        )
+        readout_samples = (max(*readout_samples, pooled),)
     workspace = sum(
-        8 * (6 * n * (f + out) + 12 * f * f + 6 * min(n, f) ** 2 + 4 * f * out)
-        for f, out in zip(features, outputs)
+        8 * (6 * rows * (f + out) + 12 * f * f + 6 * min(rows, f) ** 2 + 4 * f * out)
+        for rows, f, out in zip(readout_samples, features, outputs)
     )
     working = (
         model_copies + fit_data + traces + forecasts + context.replay_history_bytes + workspace
@@ -567,6 +700,9 @@ def estimate_memory(
             "fit_data": fit_data,
             "feature_traces": traces,
             "trace_samples": trace_samples,
+            "readout_samples": readout_samples,
+            "readout_features": features,
+            "parallel_trace_components": parallel_components,
             "forecast_outputs": forecasts,
             "replay_history": context.replay_history_bytes,
             "solve_workspace": workspace,

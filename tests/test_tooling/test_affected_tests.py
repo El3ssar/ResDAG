@@ -93,6 +93,26 @@ def test_cpu_workflow_harness_change_runs_its_protocol_and_real_cli_checks() -> 
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        "benchmarks/vanilla_robustness.py",
+        "benchmarks/rc_bench/_threads.py",
+        "benchmarks/requirements.txt",
+        "docs/assets/data/phase-five-independent-trajectories-2026-10-23.json",
+    ],
+)
+def test_vanilla_robustness_runtime_dependencies_select_real_cli(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_regression/test_vanilla_robustness_cli.py" in selected.tests
+
+
+def test_pre_option_checkpoint_changes_select_actual_load_and_recipe_checks() -> None:
+    selected = AT.select_tests(["tests/fixtures/input_to_readout_ca40fe4b/facade.pt"])
+    assert "tests/test_models/test_input_to_readout.py" in selected.tests
+    assert "tests/test_hpo/test_input_to_readout.py" in selected.tests
+
+
+@pytest.mark.parametrize(
     "record", ["accuracy", "auto", "compile", "interleaved", "recurrence", "storage", "workflows"]
 )
 def test_cpu_measurement_data_changes_run_scientific_evidence_checks(record: str) -> None:

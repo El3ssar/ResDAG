@@ -82,13 +82,13 @@ number of trials, seeds and starting points.
 
 | Setting | Default range | Sampling |
 | --- | --- | --- |
-| `reservoir_size` | Half to twice the initial width, each bound at least eight | Integer |
-| `spectral_radius` | 0.05–1.5 | Uniform |
-| `leak_rate` | 0.05–1.0 | Uniform |
-| `alpha` | `1e-12`–`1e-2` | Logarithmic, when the readout exposes this setting |
-| `input_scaling` | `1e-3`–2.0 | Logarithmic, when supported by the input initializer |
-| `bias_scaling` | `1e-3`–1.0 | Logarithmic, when bias uses its default initializer |
-| `mean_degree` | Three to twelve, capped by available recurrent inputs | Integer, for the default or configured Erdős–Rényi topology |
+| <code style="white-space: nowrap">reservoir_size</code> | Half to twice the initial width, each bound at least eight | Integer |
+| <code style="white-space: nowrap">spectral_radius</code> | 0.05–1.5 | Uniform |
+| <code style="white-space: nowrap">leak_rate</code> | 0.05–1.0 | Uniform |
+| <code style="white-space: nowrap">alpha</code> | `1e-12`–`1e-2` | Logarithmic, when the readout exposes this setting |
+| <code style="white-space: nowrap">input_scaling</code> | `1e-3`–2.0 | Logarithmic, when supported by the input initializer |
+| <code style="white-space: nowrap">bias_scaling</code> | `1e-3`–1.0 | Logarithmic, when bias uses its default initializer |
+| <code style="white-space: nowrap">mean_degree</code> | Three to twelve, capped by available recurrent inputs | Integer, for the default or configured Erdős–Rényi topology |
 
 `mean_degree` is a tuning control for the automatic recipe. It controls the
 expected number of recurrent matrix entries per

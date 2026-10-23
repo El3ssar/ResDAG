@@ -10,8 +10,16 @@ import pytest
 
 optuna = pytest.importorskip("optuna")
 
-from resdag.hpo.transfer import transfer_trials  # noqa: E402
+from resdag.hpo.transfer import transfer_trials as _transfer_trials  # noqa: E402
 from resdag.hpo.utils import get_study_summary  # noqa: E402
+
+
+def transfer_trials(destination, source):
+    # Exact-task score imports are explicit; configuration-only reuse is tested
+    # independently in test_warm_start.py.
+    source.set_user_attr("resdag_tuning_protocol_v1", "identical")
+    destination.set_user_attr("resdag_tuning_protocol_v1", "identical")
+    return _transfer_trials(destination, source, mode="scores", protocol_hash="identical")
 
 
 def _trial(values, *, parameter=0.25):
@@ -52,8 +60,15 @@ def test_transfer_omits_external_nonfinite_scores_without_diagnostic_flags(
     assert len(destination.trials) == 2
     assert destination.trials[-1].values == valid_values
     assert destination.trials[-1].params == {"x": 0.25}
-    assert destination.trials[-1].user_attrs == original[0].user_attrs
-    assert source.user_attrs == {"caller_owned": {"keep": True}}
+    assert (
+        destination.trials[-1].user_attrs["external_metadata"]
+        == original[0].user_attrs["external_metadata"]
+    )
+    assert destination.trials[-1].user_attrs["resdag_transfer"]["trial_number"] == 0
+    assert source.user_attrs == {
+        "caller_owned": {"keep": True},
+        "resdag_tuning_protocol_v1": "identical",
+    }
     for before, after in zip(original, source.trials, strict=True):
         np.testing.assert_equal(before.values, after.values)
         assert before.params == after.params
@@ -101,7 +116,10 @@ def test_matching_multiobjective_transfer_preserves_values_and_directions():
     assert transfer_trials(destination, source) == 1
     assert destination.directions == source.directions
     assert destination.trials[0].values == [2.0, 7.0]
-    assert destination.trials[0].user_attrs == source.trials[0].user_attrs
+    assert (
+        destination.trials[0].user_attrs["external_metadata"]
+        == source.trials[0].user_attrs["external_metadata"]
+    )
 
 
 def test_direction_mismatch_is_rejected_before_reading_or_mutating_trials(monkeypatch):
@@ -114,7 +132,7 @@ def test_direction_mismatch_is_rejected_before_reading_or_mutating_trials(monkey
         raise AssertionError("Source trials read before validating objective directions")
 
     monkeypatch.setattr(source, "get_trials", forbidden_read)
-    with pytest.raises(ValueError, match="different objective directions"):
+    with pytest.raises(ValueError, match="matching objective directions"):
         transfer_trials(destination, source)
     assert destination.trials == before
 

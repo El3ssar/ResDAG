@@ -1,436 +1,268 @@
-"""Tests for the HPO trial-execution backends (``resdag.hpo.dispatch``).
+"""Parent-owned studies, finite joblib windows and interruption cleanup."""
 
-These cover the three correctness properties of the multi-process backend
-guaranteed by issue #276:
-
-- **Portability** — :func:`select_start_method` prefers ``fork`` but falls back
-  to ``spawn`` on fork-less platforms (and errors actionably when neither is
-  available), so ``n_workers > 1`` works everywhere.
-- **Bounded budget** — :func:`worker_budget` and an end-to-end run keep the
-  completed-trial count within ``[n_trials, n_trials + n_workers - 1]``.
-- **Crash-safe interruption** — a cooperatively interrupted parallel study
-  leaves the storage backend readable (not corrupted).
-
-The model / search-space / data-loader callables are defined at *module level*
-so they are picklable — required for the ``spawn`` start method.
-"""
-
-import multiprocessing as mp
+import importlib
 import os
-from pathlib import Path
+import threading
+from contextlib import contextmanager
 
 import optuna
 import pytest
 import torch
 
 from resdag.hpo import run_hpo
-from resdag.hpo.dispatch import (
-    _worker_process,
-    preferred_start_method,
-    select_start_method,
-    worker_budget,
-)
-from resdag.hpo.losses import get_loss
+from resdag.hpo.dispatch import _fail_active, run_trials
 from resdag.hpo.objective import build_objective
-from resdag.hpo.storage import resolve_storage
-from resdag.hpo.trial_runner import _CUDA_FORK_REINIT_MARKER, TrialRunner
-from resdag.models import ott_esn
+from resdag.models import classic_esn
 
 
-# ── Picklable top-level fixtures (needed for the spawn start method) ──────────
-def _model_creator(reservoir_size: int = 30, spectral_radius: float = 0.9):
-    """Tiny model creator (small reservoir → fast trials)."""
-    return ott_esn(
-        reservoir_size=reservoir_size,
-        feedback_size=3,
-        output_size=3,
-        spectral_radius=spectral_radius,
+def _data():
+    values = torch.sin(torch.arange(55, dtype=torch.float32).reshape(1, -1, 1) / 7)
+    return dict(
+        warmup=values[:, :5],
+        train=values[:, 5:30],
+        target=values[:, 6:31],
+        f_warmup=values[:, 30:35],
+        val=values[:, 35:45],
     )
 
 
-def _search_space(trial):
-    """Minimal search space."""
-    return {
-        "reservoir_size": trial.suggest_int("reservoir_size", 20, 40, step=10),
-        "spectral_radius": trial.suggest_float("spectral_radius", 0.7, 1.1),
-    }
-
-
-def _data_loader(trial):
-    """Small synthetic dataset."""
-    torch.manual_seed(0)
-    data = torch.randn(1, 150, 3)
-    return {
-        "warmup": data[:, :20, :],
-        "train": data[:, 20:70, :],
-        "target": data[:, 21:71, :],
-        "f_warmup": data[:, 70:90, :],
-        "val": data[:, 90:100, :],
-    }
-
-
-def _broken_model_creator(**kwargs):
-    raise RuntimeError("intentional worker failure")
-
-
-def _record_sampler_search_space(trial):
-    trial.set_user_attr("sampler_type", type(trial.study.sampler).__name__)
-    return _search_space(trial)
-
-
-# ── select_start_method ──────────────────────────────────────────────────────
-class TestSelectStartMethod:
-    """Portability: a usable start method is always chosen (or errors cleanly)."""
-
-    def test_prefers_available_method(self, monkeypatch):
-        """The preferred method is returned verbatim when supported."""
-        monkeypatch.setattr(mp, "get_all_start_methods", lambda: ["fork", "spawn"])
-        assert select_start_method("fork") == "fork"
-
-    def test_falls_back_to_spawn_when_fork_absent(self, monkeypatch):
-        """Fork-less platforms (Windows / hardened macOS) fall back to spawn."""
-        monkeypatch.setattr(mp, "get_all_start_methods", lambda: ["spawn"])
-        assert select_start_method("fork") == "spawn"
-
-    def test_raises_when_no_method_available(self, monkeypatch):
-        """An empty platform raises an actionable error mentioning n_workers=1."""
-        monkeypatch.setattr(mp, "get_all_start_methods", lambda: [])
-        with pytest.raises(RuntimeError, match="n_workers=1"):
-            select_start_method("fork")
-
-    def test_real_platform_returns_usable_method(self):
-        """On the real platform a context can actually be built from the result."""
-        method = select_start_method("fork")
-        assert method in mp.get_all_start_methods()
-        # Must be constructable — this is what run_multiprocess does.
-        mp.get_context(method)
-
-
-# ── preferred_start_method (device-safety) ───────────────────────────────────
-class TestPreferredStartMethod:
-    """Device-safety: CUDA studies must prefer ``spawn`` (fork breaks CUDA).
-
-    ``fork`` is silently unusable with CUDA — a forked worker raises
-    ``Cannot re-initialize CUDA in forked subprocess`` on every CUDA op, and the
-    runner would penalise that, producing an all-penalty study with nonsense
-    ``best_params``.  The dispatcher must therefore pick ``spawn`` whenever the
-    study will touch the GPU.
-    """
-
-    def test_cpu_device_prefers_fork(self, monkeypatch):
-        """A CPU device with CUDA uninitialised keeps the cheaper ``fork``."""
-        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
-        assert preferred_start_method(torch.device("cpu")) == "fork"
-
-    def test_none_device_prefers_fork_when_cuda_uninitialised(self, monkeypatch):
-        """``device=None`` (framework default) is treated as CPU → ``fork``."""
-        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
-        assert preferred_start_method(None) == "fork"
-
-    def test_cuda_device_forces_spawn(self, monkeypatch):
-        """A CUDA device forces ``spawn`` even if CUDA is not yet initialised."""
-        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
-        assert preferred_start_method(torch.device("cuda")) == "spawn"
-
-    def test_cuda_already_initialised_forces_spawn(self, monkeypatch):
-        """A parent that already initialised CUDA forces ``spawn`` even for CPU.
-
-        This is the near-universal precondition of the bug: a prior trial ran, or
-        the user loaded data/model to the GPU, so CUDA is live in the parent and
-        a forked child would crash on any CUDA op.
-        """
-        monkeypatch.setattr(torch.cuda, "is_initialized", lambda: True)
-        assert preferred_start_method(None) == "spawn"
-        assert preferred_start_method(torch.device("cpu")) == "spawn"
-
-
-# ── worker_budget ────────────────────────────────────────────────────────────
-class TestWorkerBudget:
-    """Bounded budget: each worker gets ceil(remaining / W) + slack trials."""
-
-    def test_even_split_plus_slack(self):
-        """10 trials / 2 workers → 5 + slack per worker."""
-        assert worker_budget(10, 2, slack=2) == 7
-
-    def test_rounds_up(self):
-        """Uneven splits round up so the study can still reach `remaining`."""
-        assert worker_budget(10, 3, slack=0) == 4  # ceil(10/3) == 4
-
-    def test_single_worker_gets_full_budget(self):
-        """With one worker the budget covers all remaining trials (+ slack)."""
-        assert worker_budget(10, 1, slack=0) == 10
-
-    def test_clamps_nonpositive_workers(self):
-        """`n_workers <= 0` is clamped to 1 rather than dividing by zero."""
-        assert worker_budget(5, 0, slack=0) == 5
-
-    def test_sum_of_budgets_covers_remaining(self):
-        """Sum of per-worker budgets is always >= remaining (no under-run)."""
-        for remaining in (1, 5, 7, 13, 100):
-            for n_workers in (1, 2, 3, 4, 8):
-                budget = worker_budget(remaining, n_workers, slack=0)
-                assert budget * n_workers >= remaining
-
-    def test_no_single_worker_runs_whole_budget(self):
-        """For W > 1 the per-worker budget is strictly below `remaining`.
-
-        This is the core overshoot fix: previously each worker received the
-        global ``n_trials`` as its budget.
-        """
-        remaining, n_workers = 20, 4
-        assert worker_budget(remaining, n_workers, slack=2) < remaining
-
-
-# ── End-to-end multiprocess runs ─────────────────────────────────────────────
-@pytest.mark.slow
-class TestMultiprocessEndToEnd:
-    """Integration tests that actually spawn workers via ``run_hpo``."""
-
-    def test_custom_sampler_used_by_workers_and_returned_study(self, tmp_path):
-        study = run_hpo(
-            model_creator=_model_creator,
-            search_space=_record_sampler_search_space,
-            data_loader=_data_loader,
-            sampler=optuna.samplers.RandomSampler(seed=42),
-            n_trials=2,
-            n_workers=2,
-            storage=str(tmp_path / "custom_sampler.log"),
-            study_name="custom_sampler",
-            verbosity=0,
-        )
-        assert isinstance(study.sampler, optuna.samplers.RandomSampler)
-        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        assert completed
-        assert all(t.user_attrs["sampler_type"] == "RandomSampler" for t in completed)
-
-    def test_worker_failure_reaches_caller_and_restores_environment(self, tmp_path, monkeypatch):
-        values = {"OMP_NUM_THREADS": "7", "MKL_NUM_THREADS": None, "OPENBLAS_NUM_THREADS": "5"}
-        for key, value in values.items():
-            if value is None:
-                monkeypatch.delenv(key, raising=False)
-            else:
-                monkeypatch.setenv(key, value)
-        with pytest.raises(RuntimeError, match="HPO worker process failed"):
-            run_hpo(
-                model_creator=_broken_model_creator,
-                search_space=_search_space,
-                data_loader=_data_loader,
-                n_trials=1,
-                n_workers=2,
-                storage=str(tmp_path / "crash.log"),
-                study_name="worker_crash",
-                catch_exceptions=False,
-                verbosity=0,
-            )
-        assert {key: os.environ.get(key) for key in values} == values
-
-    def test_n_workers_gt_1_runs(self, tmp_path: Path):
-        """`n_workers > 1` completes a study and produces a best value."""
-        study = run_hpo(
-            model_creator=_model_creator,
-            search_space=_search_space,
-            data_loader=_data_loader,
-            n_trials=6,
-            n_workers=2,
-            storage=str(tmp_path / "study.log"),
-            study_name="mp_runs",
-            verbosity=0,
-        )
-        assert study.best_value is not None
-
-    def test_completed_count_within_overshoot_bound(self, tmp_path: Path):
-        """AC: completed trials land in [n_trials, n_trials + n_workers - 1]."""
-        n_trials, n_workers = 6, 3
-        study = run_hpo(
-            model_creator=_model_creator,
-            search_space=_search_space,
-            data_loader=_data_loader,
-            n_trials=n_trials,
-            n_workers=n_workers,
-            storage=str(tmp_path / "bound.log"),
-            study_name="mp_bound",
-            verbosity=0,
-        )
-        completed = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
-        assert n_trials <= completed <= n_trials + n_workers - 1
-
-    def test_sqlite_backend_readable_after_run(self, tmp_path: Path):
-        """A multiprocess SQLite study reloads cleanly (no corruption)."""
-        db = tmp_path / "study.db"
-        run_hpo(
-            model_creator=_model_creator,
-            search_space=_search_space,
-            data_loader=_data_loader,
-            n_trials=4,
-            n_workers=2,
-            storage=f"sqlite:///{db}",
-            study_name="mp_sqlite",
-            verbosity=0,
-        )
-        # Reopening must not raise — corruption would surface here.
-        reloaded = optuna.load_study(
-            study_name="mp_sqlite",
-            storage=f"sqlite:///{db}",
-        )
-        completed = len([t for t in reloaded.trials if t.state == optuna.trial.TrialState.COMPLETE])
-        assert completed >= 4
-
-
-@pytest.mark.slow
-class TestCooperativeInterruption:
-    """Crash-safe interruption: a pre-signalled stop leaves storage readable."""
-
-    def test_preset_stop_event_exits_cleanly_without_corruption(self, tmp_path: Path):
-        """A worker started with the stop event already set exits gracefully.
-
-        This exercises the cooperative-stop path (the same one taken on
-        ``KeyboardInterrupt``): instead of being ``terminate()``-d mid-write, the
-        worker observes the event and returns from ``study.optimize`` after at
-        most one trial, leaving the journal/SQLite backend readable.
-        """
-        storage_path = str(tmp_path / "interrupt.log")
-
-        # Create the study (and storage schema) up front.
-        store = resolve_storage(storage_path, n_workers=1)
-        assert store is not None
-        optuna.create_study(
-            direction="minimize",
-            study_name="mp_interrupt",
-            storage=store,
-        )
-        del store
-
-        objective = build_objective(
-            model_creator=_model_creator,
-            search_space=_search_space,
-            data_loader=_data_loader,
-            loss_fn=get_loss("efh"),
-        )
-
-        ctx = mp.get_context(select_start_method("fork"))
-        stop_event = ctx.Event()
-        stop_event.set()  # Signal stop before the worker runs any trial.
-
-        proc = ctx.Process(
-            target=_worker_process,
-            # Signature: (study_name, storage, objective, n_trials, local_budget,
-            #             worker_seed, pruner, stop_event). ``None`` pruner =
-            #             Optuna default (no pruning); this test exercises the
-            #             cooperative-stop path, not pruning.
-            args=("mp_interrupt", storage_path, objective, 100, 100, 0, None, stop_event),
-            daemon=False,
-        )
-        proc.start()
-        proc.join(timeout=60)
-
-        assert not proc.is_alive(), "worker did not stop cooperatively"
-        assert proc.exitcode == 0, "worker crashed instead of exiting cleanly"
-
-        # Storage must still be readable (uncorrupted) after the interruption.
-        reopened = resolve_storage(storage_path, n_workers=1)
-        assert reopened is not None
-        reloaded = optuna.load_study(study_name="mp_interrupt", storage=reopened)
-        # At most one trial may have started before the event was observed.
-        completed = len([t for t in reloaded.trials if t.state == optuna.trial.TrialState.COMPLETE])
-        assert completed <= 1
-
-
-# ── Systematic fork/CUDA failure: re-raise instead of penalise ───────────────
-class TestForkCudaSystematicFailure:
-    """The fork/CUDA re-init error must abort the study, not burn the budget.
-
-    A forked worker touching CUDA raises the same error on *every* trial.  Since
-    :class:`TrialRunner` catches all exceptions and returns ``penalty_value`` by
-    default, penalising it would silently complete the whole study at
-    ``penalty_value`` and return nonsense ``best_params``.  The runner therefore
-    re-raises this *specific* error (bypassing ``catch_exceptions``) so the study
-    fails loudly — while genuine per-trial failures are still penalised.
-    """
-
-    def _runner(self) -> TrialRunner:
-        return TrialRunner(
-            model_creator=lambda **k: None,
-            search_space=lambda t: {},
-            data_loader=lambda t: {},
-            loss_fn=lambda a, b: 0.0,
-            catch_exceptions=True,  # the guard must re-raise *despite* this
-            penalty_value=1e10,
-        )
-
-    def test_fork_cuda_error_is_reraised(self, monkeypatch):
-        """The fork/CUDA re-init RuntimeError propagates instead of penalising."""
-        runner = self._runner()
-
-        def boom(trial):
-            raise RuntimeError(
-                f"{_CUDA_FORK_REINIT_MARKER}. To use CUDA with multiprocessing, "
-                "you must use the 'spawn' start method"
-            )
-
-        monkeypatch.setattr(runner, "_run", boom)
-        study = optuna.create_study(direction="minimize")
-        trial = study.ask()
-
-        with pytest.raises(RuntimeError, match="Cannot re-initialize CUDA"):
-            runner(trial)
-
-    def test_genuine_per_trial_error_still_penalised(self, monkeypatch):
-        """A normal per-trial failure is still caught and penalised as before."""
-        runner = self._runner()
-
-        def boom(trial):
-            raise ValueError("a genuine, non-systematic per-trial failure")
-
-        monkeypatch.setattr(runner, "_run", boom)
-        study = optuna.create_study(direction="minimize")
-        trial = study.ask()
-
-        assert runner(trial) == 1e10
-        assert trial.user_attrs.get("error") == "a genuine, non-systematic per-trial failure"
-
-
-# ── GPU end-to-end: parent-initialised CUDA must not produce all-penalty ─────
-@pytest.mark.gpu
-@pytest.mark.slow
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-class TestCudaMultiprocessNoSilentPenalty:
-    """Regression for the fork/CUDA silent-garbage bug (multi-worker, device=cuda).
-
-    With CUDA initialised in the parent (the near-universal precondition), a
-    multi-worker study with ``device='cuda'`` must select ``spawn`` and produce
-    *real* trial values — not a full budget of ``penalty_value``.
-    """
-
-    def test_cuda_study_runs_real_trials(self, tmp_path: Path):
-        # Precondition: initialise CUDA in the parent, as any prior GPU use would.
-        _ = torch.randn(4, device="cuda")
-        assert torch.cuda.is_initialized()
-
-        study = run_hpo(
-            model_creator=_model_creator,
-            search_space=_search_space,
-            data_loader=_data_loader,
-            n_trials=4,
-            n_workers=2,
-            device="cuda",
-            storage=str(tmp_path / "cuda_study.log"),
-            study_name="cuda_no_silent_penalty",
-            seed=0,
-            verbosity=0,
-        )
-
-        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        assert completed, "no trials completed — CUDA study failed entirely"
-
-        values = [t.value for t in completed]
-        penalty = 1e10
-        # The bug's signature is *every* completed trial pinned at penalty_value.
-        assert not all(v is not None and abs(v - penalty) < 1e-3 for v in values), (
-            f"all trials returned penalty_value ({penalty}) — the fork/CUDA "
-            f"silent-garbage bug regressed; values={values}"
-        )
-        # And no trial recorded the fork/CUDA error as a caught per-trial failure.
-        errors = [t.user_attrs.get("error") for t in completed]
-        assert not any(
-            e and _CUDA_FORK_REINIT_MARKER in e for e in errors
-        ), f"a completed trial swallowed the fork/CUDA error: {errors}"
+def _runner(**options):
+    return build_objective(
+        model_creator=lambda size=8: classic_esn(
+            reservoir_size=size, feedback_size=1, output_size=1
+        ),
+        search_space=lambda trial: {"size": 8},
+        data_loader=lambda trial: _data(),
+        loss_fn=lambda predicted, truth: float(((predicted - truth) ** 2).mean()),
+        error_policy="fail",
+        **options,
+    )
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_notebook_closures_parent_callbacks_and_exact_attempt_budget(workers, tmp_path):
+    parent = os.getpid()
+    events = []
+    path = str(tmp_path)
+    offset = 1
+    parent_only_lock = threading.Lock()
+
+    def factory(size, fixed=0):
+        from pathlib import Path
+
+        Path(path, f"worker-{os.getpid()}").touch()
+        assert fixed == offset
+        return classic_esn(reservoir_size=size, feedback_size=1, output_size=1)
+
+    def space(trial):
+        assert os.getpid() == parent
+        assert isinstance(trial, optuna.Trial)
+        events.append(("space", trial.number))
+        return {"size": trial.suggest_int("size", 7, 9), "fixed": offset}
+
+    def loader(trial):
+        assert os.getpid() == parent
+        with parent_only_lock:
+            events.append(("data", trial.number))
+        return _data()
+
+    def callback(trial, context):
+        assert os.getpid() == parent
+        assert isinstance(trial, optuna.Trial)
+        assert context["params"]["fixed"] == offset
+        with parent_only_lock:
+            events.append(("callback", trial.number))
+
+    study = run_hpo(
+        factory,
+        space,
+        loader,
+        n_trials=3,
+        n_workers=workers,
+        trial_callbacks=[callback],
+        loss=lambda predicted, truth: float(((predicted - truth) ** 2).mean()),
+        verbosity=0,
+        seed=11,
+    )
+    assert len(study.trials) == 3
+    assert all(trial.state == optuna.trial.TrialState.COMPLETE for trial in study.trials)
+    assert len(events) == 9
+    pids = {int(file.name.split("-")[1]) for file in tmp_path.glob("worker-*")}
+    assert pids and (pids == {parent} if workers == 1 else parent not in pids)
+    assert all(trial.intermediate_values for trial in study.trials)
+
+
+class _FirstCheckpoint(optuna.pruners.BasePruner):
+    def __init__(self):
+        self.parent = os.getpid()
+        self.calls = []
+
+    def prune(self, study, trial):
+        assert os.getpid() == self.parent
+        self.calls.append(trial.number)
+        return bool(trial.intermediate_values)
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_in_memory_parent_pruner_releases_every_reservation(workers):
+    pruner = _FirstCheckpoint()
+    study = optuna.create_study(pruner=pruner)
+    run_trials(study, _runner(n_checkpoints=4), n_trials=3, n_workers=workers, verbosity=0)
+    assert len(study.trials) == 3
+    assert all(trial.state == optuna.trial.TrialState.PRUNED for trial in study.trials)
+    assert all(set(trial.intermediate_values) == {1} for trial in study.trials)
+    assert sorted(pruner.calls) == [0, 1, 2]
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("executor startup"), KeyboardInterrupt()])
+def test_executor_startup_or_interrupt_marks_only_owned_reservations_failed(monkeypatch, failure):
+    dispatch = importlib.import_module("resdag.hpo.dispatch")
+    study = optuna.create_study()
+    foreign = study.ask()
+
+    @contextmanager
+    def fail(*args, **kwargs):
+        raise failure
+        yield
+
+    monkeypatch.setattr(dispatch, "iter_jobs", fail)
+    with pytest.raises(type(failure)) as caught:
+        run_trials(study, _runner(), n_trials=5, n_workers=2, verbosity=0)
+    assert caught.value is failure
+    assert study.trials[foreign.number].state == optuna.trial.TrialState.RUNNING
+    assert len(study.trials) == 3
+    assert all(trial.state == optuna.trial.TrialState.FAIL for trial in study.trials[1:])
+
+
+def test_fail_cleanup_attempts_every_trial_and_preserves_primary(monkeypatch):
+    study = optuna.create_study()
+    trials = {trial.number: trial for trial in (study.ask(), study.ask(), study.ask())}
+    calls = []
+
+    def fail(number, **kwargs):
+        calls.append(number)
+        raise OSError(f"cleanup {number}")
+
+    monkeypatch.setattr(study, "tell", fail)
+    primary = ValueError("primary")
+    _fail_active(study, trials, primary)
+    assert calls == [0, 1, 2]
+    assert len(primary.__notes__) == 3
+    with pytest.raises(OSError, match="cleanup 0") as caught:
+        _fail_active(study, trials, None)
+    assert calls == [0, 1, 2, 0, 1, 2]
+    assert len(caught.value.__notes__) == 2
+
+
+def test_failed_numerical_worker_leaves_no_running_and_next_run_works(monkeypatch):
+    runner = _runner(catch_exceptions=False)
+
+    def broken(**kwargs):
+        raise ArithmeticError("numerical failure")
+
+    runner.model_creator = broken
+    study = optuna.create_study()
+    with pytest.raises(ArithmeticError, match="numerical failure"):
+        run_trials(study, runner, n_trials=3, n_workers=2, verbosity=0)
+    assert all(trial.state != optuna.trial.TrialState.RUNNING for trial in study.trials)
+    next_study = optuna.create_study()
+    run_trials(next_study, _runner(), n_trials=1, n_workers=2, verbosity=0)
+    assert next_study.best_value >= 0
+
+
+def test_failed_preparation_consumes_exact_new_attempts():
+    runner = _runner()
+
+    def bad_data(trial):
+        raise ValueError("bad prepared data")
+
+    runner.data_loader = bad_data
+    study = optuna.create_study()
+    run_trials(study, runner, n_trials=5, n_workers=2, verbosity=0)
+    assert len(study.trials) == 5
+    assert all(trial.state == optuna.trial.TrialState.FAIL for trial in study.trials)
+
+
+def test_unserializable_factory_releases_reserved_trials():
+    lock = threading.Lock()
+
+    def factory(size=8):
+        with lock:
+            return classic_esn(reservoir_size=size, feedback_size=1, output_size=1)
+
+    runner = _runner()
+    runner.model_creator = factory
+    study = optuna.create_study()
+    with pytest.raises(Exception, match="pickle|serializ"):
+        run_trials(study, runner, n_trials=3, n_workers=2, verbosity=0)
+    assert len(study.trials) == 2
+    assert all(trial.state == optuna.trial.TrialState.FAIL for trial in study.trials)
+
+
+@pytest.mark.parametrize("failure", [ArithmeticError("numerical error"), KeyboardInterrupt()])
+def test_numerical_cleanup_preserves_primary_exception(monkeypatch, failure):
+    module = importlib.import_module("resdag.hpo.trial_runner")
+    runner = _runner(catch_exceptions=False)
+    study = optuna.create_study()
+    prepared = runner.prepare(study.ask())
+
+    def fail(**kwargs):
+        raise failure
+
+    def cleanup():
+        raise OSError("cleanup failed")
+
+    runner.model_creator = fail
+    monkeypatch.setattr(module, "_cleanup", cleanup)
+    with pytest.raises(type(failure)) as caught:
+        runner.evaluate(prepared)
+    assert caught.value is failure
+    assert any("cleanup failed" in note for note in failure.__notes__)
+
+
+@pytest.mark.parametrize(
+    "failure,state",
+    [(ArithmeticError("numeric"), "fail"), (optuna.TrialPruned("pruned"), "pruned")],
+)
+def test_numerical_cleanup_preserves_recorded_failure_or_pruning(monkeypatch, failure, state):
+    module = importlib.import_module("resdag.hpo.trial_runner")
+    runner = _runner()
+    study = optuna.create_study()
+    prepared = runner.prepare(study.ask())
+
+    def fail(**kwargs):
+        raise failure
+
+    def cleanup():
+        raise OSError("cleanup failed")
+
+    runner.model_creator = fail
+    monkeypatch.setattr(module, "_cleanup", cleanup)
+    outcome = runner.evaluate(prepared)
+    assert outcome.state == state
+    assert outcome.error == str(failure)
+    assert outcome.attrs["cleanup_error"] == "cleanup failed"
+
+
+def test_successful_numeric_cleanup_failure_still_raises(monkeypatch):
+    module = importlib.import_module("resdag.hpo.trial_runner")
+    runner = _runner()
+    study = optuna.create_study()
+    prepared = runner.prepare(study.ask())
+
+    def cleanup():
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(module, "_cleanup", cleanup)
+    with pytest.raises(OSError, match="cleanup failed"):
+        runner.evaluate(prepared)
+
+
+def test_direct_runner_performs_numerical_cleanup_once(monkeypatch):
+    module = importlib.import_module("resdag.hpo.trial_runner")
+    calls = []
+    monkeypatch.setattr(module, "_cleanup", lambda: calls.append("cleanup"))
+    study = optuna.create_study()
+    study.optimize(_runner(), n_trials=1)
+    assert len(calls) == 1
+    assert study.best_value >= 0

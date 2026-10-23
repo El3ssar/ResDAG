@@ -10,9 +10,7 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
-import inspect
 import json
-import marshal
 import math
 import platform
 import random
@@ -20,8 +18,7 @@ import statistics
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass, field
-from functools import partial
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -33,22 +30,34 @@ from resdag._contracts import module_reference
 from resdag.core.model import ESNModel
 from resdag.core.workflow import Model, _washout
 from resdag.data._trajectory import is_trajectory
-from resdag.facade import ESN, _configuration
+from resdag.facade import ESN
 from resdag.layers.readouts import ReadoutLayer
 from resdag.layers.reservoirs import BaseReservoirLayer
 
 from ._parallel import run_jobs
+from ._provenance import bind_protocol, class_identity, resolve_trial_settings
+from ._provenance import callable_identity as _callable_identity
+from ._provenance import canonical_config as _configuration
+from ._trial_progress import ProgressCallback, TrialProgress
 from ._tuning_data import TuningData, prepare_tuning_data
-from ._tuning_scores import score_forecast
+from ._tuning_scores import ScoreResult, StreamingForecastScore
+from .pruners import resolve_pruner
+from .resources import (
+    MemoryBudget,
+    MemoryContext,
+    MemoryEstimate,
+    Screening,
+    estimate_memory,
+    memory_context,
+)
 from .storage import _close_storage, resolve_storage
 
-__all__ = ["ScoreContext", "TuningReport", "tune_model"]
+__all__ = ["ScoreContext", "PrefixScoreContext", "TuningReport", "tune_model"]
 
 Factory = Callable[[dict[str, Any], int], Model | ESN]
 SearchSpace = Callable[[optuna.Trial], Mapping[str, Any]]
 Preset = Literal["quick", "balanced", "thorough"]
 _PRESETS = {"quick": (8, 1, 1), "balanced": (24, 3, 3), "thorough": (80, 5, 5)}
-_PROTOCOL_KEY = "resdag_tuning_protocol_v1"
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,19 @@ class ScoreContext:
     scales: dict[str, torch.Tensor]
     seed: int
     origin: int
+
+
+@dataclass(frozen=True)
+class PrefixScoreContext(ScoreContext):
+    """Explicitly prefix-safe pruning objective with the complete target horizon.
+
+    Predictions and truth contain only the admitted prefix. This callback
+    controls pruning, while ``objective`` still scores the complete forecast.
+    Keep its direction and scale comparable across matching resource steps.
+    """
+
+    completed_steps: int
+    horizon: int
 
 
 @dataclass(frozen=True)
@@ -85,6 +107,7 @@ class TuningReport:
     runs: tuple[dict[str, Any], ...]
     _template: Model | ESN = field(repr=False, compare=False)
     _installed_hash: str = field(repr=False, compare=False)
+    resources: dict[str, Any] = field(default_factory=dict)
 
 
 def _count(value: Any, name: str) -> int:
@@ -248,65 +271,6 @@ def _default_space(template: Model | ESN) -> SearchSpace:
     return space
 
 
-def _dependency_identity(value: Any, seen: set[int]) -> Any:
-    if inspect.ismodule(value):
-        return ("module", value.__name__, getattr(value, "__version__", None))
-    if inspect.isfunction(value) or inspect.ismethod(value) or isinstance(value, partial):
-        return _callable_identity(value, seen)
-    if isinstance(value, (Mapping, tuple, list)):
-        if id(value) in seen:
-            return ("recursive", type(value).__qualname__)
-        seen = seen | {id(value)}
-        if isinstance(value, Mapping):
-            return tuple(
-                (str(key), _dependency_identity(item, seen))
-                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-            )
-        return tuple(_dependency_identity(item, seen) for item in value)
-    return _configuration(value)
-
-
-def _callable_identity(function: Any, seen: set[int] | None = None) -> Any:
-    if function is None:
-        return None
-    seen = set() if seen is None else seen
-    if id(function) in seen:
-        return (
-            "recursive_callable",
-            getattr(function, "__qualname__", type(function).__qualname__),
-        )
-    seen = seen | {id(function)}
-    if isinstance(function, partial):
-        return (
-            "partial",
-            _callable_identity(function.func, seen),
-            _dependency_identity(function.args, seen),
-            _dependency_identity(function.keywords, seen),
-        )
-    try:
-        source = inspect.getsource(function)
-    except (OSError, TypeError):
-        code = getattr(function, "__code__", None)
-        source = marshal.dumps(code).hex() if code is not None else repr(type(function))
-    closure = getattr(function, "__closure__", None)
-    dependencies: Mapping[str, Any] = {}
-    if inspect.isfunction(function) or inspect.ismethod(function):
-        dependencies = inspect.getclosurevars(function).globals
-    return (
-        getattr(function, "__module__", ""),
-        getattr(function, "__qualname__", type(function).__qualname__),
-        source,
-        _dependency_identity(getattr(function, "__defaults__", None), seen),
-        _dependency_identity(getattr(function, "__kwdefaults__", None), seen),
-        _dependency_identity(
-            tuple(cell.cell_contents for cell in closure) if closure else None, seen
-        ),
-        _configuration(getattr(function, "__dict__", None)),
-        _configuration(getattr(function, "__self__", None)),
-        _dependency_identity(dependencies, seen),
-    )
-
-
 def _module_configs(model: Model) -> Any:
     module_keys = set(nn.Module().__dict__)
     runtime = {
@@ -319,14 +283,19 @@ def _module_configs(model: Model) -> Any:
         "_fitted_flag",
         "last_solve",
     }
-    configurations = []
+    configurations: list[tuple[Any, ...]] = [("workflow", class_identity(type(model), set()))]
+    implementations: dict[type[nn.Module], Any] = {}
     for group, root in (
         ("graph", model.graph),
         ("input", model.input_scalers),
         ("output", model.output_scalers),
     ):
         for name, module in root.named_modules():
+            cls = type(module)
+            if cls not in implementations:
+                implementations[cls] = class_identity(cls, set())
             if module is model.graph:
+                configurations.append((group, name, implementations[cls]))
                 continue
             attributes = {
                 key: value
@@ -337,8 +306,7 @@ def _module_configs(model: Model) -> Any:
                 (
                     group,
                     name,
-                    type(module).__module__,
-                    type(module).__qualname__,
+                    implementations[cls],
                     _configuration(attributes),
                 )
             )
@@ -356,6 +324,7 @@ def _recipe_identity(template: Model | ESN) -> Any:
         if not any(name == prefix or name.startswith(prefix + ".") for prefix in readouts)
     }
     return (
+        class_identity(type(template), set()),
         (
             _configuration(template._factory_options)
             if isinstance(template, ESN)
@@ -387,7 +356,8 @@ def _graph_structure(workflow: Model) -> Any:
 
 def _protocol(data: TuningData, template: Model | ESN, **settings: Any) -> tuple[str, Any]:
     payload = {
-        "version": 1,
+        "version": 2,
+        "contract": "resdag.model.autonomous",
         "views": _configuration(data),
         "model": _recipe_identity(template),
         "settings": settings,
@@ -405,6 +375,17 @@ class _Evaluation:
     nrmse: float | None
     runs: tuple[dict[str, Any], ...]
     error: str | None = None
+    pruned: bool = False
+    pruning_reason: str | None = None
+    intermediates: tuple[tuple[int, float], ...] = ()
+
+
+@dataclass(frozen=True)
+class _TuningJob:
+    number: int
+    params: dict[str, Any]
+    progress: ProgressCallback | None = None
+    stage: Literal["full", "screen"] = "full"
 
 
 @dataclass
@@ -418,6 +399,8 @@ class _Evaluator:
     catch_exceptions: bool
     device: torch.device
     execution: Literal["auto", "fast", "history"]
+    checkpoint_interval: int = 64
+    pruning_objective: Callable[[PrefixScoreContext], float] | None = None
 
     def build(self, params: dict[str, Any], seed: int) -> Model | ESN:
         with torch.inference_mode(False):
@@ -426,9 +409,11 @@ class _Evaluator:
             raise TypeError("A candidate recipe must return rd.Model or rd.ESN")
         return _template(supplied, self.data.train.inputs, seed)
 
-    def __call__(self, job: tuple[int, dict[str, Any]]) -> _Evaluation:
-        number, params = job
+    def __call__(self, job: _TuningJob) -> _Evaluation:
+        number, params = job.number, job.params
         runs: list[dict[str, Any]] = []
+        intermediates: list[tuple[int, float]] = []
+        current: dict[str, Any] | None = None
         try:
             for seed in self.seeds:
                 with _isolated_seed(seed, self.device):
@@ -442,57 +427,170 @@ class _Evaluator:
                     scales = self.data.scales_for(workflow)
                     for index, origin in enumerate(self.data.origins):
                         started = time.perf_counter()
+                        horizon = origin.horizon - origin.skip
+                        case = len(runs)
+                        current = {
+                            "seed": seed,
+                            "origin": index,
+                            "complete": False,
+                            "completed_steps": 0,
+                            "fit_seconds": fit_seconds if index == 0 else 0.0,
+                        }
                         execution = self.execution
                         if execution == "auto":
                             execution = (
                                 "history" if workflow._requires_complete_history() else "fast"
                             )
-                        predictions = origin.forecast(workflow, execution=execution)
-                        _synchronize(workflow)
-                        forecast_seconds = time.perf_counter() - started
-                        truth = {
-                            name: value.to(predictions[name])
-                            for name, value in origin.truth.items()
-                        }
-                        metrics = score_forecast(
-                            predictions,
-                            truth,
+                        accumulator = StreamingForecastScore(
                             scales,
                             threshold=self.threshold,
                             aggregation=self.aggregation,
                         )
-                        context = ScoreContext(
-                            predictions,
-                            {name: value.clone() for name, value in truth.items()},
-                            {name: value.clone() for name, value in scales.items()},
-                            seed,
-                            index,
-                        )
+                        collected: dict[str, list[torch.Tensor]] = {
+                            name: [] for name in workflow.output_names
+                        }
+                        truth = None
+                        metrics: ScoreResult | None = None
+                        with origin.stream(
+                            workflow,
+                            chunk_size=self.checkpoint_interval,
+                            execution=execution,
+                            checkpoints=(
+                                tuple(range(origin.skip, origin.horizon, self.checkpoint_interval))
+                                if origin.skip
+                                else None
+                            ),
+                        ) as chunks:
+                            for chunk in chunks:
+                                predicted = chunk.named_predictions
+                                if truth is None:
+                                    truth = {
+                                        name: value.to(predicted[name])
+                                        for name, value in origin.truth.items()
+                                    }
+                                targets = {
+                                    name: value[..., chunk.start : chunk.stop, :]
+                                    for name, value in truth.items()
+                                }
+                                accumulator.update(predicted, targets)
+                                current["completed_steps"] = accumulator.steps
+                                if self.objective is not None or self.pruning_objective is not None:
+                                    for name, value in predicted.items():
+                                        collected[name].append(value.detach().clone())
+                                if job.progress is not None and (
+                                    self.objective is None or self.pruning_objective is not None
+                                ):
+                                    metrics = accumulator.summary()
+                                    partial_score = metrics.score
+                                    if self.pruning_objective is not None:
+                                        partial_score = float(
+                                            self.pruning_objective(
+                                                PrefixScoreContext(
+                                                    {
+                                                        name: torch.cat(values, dim=-2)
+                                                        for name, values in collected.items()
+                                                    },
+                                                    {
+                                                        name: value[
+                                                            ..., : accumulator.steps, :
+                                                        ].clone()
+                                                        for name, value in truth.items()
+                                                    },
+                                                    {
+                                                        name: value.clone()
+                                                        for name, value in scales.items()
+                                                    },
+                                                    seed,
+                                                    index,
+                                                    accumulator.steps,
+                                                    horizon,
+                                                )
+                                            )
+                                        )
+                                    if not math.isfinite(partial_score):
+                                        raise ValueError(
+                                            "The pruning objective must return a finite scalar"
+                                        )
+                                    aggregate = statistics.median(
+                                        [run["score"] for run in runs] + [partial_score]
+                                    )
+                                    step = case * horizon + accumulator.steps
+                                    current.update(
+                                        score=partial_score,
+                                        nrmse=metrics.nrmse,
+                                        head_horizons=metrics.head_horizons,
+                                        head_errors=metrics.head_errors,
+                                    )
+                                    intermediates.append((step, aggregate))
+                                    job.progress(aggregate, step)
+                        if accumulator.steps != horizon:
+                            raise RuntimeError(
+                                "Forecast stream did not finish its declared horizon"
+                            )
+                        metrics = accumulator.summary()
+                        assert truth is not None
                         score = (
                             metrics.score
                             if self.objective is None
-                            else float(self.objective(context))
+                            else float(
+                                self.objective(
+                                    ScoreContext(
+                                        {
+                                            name: torch.cat(values, dim=-2)
+                                            for name, values in collected.items()
+                                        },
+                                        {name: value.clone() for name, value in truth.items()},
+                                        {name: value.clone() for name, value in scales.items()},
+                                        seed,
+                                        index,
+                                    )
+                                )
+                            )
                         )
                         if not math.isfinite(score):
                             raise ValueError("The tuning objective must return a finite scalar")
-                        runs.append(
-                            {
-                                "seed": seed,
-                                "origin": index,
-                                "score": score,
-                                "nrmse": metrics.nrmse,
-                                "head_horizons": metrics.head_horizons,
-                                "head_errors": metrics.head_errors,
-                                "fit_seconds": fit_seconds if index == 0 else 0.0,
-                                "forecast_seconds": forecast_seconds,
-                            }
+                        _synchronize(workflow)
+                        current.update(
+                            score=score,
+                            nrmse=metrics.nrmse,
+                            head_horizons=metrics.head_horizons,
+                            head_errors=metrics.head_errors,
+                            forecast_seconds=time.perf_counter() - started,
+                            complete=True,
                         )
+                        runs.append(current)
+                        current = None
+                        step = (case + 1) * horizon
+                        aggregate = statistics.median(run["score"] for run in runs)
+                        # Full-forecast objectives preserve their full-data
+                        # contract unless an explicit prefix objective is given.
+                        if job.progress is None or (
+                            self.objective is not None and self.pruning_objective is None
+                        ):
+                            intermediates.append((step, aggregate))
+                            if job.progress is not None:
+                                job.progress(aggregate, step)
             return _Evaluation(
                 number,
                 params,
                 statistics.median(run["score"] for run in runs),
                 statistics.median(run["nrmse"] for run in runs),
                 tuple(runs),
+                intermediates=tuple(intermediates),
+            )
+        except optuna.TrialPruned as error:
+            if current is not None:
+                current["forecast_seconds"] = time.perf_counter() - started
+                runs.append(current)
+            return _Evaluation(
+                number,
+                params,
+                None,
+                None,
+                tuple(runs),
+                pruned=True,
+                pruning_reason=str(error),
+                intermediates=tuple(intermediates),
             )
         except Exception as error:
             if not self.catch_exceptions:
@@ -522,20 +620,6 @@ def _install(target: Model | ESN, winner: Model | ESN, report: TuningReport) -> 
     target.__dict__.update(state)
 
 
-def _resolved_params(value: Mapping[str, Any]) -> dict[str, Any]:
-    """Keep fixed values alongside sampled values in portable Optuna metadata."""
-    if not isinstance(value, Mapping) or not all(isinstance(name, str) for name in value):
-        raise TypeError("search_space must return a mapping with string keys")
-    try:
-        json.dumps(dict(value), allow_nan=False)
-        return cast(dict[str, Any], ast.literal_eval(repr(dict(value))))
-    except (TypeError, ValueError, SyntaxError) as error:
-        raise TypeError(
-            "search_space values must be finite JSON data; capture custom modules, "
-            "initializers and callables in factory(params, seed) instead"
-        ) from error
-
-
 def _model_hash(model: Model | ESN) -> str:
     return hashlib.sha256(
         repr(
@@ -549,6 +633,235 @@ def _model_hash(model: Model | ESN) -> str:
             )
         ).encode()
     ).hexdigest()
+
+
+def _run_trials(
+    study: optuna.Study,
+    evaluator: _Evaluator,
+    space: SearchSpace,
+    *,
+    trials: int,
+    seed: int,
+    n_jobs: int,
+    inner_max_num_threads: int,
+    started: float,
+    timeout: float | None,
+    direction: str,
+    screening: Screening | None,
+    budget: MemoryBudget | None,
+    context: MemoryContext | None,
+    custom_factory: bool,
+    estimator: Callable[[dict[str, Any], MemoryContext], MemoryEstimate | int] | None,
+) -> tuple[int, dict[str, Any]]:
+    """Parent-owned allocation, optional cohort ranking and finite job windows."""
+    from joblib import effective_n_jobs
+
+    workers = effective_n_jobs(n_jobs)
+    report: dict[str, Any] = {
+        "requested_jobs": n_jobs,
+        "effective_jobs": workers,
+        "max_running_jobs": 0,
+        "screening": None if screening is None else asdict(screening),
+        "memory_budget": None if budget is None else asdict(budget),
+        "memory_skipped": 0,
+        "screened": 0,
+        "promoted": 0,
+        "pruned": 0,
+        "timed_out": False,
+    }
+    allocated: dict[int, optuna.Trial] = {}
+    attempts = 0
+    primary: BaseException | None = None
+    progress: TrialProgress | None = None
+
+    def expired() -> bool:
+        return timeout is not None and time.perf_counter() - started >= timeout
+
+    def finish(
+        trial: optuna.Trial, state: optuna.trial.TrialState, value: float | None = None
+    ) -> None:
+        study.tell(trial, value, state=state)
+        allocated.pop(trial.number, None)
+
+    def reject(trial: optuna.Trial, reason: str) -> None:
+        trial.set_user_attr("pruning_reason", reason)
+        trial.set_user_attr("resdag_tune_valid", False)
+        finish(trial, optuna.trial.TrialState.PRUNED)
+        report["pruned"] += 1
+
+    # A stage item holds no fitted model or forecast tensors in the parent.
+    Item = tuple[optuna.Trial, dict[str, Any], MemoryEstimate | None]
+
+    def execute(
+        items: list[Item], worker: _Evaluator, stage: Literal["screen", "full"]
+    ) -> list[tuple[Item, _Evaluation]]:
+        completed = []
+        pending = iter(items)
+        next_item = next(pending, None)
+        while next_item is not None and not expired():
+            batch: list[Item] = []
+            estimates: list[MemoryEstimate] = []
+            while next_item is not None and len(batch) < workers:
+                estimate = next_item[2]
+                if budget is not None and estimate is not None:
+                    if not budget.fits(estimate, estimates):
+                        break
+                    estimates.append(estimate)
+                batch.append(next_item)
+                next_item = next(pending, None)
+            if not batch:
+                raise RuntimeError("An inadmissible memory estimate reached the job scheduler")
+            callbacks: list[ProgressCallback] = []
+            try:
+                jobs = []
+                for trial, params, _ in batch:
+                    callback = None
+                    if progress is not None and stage == "full":
+                        callback = progress.callback(trial)
+                        callbacks.append(callback)
+                    jobs.append(_TuningJob(trial.number, params, callback, stage))
+                report["max_running_jobs"] = max(report["max_running_jobs"], len(batch))
+                results = (
+                    [worker(job) for job in jobs]
+                    if len(batch) == 1
+                    else run_jobs(
+                        worker,
+                        jobs,
+                        n_jobs=len(batch),
+                        inner_max_num_threads=inner_max_num_threads,
+                    )
+                )
+                if progress is not None:
+                    progress.check()
+                for item, result in zip(batch, results, strict=True):
+                    trial = item[0]
+                    if trial.number != result.number:
+                        raise RuntimeError("A worker returned another trial's evaluation")
+                    trial.set_user_attr(
+                        "runs" if stage == "full" else "screening_runs", result.runs
+                    )
+                    if result.error is not None:
+                        trial.set_user_attr("error", result.error)
+                        finish(trial, optuna.trial.TrialState.FAIL)
+                    elif result.pruned:
+                        reject(trial, result.pruning_reason or "Optuna pruning")
+                    elif stage == "screen":
+                        trial.set_user_attr("screening_score", result.score)
+                        trial.set_user_attr("screening_nrmse", result.nrmse)
+                        report["screened"] += 1
+                        completed.append((item, result))
+                    else:
+                        if progress is None:
+                            for step, value in result.intermediates:
+                                trial.report(value, step=step)
+                        trial.set_user_attr("nrmse", result.nrmse)
+                        trial.set_user_attr("resdag_tune_valid", True)
+                        trial.set_user_attr("evaluation_complete", True)
+                        finish(trial, optuna.trial.TrialState.COMPLETE, result.score)
+                        completed.append((item, result))
+            finally:
+                if progress is not None:
+                    for callback in callbacks:
+                        progress.release(callback)
+        return completed
+
+    try:
+        with ExitStack() as stack:
+            if type(study.pruner) is not optuna.pruners.NopPruner:
+                progress = stack.enter_context(TrialProgress(parallel=workers > 1))
+            while attempts < trials and not expired():
+                cohort_limit = screening.cohort_size or trials if screening is not None else workers
+                cohort: list[Item] = []
+                for _ in range(min(cohort_limit, trials - attempts)):
+                    if expired():
+                        break
+                    trial = study.ask()
+                    allocated[trial.number] = trial
+                    attempts += 1
+                    with _isolated_seed((seed + trial.number) % (2**63), evaluator.device):
+                        params = resolve_trial_settings(trial, space(trial))
+                        estimate = (
+                            None
+                            if budget is None or context is None
+                            else estimate_memory(
+                                params, context, custom_factory=custom_factory, estimator=estimator
+                            )
+                        )
+                    trial.set_user_attr("resolved_params", json.loads(json.dumps(params)))
+                    trial.set_user_attr("resolved_params_literal", repr(params))
+                    trial.set_user_attr("seeds", list(evaluator.seeds))
+                    trial.set_user_attr("refit_seed", evaluator.seeds[0])
+                    if estimate is not None:
+                        trial.set_user_attr(
+                            "memory_estimate",
+                            {
+                                "host_bytes": estimate.host_bytes,
+                                "device_bytes": estimate.device_bytes,
+                                "details": json.loads(
+                                    json.dumps(dict(estimate.details), default=str, allow_nan=False)
+                                ),
+                            },
+                        )
+                        if budget is not None and not budget.fits(estimate):
+                            report["memory_skipped"] += 1
+                            reject(
+                                trial,
+                                "memory_budget: estimated candidate exceeds the planning limit",
+                            )
+                            continue
+                    cohort.append((trial, params, estimate))
+                if screening is None:
+                    execute(cohort, evaluator, "full")
+                else:
+                    cheap = replace(
+                        evaluator,
+                        seeds=evaluator.seeds[: screening.seed_count],
+                        data=replace(
+                            evaluator.data, origins=evaluator.data.origins[: screening.origin_count]
+                        ),
+                    )
+                    screened = execute(cohort, cheap, "screen")
+                    screened.sort(
+                        key=lambda pair: (
+                            (
+                                -cast(float, pair[1].score)
+                                if direction == "maximize"
+                                else cast(float, pair[1].score)
+                            ),
+                            pair[0][0].number,
+                        )
+                    )
+                    keep = screening.promoted_count(len(screened))
+                    for item, _ in screened[keep:]:
+                        reject(item[0], "screening: not promoted to full evaluation")
+                    promoted = [item for item, _ in screened[:keep]]
+                    report["promoted"] += len(promoted)
+                    execute(promoted, evaluator, "full")
+                # A timeout stops new windows, including full promotion jobs.
+                # Unfinished allocations remain explicit PRUNED attempts.
+                for trial in list(allocated.values()):
+                    reject(trial, "timeout: no further evaluation window was submitted")
+            report["timed_out"] = expired()
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        first_cleanup_error: BaseException | None = None
+        for trial in list(allocated.values()):
+            try:
+                current = next(t for t in study.trials if t.number == trial.number)
+                if current.state == optuna.trial.TrialState.RUNNING:
+                    finish(trial, optuna.trial.TrialState.FAIL)
+            except BaseException as cleanup_error:
+                if primary is not None:
+                    primary.add_note(f"Trial cleanup also failed: {cleanup_error}")
+                elif first_cleanup_error is None:
+                    first_cleanup_error = cleanup_error
+                else:
+                    first_cleanup_error.add_note(f"Trial cleanup also failed: {cleanup_error}")
+        if primary is None and first_cleanup_error is not None:
+            raise first_cleanup_error
+    return attempts, report
 
 
 def tune_model(
@@ -569,11 +882,19 @@ def tune_model(
     threshold: float = 0.2,
     aggregation: Literal["weakest", "mean"] = "weakest",
     objective: Callable[[ScoreContext], float] | None = None,
+    pruning_objective: Callable[[PrefixScoreContext], float] | None = None,
     direction: Literal["maximize", "minimize"] = "maximize",
     sampler: optuna.samplers.BaseSampler | None = None,
+    pruner: str | optuna.pruners.BasePruner | None = None,
+    checkpoint_interval: int = 64,
     study: optuna.Study | None = None,
     storage: str | None = None,
     study_name: str | None = None,
+    warm_start: optuna.Study | None = None,
+    transfer_mode: Literal["reevaluate", "scores"] = "reevaluate",
+    screening: bool | Screening | None = False,
+    memory_budget: MemoryBudget | str | int | None = None,
+    memory_estimator: Callable[[dict[str, Any], MemoryContext], MemoryEstimate | int] | None = None,
     n_jobs: int = 1,
     timeout: float | None = None,
     inner_max_num_threads: int = 1,
@@ -608,6 +929,7 @@ def tune_model(
     if isinstance(n_jobs, bool) or not isinstance(n_jobs, int) or n_jobs == 0:
         raise ValueError("n_jobs must be a nonzero integer")
     _count(inner_max_num_threads, "inner_max_num_threads")
+    _count(checkpoint_interval, "checkpoint_interval")
     if not isinstance(catch_exceptions, bool):
         raise TypeError("catch_exceptions must be a boolean")
     if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**63:
@@ -629,14 +951,76 @@ def tune_model(
     seed_bank = tuple(dict.fromkeys(seeds))
     if fixed_graph and len(seed_bank) != 1:
         raise ValueError("Several initialization seeds require a factory to rebuild a custom DAG")
-    if study is not None and (storage is not None or study_name is not None or sampler is not None):
-        raise ValueError("Pass an existing study or storage/study_name/sampler, not both")
+    if study is not None and (
+        storage is not None or study_name is not None or sampler is not None or pruner is not None
+    ):
+        raise ValueError("Pass an existing study or storage/study_name/sampler/pruner, not both")
+    if warm_start is not None and not isinstance(warm_start, optuna.Study):
+        raise TypeError("warm_start must be an Optuna study")
+    if warm_start is not None and warm_start is study:
+        raise ValueError("warm_start must be a separate source study")
+    if transfer_mode not in ("reevaluate", "scores"):
+        raise ValueError("transfer_mode must be 'reevaluate' or 'scores'")
     if search_space is not None and not callable(search_space):
         raise TypeError("search_space must be callable")
     if factory is not None and not callable(factory):
         raise TypeError("factory must be callable")
     if objective is not None and not callable(objective):
         raise TypeError("objective must be callable")
+    if pruning_objective is not None and not callable(pruning_objective):
+        raise TypeError("pruning_objective must be callable")
+    if screening is True:
+        screening = Screening()
+    elif screening is False:
+        screening = None
+    elif screening is not None and not isinstance(screening, Screening):
+        raise TypeError("screening must be False, True, or a Screening policy")
+    budget = (
+        memory_budget
+        if isinstance(memory_budget, MemoryBudget) or memory_budget is None
+        else MemoryBudget(memory_budget)
+    )
+    if memory_estimator is not None and not callable(memory_estimator):
+        raise TypeError("memory_estimator must be callable")
+    if memory_estimator is not None and budget is None:
+        raise ValueError("memory_estimator requires memory_budget")
+    if budget is not None and factory is not None and memory_estimator is None:
+        raise ValueError("A custom factory with a memory budget requires memory_estimator")
+    resolved_pruner: optuna.pruners.BasePruner
+    if study is None and isinstance(pruner, str) and pruner.lower() == "threshold":
+        if objective is not None:
+            raise ValueError(
+                "The common threshold preset is for positive horizon scores; "
+                "supply a configured Optuna ThresholdPruner for a custom objective"
+            )
+        resolved_pruner = optuna.pruners.ThresholdPruner(
+            lower=0.1, n_warmup_steps=2 * checkpoint_interval
+        )
+    else:
+        resolved_pruner = resolve_pruner(pruner) if study is None else study.pruner
+    # A huge lazy preset must not allocate its initial dense recurrence before
+    # resource planning can even start. This is a known lower bound, not a
+    # substituted smaller architecture or a claim about solver peak memory.
+    if budget is not None and isinstance(model, ESN) and model.workflow is None:
+        size = model._factory_options["reservoir_size"]
+        sample = training.get("input") if isinstance(training, Mapping) else training
+        if is_trajectory(sample):
+            sample = torch.as_tensor(cast(Any, sample).y)
+        element = model._reference.element_size()
+        if not model._dtype_pinned and isinstance(sample, torch.Tensor):
+            element = sample.element_size()
+        lower = size * size * element
+        destination = (
+            model._reference.device
+            if model._device_pinned or not isinstance(sample, torch.Tensor)
+            else sample.device
+        )
+        minimum = MemoryEstimate(lower) if destination.type == "cpu" else MemoryEstimate(0, lower)
+        if not budget.fits(minimum):
+            raise ValueError(
+                "The lazy ESN base template exceeds memory_budget before construction; "
+                "start from a smaller base model or provide a custom construction recipe"
+            )
     previous_report = model.__dict__.get("tuning_report")
     resuming = isinstance(previous_report, TuningReport) and (
         study is previous_report.study
@@ -661,6 +1045,51 @@ def tune_model(
         horizon=horizon,
         n_origins=origin_count,
     )
+    if screening is not None:
+        screening.validate(len(seed_bank), len(data.origins))
+    memory = (
+        None
+        if budget is None
+        else memory_context(
+            workflow,
+            data,
+            preset_options=template._factory_options if isinstance(template, ESN) else None,
+        )
+    )
+    if memory is not None and (objective is not None or pruning_objective is not None):
+        reference = module_reference(workflow.graph)
+        element = 4 if reference is None else reference.element_size()
+        batch = next(iter(data.origins[0].truth.values()))
+        batches = batch.shape[0] if batch.ndim == 3 else 1
+        retained = (
+            batches
+            * max(origin.horizon for origin in data.origins)
+            * sum(workflow._output_widths)
+            * element
+        )
+        memory = replace(memory, retained_forecast_bytes=retained)
+    if memory is not None and (
+        execution == "history" or (execution == "auto" and workflow._requires_complete_history())
+    ):
+        element = torch.finfo(memory.dtype).bits // 8
+        replay = max(
+            sum(
+                (value.shape[0] if value.ndim == 3 else 1)
+                * (value.shape[-2] + origin.horizon)
+                * value.shape[-1]
+                for value in origin.history.values()
+            )
+            for origin in data.origins
+        )
+        memory = replace(
+            memory,
+            replay_history_bytes=3 * element * replay,
+            forecast_samples=max(
+                (value.shape[0] if value.ndim == 3 else 1) * (value.shape[-2] + origin.horizon)
+                for origin in data.origins
+                for value in origin.history.values()
+            ),
+        )
     recipe = factory or (
         _preset_recipe(template) if isinstance(template, ESN) else _fixed_recipe(template)
     )
@@ -675,6 +1104,9 @@ def tune_model(
         factory=_callable_identity(factory),
         search_space=_callable_identity(search_space),
         objective=_callable_identity(objective),
+        pruning_objective=_callable_identity(pruning_objective),
+        memory_budget=None if budget is None else asdict(budget),
+        memory_estimator=_callable_identity(memory_estimator),
         fixed_graph=fixed_graph,
         execution=execution,
     )
@@ -689,21 +1121,19 @@ def tune_model(
                 load_if_exists=study_name is not None,
                 direction=direction,
                 sampler=sampler or optuna.samplers.TPESampler(seed=seed),
-                pruner=optuna.pruners.NopPruner(),
+                pruner=resolved_pruner,
             )
         if len(study.directions) != 1 or study.direction.name.lower() != direction:
             raise ValueError("Study direction must match the tuning objective")
-        previous = study.user_attrs.get(_PROTOCOL_KEY)
-        evaluated = any(trial.state != optuna.trial.TrialState.WAITING for trial in study.trials)
-        if previous != fingerprint and (previous is not None or evaluated):
-            raise ValueError(
-                "Study protocol differs (data, splits, seeds, task or objective); use a fresh study"
-            )
-        study.set_user_attr(_PROTOCOL_KEY, fingerprint)
+        bind_protocol(study, fingerprint)
+        if warm_start is not None:
+            from .transfer import transfer_trials
+
+            transfer_trials(study, warm_start, mode=transfer_mode, protocol_hash=fingerprint)
         study.set_user_attr(
             "resdag_tuning",
             {
-                "version": 1,
+                "version": 2,
                 "seeds": list(seed_bank),
                 "refit_seed": seed_bank[0],
                 "validation": data.report,
@@ -724,59 +1154,27 @@ def tune_model(
             catch_exceptions,
             torch.device("cpu") if reference is None else reference.device,
             execution,
+            checkpoint_interval,
+            pruning_objective,
         )
-        window = 1
-        if n_jobs != 1:
-            from joblib import effective_n_jobs
-
-            window = effective_n_jobs(n_jobs)
-        attempts = 0
-        while attempts < trials and (timeout is None or time.perf_counter() - started < timeout):
-            active = []
-            window_error: BaseException | None = None
-            try:
-                jobs = []
-                for _ in range(min(window, trials - attempts)):
-                    trial = study.ask()
-                    active.append(trial)
-                    attempts += 1
-                    with _isolated_seed((seed + trial.number) % (2**63), evaluator.device):
-                        params = _resolved_params(space(trial))
-                    jobs.append((trial.number, params))
-                    trial.set_user_attr("resolved_params", json.loads(json.dumps(params)))
-                    trial.set_user_attr("resolved_params_literal", repr(params))
-                    trial.set_user_attr("seeds", list(seed_bank))
-                    trial.set_user_attr("refit_seed", seed_bank[0])
-                results = (
-                    [evaluator(job) for job in jobs]
-                    if n_jobs == 1
-                    else run_jobs(
-                        evaluator, jobs, n_jobs=n_jobs, inner_max_num_threads=inner_max_num_threads
-                    )
-                )
-                for trial, result in zip(active, results, strict=True):
-                    trial.set_user_attr("runs", result.runs)
-                    if result.error is not None:
-                        trial.set_user_attr("error", result.error)
-                        study.tell(trial, state=optuna.trial.TrialState.FAIL)
-                    else:
-                        trial.set_user_attr("nrmse", result.nrmse)
-                        trial.set_user_attr("resdag_tune_valid", True)
-                        study.tell(trial, result.score)
-                active = []
-            except BaseException as error:
-                window_error = error
-                raise
-            finally:
-                for trial in active:
-                    try:
-                        current = next(t for t in study.trials if t.number == trial.number)
-                        if current.state == optuna.trial.TrialState.RUNNING:
-                            study.tell(trial, state=optuna.trial.TrialState.FAIL)
-                    except BaseException as cleanup_error:
-                        if window_error is None:
-                            raise
-                        window_error.add_note(f"Trial cleanup also failed: {cleanup_error}")
+        attempts, resource_report = _run_trials(
+            study,
+            evaluator,
+            space,
+            trials=trials,
+            seed=seed,
+            n_jobs=n_jobs,
+            inner_max_num_threads=inner_max_num_threads,
+            started=started,
+            timeout=timeout,
+            direction=direction,
+            screening=screening,
+            budget=budget,
+            context=memory,
+            custom_factory=factory is not None,
+            estimator=memory_estimator,
+        )
+        study.set_user_attr("resdag_tuning_resources", resource_report)
         valid = [
             trial
             for trial in study.trials
@@ -788,9 +1186,9 @@ def tune_model(
         if not valid:
             detail = next(
                 (
-                    trial.user_attrs["error"]
+                    trial.user_attrs.get("error", trial.user_attrs.get("pruning_reason"))
                     for trial in study.trials
-                    if "error" in trial.user_attrs
+                    if "error" in trial.user_attrs or "pruning_reason" in trial.user_attrs
                 ),
                 "no evaluation finished",
             )
@@ -825,6 +1223,7 @@ def tune_model(
             tuple(best.user_attrs["runs"]),
             template,
             _model_hash(winner),
+            resource_report,
         )
         _close_storage(owned, keep_study_usable=True)
         _install(model, winner, report)

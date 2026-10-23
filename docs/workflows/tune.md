@@ -51,9 +51,9 @@ function as well as values sampled by Optuna.
 
 | Preset | New trial attempts | Initialization seeds | Forecast starting points |
 | --- | ---: | ---: | ---: |
-| `"quick"` | 8 | 1 | 1 |
-| `"balanced"` (default) | 24 | 3 | 3 |
-| `"thorough"` | 80 | 5 | 5 |
+| <code style="white-space: nowrap">"quick"</code> | 8 | 1 | 1 |
+| <code style="white-space: nowrap">"balanced"</code> (default) | 24 | 3 | 3 |
+| <code style="white-space: nowrap">"thorough"</code> | 80 | 5 | 5 |
 
 Seeds and starting points are reused across configurations. A starting point
 is a later moment in the held-out segment: the model sees observations before
@@ -70,6 +70,34 @@ An unsupported explicit horizon raises before any trial starts.
 
 For `rd.ESN`, the default search varies reservoir size, spectral radius, leak
 rate and readout regularization (`alpha`). Custom DAGs have the options below.
+
+### Optionally screen candidates first
+
+Full evaluation remains the default. To shortlist candidates before spending
+the complete repetition budget, enable screening:
+
+```python
+screened = rd.ESN(reservoir_size=32, washout=20, readout="svd", dtype=torch.float64)
+screened.tune(
+    development, preset="balanced", horizon=40, seed=7,
+    screening=True, memory_budget="8GiB",
+)
+print(screened.tuning_report.resources)
+```
+
+This checks all 24 candidates on one seed and one starting point, using the
+**complete** 40-sample forecast. The best eight then receive the full three-seed,
+three-origin evaluation. Only a fully evaluated candidate can win. Candidates
+outside the shortlist are recorded as `PRUNED`; they still consume attempts.
+Screening may discard a configuration that would perform better across other
+seeds or starting points.
+
+`Screening(...)` lets you choose repetition counts, promotion fraction and cohort
+size. Memory planning can reduce concurrency or skip an individually oversized
+candidate; it does not change its architecture or precision. A budget is an
+estimate, not an OS/RSS/GPU allocation limit. See
+[tuning resources](../advanced/tuning-resources.md) for the controls and custom
+factory estimates.
 
 ## Tune a custom DAG
 
@@ -265,6 +293,60 @@ Return one finite scalar per seed/origin. Scores are aggregated by their median.
 requires `"maximize"`. Custom metrics can remain on the tensor device until
 the final scalar conversion.
 
+### Stop unpromising forecasts early
+
+An Optuna pruner can stop future forecast generation at a checkpoint:
+
+```python
+pruned_model = rd.ESN(reservoir_size=32, washout=20, readout="svd", dtype=torch.float64)
+pruned_model.tune(
+    development, preset="quick", horizon=40, seed=7,
+    pruner="median", checkpoint_interval=10,
+)
+```
+
+Forecasting proceeds in chunks of at most ten scored samples here. The parent
+process owns the real Optuna trial and makes pruning decisions, including when
+numerical work runs in joblib workers. A rejected checkpoint prevents later
+chunks, origins and seeds from running. Fitting and work before that checkpoint
+have already happened. Pruning is disabled by default, and the median pruner
+also has its own startup/warmup rules.
+
+For the built-in objective, intermediate values are positive accurate-horizon
+scores with the same fixed training scales. `pruner="threshold"` uses a lower
+score bound of 0.1 after a warmup of `2 * checkpoint_interval` resource steps.
+This is separate from `threshold=0.2`, which defines an accurate forecast sample.
+The [raw runner](../advanced/raw-hpo.md) uses negated horizon losses and a
+different threshold-pruner preset; its bounds are not interchangeable.
+
+Custom `objective` callbacks still receive a **complete** forecast. Without an
+explicit prefix callback, pruning is checked only after each complete
+seed/origin forecast and can skip later evaluations. Opt in to within-forecast
+pruning when your metric makes sense on partial predictions:
+
+```python
+from resdag.hpo import PrefixScoreContext
+
+def prefix_error(context: PrefixScoreContext):
+    # Predictions/truth contain only the completed prefix. The same fixed
+    # training scales used by normalized_error are available here.
+    return normalized_error(context)
+
+prefix_model = rd.ESN(reservoir_size=32, washout=20, readout="svd", dtype=torch.float64)
+prefix_model.tune(
+    development, preset="quick", horizon=40, seed=7,
+    objective=normalized_error, pruning_objective=prefix_error,
+    direction="minimize", pruner="median", checkpoint_interval=10,
+)
+```
+
+`PrefixScoreContext.completed_steps` is the admitted prefix length;
+`horizon` is the complete requested scored length. Return a finite scalar with
+the same direction and comparable meaning at matching resource steps. The
+complete `objective` still decides the final ranking. Custom callbacks retain
+prediction prefixes; the built-in scorer accumulates its statistics without
+retaining a full output trajectory.
+
 ## Run and resume a study
 
 Optuna provides samplers, queued starting configurations and study inspection.
@@ -292,24 +374,33 @@ resumable.tune(
 assert len(study.trials) == 6
 ```
 
-`n_trials` counts **new attempts per call**, including failed candidates.
+`n_trials` counts **new attempts per call**, including failed, pruned,
+memory-rejected and screened-out candidates. A timeout can stop a call before
+it uses the whole budget.
 `catch_exceptions=True` records evaluation failures as `FAIL` trials, with
 messages in trial attributes; they cannot win. Set it to `False` while debugging
 to raise the original error. If no valid candidate completes, tuning raises.
 The source model changes only after a winner refits successfully. Construct
 optimizers after tuning, since the winning configuration can replace parameters.
 
-The default `n_jobs=1` runs in the caller. Other values use joblib process workers
+The default `n_jobs=1` runs in the caller. Other values use joblib/loky process workers
 and its standard worker-count conventions, including `-1` for available CPUs.
 Workers evaluate parent-sampled windows of candidates; `inner_max_num_threads=1`
-limits worker BLAS threads. `timeout` stops dispatching new windows, while an
+limits worker BLAS threads. Search suggestions, Optuna storage and pruning stay
+in the parent; workers receive prepared numerical jobs. Submission uses finite
+windows bounded by remaining attempts and estimated memory, so a worker queue
+cannot exceed the new-attempt budget. `timeout` stops dispatching new windows, while an
 in-flight window and the final winner fit finish normally. It is not a hard
 wall-clock deadline. Changing worker count can change an adaptive sampler's
 sequence, even though candidates reuse the same evaluation seeds and origins.
 
+On errors or interruption, joblib cancels outstanding work and this call's
+unfinished trial reservations are finalized. An error during final refitting
+or owned-storage cleanup leaves the original model unchanged.
+
 Use `storage="tuning.log", study_name="my-experiment"` for a persistent journal,
 or a `.db` path for SQLite. Pass those options instead of `study=`; a caller-owned
-study also owns its sampler. Resuming checks data, validation, task, seed bank,
+study also owns its sampler and pruner. Resuming checks data, validation, task, seed bank,
 objective and captured configuration against the stored protocol. Keep callback
 configuration stable, and use a fresh study when the experiment changes.
 Unverified prior evaluated scores are rejected; queued trials are supported.
@@ -320,14 +411,32 @@ Forecast execution defaults to `execution="auto"`: compatible DAGs use the fast
 step loop, while temporal custom layers use history replay. Force `"fast"` or
 `"history"` to select a mode explicitly. See [forecast capabilities](../advanced/forecast-capabilities.md).
 
-!!! note "Forecast pruning is still pending"
-    The common tuner currently evaluates each full forecast. It does not offer
-    an Optuna pruner or stop forecast generation early. This is a separate
-    roadmap item. The [raw runner](../advanced/raw-hpo.md) has scoring-checkpoint
-    pruning after generation; its multiprocessing and loss protocols are separate.
+### Reuse settings from another experiment
+
+```python
+reused = rd.ESN(reservoir_size=64, washout=30, readout="svd", dtype=torch.float64)
+reused.tune(
+    development, warm_start=model.tuning_report.study,
+    preset="quick", horizon=40, seed=7, n_trials=2,
+)
+```
+
+The default `transfer_mode="reevaluate"` queues complete configurations from
+the source, best first, then evaluates them on the destination task. Old scores
+are not copied. Fixed returned settings and source-trial provenance are kept.
+Queued configurations consume new attempts when evaluated; any beyond the
+budget remain `WAITING`. This is the useful choice when data, architecture or
+the objective changes. Adapt incompatible settings explicitly.
+
+`transfer_mode="scores"` is an explicit import of prior evaluated scores. It
+requires identical bound task protocols and objective directions, including
+the actual prepared data and model/objective configuration. Imported scores
+do not consume the budget for new attempts. Use reevaluation when the experiment
+changes; matching parameter names alone do not make scores comparable.
 
 ## Continue
 
 - [HPO reference](../reference/hpo.md) — every option and report field
+- [Tuning resources](../advanced/tuning-resources.md) — optional screening and memory planning
 - [Common model workflow](../start/model-workflow.md) — build, fit and use a custom network
 - [Raw HPO runner](../advanced/raw-hpo.md) — manually prepared five-array studies

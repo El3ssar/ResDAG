@@ -4,10 +4,14 @@ description: Agreed tuning experience, numerical safeguards and implementation p
 
 # Phase three: reliable tuning
 
-**Status: WIP.** The [roadmap](roadmap.md#phase-3-tuning-and-automatic-solver-policy)
-tracks implementation and verification. The common `model.tune(...)` lifecycle,
-joblib execution and automatic readout are implemented. Forecast-generation
-pruning and staged resource promotion remain separate unfinished work.
+**Status: Done — completion PR awaiting merge.** The
+[roadmap](roadmap.md#phase-3-tuning-and-automatic-solver-policy) records the
+implementation and verification. The common `model.tune(...)` lifecycle,
+joblib execution and automatic readout are released in 2.1.0. The continuation
+adds forecast-generation pruning, optional screening and memory planning, and
+safe raw-runner reuse. All local and locked/latest hosted acceptance gates pass
+in [PR #462](https://github.com/El3ssar/ResDAG/pull/462). Its publication remains
+separate from the released 2.1.0 increment.
 
 ## Approved experience
 
@@ -30,6 +34,15 @@ The maintainer approved:
   and parameters may change. Tune before creating a PyTorch optimizer.
 - The existing automatic-solver goal remains: choose a safe method, allow
   explicit overrides, and disclose precision, device and fallback decisions.
+- Balanced tuning checks every candidate with its full seed/origin bank by
+  default. Optional screening first evaluates a smaller bank, then reevaluates
+  the promoted candidates using the full bank before choosing a winner.
+- Transfer to another task reuses settings and scores them again. Copying
+  completed scores requires an exact match of the recorded evaluation protocol.
+- An optional memory budget reduces concurrency and skips an oversized
+  candidate before construction. Estimates never change its architecture or
+  precision and are not operating-system allocation limits. Custom recipes
+  provide their own estimates.
 
 The fluent interface returns the same model, like `fit`.
 `model.tuning_report` exposes the full Optuna study, resolved winning settings,
@@ -62,10 +75,17 @@ recomputing them from a growing validation suffix changes the meaning of an
 early pruning score. Named outputs require explicit aggregation rather than
 silently scoring the first head.
 
-True forecast pruning still needs an executor checkpoint hook. Calling
-`forecast` repeatedly on chunks cannot resume an in-progress delayed-feedback
-queue from reservoir state alone. Tests must compare values, timelines and
-final states with an uninterrupted rollout.
+The private streaming executor retains delayed-feedback queues and emits
+aligned forecast chunks. Scoring accumulates on the tensor device; only scalar
+checkpoint summaries cross to the parent for an Optuna pruning decision.
+Stopping closes the stream before more predictions are generated. Ordinary
+public `forecast()` retains its established optimized execution path.
+
+Whole-forecast custom objectives still receive the complete prediction. They
+can prune between completed seed/origin runs, or supply a separate
+`pruning_objective` that explicitly accepts prefixes. A pruned or screened-only
+candidate cannot become the winner. History replay and custom objectives can
+retain growing histories or prediction prefixes; those memory costs are explicit.
 
 ## Winner and parallel policy
 
@@ -81,6 +101,9 @@ final states with an uninterrupted rollout.
 - Reusing a study requires the same recorded data/task, seeds, objective and
   construction recipe. Foreign evaluated scores are rejected. Standard Optuna
   queued configurations remain supported.
+- The parent owns sampling, storage and pruning decisions in both workflows.
+  Workers receive prepared numerical jobs through joblib/loky. The raw runner
+  no longer launches or monitors its own worker processes.
 
 | Preset | New configurations | Initialization seeds | Forecast origins |
 | --- | ---: | ---: | ---: |
@@ -118,7 +141,10 @@ The initial work repairs independent defects before adding the new lifecycle:
   transfer releases its own source connections; caller-supplied studies retain
   their ownership. A cleanup failure cannot hide the original operation error.
 
-The older raw `run_hpo` runner retains its separate manual worker launcher.
-Its worker startup/cancellation redesign remains open; the new common tuner
-uses joblib. Verification is recorded in the roadmap as each increment passes
-its checks.
+Both tuning workflows now use managed finite joblib windows and parent-owned
+Optuna trials. Raw task binding also fingerprints materialized data and rechecks
+historical data on resume; opaque external resources need an explicit task
+context version. Active Python custom-layer implementations are included in
+provenance. Hashes guard recorded configuration, rather than proving arbitrary
+Python or native code semantically equivalent. Verification is recorded in the
+roadmap as each increment passes its checks.

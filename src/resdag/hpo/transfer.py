@@ -1,40 +1,54 @@
-"""Warm-starting and cross-study transfer helpers for HPO.
+"""Reuse complete settings by re-evaluating them on a destination task.
 
-This module provides the building blocks that let a study start *warm* instead
-of cold:
-
-- :func:`apply_warm_start` enqueues known-good configurations so they are
-  evaluated **before** any sampler-proposed trial.
-- :func:`transfer_trials` ingests already-evaluated ``COMPLETE`` trials from a
-  prior study, keeping only the parameters that overlap with the new search
-  space and logging the mismatched ones at ``INFO`` level.
-- :func:`export_best_config` round-trips a study's best parameters into a plain
-  ``dict`` suitable as a :func:`apply_warm_start` entry, so the winner of one
-  run can seed the next.
-
-All three operate on the parent-process :class:`optuna.Study` **before** any
-workers are forked, so they compose cleanly with multi-process optimization
-(``n_workers > 1``).
-
-See Also
---------
-resdag.hpo.run : High-level orchestrator that calls these helpers pre-fork.
+Copying completed scores is an explicit operation restricted to matching bound
+task protocols and objective directions. Transfer preserves full settings,
+suggestions, and source-study provenance; it never filters a scored model.
 """
 
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from math import isfinite
-from typing import Any
+from typing import Any, Literal
+from uuid import uuid4
 
 import optuna
 from optuna.trial import TrialState
 
+from ._provenance import (
+    PROTOCOL_KEY,
+    RESOLVED_SETTINGS_KEY,
+    REUSED_SETTINGS_KEY,
+    resolved_settings,
+    trial_settings,
+)
 from .storage import _close_storage, resolve_storage
 
 __all__ = ["apply_warm_start", "transfer_trials", "export_best_config"]
 
 logger = logging.getLogger(__name__)
+
+_STUDY_CHALLENGE_KEY = "resdag_transfer_identity_check_v1"
+
+
+def _require_distinct_studies(study: optuna.Study, source: optuna.Study) -> None:
+    """Detect aliases with public storage-backed metadata, including copied studies.
+
+    Optuna exposes no public Study storage identity. Write a fresh challenge to
+    the destination and see whether the source observes it. A new challenge on
+    every check distinguishes independent studies even when ``copy_study`` has
+    cloned their metadata. No private storage IDs or credential-bearing URLs
+    are inspected. The final read fails closed if another check interferes.
+    """
+    if study is source:
+        raise ValueError("Source and destination refer to the same study")
+    challenge = uuid4().hex
+    study.set_user_attr(_STUDY_CHALLENGE_KEY, challenge)
+    source_challenge = source.user_attrs.get(_STUDY_CHALLENGE_KEY)
+    if study.user_attrs.get(_STUDY_CHALLENGE_KEY) != challenge:
+        raise RuntimeError("Concurrent study identity check; retry the transfer")
+    if source_challenge == challenge:
+        raise ValueError("Source and destination refer to the same study")
 
 
 def apply_warm_start(
@@ -46,9 +60,9 @@ def apply_warm_start(
     Each mapping in *warm_start* is enqueued via
     :meth:`optuna.study.Study.enqueue_trial`, which guarantees the configuration
     is the next one handed to the objective — i.e. it runs **before** any trial
-    the sampler would otherwise propose.  Enqueuing mutates the shared storage,
-    so calling this in the parent process makes the warm-start trials visible to
-    every forked worker.
+    the sampler would otherwise propose.  The parent enqueues settings before preparing finite numerical job windows.
+    Queued fixed values remain available even when the current search-space
+    function does not suggest them.
 
     Parameters
     ----------
@@ -75,7 +89,10 @@ def apply_warm_start(
     for params in warm_start:
         if not params:
             continue
-        study.enqueue_trial(dict(params), skip_if_exists=False)
+        settings = resolved_settings(params)
+        study.enqueue_trial(
+            settings, user_attrs={REUSED_SETTINGS_KEY: repr(settings)}, skip_if_exists=False
+        )
         count += 1
 
     if count:
@@ -137,118 +154,106 @@ def _source_study(
 def transfer_trials(
     study: optuna.Study,
     transfer_from: "optuna.Study | str",
-    param_names: "set[str] | None" = None,
+    *,
+    mode: Literal["reevaluate", "scores"] = "reevaluate",
+    protocol_hash: str | None = None,
 ) -> int:
-    """Copy ``COMPLETE`` trials from a prior study into *study*.
+    """Reuse complete configurations, re-evaluating them by default.
 
-    Each finished trial from *transfer_from* is re-created with
-    :func:`optuna.trial.create_trial` and added via
-    :meth:`optuna.study.Study.add_trial`, so its evaluated value seeds the
-    sampler without re-running the objective.  Only parameters that **overlap**
-    with the new search space are kept:
+    ``mode="reevaluate"`` enqueues full recorded resolved settings, including
+    fixed values that were not Optuna suggestions. Old scores are not copied.
+    Source study/trial/protocol provenance is retained on every queued trial.
+    A changed objective direction is allowed because the new task evaluates
+    the settings again. No parameter is silently removed to fit a new space.
 
-    - When *param_names* is given, it is the authoritative set of search-space
-      parameters; any source parameter outside it is dropped.
-    - When *param_names* is ``None``, every source parameter is kept (the
-      caller has asserted the search spaces match).
+    ``mode="scores"`` imports finite completed values only when both studies
+    are bound to exactly ``protocol_hash`` and their directions match. The
+    caller's protocol must identify actual data, validation, objective and
+    construction settings. An unbound or changed task must re-evaluate instead.
+    All source parameters/distributions and complete resolved settings remain
+    intact; incompatible model settings should be adapted explicitly before
+    enqueueing, never combined with an old score.
 
-    Dropped (mismatched) parameters are reported once per source trial at
-    ``INFO`` level.  Like :func:`apply_warm_start`, this mutates the shared
-    storage in the parent process, so transferred trials are visible to forked
-    workers.
-
-    Both studies must use the same objective directions. Reusing evaluated
-    scores also assumes identical data, preprocessing and objective semantics;
-    for a new experiment use ``warm_start`` to evaluate prior configurations
-    again. Trials marked with an error/non-finite diagnostic, or containing
-    any non-finite objective value, are not copied. This validation also applies
-    to externally created trials without ResDAG diagnostic attributes. Matching
-    multi-objective studies preserve every objective value.
-
-    Parameters
-    ----------
-    study : optuna.Study
-        Destination study to add trials to.
-    transfer_from : optuna.Study or str
-        Source study, or a storage path/URL holding exactly one study.
-    param_names : set of str, optional
-        Names of the new search space's parameters.  Source parameters outside
-        this set are filtered out.  When ``None``, no filtering is applied.
-
-    Returns
-    -------
-    int
-        The number of trials successfully transferred.
-
-    Notes
-    -----
-    A source trial that becomes empty after filtering (no overlapping
-    parameters) is skipped, since a parameterless trial carries no transferable
-    information to the sampler.
-
-    Examples
-    --------
-    >>> transfer_trials(study, "prior_study.db", param_names={"spectral_radius"})
-    7
+    Returns the number of queued or copied configurations. Invalid/nonfinite
+    source evaluations are skipped. Caller-owned study connections are not
+    closed; a source opened from a path is released on success and failure.
     """
+    if mode not in ("reevaluate", "scores"):
+        raise ValueError("mode must be 'reevaluate' or 'scores'")
     with _source_study(transfer_from) as source:
-        if study.directions != source.directions:
-            raise ValueError(
-                "Cannot transfer evaluated scores between studies with different objective directions. "
-                "Use warm_start to re-evaluate prior configurations with the new objective."
-            )
-
-        completed = [t for t in source.trials if t.state == TrialState.COMPLETE]
+        _require_distinct_studies(study, source)
+        source_protocol = source.user_attrs.get(PROTOCOL_KEY)
+        if mode == "scores":
+            if (
+                not protocol_hash
+                or source_protocol != protocol_hash
+                or study.user_attrs.get(PROTOCOL_KEY) != protocol_hash
+            ):
+                raise ValueError(
+                    "Copying evaluated scores requires an identical bound task protocol; "
+                    "use mode='reevaluate' to reuse settings for a new task"
+                )
+            if study.directions != source.directions:
+                raise ValueError("Identical-score transfer requires matching objective directions")
         transferred = 0
-        for src in completed:
-            values = src.values
-            if not values or not all(isfinite(value) for value in values):
-                logger.info(
-                    "Transfer: skipping source trial %d (missing or non-finite objective values)",
-                    src.number,
+        source_trials = source.get_trials(states=(TrialState.COMPLETE,))
+        if mode == "reevaluate" and len(source.directions) == 1:
+            maximize = source.direction == optuna.study.StudyDirection.MAXIMIZE
+            source_trials.sort(
+                key=lambda trial: (
+                    (
+                        (-(trial.value or 0.0) if maximize else trial.value or 0.0)
+                        if trial.value is not None and isfinite(trial.value)
+                        else float("inf")
+                    ),
+                    trial.number,
                 )
-                continue
-            if "error" in src.user_attrs or src.user_attrs.get("nonfinite_loss", False):
-                continue
-
-            if param_names is None:
-                kept_params = dict(src.params)
-                kept_dists = dict(src.distributions)
-            else:
-                kept_params = {k: v for k, v in src.params.items() if k in param_names}
-                kept_dists = {k: v for k, v in src.distributions.items() if k in param_names}
-                dropped = sorted(set(src.params) - param_names)
-                if dropped:
-                    logger.info(
-                        "Transfer: dropping %d mismatched param(s) %s from source trial %d",
-                        len(dropped),
-                        dropped,
-                        src.number,
-                    )
-
-            if not kept_params:
-                logger.info(
-                    "Transfer: skipping source trial %d (no overlapping params)",
-                    src.number,
-                )
-                continue
-
-            new_trial = optuna.trial.create_trial(
-                state=TrialState.COMPLETE,
-                values=values,
-                params=kept_params,
-                distributions=kept_dists,
-                user_attrs=dict(src.user_attrs),
             )
-            study.add_trial(new_trial)
+        entries = []
+        for src in source_trials:
+            values = src.values
+            if (
+                not values
+                or not all(isfinite(value) for value in values)
+                or "error" in src.user_attrs
+                or src.user_attrs.get("nonfinite_loss", False)
+            ):
+                continue
+            settings = trial_settings(src)
+            if not settings:
+                continue
+            entries.append((src, settings))
+        # Validate recorded configurations before changing the destination.
+        # Storage write failures can still interrupt a standard Optuna import.
+        for src, settings in entries:
+            values = src.values
+            provenance = {
+                "mode": mode,
+                "study_name": source.study_name,
+                "trial_number": src.number,
+                "protocol_hash": source_protocol,
+                "resolved_settings_literal": repr(settings),
+            }
+            if mode == "reevaluate":
+                study.enqueue_trial(
+                    {**src.params, **settings},
+                    user_attrs={"resdag_transfer": provenance, REUSED_SETTINGS_KEY: repr(settings)},
+                    skip_if_exists=False,
+                )
+            else:
+                attrs = dict(src.user_attrs)
+                attrs["resdag_transfer"] = provenance
+                attrs[RESOLVED_SETTINGS_KEY] = repr(settings)
+                study.add_trial(
+                    optuna.trial.create_trial(
+                        state=TrialState.COMPLETE,
+                        values=values,
+                        params=dict(src.params),
+                        distributions=dict(src.distributions),
+                        user_attrs=attrs,
+                    )
+                )
             transferred += 1
-
-        logger.info(
-            "Transferred %d of %d completed trial(s) from prior study %r",
-            transferred,
-            len(completed),
-            source.study_name,
-        )
         return transferred
 
 
@@ -268,7 +273,8 @@ def export_best_config(study: optuna.Study) -> dict[str, Any]:
     Returns
     -------
     dict
-        A shallow copy of ``study.best_params``.
+        Complete recorded resolved settings, including fixed factory values.
+        External studies without that record fall back to their suggestions.
 
     Raises
     ------
@@ -283,4 +289,12 @@ def export_best_config(study: optuna.Study) -> dict[str, Any]:
     completed = [t for t in study.trials if t.state == TrialState.COMPLETE]
     if not completed:
         raise ValueError("Cannot export best config: study has no completed trials.")
-    return dict(study.best_params)
+    best = study.best_trial
+    if (
+        "error" in best.user_attrs
+        or best.user_attrs.get("nonfinite_loss", False)
+        or best.value is None
+        or not isfinite(best.value)
+    ):
+        raise ValueError("Cannot export an invalid or non-finite winning configuration")
+    return {**best.params, **trial_settings(best)}

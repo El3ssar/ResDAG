@@ -1,582 +1,223 @@
-"""Trial execution backends for HPO studies.
+"""Parent-owned Optuna bookkeeping with the shared managed joblib executor."""
 
-This module provides single-process and multi-process execution strategies for
-running Optuna trials.  The multi-process backend is **start-method agnostic**:
-it prefers ``fork`` (cheapest — no pickling) for CPU-only studies when the
-platform supports it, switches to ``spawn`` when the study touches CUDA (``fork``
-is silently broken with CUDA — see below), and transparently falls back to
-``spawn`` on fork-less platforms (Windows, hardened macOS / CPython 3.14).  Spawn
-works because the objective is a top-level *picklable*
-:class:`resdag.hpo.trial_runner.TrialRunner`, not a closure, so it can be shipped to
-freshly-interpreted workers along with the other (already picklable) arguments.
+from __future__ import annotations
 
-Three correctness properties the multi-process backend guarantees:
-
-- **Portability and device-safety.** A usable start method is selected
-  automatically via :func:`preferred_start_method` (``spawn`` for CUDA, else
-  ``fork``) validated by :func:`select_start_method`; if none is available an
-  actionable :class:`RuntimeError` is raised early.  ``fork`` is *unusable* with
-  CUDA — a forked worker raises ``Cannot re-initialize CUDA in forked
-  subprocess`` on every CUDA op — so CUDA studies must use ``spawn``, which
-  :func:`preferred_start_method` selects whenever a CUDA device is requested or
-  CUDA is already initialised in the parent.
-- **Bounded budget.** Each worker is given a small *local* trial budget
-  (:func:`worker_budget`, ``ceil(remaining / n_workers) + slack``) rather than
-  the global target, with a global stop callback as a safety net.  The
-  completed-trial count therefore lands in
-  ``[n_trials, n_trials + n_workers - 1]`` instead of overshooting by a full
-  ``n_trials`` per worker.
-- **Crash-safe interruption.** Workers are **non-daemon** and stop
-  *cooperatively* via a shared :class:`multiprocessing.Event`; on
-  ``KeyboardInterrupt`` the event is set and the workers are *joined* (allowed
-  to flush their current write) instead of being ``terminate()``-d mid-write,
-  which could corrupt the journal / SQLite backend.
-
-See Also
---------
-resdag.hpo.run : High-level orchestrator that selects and invokes a runner.
-resdag.hpo.storage : Storage backend resolution used by workers.
-"""
-
-import logging
+import json
 import math
-import multiprocessing as mp
-import time
-from copy import deepcopy
-from multiprocessing.context import ForkContext, SpawnContext
-from typing import Callable, cast
+from collections.abc import Callable
+from typing import Any
 
 import optuna
-import torch
-from optuna.samplers import TPESampler
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
-from .storage import resolve_storage
-from .trial_runner import TrialEvaluationError
+from ._parallel import iter_jobs
+from ._trial_progress import TrialProgress
+from .resources import (
+    MemoryBudget,
+    MemoryContext,
+    MemoryEstimate,
+    estimate_memory,
+    raw_memory_context,
+)
+from .trial_runner import PreparedTrial, TrialEvaluationError, TrialRunner
 
-__all__ = [
-    "run_single",
-    "run_multiprocess",
-    "select_start_method",
-    "preferred_start_method",
-    "worker_budget",
-]
-
-logger = logging.getLogger(__name__)
-
-# Worker-local budgets are padded by this many extra trials so that, if some
-# trials are pruned/fail (and therefore do not count towards COMPLETE), workers
-# still collectively reach ``remaining`` completed trials before exhausting
-# their local budgets.  The global stop callback caps the true total.
-_BUDGET_SLACK = 2
+__all__ = ["run_trials"]
 
 
-def select_start_method(preferred: str = "fork") -> str:
-    """Pick a usable :mod:`multiprocessing` start method for the platform.
-
-    Prefers *preferred* (``"fork"`` by default — the cheapest, since children
-    inherit the parent's memory without pickling), falling back to ``"spawn"``
-    when the preferred method is unavailable (e.g. Windows, or hardened
-    macOS / CPython 3.14 where ``fork`` alongside threads is unsafe).  Raises if
-    neither is available.
-
-    Parameters
-    ----------
-    preferred : str, default="fork"
-        The start method to use when the platform supports it.
-
-    Returns
-    -------
-    str
-        A start method name accepted by :func:`multiprocessing.get_context`
-        (``"fork"`` or ``"spawn"``).
-
-    Raises
-    ------
-    RuntimeError
-        If neither *preferred* nor ``"spawn"`` is supported on this platform.
-    """
-    available = mp.get_all_start_methods()
-    if preferred in available:
-        return preferred
-    if "spawn" in available:
-        logger.info(
-            "multiprocessing start method '%s' is unavailable on this platform; "
-            "falling back to 'spawn'. The objective is picklable, so this is safe.",
-            preferred,
-        )
-        return "spawn"
-    raise RuntimeError(
-        f"No usable multiprocessing start method found (wanted '{preferred}' or "
-        f"'spawn'; available: {available}). Run with n_workers=1 for "
-        "single-process optimization."
-    )
-
-
-def preferred_start_method(device: "torch.device | None") -> str:
-    """Decide which start method a study should *prefer*, given its device.
-
-    ``fork`` is the cheapest start method (children inherit the parent's memory
-    without pickling), but it is **fundamentally incompatible with CUDA**: once
-    the parent process has initialised a CUDA context, any CUDA op in a forked
-    child raises ``RuntimeError: Cannot re-initialize CUDA in forked
-    subprocess``.  Because :class:`resdag.hpo.trial_runner.TrialRunner` catches all
-    exceptions and returns ``penalty_value`` by default, that failure is
-    *silent* — the study runs its full budget marking every trial COMPLETE at
-    the penalty and returns nonsense ``best_params``.
-
-    To avoid that trap we prefer ``spawn`` (which re-interprets a fresh process
-    and initialises its own CUDA context cleanly) whenever the study will touch
-    the GPU — either because the caller asked for a CUDA *device* or because
-    CUDA is *already initialised* in the parent (a prior trial, or the user
-    having loaded data/model to the GPU before calling ``run_hpo``).  CPU-only
-    studies keep ``fork`` for its faster startup.
-
-    Parameters
-    ----------
-    device : torch.device or None
-        The device the study will place models/data on, as resolved by
-        ``run_hpo``.  ``None`` means "framework default" (treated as CPU unless
-        CUDA is already initialised in the parent).
-
-    Returns
-    -------
-    str
-        ``"spawn"`` when the study will use CUDA, otherwise ``"fork"``.  This is
-        only a *preference*; :func:`select_start_method` still validates it
-        against the platform and falls back if unavailable.
-    """
-    device_is_cuda = device is not None and device.type == "cuda"
-    if device_is_cuda or torch.cuda.is_initialized():
-        return "spawn"
-    return "fork"
-
-
-def worker_budget(remaining: int, n_workers: int, slack: int = _BUDGET_SLACK) -> int:
-    """Compute the bounded per-worker trial budget.
-
-    Each worker runs at most ``ceil(remaining / n_workers) + slack`` trials so
-    that no single worker can consume the entire global budget (which would let
-    the study overshoot ``n_trials`` by up to ``n_trials`` trials).  The small
-    *slack* keeps throughput high when some workers prune/fail trials; the
-    global stop callback caps the true completed total.
-
-    Parameters
-    ----------
-    remaining : int
-        Total number of new trials still to run across all workers.
-    n_workers : int
-        Number of parallel worker processes (clamped to ``>= 1``).
-    slack : int, default=2
-        Extra per-worker headroom above the even split.
-
-    Returns
-    -------
-    int
-        The maximum number of trials a single worker should attempt.
-    """
-    n_workers = max(1, n_workers)
-    return math.ceil(remaining / n_workers) + slack
-
-
-class _TrialProgressCallback:
-    """Thread-safe tqdm progress bar callback for Optuna studies.
-
-    Provides real-time feedback during single-process optimization by updating
-    a ``tqdm`` bar after every completed trial and displaying the current best
-    objective value.
-
-    Parameters
-    ----------
-    n_trials : int
-        Total number of trials expected (used as the progress bar total).
-    """
-
-    def __init__(self, n_trials: int) -> None:
-        self._bar = tqdm(total=n_trials, desc="HPO Trials", unit="trial")
-
-    def __call__(
-        self,
-        study: optuna.Study,
-        trial: optuna.trial.FrozenTrial,
-    ) -> None:
-        """Update the progress bar after a trial completes.
-
-        Parameters
-        ----------
-        study : optuna.Study
-            The running study (used to read the current best value).
-        trial : optuna.trial.FrozenTrial
-            The trial that just finished.
-        """
-        self._bar.update(1)
-        if trial.state == optuna.trial.TrialState.COMPLETE:
-            try:
-                self._bar.set_postfix(
-                    best=f"{study.best_value:.4f}",
-                    trial=trial.number,
-                )
-            except ValueError:
-                pass
-
-    def close(self) -> None:
-        """Close the underlying tqdm bar."""
-        self._bar.close()
-
-
-def _worker_process(
-    study_name: str,
-    storage: str,
-    objective: Callable[[optuna.Trial], float],
-    target_total: int,
-    local_budget: int,
-    worker_seed: int | None,
-    pruner: "optuna.pruners.BasePruner | None",
-    stop_event: "mp.synchronize.Event",
-    sampler: optuna.samplers.BaseSampler | None = None,
+def _fail_active(
+    study: optuna.Study, trials: dict[int, optuna.Trial], error: BaseException | None
 ) -> None:
-    """Execute trials in a worker process (``fork`` *or* ``spawn``).
-
-    Each worker opens its own storage connection, loads the shared study, and
-    runs **at most** *local_budget* trials.  It stops early when either the
-    global completed-trial count reaches *target_total* (safety net against
-    overshoot) or a cooperative *stop_event* is set by the parent (graceful
-    interruption).  The local budget — not *target_total* — is the hard cap, so
-    no single worker can run the whole global budget.
-
-    Parameters
-    ----------
-    study_name : str
-        Name of the shared Optuna study.
-    storage : str
-        Raw storage path (journal file or SQLite URL) that the worker will
-        independently open.
-    objective : Callable[[Trial], float]
-        Objective function.  Inherited via ``fork`` or unpickled under
-        ``spawn`` — it is a top-level picklable
-        :class:`resdag.hpo.trial_runner.TrialRunner`, so both work.
-    target_total : int
-        Global stop threshold: once this many trials are ``COMPLETE`` across all
-        workers, the worker stops.  This is a *safety net*; the per-worker hard
-        cap is *local_budget*.
-    local_budget : int
-        Maximum number of trials this worker may attempt (the bounded budget
-        from :func:`worker_budget`).
-    worker_seed : int or None
-        Seed for the worker's ``TPESampler``.  ``None`` for unseeded sampling.
-    pruner : optuna.pruners.BasePruner or None
-        Pruner to attach to the worker's loaded study so it honors the same
-        early-stopping policy as the parent process.  ``None`` leaves Optuna's
-        default (no pruning) in place.
-    stop_event : multiprocessing.Event
-        Shared event; when set by the parent (e.g. on ``KeyboardInterrupt``),
-        the worker stops cooperatively after its current trial rather than being
-        forcibly terminated mid-write.
-
-    Notes
-    -----
-    Thread counts are pinned to 1 per worker to avoid oversubscription when
-    many workers share the same CPU.
-    """
-    # Prevent thread oversubscription: each worker gets 1 thread.
-    torch.set_num_threads(1)
-    torch.set_num_interop_threads(1)
-
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-    # Reconstruct the storage object in the worker process. ``storage`` is a
-    # non-None path string here, so ``resolve_storage`` always returns a
-    # concrete backend (it only returns None for in-memory single-worker runs).
-    worker_storage = resolve_storage(storage, n_workers=1)
-    assert worker_storage is not None
-
-    if sampler is None:
-        sampler = TPESampler(
-            multivariate=True,
-            warn_independent_sampling=False,
-            seed=worker_seed,
-        )
-    else:
-        # Each worker owns its sampler state; identical inherited RNG streams
-        # would otherwise propose duplicate trials. Use the sampler's public
-        # reseeding hook so custom policies retain their class/configuration.
-        sampler = deepcopy(sampler)
-        sampler.reseed_rng()
-    study = optuna.load_study(
-        study_name=study_name,
-        storage=worker_storage,
-        sampler=sampler,
-        pruner=pruner,
-    )
-
-    def _stop_callback(
-        study: optuna.Study,
-        _trial: optuna.trial.FrozenTrial,
-    ) -> None:
-        # Cooperative interruption: flush-on-exit by returning from optimize()
-        # rather than terminating, so the just-finished trial's write completes.
-        if stop_event.is_set():
-            study.stop()
-            return
-        # Global safety net against overshoot beyond the bounded local budget.
-        done = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
-        if done >= target_total:
-            study.stop()
-
-    study.optimize(
-        objective,
-        n_trials=local_budget,
-        catch=(TrialEvaluationError,),
-        callbacks=[_stop_callback],
-        show_progress_bar=False,
-        n_jobs=1,
-    )
+    """Release only this call's reservations, preserving the primary exception."""
+    first_error = error
+    for number in tuple(trials):
+        try:
+            study.tell(number, state=optuna.trial.TrialState.FAIL, skip_if_finished=True)
+        except BaseException as cleanup_error:
+            if first_error is None:
+                first_error = cleanup_error
+            else:
+                first_error.add_note(f"Trial {number} cleanup also failed: {cleanup_error}")
+    if error is None and first_error is not None:
+        raise first_error
 
 
-def run_single(
+def run_trials(
     study: optuna.Study,
-    objective: Callable[[optuna.Trial], float],
-    remaining: int,
-    n_workers: int,
-    verbosity: int,
+    runner: TrialRunner,
+    *,
+    n_trials: int,
+    n_workers: int = 1,
+    verbosity: int = 1,
+    inner_max_num_threads: int = 1,
+    memory_budget: MemoryBudget | None = None,
+    memory_estimator: Callable[[dict[str, Any], MemoryContext], MemoryEstimate | int] | None = None,
 ) -> None:
-    """Run optimization in a single process.
+    """Run finite new attempts with sampling/storage in the caller only.
 
-    Parameters
-    ----------
-    study : optuna.Study
-        The study to optimize.
-    objective : Callable[[Trial], float]
-        Objective function to evaluate each trial.
-    remaining : int
-        Number of trials still to run.
-    n_workers : int
-        Number of Optuna ``n_jobs`` (thread-level parallelism within this
-        process).
-    verbosity : int
-        Logging verbosity: ``0`` = silent, ``>= 1`` = show progress bar.
-
-    Raises
-    ------
-    Exception
-        Re-raises any non-``KeyboardInterrupt`` exception after logging.
+    Managed loky workers receive numerical jobs without Trial/storage objects.
+    Failed/pruned configurations consume attempts. Finite submission windows
+    prevent background consumption of future attempts. Errors and interrupts
+    propagate after this call's RUNNING reservations are marked failed.
     """
-    progress_cb = _TrialProgressCallback(remaining) if verbosity >= 1 else None
+    from joblib import effective_n_jobs
 
+    window = effective_n_jobs(n_workers)
+    active: dict[int, optuna.Trial] = {}
+    worker = runner.for_worker()
+    pruning = not isinstance(study.pruner, optuna.pruners.NopPruner)
+    bar = tqdm(total=n_trials, desc="HPO attempts", unit="trial") if verbosity else None
+    primary_error: BaseException | None = None
+    attempts = 0
+    pending: tuple[PreparedTrial, MemoryEstimate] | None = None
     try:
-        study.optimize(
-            objective,
-            n_trials=remaining,
-            catch=(TrialEvaluationError,),
-            n_jobs=n_workers,
-            show_progress_bar=False,
-            callbacks=[progress_cb] if progress_cb else None,
-        )
-    except KeyboardInterrupt:
-        logger.warning("Optimization interrupted by user")
-    except Exception as e:
-        logger.error(f"Optimization failed: {e}")
+        with TrialProgress(parallel=n_workers != 1 and pruning) as progress:
+            while attempts < n_trials or pending is not None:
+                callbacks = []
+                window_error: BaseException | None = None
+                try:
+                    jobs: list[tuple[PreparedTrial, Any]] = []
+                    estimates: list[MemoryEstimate] = []
+                    while len(jobs) < window and (attempts < n_trials or pending is not None):
+                        if pending is not None:
+                            prepared, estimate = pending
+                            pending = None
+                            trial = active[prepared.number]
+                        else:
+                            trial = study.ask()
+                            active[trial.number] = trial
+                            attempts += 1
+                            try:
+                                prepared = runner.prepare(trial)
+                            except optuna.TrialPruned:
+                                study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+                                active.pop(trial.number)
+                                if bar:
+                                    bar.update()
+                                continue
+                            except Exception as error:
+                                if not runner.catch_exceptions:
+                                    raise
+                                trial.set_user_attr("error", str(error))
+                                if runner.error_policy == "penalty":
+                                    penalty = abs(runner.penalty_value)
+                                    study.tell(
+                                        trial,
+                                        penalty if study.direction.name == "MINIMIZE" else -penalty,
+                                    )
+                                else:
+                                    study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                                active.pop(trial.number)
+                                if bar:
+                                    bar.update()
+                                continue
+                            estimate = None
+                            if memory_budget is not None:
+                                horizon = (
+                                    int(prepared.data[runner.horizon_key])
+                                    if runner.horizon_key and runner.horizon_key in prepared.data
+                                    else int(prepared.data["val"].shape[1])
+                                )
+                                context = raw_memory_context(
+                                    prepared.data,
+                                    device=runner.device,
+                                    dtype=prepared.data["train"].dtype,
+                                    horizon=horizon,
+                                )
+                                estimate = estimate_memory(
+                                    prepared.params,
+                                    context,
+                                    custom_factory=True,
+                                    estimator=memory_estimator,
+                                )
+                                metadata = {
+                                    "host_bytes": estimate.host_bytes,
+                                    "device_bytes": estimate.device_bytes,
+                                    "details": json.loads(
+                                        json.dumps(
+                                            dict(estimate.details), default=str, allow_nan=False
+                                        )
+                                    ),
+                                }
+                                trial.set_user_attr("memory_estimate", metadata)
+                                prepared.attrs["memory_estimate"] = metadata
+                                if not memory_budget.fits(estimate):
+                                    trial.set_user_attr(
+                                        "pruned_reason",
+                                        "memory_budget: estimated candidate exceeds the planning limit",
+                                    )
+                                    study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+                                    active.pop(trial.number)
+                                    if bar:
+                                        bar.update()
+                                    continue
+                        if memory_budget is not None and estimate is not None:
+                            if jobs and not memory_budget.fits(estimate, estimates):
+                                pending = prepared, estimate
+                                break
+                            estimates.append(estimate)
+                        callback = progress.callback(trial) if pruning else None
+                        if callback is not None:
+                            callbacks.append(callback)
+                        jobs.append((prepared, callback))
+                    if jobs:
+                        with iter_jobs(
+                            worker.evaluate_job,
+                            jobs,
+                            n_jobs=n_workers,
+                            inner_max_num_threads=inner_max_num_threads,
+                        ) as results:
+                            for result in results:
+                                progress.check()
+                                trial = active[result.number]
+                                try:
+                                    value = runner.finalize(trial, result)
+                                except optuna.TrialPruned:
+                                    study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+                                except TrialEvaluationError:
+                                    study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                                else:
+                                    if not math.isfinite(value):
+                                        raise ValueError(
+                                            "An evaluation returned a non-finite objective"
+                                        )
+                                    study.tell(trial, value)
+                                active.pop(result.number)
+                                if bar:
+                                    bar.update()
+                    progress.check()
+                except BaseException as error:
+                    window_error = error
+                    raise
+                finally:
+                    release_error = window_error
+                    for callback in callbacks:
+                        try:
+                            progress.release(callback)
+                        except BaseException as cleanup_error:
+                            if release_error is None:
+                                release_error = cleanup_error
+                            else:
+                                release_error.add_note(
+                                    f"Progress cleanup also failed: {cleanup_error}"
+                                )
+                    if window_error is None and release_error is not None:
+                        raise release_error
+    except BaseException as error:
+        primary_error = error
         raise
     finally:
-        if progress_cb is not None:
-            progress_cb.close()
-
-
-def run_multiprocess(
-    study_name: str,
-    storage: str,
-    objective: Callable[[optuna.Trial], float],
-    n_trials: int,
-    remaining: int,
-    completed_trials: int,
-    n_workers: int,
-    seed: int | None,
-    pruner: "optuna.pruners.BasePruner | None" = None,
-    verbosity: int = 1,
-    device: "torch.device | None" = None,
-    sampler: optuna.samplers.BaseSampler | None = None,
-) -> None:
-    """Run optimization with multiple OS processes sharing storage.
-
-    Selects a start method that is **device-safe** — ``spawn`` when the study
-    will touch CUDA (a CUDA *device* was requested, or CUDA is already
-    initialised in the parent), otherwise the cheaper ``fork`` — validated for
-    portability (falling back to ``spawn`` on fork-less platforms). It then
-    gives each worker a **bounded** local budget so the study cannot overshoot
-    *n_trials* by a full budget per worker, and stops workers **cooperatively**
-    via a shared :class:`multiprocessing.Event` so an interruption never
-    ``terminate()``-s a worker mid-write.
-
-    .. warning::
-        ``fork`` is silently unusable with CUDA: a forked worker raises
-        ``Cannot re-initialize CUDA in forked subprocess`` on every CUDA op, and
-        :class:`resdag.hpo.trial_runner.TrialRunner` would penalise that (returning
-        ``penalty_value``) rather than crash — producing an all-penalty study
-        with nonsense ``best_params``.  This function therefore prefers ``spawn``
-        for CUDA studies (see :func:`preferred_start_method`), and the runner
-        re-raises the fork/CUDA error rather than penalising it as a last-line
-        guard.
-
-    A custom *sampler* is copied and reseeded in each worker. ``None`` builds
-    the default TPESampler from the derived worker seed. Nonzero worker exit
-    codes raise a RuntimeError in the caller after all workers are joined.
-
-    Parameters
-    ----------
-    study_name : str
-        Name of the shared study in storage.
-    storage : str
-        Raw storage path that each worker will independently open.
-    objective : Callable[[Trial], float]
-        Objective function.  Inherited via ``fork`` or pickled to workers under
-        ``spawn`` (it is a picklable
-        :class:`resdag.hpo.trial_runner.TrialRunner`, so both paths work).
-    n_trials : int
-        Total target number of completed trials (including previously completed).
-    remaining : int
-        Number of new trials to run.
-    completed_trials : int
-        Number of trials already completed before this call.
-    n_workers : int
-        Number of parallel worker processes to spawn.
-    seed : int or None
-        Base random seed.  Each worker receives ``seed + i * 7919``.
-    pruner : optuna.pruners.BasePruner or None, optional
-        Early-stopping pruner attached to each worker's loaded study so the
-        multi-process run honors the same policy as the parent.  ``None``
-        (default) leaves Optuna's default (no pruning) in place.  Must be
-        picklable for the ``spawn`` start method; Optuna's built-in pruners are.
-    verbosity : int, default=1
-        Logging verbosity: ``0`` = silent, ``>= 1`` = show progress bar.
-    device : torch.device or None, optional
-        The device the study places models/data on.  Drives the start-method
-        choice: a CUDA device forces ``spawn`` (``fork`` is unusable with CUDA);
-        ``None`` / CPU keeps ``fork`` unless CUDA is already initialised in the
-        parent.  See :func:`preferred_start_method`.
-
-    Raises
-    ------
-    RuntimeError
-        If the platform supports no usable start method (neither ``fork`` nor
-        ``spawn``); see :func:`select_start_method`.
-
-    Notes
-    -----
-    The caller **must** release all storage references before calling this
-    function to avoid inheriting file locks into forked children.  After this
-    function returns the caller should reopen the storage to build the final
-    ``Study`` object.
-
-    Under ``spawn`` the *objective* and every other argument must be picklable.
-    The objective is a top-level :class:`~resdag.hpo.trial_runner.TrialRunner`; the
-    user-supplied ``model_creator`` / ``search_space`` / ``data_loader`` it
-    holds must likewise be picklable (top-level functions, not lambdas or local
-    closures) for fork-less platforms.
-    """
-    # Device-safe start method: ``spawn`` when the study touches CUDA (fork is
-    # silently broken with CUDA — see preferred_start_method), else the cheaper
-    # ``fork``. select_start_method then validates it against the platform and
-    # falls back if unavailable, raising an actionable RuntimeError when neither
-    # is supported. The concrete ForkContext/SpawnContext both expose
-    # ``Process`` / ``Event``; the typeshed ``BaseContext`` does not, so narrow
-    # to the union for the type checker.
-    start_method = select_start_method(preferred_start_method(device))
-    ctx: ForkContext | SpawnContext = cast(
-        "ForkContext | SpawnContext", mp.get_context(start_method)
-    )
-    logger.info(f"Spawning {n_workers} worker processes (start method: {start_method})")
-
-    # Bounded per-worker budget so no single worker can run the whole global
-    # budget; the global stop callback inside the worker remains a safety net.
-    local_budget = worker_budget(remaining, n_workers)
-
-    # Cooperative stop signal — set on KeyboardInterrupt so workers flush their
-    # current write and exit cleanly instead of being terminated mid-write.
-    stop_event = ctx.Event()
-
-    processes: list[mp.process.BaseProcess] = []
-    for i in range(n_workers):
-        worker_seed = (seed + i * 7919) if seed is not None else None
-        # Annotate as BaseProcess so the later monitor loops (which type ``p`` as
-        # BaseProcess) agree with this context's Process instance. Non-daemon so
-        # workers can finish their in-flight storage write on shutdown.
-        p: mp.process.BaseProcess = ctx.Process(
-            target=_worker_process,
-            args=(
-                study_name,
-                storage,
-                objective,
-                n_trials,
-                local_budget,
-                worker_seed,
-                pruner,
-                stop_event,
-                sampler,
-            ),
-            daemon=False,
-        )
-        p.start()
-        processes.append(p)
-
-    # Reopen storage in the main process for progress monitoring.
-    # This is safe because forked children have their own copies. ``storage`` is
-    # a non-None path string, so the resolved backend is never None here.
-    monitor_storage = resolve_storage(storage, n_workers=1)
-    assert monitor_storage is not None
-    monitor_study = optuna.load_study(
-        study_name=study_name,
-        storage=monitor_storage,
-    )
-
-    bar = tqdm(total=remaining, desc="HPO Trials", unit="trial") if verbosity >= 1 else None
-    prev_count = completed_trials
-
-    try:
-        while any(p.is_alive() for p in processes):
-            time.sleep(0.5)
-            current = len(
-                [t for t in monitor_study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-            )
-            delta = current - prev_count
-            if delta > 0 and bar is not None:
-                bar.update(delta)
-                prev_count = current
-                try:
-                    bar.set_postfix(best=f"{monitor_study.best_value:.4f}")
-                except ValueError:
-                    pass
-    except KeyboardInterrupt:
-        logger.warning(
-            "Optimization interrupted by user — signalling workers to stop "
-            "cooperatively (current trial writes will be flushed)"
-        )
-        stop_event.set()
-    finally:
-        # Always signal stop so non-daemon workers terminate even on normal exit
-        # or an unexpected error; already-finished workers are unaffected.
-        stop_event.set()
-        # Join without a timeout so a worker is allowed to finish its in-flight
-        # storage write rather than being abandoned/terminated mid-write.  The
-        # cooperative stop_event guarantees each worker exits after at most one
-        # more trial.
-        for p in processes:
-            p.join()
+        cleanup_primary = primary_error
+        try:
+            _fail_active(study, active, primary_error)
+        except BaseException as cleanup_error:
+            cleanup_primary = cleanup_error
         if bar is not None:
-            # Final sync in case we missed any
-            current = len(
-                [t for t in monitor_study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-            )
-            delta = current - prev_count
-            if delta > 0:
-                bar.update(delta)
-                try:
-                    bar.set_postfix(best=f"{monitor_study.best_value:.4f}")
-                except ValueError:
-                    pass
-            bar.close()
-    failed = [p.exitcode for p in processes if p.exitcode != 0]
-    if failed:
-        raise RuntimeError(
-            f"HPO worker process failed (exit codes: {failed}). "
-            "See the worker traceback above; no successful study is returned."
-        )
+            try:
+                bar.close()
+            except BaseException as cleanup_error:
+                if cleanup_primary is None:
+                    cleanup_primary = cleanup_error
+                else:
+                    cleanup_primary.add_note(f"Progress bar cleanup also failed: {cleanup_error}")
+        if primary_error is None and cleanup_primary is not None:
+            raise cleanup_primary

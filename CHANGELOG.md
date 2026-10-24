@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v6.0.0 (2026-10-24)
+
+### Features
+
+- Complete public API, forecasting preparation and scientific docs
+  ([`96b5615`](https://github.com/El3ssar/ResDAG/commit/96b561584c34e8b57392ddaae5e75ba4a9fb04a0))
+
+### Breaking Changes
+
+- Generators default to normalize=None; request normalize="standard" explicitly to reproduce old
+  generator scaling. Use advanced HPO helpers from rd.hpo rather than duplicate root aliases. Raw
+  load_full requires trusted=True. Internal memory-context builders, cell validators and worker
+  adapters are private. Migration guidance is included.
+
+
 ## v5.0.2 (2026-10-24)
 
 ### Bug Fixes

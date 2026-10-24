@@ -208,7 +208,7 @@ from .utils.seeds import SeedStreams
 # Signature stability diagnostic, surfaced at the top level for discoverability.
 from .utils.states import esp_index
 
-__version__ = "5.0.2"
+__version__ = "6.0.0"
 
 __all__ = [
     "ArtifactError",

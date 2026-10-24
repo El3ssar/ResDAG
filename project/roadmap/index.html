@@ -1,0 +1,7414 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Delivery tracker for dependable forecasting, functional DAG composition, PyTorch integration, tuning, persistence and competitive performance.">
+      
+      
+        <meta name="author" content="Daniel Estevez-Moya">
+      
+      
+        <link rel="canonical" href="https://el3ssar.github.io/ResDAG/project/roadmap/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../phase-two-design/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Roadmap - ResDAG</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Figtree:300,300i,400,400i,700,700i%7CIBM+Plex+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Figtree";--md-code-font:"IBM Plex Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../css/notebook.css">
+    
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#roadmap" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ResDAG" class="md-header__button md-logo" aria-label="ResDAG" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResDAG
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Roadmap
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/El3ssar/ResDAG" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    El3ssar/ResDAG
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../start/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../build/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Build
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../workflows/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Work
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../migrating/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Migrating
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../theory/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Theory
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ResDAG" class="md-nav__button md-logo" aria-label="ResDAG" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    ResDAG
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/El3ssar/ResDAG" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    El3ssar/ResDAG
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../start/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/first-forecast/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First forecast
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/end-to-end/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train, save and integrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/model-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Common model workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/forecast-experiment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Measure a forecast
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/feedback/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feedback and timing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/trajectory-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TSDynamics trajectories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/named-trajectories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Named trajectories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The mental model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Build
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/custom-components/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/custom-preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom preprocessing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/layers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Layers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/layers/esn-layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Esn layer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/layers/legendre-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legendre delay memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/layers/ng-reservoir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ng reservoir
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/layers/oscillator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Oscillator reservoir
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/layers/pytorch-recurrent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reuse a PyTorch GRU or LSTM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/layers/transforms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/readouts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Readouts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Readouts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/lsmr-readout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Low-memory LSMR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/readouts/cg-readout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cg readout
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/architectures/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architectures
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architectures
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architectures/classic-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Classic esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architectures/coupled-ensemble/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coupled ensemble
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architectures/headless-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Headless esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architectures/linear-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linear esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architectures/ott-esn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ott esn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architectures/power-augmented/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Power augmented
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/initialization/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initialization
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Initialization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/recurrent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recurrent weights
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/custom/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/initialization/topologies/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topologies
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_7_4" id="__nav_3_7_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_7_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Topologies
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/antisymmetric/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antisymmetric
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/band/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Band
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/barabasi_albert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Barabasi albert
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/block_diagonal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block diagonal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/chord_dendrocycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chord dendrocycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/complete/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Complete
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/connected_erdos_renyi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connected erdos renyi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/connected_watts_strogatz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connected watts strogatz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/cycle_jumps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cycle jumps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/delay_line/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Delay line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/delay_line_backward/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Delay line backward
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/dendrocycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dendrocycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/eigen_spectrum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eigen spectrum
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/erdos_renyi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Erdos renyi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/fast_spectral_initialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fast spectral initialization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/householder_orthogonal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Householder orthogonal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/kleinberg_small_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kleinberg small world
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/multi_cycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi cycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/newman_watts_strogatz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Newman watts strogatz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/orthogonal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orthogonal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Random
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/regular/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Regular
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/ring_chord/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ring chord
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/self_loop_cycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self loop cycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/signed_permutation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signed permutation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/simple_cycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simple cycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/simple_cycle_jumps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simple cycle jumps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/singular_spectrum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Singular spectrum
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/spectral_cascade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spectral cascade
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/toeplitz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Toeplitz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/watts_strogatz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watts strogatz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/topologies/zeros/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zeros
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../build/initialization/initializers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initializers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_7_5" id="__nav_3_7_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_7_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Initializers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/bernoulli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bernoulli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/binary_balanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Binary balanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/chain_of_neurons_input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chain of neurons input
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/chebyshev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chebyshev
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/chessboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chessboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/dendrocycle_input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dendrocycle input
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/informed_init/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Informed init
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/logistic_mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logistic mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/minimal_init/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Minimal init
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/normal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Normal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/opposite_anchors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opposite anchors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/pseudo_diagonal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pseudo diagonal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Random
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/random_binary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Random binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/ring_window/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ring window
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/uniform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Uniform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/weighted_init/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Weighted init
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/weighted_minimal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Weighted minimal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/initialization/initializers/zeros/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zeros
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Work
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/train/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/readout-solvers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Readout solvers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/forecast/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecast
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/visualize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plot and animate forecasts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/forecast-capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecast execution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/lyapunov/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lyapunov time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/ngrc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NG-RC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/tune/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tune
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/tuning-resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/raw-hpo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Raw HPO runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Streaming &amp; DataLoaders
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/sparse-reservoirs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory &amp; sparse models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/save-load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Save, load &amp; diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scale &amp; deploy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrating/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../theory/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theory
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Theory
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theory/dynamics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reservoir dynamics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theory/readout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Readout solvers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theory/timing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Timing conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theory/design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design of the library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/top-level/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Top level
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/facade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facade
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/artifacts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model artifacts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/init/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initialization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and datasets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models &amp; ensembles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/hpo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked="">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#goals-and-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals and decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delivery-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delivery overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-correctness-and-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: correctness and verification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: correctness and verification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#verification-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification record
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-one-functional-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: one functional workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: one functional workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#first-increment-verification-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First-increment verification record
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trajectory-increment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trajectory increment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completion-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-tuning-and-automatic-solver-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: tuning and automatic solver policy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: tuning and automatic solver policy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#initial-implementation-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initial implementation verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completion-verification_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-model-artifacts-diagrams-and-efficient-training" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: model artifacts, diagrams and efficient training
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: model artifacts, diagrams and efficient training">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-verification-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current verification record
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sq-01-one-pass-training-of-cascaded-readout-dags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQ-01: one-pass training of cascaded-readout DAGs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-speed-memory-and-comparisons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: speed, memory and comparisons
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: speed, memory and comparisons">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#known-baseline-performance-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known baseline performance limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#all-pytorch-closeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All-PyTorch closeout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#first-increment-accuracy-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First-increment accuracy evidence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#continuation-decisions-and-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuation decisions and verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-experiment-readiness-and-ongoing-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: experiment readiness and ongoing documentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#completion-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion log
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#standard-tools-to-reuse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard tools to reuse
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#final-api-documentation-and-hygiene-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final API, documentation and hygiene sweep
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Final API, documentation and hygiene sweep">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#completion-verification-24-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion verification — 24 October 2026
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phase-two-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase two design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phase-three-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase three design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phase-four-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase four design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phase-five-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase five design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phase-five-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase five measurements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phase-five-robustness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vanilla robustness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence and dependency audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../single-pass-training-benchmark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Single-pass training measurements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graph-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../esn-migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    New ESN API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../citation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Citation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecosystem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ecosystem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../related-work/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Related work
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#goals-and-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals and decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delivery-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delivery overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-correctness-and-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: correctness and verification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: correctness and verification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#verification-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification record
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-one-functional-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: one functional workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: one functional workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#first-increment-verification-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First-increment verification record
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trajectory-increment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trajectory increment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completion-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-tuning-and-automatic-solver-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: tuning and automatic solver policy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: tuning and automatic solver policy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#initial-implementation-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initial implementation verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completion-verification_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-model-artifacts-diagrams-and-efficient-training" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: model artifacts, diagrams and efficient training
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: model artifacts, diagrams and efficient training">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-verification-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current verification record
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sq-01-one-pass-training-of-cascaded-readout-dags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQ-01: one-pass training of cascaded-readout DAGs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-speed-memory-and-comparisons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: speed, memory and comparisons
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: speed, memory and comparisons">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#known-baseline-performance-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known baseline performance limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#all-pytorch-closeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All-PyTorch closeout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#first-increment-accuracy-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First-increment accuracy evidence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#continuation-decisions-and-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuation decisions and verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-experiment-readiness-and-ongoing-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: experiment readiness and ongoing documentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#completion-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion log
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#standard-tools-to-reuse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard tools to reuse
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#final-api-documentation-and-hygiene-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final API, documentation and hygiene sweep
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Final API, documentation and hygiene sweep">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#completion-verification-24-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion verification — 24 October 2026
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="roadmap">Roadmap<a class="headerlink" href="#roadmap" title="Permanent link">¶</a></h1>
+<p>Last updated: <strong>24 October 2026</strong>. Audit baseline: <strong>ResDAG 1.1.0</strong>;
+phase-one corrections released in <strong>1.1.1</strong>, and the initial trajectory
+workflow in <strong>1.2.0</strong>. Phase-two completion was merged through
+<a href="https://github.com/El3ssar/ResDAG/pull/460">PR #460</a> as <code>4735542</code>.
+The <a href="https://github.com/El3ssar/ResDAG/releases/tag/v2.0.0">2.0.0 release</a>
+and its documentation deployment are verified. Phase three is implemented and
+verified in <a href="https://github.com/El3ssar/ResDAG/pull/462">PR #462</a>, merged as <code>f8d7637</code>;
+the initial tuning increment was published in <strong>2.1.0</strong>, and phase-three
+completion is released in <strong>3.0.0</strong>. Phase four, including single-pass multi-readout training (SQ-01), is implemented
+and verified in <a href="https://github.com/El3ssar/ResDAG/pull/463">PR #463</a>, merged as
+<code>0b546d6</code>. Phase five is in progress: correct held-out comparisons and measure
+classical forecast accuracy before changing execution policies.
+The phase-four release job published <strong>4.0.0</strong> after full post-merge CI passed.
+The first phase-five increment was merged through
+<a href="https://github.com/El3ssar/ResDAG/pull/464">PR #464</a> as <code>041db61</code>.
+Its <strong>4.1.0</strong> release, installed published wheel, full post-merge CI and
+documentation deployment are verified. The continuation adds compact sparse
+storage, optional matrix-free fitting, native forecast hooks and the first
+equal-time three-library comparison.
+The CPU correctness/readout follow-up was merged through
+<a href="https://github.com/El3ssar/ResDAG/pull/466">PR #466</a> as <code>3b34005</code>.
+Its <strong>5.0.1</strong> release, four full post-merge suites, three dynamics lanes,
+installed published package and live documentation deployment are verified.
+The PyTorch closeout was merged through
+<a href="https://github.com/El3ssar/ResDAG/pull/467">PR #467</a> as <code>ca40fe4b</code>.
+Its <strong>5.0.2</strong> release, all four full post-merge suites, installed published
+package and live documentation deployment are verified.
+The closeout checks trained reservoirs inside larger PyTorch networks,
+adopts a measured parallel-forecast improvement, validates frozen recipes on
+independent trajectories and adds exact experiment replay. The measured
+cross-library CPU gap and the friendly vanilla recipes' accuracy shortfall
+remain explicit open goals.</p>
+<p>This is the canonical delivery tracker. Update the status, evidence and next
+step in the same pull request as the implementation. A task is <strong>Done</strong> only
+after its acceptance checks pass and its public behavior is documented.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pending</td>
+<td>Agreed work that has not started, or depends on an earlier task.</td>
+</tr>
+<tr>
+<td>WIP</td>
+<td>Implementation or verification is in progress; it is not a release claim.</td>
+</tr>
+<tr>
+<td>Done</td>
+<td>Implementation, regression tests, documentation and required CI checks are complete.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="goals-and-decisions">Goals and decisions<a class="headerlink" href="#goals-and-decisions" title="Permanent link">¶</a></h2>
+<ul>
+<li>Autonomous dynamical-system forecasting is the easiest default workflow.</li>
+<li>Presets and custom DAGs use the same fit, forecast, tune and save lifecycle.</li>
+<li>Keep the expressive <strong>functional construction API</strong>, similar to building a
+  Keras functional model. <code>pytorch_symbolic</code> remains supported while its
+  limitations and available standard PyTorch alternatives are evaluated.
+  Changing the backend must preserve that construction experience.</li>
+<li>Prefer existing PyTorch, Optuna, Graphviz, SciPy and TSDynamics capabilities.
+  Add a ResDAG abstraction only when a demonstrated requirement needs it.</li>
+<li>Keep every component replaceable through public interfaces: initializers,
+  cells, state, transforms, readouts, solvers, objectives and search spaces.</li>
+<li>Automatic defaults must be dependable; users can force the solver,
+  precision, device, preprocessing and execution choices.</li>
+<li>Learn preprocessing from training data and return forecasts in original
+  units. Keep preprocessing configurable and optional.</li>
+<li>The common PyTorch workflow applies fitted preprocessing in <code>model(x)</code> and
+  returns original units; <code>model.graph(x)</code> exposes the raw graph. Calls carry
+  reservoir state by default. One output returns a tensor; several outputs
+  return a dictionary keyed by their declared names.</li>
+<li>Provide explicit delayed feedback connections and named inputs/outputs.</li>
+<li>Keep TSDynamics optional, with first-class trajectory input/output.</li>
+<li>Tuning has quick, balanced and thorough presets. Balanced is the default;
+  the winning model is fitted and ready to forecast afterward.</li>
+<li>Compare forecast accuracy, speed and memory together. Publish reproducible
+  workload-specific results and distinguish measured hardware from skipped checks.</li>
+<li>Breaking simplifications belong in a major release with migration guidance.
+  Consult the maintainer before major implementation choices.</li>
+</ul>
+<h2 id="delivery-overview">Delivery overview<a class="headerlink" href="#delivery-overview" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Status</th>
+<th>Deliverable</th>
+<th>Exit condition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0. Baseline audit</td>
+<td>Done</td>
+<td>Review all 173 runtime modules, 62 documentation pages and 17 examples; reproduce high-impact defects.</td>
+<td>Explicit coverage inventory, independent numerical/state probes and chronological HPO pilot recorded.</td>
+</tr>
+<tr>
+<td>1. Correctness and verification</td>
+<td>Done</td>
+<td>Repair confirmed training, numerical, initialization, diagnostic, HPO and integration failures.</td>
+<td>Independent regression oracles pass; full supported CI, optional integration and strict docs are green.</td>
+</tr>
+<tr>
+<td>2. Unified functional model workflow</td>
+<td>Done</td>
+<td>One PyTorch model lifecycle for presets and custom graphs.</td>
+<td>The same documented fit/forecast/state commands work for both; functional construction and PyTorch semantics are preserved. Tuning and complete artifacts remain phases 3 and 4.</td>
+</tr>
+<tr>
+<td>3. Reliable automatic tuning</td>
+<td>Done</td>
+<td>Robust tuning with little setup and complete winner provenance.</td>
+<td>Quick/balanced/thorough studies, streaming pruning, optional screening/memory budgets, protocol-safe reuse and fitted winners pass local/package/hosted verification. Completion PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/462" title="GitHub Issue: El3ssar/resdag #462">#462</a> merged as <code>f8d7637</code>.</td>
+</tr>
+<tr>
+<td>4. Model artifacts, diagrams and efficient training</td>
+<td>Done</td>
+<td>Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work.</td>
+<td>Fresh-process load/forecast parity, diagrams and one-pass training oracles pass across supported graph families. PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/463" title="GitHub Issue: El3ssar/resdag #463">#463</a> merged as <code>0b546d6</code>.</td>
+</tr>
+<tr>
+<td>5. Performance and competitive evidence</td>
+<td>WIP</td>
+<td>Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons.</td>
+<td>Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. First increment repairs chronological windows and establishes classical accuracy baselines.</td>
+</tr>
+<tr>
+<td>6. Experiments and release readiness</td>
+<td>Done</td>
+<td>Stable experiment recipes, executable documentation and migration guidance.</td>
+<td>Clean candidate packages, exact experiment replay, executable guides and full hosted compatibility pass in PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/467" title="GitHub Issue: El3ssar/resdag #467">#467</a>. Published 5.0.2 wheel, sdist, release tag and live Pages bytes are verified.</td>
+</tr>
+</tbody>
+</table>
+<p>Phase four is merged under the approved artifact/state contract. Phase five
+starts with <a href="../phase-five-design/">the agreed measurement design</a>.
+Documentation and CI are part of every phase, not deferred cleanup.</p>
+<h2 id="phase-1-correctness-and-verification">Phase 1: correctness and verification<a class="headerlink" href="#phase-1-correctness-and-verification" title="Permanent link">¶</a></h2>
+<p>Preserve current public workflows while fixing incorrect behavior. Numerical
+corrections may change forecasts; explain those changes and review affected
+golden fixtures against independent references.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1-01</td>
+<td>Done</td>
+<td>Stable batch and streaming readout statistics.</td>
+<td>Offset, rank-deficient and ill-conditioned fixtures agree with independently centered SVD/SciPy references; chunked fitting agrees with batch fitting.</td>
+</tr>
+<tr>
+<td>P1-02</td>
+<td>Done</td>
+<td>Preserve working precision in incremental/RLS readouts; correct fresh RLS prior and FISTA convergence.</td>
+<td><code>.float()</code> and factory construction retain the configured accumulation policy; fresh streaming parity; adversarial FISTA optimality; legacy checkpoints migrate explicitly.</td>
+</tr>
+<tr>
+<td>P1-03</td>
+<td>Done</td>
+<td>Correct staged fitting when an upstream fitted readout drives downstream recurrent state.</td>
+<td>Fresh cascaded DAG agrees with a closed-form/stagewise oracle; ordinary one-stage fitting retains its fast path.</td>
+</tr>
+<tr>
+<td>P1-04</td>
+<td>Done</td>
+<td>Correct inference mode, multi-head dtype preservation and divergent ensemble behavior.</td>
+<td>Repeatable noise-free inference; mode restoration; mixed float/integer output schemas preserved; finite-member and all-invalid policies tested.</td>
+</tr>
+<tr>
+<td>P1-05</td>
+<td>Done</td>
+<td>Coherent sparse weight edits and live versus fixed cell settings.</td>
+<td>In-place weight changes affect actual recurrence; accepted configuration writes affect dynamics; fixed settings reject misleading edits.</td>
+</tr>
+<tr>
+<td>P1-06</td>
+<td>Done</td>
+<td>Consistent initializer arguments, RNGs, precision, discovery and spectral scaling.</td>
+<td>Direct/name/tuple/object forms agree; required arguments work; local seeds are independent of unrelated draws; custom float64 is preserved; analytic spectral counterexamples pass.</td>
+</tr>
+<tr>
+<td>P1-07</td>
+<td>Done</td>
+<td>Correct calibrated/vector-leak diagnostics and held-out memory-capacity evaluation.</td>
+<td>Actual-cell Jacobian/reference comparisons; caller state/modes preserved; held-out estimator validated with stated finite-sample limitations.</td>
+</tr>
+<tr>
+<td>P1-08</td>
+<td>Done</td>
+<td>Repair current TSDynamics analysis integration and test it explicitly.</td>
+<td>Current supported TSDynamics analyses work; dependency-free tests run without the optional package; optional CI lane runs genuine integration tests.</td>
+</tr>
+<tr>
+<td>P1-09</td>
+<td>Done</td>
+<td>Stop failed HPO evaluations masquerading as winners; validate transferred objective directions.</td>
+<td>Invalid evaluations are not selected as successful models; all-invalid studies fail clearly; incompatible transfer is rejected; error details remain accessible.</td>
+</tr>
+<tr>
+<td>P1-10</td>
+<td>Done</td>
+<td>Repair generated initializer recipes and stale correctness/solver guidance.</td>
+<td>All 51 catalog recipes execute; defaults match implementations; examples teach held-out evaluation and training-only scaling.</td>
+</tr>
+<tr>
+<td>P1-11</td>
+<td>Done</td>
+<td>Strengthen CI coverage and documentation selection.</td>
+<td>Docs-only changes select executable doc tests; optional integrations have a lane; full coverage remains near the established baseline; no performance thresholds weakened.</td>
+</tr>
+<tr>
+<td>P1-12</td>
+<td>Done</td>
+<td>Review historical benchmark claims and record release verification.</td>
+<td>Historical results are clearly separated from current claims; full tests, strict docs, CPU gates, wheel/install checks and hosted CI recorded before release.</td>
+</tr>
+</tbody>
+</table>
+<p>The regular graph now honors the requested degree, including odd degrees when
+the node count permits them. Cycle/jump overlaps add both contributions. These
+are intentional mathematical corrections approved for phase 1: regenerated
+weights and experiment results can change even with the same seed. Migration
+notes accompany both initializers.</p>
+<p>Phase 1 did not change dataset normalization defaults, deep-stack
+seed schedules, feedback routing or the meaning of existing <code>save()</code> files.
+Later breaking changes are recorded in the major-release migration below.</p>
+<h3 id="verification-record">Verification record<a class="headerlink" href="#verification-record" title="Permanent link">¶</a></h3>
+<p>Verified <strong>22 October 2026</strong>, runtime source commit <code>453f34a</code> in
+<a href="https://github.com/El3ssar/ResDAG/pull/458">PR #458</a>. The final tracker update
+changes documentation only. Merged into <code>main</code> on 22 October 2026 as
+<code>41a1744</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete local suite</td>
+<td><strong>4,084 passed</strong>, 234 skipped, 13 benchmark cases deselected; <strong>93.06% coverage</strong>. Forecast golden fixtures are unchanged.</td>
+</tr>
+<tr>
+<td>Locked hosted CI</td>
+<td><strong>Passed</strong> on Python 3.11–3.14, including lint/types, CPU gates and installed TSDynamics lanes on 3.12–3.14. <a href="https://github.com/El3ssar/ResDAG/actions/runs/39789171340">Run</a>.</td>
+</tr>
+<tr>
+<td>Latest-dependency hosted CI</td>
+<td><strong>Passed</strong> on Python 3.11–3.14, optional TSDynamics lanes and strict docs. The 3.13 lane tested Torch 2.14.1 and NumPy 2.5.4. <a href="https://github.com/El3ssar/ResDAG/actions/runs/39789185722">Run</a>.</td>
+</tr>
+<tr>
+<td>Documentation</td>
+<td>Strict MkDocs build passes; all <strong>51</strong> catalog recipes and three primary architecture guides execute; rendered roadmap and phase navigation inspected.</td>
+</tr>
+<tr>
+<td>Optional integration</td>
+<td>Real TSDynamics 6.0.2: <strong>32 passed</strong>, one intentional missing-dependency check skipped.</td>
+</tr>
+<tr>
+<td>CPU performance gates</td>
+<td><strong>4 passed</strong>, four unavailable-device cases skipped, one deselected; no ratio thresholds weakened.</td>
+</tr>
+<tr>
+<td>Package and compatibility</td>
+<td>Wheel/sdist build, clean wheel install, fit/forecast/full-model-load smoke; legacy readout checkpoints and old full-model pickle compatibility tests pass.</td>
+</tr>
+</tbody>
+</table>
+<p>Native MPS correctness checks ran on this Mac. CUDA throughput was not measured.
+These checks establish the documented correctness and regression contracts;
+they do not establish comparative forecast superiority. The aligned
+speed–accuracy study remains in phase 5. For a runnable workflow today, see
+<a href="../../start/end-to-end/">the end-to-end guide</a> and
+<a href="../ecosystem/#generate-train-and-forecast">the TSDynamics example</a>.</p>
+<h2 id="phase-2-one-functional-workflow">Phase 2: one functional workflow<a class="headerlink" href="#phase-2-one-functional-workflow" title="Permanent link">¶</a></h2>
+<p>The <a href="../phase-two-design/">phase-two design note</a> distinguishes agreed behavior,
+the agreed construction API, and implementation progress. The maintainer has
+approved <code>rd.Model(inputs={...}, outputs={...})</code>; later major choices still
+require consultation before implementation.</p>
+<p>Current boundary: phase 1 orders algebraic fitting inside standard
+<code>nn.Sequential</code>, but the explicit-state and compiled backends cannot thread
+state through reservoirs hidden inside containers. Phase two rejects that case
+before running the graph, rather than changing stored state during a supposedly
+stateless call. Expose reservoirs as separate functional graph nodes for those
+execution paths. Ordinary stateful graph calls remain available.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P2-01</td>
+<td>Done</td>
+<td>Agree a minimal common model lifecycle and capability contract.</td>
+<td>Native <code>rd.ESN</code> and named <code>rd.Model</code> share original-unit fit/forecast, carried state and named results across symbolic DAGs, parallel local-state graphs and coupled ensembles. Public fast/history capability contract verified. Tuning and complete artifacts remain phases 3 and 4.</td>
+</tr>
+<tr>
+<td>P2-02</td>
+<td>Done</td>
+<td>Preserve functional construction while evaluating existing graph tooling.</td>
+<td>Functional construction retained; <a href="../graph-tooling/">standard-tooling review</a> records FX/export/module/Graphviz boundaries. Executable FX leaf tracing preserves ownership, state, values and upstream gradients for tensor and named multi-head pipelines. No private graph API exposed to users.</td>
+</tr>
+<tr>
+<td>P2-03</td>
+<td>Done</td>
+<td>Named ports, branches/merges, multiple heads and explicit delayed feedback.</td>
+<td>Named feedback, fanout, delays and separate per-head prediction leads pass independent physical-time and driver-count oracles. Includes lead-aware targets, scaling bridges and metadata.</td>
+</tr>
+<tr>
+<td>P2-04</td>
+<td>Done</td>
+<td>Coherent cell/state and execution semantics.</td>
+<td>Public framewise declaration and explicit full-history execution verified. Temporal fitting preserves the complete prefix; default fast path remains. Explicit-state visibility, final state, batch switching, hooks and gradients covered across model families.</td>
+</tr>
+<tr>
+<td>P2-05</td>
+<td>Done</td>
+<td>Training-only preprocessing owned by the convenient workflow.</td>
+<td>Fitted Torch statistics, inverse transforms, feedback unit conversion and off/method switches work across symbolic/parallel/coupled families. Independent training-window, gradient, native MPS and checkpoint oracles pass. Per-port reversible custom modules and identity overrides preserve module/parameter ownership through staged fit and state-only validation. Complete artifacts belong to phase 4.</td>
+</tr>
+<tr>
+<td>P2-06</td>
+<td>Done</td>
+<td>First-class TSDynamics trajectories through the optional extra.</td>
+<td>Bare and named trajectory mappings preserve component names, future times and checkpoint-safe provenance. Configurable resampling, automatic shared-range alignment, physical lead-aware targets, held-out target clipping and tensor-return option pass installed-dependency and independent clock oracles.</td>
+</tr>
+<tr>
+<td>P2-07</td>
+<td>Done</td>
+<td>Independent named initialization seeds and public customization templates.</td>
+<td>Public <code>SeedStreams</code> gives stable named initialization seeds; executable initializer/cell/transform/solver recipes use public APIs, including <code>ReadoutLayer.solve</code>. Seeded presets/ensembles preserve caller RNG streams; fresh-process MPS and CPU bit-pattern oracles pass.</td>
+</tr>
+<tr>
+<td>P2-08</td>
+<td>Done</td>
+<td>Standard PyTorch composition and migration.</td>
+<td>Direct new <code>ESN</code> module uses the common workflow, eager/build/lazy construction and raw <code>.graph</code>; no legacy wrapper. Symbolic/parallel/coupled state, gradients/checkpoints and native MPS covered; FX leaf composition supports presets/custom models.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="first-increment-verification-record">First-increment verification record<a class="headerlink" href="#first-increment-verification-record" title="Permanent link">¶</a></h3>
+<p>Local verification on <strong>22 October 2026</strong>, commit <code>665b04a</code>, covers the symbolic-DAG increment,
+not completion of phase two. The <a href="../../start/model-workflow/">runnable guide</a>
+shows functional construction, factory wrapping, named targets and PyTorch
+composition; its Python examples execute in CI, including on later docs-only
+changes.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete local suite</td>
+<td><strong>4,264 passed</strong>, 234 skipped, 13 benchmark cases deselected; <strong>93.04% coverage</strong>. Existing staged-fitting and forecast golden tests pass unchanged.</td>
+</tr>
+<tr>
+<td>Independent compatibility probe</td>
+<td><strong>120/120</strong> CPU float64 combinations: 12 reservoir configurations, including delayed and GRU/LSTM states, across ten readout/solver configurations. Forecasts agree with manually normalized training; deepcopy and checkpoint parity pass, without convergence warnings in the final configuration.</td>
+</tr>
+<tr>
+<td>Native MPS</td>
+<td>Recurrent float32 fitting with a compatible CG solver, original-unit forecasting, CPU/checkpoint transfer and upstream gradients pass; CPU-fit-then-MPS inference also passes. This is correctness evidence, not a GPU throughput claim.</td>
+</tr>
+<tr>
+<td>CPU performance gates</td>
+<td><strong>4 passed</strong>, four unavailable-device cases skipped, one deselected; existing thresholds unchanged.</td>
+</tr>
+<tr>
+<td>PyTorch and checkpoint behavior</td>
+<td>Named mappings, state carry/chunks, hooks, gradient preservation, parameter identity, failed-refit isolation, inference-mode fitting/loading and malformed schema rejection have permanent regression tests.</td>
+</tr>
+<tr>
+<td>Package smoke</td>
+<td>Wheel/sdist build and isolated installed-wheel fit/forecast/checkpoint/PyTorch smoke pass, including Torch 2.14.1.</td>
+</tr>
+<tr>
+<td>Documentation</td>
+<td>Strict MkDocs build passes; the common-model guide executes, and rendered guide/roadmap navigation was inspected.</td>
+</tr>
+</tbody>
+</table>
+<p>At that checkpoint, the first increment retained the established flat forecast engine
+and its single feedback route. Custom preprocessing, feedback conversion,
+named delayed routes, trajectory mappings, other backend families and preset
+migration remain open. Required hosted CI and strict documentation checks must
+pass on the implementation PR before merge.</p>
+<h3 id="trajectory-increment">Trajectory increment<a class="headerlink" href="#trajectory-increment" title="Permanent link">¶</a></h3>
+<p>The <a href="../../start/trajectory-workflow/">trajectory guide</a> covers direct
+<code>fit(trajectory)</code>, default trajectory forecasts, the explicit tensor option,
+configurable resampling and portable checkpoints. Uniform time axes are the
+normal case; irregular axes are resampled automatically with linear, PCHIP or
+cubic interpolation. Explicit sampling intervals preserve the last observed
+time and never extrapolate. Future histories use the fitted interval.</p>
+<p>The integration adds independent physical-time oracles, source/clock/schema
+validation, real TSDynamics simulation, failed-refit isolation, legacy
+checkpoint and optional-dependency tests. Its runnable guide is included in
+the installed-dynamics CI lanes on Python 3.12–3.14, so missing optional
+packages cannot silently skip integration verification. This was an intermediate
+delivery; the completion record below covers the remaining phase-two work.</p>
+<p>The adapter, workflow and guide comprise <strong>81 checks</strong>, verified from a clean
+installed wheel against the minimum supported <strong>TSDynamics 6.0.2</strong>, and with
+the locked <strong>6.0.3</strong> locally. Native MPS fitting, device-local tensor forecasts,
+portable metadata, bfloat16 output conversion and strict documentation builds
+are covered. Complete-suite and hosted verification are tracked on
+<a href="https://github.com/El3ssar/ResDAG/pull/459">PR #459</a>, merged as <code>d63905d</code>.
+The post-merge <a href="https://github.com/El3ssar/ResDAG/actions/runs/39826799461">release workflow</a>
+passed the full Python 3.11–3.14 test matrix, installed dynamics lanes,
+lint/types and package publication. The initial post-merge
+<a href="https://github.com/El3ssar/ResDAG/actions/runs/39826799223">documentation run</a>
+also passed. This increment is released in
+<a href="https://github.com/El3ssar/ResDAG/releases/tag/v1.2.0">1.2.0</a>.</p>
+<h3 id="completion-verification">Completion verification<a class="headerlink" href="#completion-verification" title="Permanent link">¶</a></h3>
+<p>The completion increment adds parallel/coupled adapters, direct PyTorch <code>ESN</code>,
+named delayed feedback and independent prediction leads, full-history temporal
+execution/fitting, stable named seeds and public customization recipes. It also
+repairs <code>Standardize</code> precision/device construction and fitting, scripted inverse,
+accelerator RNG isolation, and MPS solve diagnostics. These public changes target
+the next <strong>major release</strong>: the maintainer approved the new API directly, without
+legacy wrappers or compatibility constraints. Reversible, signal-preserving custom
+preprocessing and automatic shared-range alignment of named trajectories are
+implemented and verified as well.</p>
+<p>Verification of source <code>2942bb5a944248deadd977546a3dff14be41f6e2</code> on
+22 October 2026. The runtime tree is identical to <code>7f294ba</code>; the final source
+adds the stricter coverage gate and 83 dependency-free clock/CI regression cases.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete local runtime suite with dynamics</td>
+<td><strong>4,741 passed</strong>, 231 skipped, 13 benchmark cases deselected; <strong>92.81% coverage</strong> on <code>7f294ba</code>, before the final 83 CI/clock cases were added.</td>
+</tr>
+<tr>
+<td>Complete final local suite without dynamics</td>
+<td><strong>4,713 passed</strong>, 342 skipped, 13 benchmark cases deselected; <strong>91.08% coverage</strong>, with the strict floor enforced. Native MPS supplies additional local device checks.</td>
+</tr>
+<tr>
+<td>Installed branch wheel</td>
+<td><strong>462 passed</strong>, three skipped, including native MPS correctness, with locked <strong>Torch 2.10.0 / TSDynamics 6.0.3</strong>. All <strong>183 Python modules</strong> match the runtime source byte-for-byte; the rebuilt final wheel is identical to this tested wheel. This is an unreleased branch build, not the published 1.2.0 package.</td>
+</tr>
+<tr>
+<td>Minimum optional dependency and newer Torch</td>
+<td>A further <strong>462 passed</strong>, three skipped, from the same installed branch wheel with <strong>TSDynamics 6.0.2 / Torch 2.14.1</strong>.</td>
+</tr>
+<tr>
+<td>CPU performance gates</td>
+<td><strong>Four passed</strong>, four unavailable-device cases skipped, one deselected; thresholds unchanged. CUDA throughput was not measured.</td>
+</tr>
+<tr>
+<td>Supplemental complete CPU benchmark selection</td>
+<td><strong>Seven passed, two failed</strong> locally. The same sparse/parallel timing assertions fail against unchanged <code>main</code>; these pre-existing hardware limits are recorded in phase 5 below. They are outside the current four-test CI performance job.</td>
+</tr>
+<tr>
+<td>Static and package checks</td>
+<td>CI-scoped Ruff/Black, whole-package mypy (<strong>183 modules</strong>), lock validation, actionlint and wheel/sdist builds pass. Both archives match runtime source and exclude local coordination notes.</td>
+</tr>
+<tr>
+<td>Documentation</td>
+<td>Strict locked/latest MkDocs builds and <strong>15 executable guide checks</strong> pass. Rendered desktop guide navigation, custom preprocessing, named trajectories and feedback layout inspected.</td>
+</tr>
+<tr>
+<td>Full hosted suites</td>
+<td><a href="https://github.com/El3ssar/ResDAG/actions/runs/39845805396">Locked CI</a> and <a href="https://github.com/El3ssar/ResDAG/actions/runs/39845806724">latest compatibility</a> pass all eight Python 3.11–3.14 suites. Each: <strong>4,625 passed</strong>, 430 skipped, 13 deselected; <strong>90.97–91.01% coverage</strong> against the unchanged 90% floor.</td>
+</tr>
+<tr>
+<td>Hosted integration and docs</td>
+<td>All six Python 3.12–3.14 dynamics lanes pass <strong>212 checks</strong> each, seven skipped, using locked <strong>6.0.3</strong> and latest <strong>6.1.0</strong>. Strict docs, lint/types and CPU benchmark/report jobs pass.</td>
+</tr>
+</tbody>
+</table>
+<p>The final CI fix sets coverage report precision to two decimal places: integer
+rounding had allowed a below-90% result to exit successfully. A real pytest
+subprocess regression now verifies that <strong>89.8% fails</strong> and <strong>90.2% passes</strong>.
+The additional clock tests exercise pure alignment/interpolation/checkpoint
+logic without requiring TSDynamics; no first-party code was excluded to reach
+the floor. Final prose-only roadmap updates retain this runtime/test/config
+tree and run the required PR checks again.</p>
+<h2 id="phase-3-tuning-and-automatic-solver-policy">Phase 3: tuning and automatic solver policy<a class="headerlink" href="#phase-3-tuning-and-automatic-solver-policy" title="Permanent link">¶</a></h2>
+<p>Implementation started on <strong>22 October 2026</strong>, from the phase-two merge.
+The new <code>model.tune(...)</code> lifecycle uses the common <code>Model</code>/<code>ESN</code> workflow,
+including preprocessing, named feedback and trajectory clocks. The maintainer
+approved chronological 80/20 validation, refitting the winner on supplied
+development data, Python recipes for structural candidates, the longest accurate
+forecast as the default reward, weakest-output aggregation and joblib/loky
+parallel trials. The initial implementation is verified in
+<a href="https://github.com/El3ssar/ResDAG/pull/461">PR #461</a>. See the
+<a href="../phase-three-design/">phase-three design</a> for the agreed experience and
+data/timing safeguards.</p>
+<p>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/461" title="GitHub Issue: El3ssar/resdag #461">#461</a> merged as <code>ad0f8c9</code> and was published as
+<a href="https://github.com/El3ssar/ResDAG/releases/tag/v2.1.0">2.1.0</a>.
+The <a href="https://github.com/El3ssar/ResDAG/actions/runs/39867667829">post-merge release run</a>
+passed its full test matrix, installed dynamics checks and package publication.
+The <a href="https://github.com/El3ssar/ResDAG/actions/runs/39868993286">release-version documentation deployment</a>
+also passed. Published wheel/sdist digests match the release, all 188 Python
+modules match the pinned release source, and an isolated published-wheel smoke
+verified tuning, reload/forecast parity, PyTorch gradients and trajectory clocks.</p>
+<p>Independent audits reproduced a finite-input SVD overflow, acceptance of
+non-finite regularization, invalid infinite-score transfer, incorrect
+maximize-study summary ordering, and incomplete process/storage cleanup.
+The correctness fixes, common tuner and automatic solver are implemented with
+independent numerical, time-alignment, ownership and real-worker oracles.
+The continuation completes pruning during forecast generation, optional staged
+screening, memory planning and migration of the raw runner. Implementation,
+documentation and consolidated verification are complete in PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/462" title="GitHub Issue: El3ssar/resdag #462">#462</a>; its
+merge and publication remain separate steps.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P3-01</td>
+<td>Done</td>
+<td>Unified <code>model.tune(...)</code> with quick/balanced/thorough presets.</td>
+<td>Presets/custom DAGs, named targets and trajectories; original-unit forecasts, transactional winner refit, report/study access and joblib execution pass complete local/package/hosted verification below.</td>
+</tr>
+<tr>
+<td>P3-02</td>
+<td>Done</td>
+<td>Several seeds/origins with transparent resource budgets.</td>
+<td>Full evaluation remains the default. Opt-in screening promotes candidates to a complete reevaluation; memory estimates reduce concurrency and skip oversized candidates before construction. Fixed seed banks/origins/scales, new-attempt budgets and timeout windows pass independent, full-suite and installed-package gates.</td>
+</tr>
+<tr>
+<td>P3-03</td>
+<td>Done</td>
+<td>Complete trial provenance and safe study transfer/resume.</td>
+<td>Common and raw studies bind task/data, timing, recipes/objectives, custom Python implementations and complete resolved settings. Cross-task reuse retests settings; score imports require an exact protocol. Raw resume rechecks materialized historical data; incompatible tasks and changed implementations have independent rejection oracles.</td>
+</tr>
+<tr>
+<td>P3-04</td>
+<td>Done</td>
+<td>Pruning during rollout and device-local scoring.</td>
+<td>Chunked rollout retains feedback queues and stops before further computation when pruned. Device-local cumulative scoring passes independent NumPy and native MPS oracles. Whole-forecast custom objectives keep their complete-data contract; explicit prefix callbacks enable earlier pruning. Complete local and supported hosted suites pass.</td>
+</tr>
+<tr>
+<td>P3-05</td>
+<td>Done</td>
+<td>Stable automatic readout selection with forced overrides.</td>
+<td>Auto primal/dual/augmented-QR/SVD with unchanged alpha, guarded precision, structured diagnostics and forced overrides; native MPS or explicit CPU bridge. Independent SVD overflow/subnormal, integration and complete CI checks pass.</td>
+</tr>
+<tr>
+<td>P3-06</td>
+<td>Done</td>
+<td>Tuning process and storage lifecycle on current Python.</td>
+<td>Both workflows use joblib/loky finite windows and parent-owned sampling, pruning and storage. Real-process interruption, worker failure, callback cleanup, usable returned studies and primary-error preservation pass regression tests and locked/latest Python 3.11–3.14 CI.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="initial-implementation-verification">Initial implementation verification<a class="headerlink" href="#initial-implementation-verification" title="Permanent link">¶</a></h3>
+<p>Runtime source: <code>b9c3fc8</code>, on <strong>23 October 2026</strong>. Subsequent source edits in
+this increment correct docstrings only; executable ASTs are unchanged.
+Hosted evidence below is pinned to <code>3cde4ce</code>; the final follow-up updates this
+record and includes the new trajectory-tuning tests in the optional CI lane.
+Required checks run again on the resulting PR head.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Independent readout checks</td>
+<td><strong>318 passed</strong>, four unavailable-device cases skipped; Decimal and augmented-system oracles, unchanged alpha, precision boundaries and actual MPS native/CPU-bridge paths.</td>
+</tr>
+<tr>
+<td>Common workflow integration</td>
+<td><strong>157 passed</strong>, covering presets, custom DAGs, trajectories, refits, PyTorch gradients and report propagation. Additional configuration regressions pass in the <strong>36-test</strong> engine suite. These focused gates overlap.</td>
+</tr>
+<tr>
+<td>Joblib and scoring</td>
+<td><strong>85 passed</strong>, including real worker processes, notebook closures, error/cancellation cleanup and actual MPS scoring. All <strong>25 backend tests</strong> also pass with minimum joblib <strong>1.5.3</strong>.</td>
+</tr>
+<tr>
+<td>Independent end-to-end review</td>
+<td><strong>Nine passed</strong>, including parallel structural recipes, equivalent-model SQLite resume, changed-objective rejection, inference-mode/autograd and in-place-layer isolation.</td>
+</tr>
+<tr>
+<td>Complete local suite</td>
+<td><strong>5,231 passed</strong>, 231 skipped, 13 benchmark cases deselected; <strong>93.15% coverage</strong>. This includes installed dynamics and native MPS correctness checks.</td>
+</tr>
+<tr>
+<td>Installed branch artifacts</td>
+<td>Wheel and sdist contain all <strong>188 Python modules</strong>, byte-matching runtime source, with local coordination files excluded. Installed-wheel preset/custom tuning, checkpoint parity, gradients and named trajectory clocks pass. These are local builds, not a PyPI release.</td>
+</tr>
+<tr>
+<td>Documentation</td>
+<td><strong>Seven tuning examples</strong> pass with exact shipping budgets, plus <strong>six solver examples</strong>, migration checks and native MPS checks. Strict MkDocs and link checks pass.</td>
+</tr>
+<tr>
+<td>Complete hosted suites</td>
+<td><a href="https://github.com/El3ssar/ResDAG/actions/runs/39864096488">Locked CI</a> and <a href="https://github.com/El3ssar/ResDAG/actions/runs/39864097736">latest compatibility</a> pass all eight Python 3.11–3.14 suites. Each: <strong>5,009 passed</strong>, 453 skipped, 13 deselected; <strong>90.43–90.47% coverage</strong>, with the unchanged 90% floor.</td>
+</tr>
+<tr>
+<td>Hosted integration, static checks and docs</td>
+<td>All six original dynamics lanes pass <strong>212 checks</strong> each, seven skipped, with locked <strong>TSDynamics 6.0.3</strong> and latest <strong>6.1.0 / Torch 2.14.1</strong>. Strict docs in both modes, Ruff/Black, mypy (<strong>188 modules</strong>) and CPU regression gates pass.</td>
+</tr>
+</tbody>
+</table>
+<p>The optional dynamics lane now also selects the new tuning data/workflow
+modules: their <strong>55 tests</strong> pass locally, including trajectory tuning. The
+complete local suite and installed-wheel checks above also exercise the optional
+integration. See <a href="https://github.com/El3ssar/ResDAG/pull/461">PR #461</a> for the
+latest checks after this CI-selection update.</p>
+<p>The hosted CPU performance gate passes without changing its thresholds. Its
+supplemental report contains ResDAG measurements, but the external comparator
+packages are unavailable: Julia is installed without the required reservoir
+package, and the Python comparator is skipped. That report is not evidence of
+a successful cross-library comparison. Comparative benchmarking remains in
+phase 5; CUDA throughput was not measured.</p>
+<p>The conservative test selector now includes common model tests for HPO changes;
+the earlier isolation assertion no longer described the dependency graph after
+models gained <code>tune()</code>. All <strong>34 selector regressions</strong> pass with that expectation
+updated; test-selection safety was not weakened.</p>
+<h3 id="completion-verification_1">Completion verification<a class="headerlink" href="#completion-verification_1" title="Permanent link">¶</a></h3>
+<p>The continuation is tracked in <a href="https://github.com/El3ssar/ResDAG/pull/462">PR #462</a>,
+with runtime and tests pinned to <code>28e49b8</code>. All remaining phase-three items pass
+their acceptance checks. The final follow-up corrects documentation only,
+including one internal docstring; executable ASTs and guide Python examples
+are unchanged. Required checks run again on the resulting PR head. The
+completion PR has not merged or been published.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete local suite</td>
+<td><strong>5,466 passed</strong>, 230 skipped, 13 benchmark cases deselected; <strong>92.98% coverage</strong>, with the unchanged 90% floor. Includes real dynamics, native MPS and all 11 tuning-guide examples.</td>
+</tr>
+<tr>
+<td>Independent acceptance</td>
+<td>Full-horizon screening, complete winner reevaluation, actual early computation stopping, globally unique scored resource steps, trajectory preroll, changed custom implementations, cross-task retesting and exact score imports pass. Focused gates overlap with the complete suite.</td>
+</tr>
+<tr>
+<td>Resource and failure contracts</td>
+<td>Admission occurs before candidate construction; fewer jobs run when combined estimates exceed the budget. Estimates include final refits, long warmup traces and growing history replay. Real worker/process failures, cancellation, parent-owned pruning, callback release, all-trial cleanup and original-error precedence pass.</td>
+</tr>
+<tr>
+<td>Actual MPS integration</td>
+<td>Both a recurrent ESN and a temporal custom DAG tune with pruning. Pruned trials cannot win; full/prefix objectives and finite original-unit forecasts remain MPS float32. Forced SVD records its explicit CPU float64 solve bridge. This is correctness evidence.</td>
+</tr>
+<tr>
+<td>Installed branch package</td>
+<td>Clean Git-archive wheel/sdist match all <strong>193 runtime files / 192 Python modules</strong>. The installed wheel passes common/raw pruning, screening, memory admission, changed-task retesting, real parallel recipes, checkpoints, PyTorch gradients and named trajectory clocks. Dependencies are reused from the verified environment; these are unreleased branch artifacts.</td>
+</tr>
+<tr>
+<td>Local CPU regression gates</td>
+<td><strong>Four passed</strong>, four unavailable-device cases skipped, one deselected, on both this branch and pinned <code>d41b576</code>. An earlier contended run failed the unchanged NG-RC ratio at <strong>3.64×</strong> versus <strong>5×</strong>; the controlled paired runs reproduced no branch-only regression. Thresholds are unchanged.</td>
+</tr>
+<tr>
+<td>Static and documentation</td>
+<td>Ruff/Black, whole-package mypy (<strong>192 modules</strong>), lock validation, actionlint and strict MkDocs pass. All 11 progressive guide blocks execute at published budgets. Rendered desktop and 390 px mobile navigation, links, tables and code scrolling are verified; preset labels stay intact.</td>
+</tr>
+<tr>
+<td>Full hosted matrices</td>
+<td><a href="https://github.com/El3ssar/ResDAG/actions/runs/39873588199">Locked CI</a> and <a href="https://github.com/El3ssar/ResDAG/actions/runs/39873587829">latest compatibility</a> pass all eight Python 3.11–3.14 suites. Each: <strong>5,241 passed</strong>, 455 skipped, 13 deselected; <strong>90.49–90.57% coverage</strong>, with the unchanged 90% floor.</td>
+</tr>
+<tr>
+<td>Hosted integrations and performance</td>
+<td>All six dynamics lanes pass <strong>302 checks</strong> each, seven skipped. Locked tests use <strong>TSDynamics 6.0.3</strong>; latest uses <strong>6.1.1 / Torch 2.14.1 / Optuna 5.0.0</strong>. Hosted CPU gates, lint/types and both strict documentation builds pass.</td>
+</tr>
+</tbody>
+</table>
+<p>Raw HPO has intentional contract changes: <code>n_trials</code> counts new attempts per
+call, transfer reevaluates complete settings by default, and importing scores
+requires an exactly matching bound protocol. Workers perform numerical jobs;
+sampling, storage, pruning and user callbacks remain parent-owned. See the
+<a href="../../advanced/raw-hpo/">raw guide</a> and <a href="../../reference/hpo/">reference</a>.</p>
+<p>Memory limits are planning estimates, not operating-system allocation caps.
+History replay and full custom objectives can retain growing prefixes. Python
+provenance guards recorded implementations/configuration; it does not prove
+opaque external/native behavior equivalent. Comparative speed–accuracy evidence
+remains phase 5, and CUDA throughput was not measured.</p>
+<h2 id="phase-4-model-artifacts-diagrams-and-efficient-training">Phase 4: model artifacts, diagrams and efficient training<a class="headerlink" href="#phase-4-model-artifacts-diagrams-and-efficient-training" title="Permanent link">¶</a></h2>
+<p>The common <code>rd.Model</code> / <code>rd.ESN</code> interface and single-pass training are implemented
+and verified. See <a href="../../workflows/save-load/">the guide</a> and
+<a href="../phase-four-design/">the agreed design</a>.</p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">model</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"experiment.pt"</span><span class="p">)</span>       <span class="c1"># complete reloadable model artifact</span>
+<span class="n">restored</span> <span class="o">=</span> <span class="n">rd</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">"experiment.pt"</span><span class="p">)</span>  <span class="c1"># no DAG reconstruction by the caller</span>
+<span class="n">model</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"experiment.svg"</span><span class="p">)</span>      <span class="c1"># diagram export</span>
+<span class="n">model</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"experiment.png"</span><span class="p">)</span>
+</code></pre></div>
+<p>Diagrams describe structure; <code>.pt</code> / <code>.pth</code> artifacts reconstruct complete models.
+Standard <code>state_dict()</code> remains available. Portable artifacts use restricted
+Torch loading plus registered component recipes. Optional notebook bundles
+require explicit trust at save and load. Current recurrent memory is included
+by default, as approved by the maintainer.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P4-01</td>
+<td>Done</td>
+<td>Versioned complete artifact: graph, component configuration, weights, preprocessing, metadata and optional streaming state.</td>
+<td>Use standard PyTorch serialization and existing schema/packaging conventions where suitable; load in a fresh process without a manually built DAG.</td>
+</tr>
+<tr>
+<td>P4-02</td>
+<td>Done</td>
+<td>Generic <code>rd.load(...)</code>, version validation and custom-component reconstruction.</td>
+<td>Presets, heterogeneous custom DAGs and registered components round-trip; custom Python code requirements are explicit; unknown versions/components fail with useful remedies.</td>
+</tr>
+<tr>
+<td>P4-03</td>
+<td>Done</td>
+<td>Save diagram as SVG, PNG, PDF or DOT with clear labels and shapes.</td>
+<td>Reuse existing Graphviz/DOT rendering; show branches, merges, named ports and delayed feedback; export does not mutate model state/modes or open a viewer unexpectedly.</td>
+</tr>
+<tr>
+<td>P4-04</td>
+<td>Done</td>
+<td>Unified save dispatch and user documentation.</td>
+<td>Supported suffixes are discoverable; unsupported formats fail clearly; diagram exports and model artifacts cannot be confused.</td>
+</tr>
+<tr>
+<td>P4-05</td>
+<td>Done</td>
+<td>Fresh-process and cross-device artifact verification.</td>
+<td>Forecast and preprocessing parity after reload; CPU map-location works; unsupported artifact versions fail clearly.</td>
+</tr>
+<tr>
+<td>P4-06 / SQ-01</td>
+<td>Done</td>
+<td>Fit multiple and cascaded readouts in one topological traversal of warmup plus training.</td>
+<td>Each reservoir consumes the full prefix once; manual coefficient/state/forecast oracles, branch reuse, last-consumer release, hook/failure cleanup and depth benchmarks.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="current-verification-record">Current verification record<a class="headerlink" href="#current-verification-record" title="Permanent link">¶</a></h3>
+<p>Verified runtime head <code>5d8f869</code> in
+<a href="https://github.com/El3ssar/ResDAG/pull/463">PR #463</a> on 23 October 2026.
+The final follow-up records results and clarifies prose; runtime source, tests,
+configuration and guide Python examples are unchanged.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete local suite</td>
+<td><strong>5,715 passed</strong>, 232 skipped, 13 deselected; <strong>93.62% coverage</strong>, above the unchanged 90% floor.</td>
+</tr>
+<tr>
+<td>Independent numerical/structural training checks</td>
+<td>Manual ridge/LMNT recurrence, cascade/branch/merge, temporal prefix, target support, final state, forecasts, hooks, liveness and failed-refit isolation pass.</td>
+</tr>
+<tr>
+<td>Fixed CPU cascade workload</td>
+<td>Depth eight: median <strong>236.195 → 30.915 ms</strong>, paired <strong>7.64×</strong> speedup; depth one essentially unchanged. Weights/states bit-identical in all pairs. <a href="../single-pass-training-benchmark/">Full measurements</a>.</td>
+</tr>
+<tr>
+<td>CPU CI performance selection</td>
+<td><strong>Four passed</strong>, four unavailable-device skips, one deselected; thresholds unchanged.</td>
+</tr>
+<tr>
+<td>Clean package</td>
+<td>All <strong>199 runtime files</strong> match source, wheel, sdist and the clean install; archives exclude local coordination notes. The installed artifact selection passes <strong>112 checks</strong>, with two actual-CUDA cases skipped; all <strong>ten guide examples</strong> pass.</td>
+</tr>
+<tr>
+<td>Artifacts/integration</td>
+<td>Portable and explicit trusted loading, all graph families, independent fresh-process heterogeneous DAGs, custom codecs, original units, memory/RNG, aliases, real TSDynamics clocks and native MPS-to-CPU mapping verified.</td>
+</tr>
+<tr>
+<td>Static/docs</td>
+<td>Ruff/Black, whole-package mypy (<strong>198 Python modules</strong>), lock validation, actionlint and strict MkDocs pass. Rendered save/load guide and DAG preview inspected.</td>
+</tr>
+<tr>
+<td>Hosted full suites</td>
+<td><a href="https://github.com/El3ssar/ResDAG/actions/runs/39920356833">Locked CI</a> and <a href="https://github.com/El3ssar/ResDAG/actions/runs/39920358020">latest compatibility</a> pass all eight Python 3.11–3.14 lanes: <strong>5,481 passed</strong> each, 466 skipped, 13 deselected; <strong>91.32–91.39% coverage</strong> against the unchanged 90% floor.</td>
+</tr>
+<tr>
+<td>Hosted integration/docs</td>
+<td>All six installed-TSDynamics lanes pass <strong>309 checks</strong> each, seven skipped; locked/latest strict docs and configured lint/types/CPU jobs pass. Latest runtime includes Torch <strong>2.14.1</strong>, Optuna <strong>5.0.0</strong>, pytorch-symbolic <strong>1.2.4</strong> and TSDynamics <strong>6.1.1</strong>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sq-01-one-pass-training-of-cascaded-readout-dags">SQ-01: one-pass training of cascaded-readout DAGs<a class="headerlink" href="#sq-01-one-pass-training-of-cascaded-readout-dags" title="Permanent link">¶</a></h3>
+<p><strong>Baseline problem.</strong> The previous trainer used fitting hooks inside repeated whole-graph
+warmup/training passes. This produced correct downstream states, but repeated
+upstream work whenever a fitted readout feeds another reservoir. For a chain
+of K comparable reservoir/readout stages, propagation can cost O(K² × T), where
+T is the sequence length. Phase-one correctness remains covered by P1-03;
+this phase-four task removes the unnecessary computation while preserving it.</p>
+<p><strong>Required execution.</strong> Initialize training states once using the current fit
+reset contract. Traverse the graph in topological order, pausing at each
+readout to fit it before continuing into its downstream dependencies:</p>
+<ol>
+<li>Run reservoir₁ through its warmup prefix, then its training samples, carrying
+   state continuously between the two portions. Retain the resulting features.</li>
+<li>Fit readout₁ using only the training features and their aligned targets.
+   Apply the fitted readout to both the warmup and training features.</li>
+<li>Continue from those outputs into reservoir₂. Its warmup now uses the fitted
+   upstream mapping; continue through its training portion without resetting
+   between warmup and training. Fit readout₂ and proceed in the same way.</li>
+<li>For branches, reuse computed outputs across consumers. Execute a merge only
+   when all its inputs are available, and release retained tensors after their
+   last consumer. Each reservoir node processes its sequence once.</li>
+</ol>
+<p>This is one batch-training traversal of the DAG: a readout waits until its
+incoming training features are available, solves once, then forwards the full
+prefix using its fitted weights. It must not restart at the graph input, run
+downstream reservoirs prematurely, or substitute target values for the fitted
+upstream readout's actual outputs. Reuse the existing execution plan, fitting
+interfaces and PyTorch tensor operations; no replacement graph framework is
+needed. Preserve target alignment, washout, preprocessing, final state and
+failed-fit isolation across supported graph structures.</p>
+<p><strong>Acceptance checks.</strong></p>
+<ul>
+<li>Compare fitted weights, downstream features, final states and forecasts with
+  an independent manual layer-by-layer reference. Include nonzero warmup,
+  deliberately wrong initial upstream weights, multiple recurrent fitting
+  boundaries, branches, shared ancestors, merges and supported containers.</li>
+<li>Instrument reservoir calls and processed samples. Each reservoir graph node
+  must consume exactly its warmup plus training samples once, and each readout
+  must fit once. These structural checks must catch whole-graph replay even if
+  a small wall-clock benchmark happens to pass.</li>
+<li>Preserve the ordinary single-readout fast path and existing numerical,
+  device/dtype, state-noise and failure-cleanup contracts. Unsupported opaque
+  composites must fail clearly rather than silently assume an execution order.</li>
+<li>Benchmark depths 1, 2, 4 and 8 at fixed sequence length, widths, dtype, device
+  and thread count. Report propagation and readout-solving time separately,
+  along with peak memory and repeat variability. Propagation work should grow
+  with graph size rather than quadratically with cascade depth; do not hide
+  regression by weakening existing performance thresholds.</li>
+</ul>
+<p><strong>Scheduling.</strong> Included in phase four at the maintainer’s request. Implementation
+and independent verification are complete. Coordinate trainer and execution
+plan changes with artifact work; consult the maintainer before introducing
+major public API or memory-policy changes.</p>
+<h2 id="phase-5-speed-memory-and-comparisons">Phase 5: speed, memory and comparisons<a class="headerlink" href="#phase-5-speed-memory-and-comparisons" title="Permanent link">¶</a></h2>
+<p>The first increment fixes benchmark preparation and evaluates the same classical
+models before and after phase four. The maintainer approved <strong>0.3</strong> as the main
+per-step normalized RMS error limit, with <strong>0.5</strong> also reported. Normalization
+uses only training data. Report each seed/origin separately, then its median
+and spread; do not construct a horizon from the median error curve.</p>
+<p>The target is a <strong>typical 7–8 Lyapunov-time forecast</strong>, rather than one selected
+successful run. This is an experiment target, not a current capability guarantee.
+The <a href="../phase-five-design/">phase-five design</a> separates accuracy regression,
+held-out tuning and cross-library comparison; public metric defaults are not
+changed by the benchmark repairs.</p>
+<h3 id="known-baseline-performance-limits">Known baseline performance limits<a class="headerlink" href="#known-baseline-performance-limits" title="Permanent link">¶</a></h3>
+<p>Running <strong>all nine</strong> existing non-GPU benchmark cases on this Apple Silicon
+Mac with Torch 2.10.0, float64 CPU tensors and four intra-op threads exposed
+two timing assumptions outside the current CI benchmark directories. The
+seven other cases passed. An isolated import of unchanged <code>main</code> (<code>a24e7a1</code>)
+reproduced both failures with the same environment and identical test/kernel
+sources; branch/main timings below are separate runs, not a controlled speedup
+comparison.</p>
+<table>
+<thead>
+<tr>
+<th>Existing assertion</th>
+<th>Completion branch</th>
+<th>Unchanged main</th>
+<th>Required by current test</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSR versus dense recurrent multiplication, size 2,000 / density 5%</td>
+<td>Dense/CSR time ratio <strong>0.35×</strong></td>
+<td><strong>0.44×</strong></td>
+<td>Greater than <strong>1.2×</strong></td>
+</tr>
+<tr>
+<td>Parallel advance with 64 versus eight patches</td>
+<td>Large/small time ratio <strong>8.44×</strong></td>
+<td><strong>7.57×</strong></td>
+<td>Less than <strong>5×</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The sparse assertion remains open performance work in P5-03. The parallel
+ratio was not reproduced in the latest controlled checks, so it remains a
+historical observation rather than a current reproduced failure. A separate
+single-frame optimization improves forecast latency with exact predictions;
+the current measurements are recorded below. Sparse crossover and batching
+claims must be measured for the actual hardware, dtype and batch regime;
+<code>sparse="auto"</code> uses fixed size/density heuristics rather than calibration.
+Users can force <code>sparse=False</code> where the dense operator wins. Keep the current
+thresholds visible until the policy and measurements are reviewed; widening
+them alone would not improve performance.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P5-01</td>
+<td>Done</td>
+<td>Correct held-out comparison windows and common prediction alignment.</td>
+<td>Real Python and pinned Julia 1.12.5 / ReservoirComputing.jl 0.12.23 adapters pass independent first-step, ridge and recurrence oracles locally and in hosted CI. Training-only scales, declared model policies and failed-track handling remain explicit.</td>
+</tr>
+<tr>
+<td>P5-02</td>
+<td>WIP</td>
+<td>Controlled numerical and idiomatic equal-budget benchmark tracks.</td>
+<td>The first increment verified 150 matched tuned/control replays. The first full six-track equal-time comparison is complete: 600 tuning seconds per library/system, 2,850 eligible complete candidates and 90 reserved-seed forecasts, independently audited. A preregistered frozen-recipe study adds 90 fits and 270 forecasts on ten independent trajectories, retaining all results. Broader scale regimes remain open.</td>
+</tr>
+<tr>
+<td>P5-03</td>
+<td>WIP</td>
+<td>Actual sparse/structured operators and appropriate matrix-free readouts.</td>
+<td>Approved compact-only CSR storage, sparse-native initializers, one-edge gather updates and opt-in SciPy LSMR are implemented and pass full-suite, checkpoint, gradient and hosted checks. The CPU follow-up adopts analytic CSR cycle normalization and fixes complex value views/stored zeros. Broader operator regimes and tighter solver/storage-aware tuning estimates remain open; automatic solver/operator policies stay unchanged.</td>
+</tr>
+<tr>
+<td>P5-04</td>
+<td>WIP</td>
+<td>Profile-driven batching and compilation improvements.</td>
+<td>Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. The CPU follow-up adopts unchanged-solution AutoReadout residual reuse. Earlier slicing rewrites are rejected after inconclusive full-workflow timing. <a href="../phase-five-results/#cpu-recurrence-investigation">Fresh recurrence profiling</a> records a private SciPy CPU CSR diagnostic; the maintainer declined that execution backend to retain all-PyTorch execution. A faster dense batch candidate changes fitted results and is not adopted. Extending CPU teacher-forced compilation is deferred: its startup/maintenance costs are not justified by established workflow gains. Prioritize standard PyTorch fit/forecast performance and composition inside larger GPU models, preserving gradients and device placement.</td>
+</tr>
+<tr>
+<td>P5-05</td>
+<td>WIP</td>
+<td>Publish speed–accuracy–memory tradeoffs against current competitors.</td>
+<td><a href="../phase-five-results/#equal-tuning-time-across-libraries">First full comparison</a> and downloadable records are complete. Its state-only vanilla accuracy is close to both competitors; selected CPU workflows are slower. Independent-trajectory testing now separates those recipes from friendly vanilla and OTT recipes: OTT reaches the ten-LT median test limit, but friendly vanilla medians are about six LT. Wider hardware/model scales and closing the CPU gap remain open.</td>
+</tr>
+<tr>
+<td>P5-06</td>
+<td>Done</td>
+<td>Bring the broader forecasting search into built-in vanilla and OTT tuning.</td>
+<td>Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage.</td>
+</tr>
+<tr>
+<td>P5-07</td>
+<td>WIP</td>
+<td>Improve friendly vanilla recipe robustness across independent trajectories.</td>
+<td>The approved <code>input_to_readout</code> switch is implemented and both choices enter automatic vanilla tuning; ordinary defaults stay unchanged. The <a href="../phase-five-robustness/">completed controlled study</a> records 432 validation fits / 1,296 forecasts and 60 final fits / 180 forecasts on fresh independent trajectories. Lorenz retains ≥10.016 LT; selected Rössler improves from 3.013 to 6.750 LT at the main 0.3 threshold, still below the typical 7–8 LT target. Both selected recipes use the input. All 180 final prediction hashes replay exactly after cleanup; 104 nonfinite Rössler validation forecasts are retained and scored.</td>
+</tr>
+</tbody>
+</table>
+<p>Python 3.14 emits fourteen <code>torch.jit.script_method</code> deprecation warnings when
+Torch 2.10 imports its own MKLDNN helpers through the <code>torch.compile</code> backend.
+Static tracing confirmed that neither ResDAG nor its functional graph dependency
+implements that deprecated path. The existing compile correctness tests pass;
+retain the upstream warning boundary rather than replacing the graph backend
+to suppress it. ResDAG's <code>Standardize.inverse</code> export annotation remains covered
+by explicit scripting tests.</p>
+<h3 id="all-pytorch-closeout">All-PyTorch closeout<a class="headerlink" href="#all-pytorch-closeout" title="Permanent link">¶</a></h3>
+<p>The larger-network acceptance covers an encoder → fitted RC → trainable head,
+including independent gradient equations, finite differences, repeated optimizer
+updates, carried/explicit state, ordinary state-dictionary reload, CPU mixed
+precision and full-graph AOT eager forward/backward capture. CPU and native MPS
+hot-path checks reject host scalar reads and cross-device tensors. CUDA cases
+remain skipped on this host; these checks do not establish GPU throughput.
+The implementation fixes CPU CSR autocast precision, compiled carried-state
+detachment and an older-Python/Torch typing-union capture failure. Execution
+remains in PyTorch.</p>
+<p>The parallel CPU forecast specialization preserves the same recurrent
+arithmetic and falls back for hooks and custom behavior. Its public raw-data
+report binds frozen sources and all prediction/state hashes. A custom-readout
+multiple-inheritance regression protects the fallback as well.
+Two fresh-process ABBA blocks measure <strong>2–9% lower forecast elapsed time</strong> in
+the tested workloads. The unchanged fit control varies from 1.5% faster to
+7.6% slower, so the small forecast gains retain that measurement caveat.</p>
+<p>The independent-trajectory study freezes six existing recipes, then runs
+<strong>90 fits and 270 forecasts</strong> on ten new trajectories with no tuning. Primary
+OTT medians reach the ten-Lyapunov-time scoring limit on both systems. Friendly
+vanilla medians are <strong>5.995 LT on Lorenz</strong> and <strong>6.326 LT on Rössler</strong> at 0.3,
+below the 7–8 target. Two secondary state-only vanilla recipes reach the median
+test limit, but do not replace the primary results. Repeating all 90 fits and
+270 forecasts on clean <code>eb70bf11</code> gives identical fitted tensors, complete
+predictions, states and scores. See the <a href="../phase-five-results/#current-all-pytorch-closeout">current closeout results</a>.
+An additional corrected-runtime replay loads all 90 original fitted checkpoints
+and reproduces all 270 forecasts, states, scores and error traces exactly,
+without another fit or readout solve.</p>
+<p>The runnable experiment now writes a resolved manifest and exact replay data.
+Verification reloads saved DAGs and recomputes predictions/scores without
+reintegration, tuning or fitting; it does not remeasure the original timings.
+Candidate runtime <code>941cd8bf</code> passes <strong>6,509 local tests at 93.86% coverage</strong>,
+all eight full locked/latest Python 3.11–3.14 hosted suites, six optional
+dynamics lanes, CPU gates, real Julia protocol checks and strict docs.
+Clean-wheel acceptance passes 110 checks and all eight common-workflow guide
+blocks; minimum TSDynamics 6.0.2 passes 13 exact experiment checks.
+These verification results remain separate from accuracy and controlled
+performance measurements. Phase five's wider CPU and vanilla-robustness goals
+remain open; the current experiment candidate is ready for review.</p>
+<h3 id="first-increment-accuracy-evidence">First-increment accuracy evidence<a class="headerlink" href="#first-increment-accuracy-evidence" title="Permanent link">¶</a></h3>
+<p>These results precede the independent initialization-stream correction. They
+describe the original seeded models; newly built models require fresh checks.
+The <a href="../phase-five-results/">continuation measurements</a> report the new seed bank,
+including the unresolved vanilla Rössler shortfall.</p>
+<p>See <a href="../phase-five-design/#historical-first-tuning-measurements">the historical protocol and results</a>
+for fixed-training-scale scores at thresholds 0.3 and 0.5. Primary tuned medians
+are <strong>9.11 / ≥10.02 Lyapunov times</strong> for vanilla/OTT Lorenz and
+<strong>7.58 / ≥10.00</strong> for vanilla/OTT Rössler. Each uses five reserved seeds and
+three unseen test starting points. The supplementary vanilla Rössler median
+is <strong>6.33</strong> and its pooled ten-seed median <strong>6.76</strong>; robust 7–8 performance is
+therefore still an open goal for that recipe. Censored values are lower bounds.
+Neither these accuracy checks nor the untuned adapter smoke establishes a
+cross-library speed ranking.</p>
+<h3 id="continuation-decisions-and-verification">Continuation decisions and verification<a class="headerlink" href="#continuation-decisions-and-verification" title="Permanent link">¶</a></h3>
+<p>The maintainer approved compressed weights as the only recurrent storage for
+<code>sparse=True</code>, an explicitly selected low-memory solver, and native PyTorch
+hooks during forecasting. Dense models and automatic solver choices retain
+their established behavior. See <a href="../../workflows/sparse-reservoirs/">memory and sparse models</a>,
+<a href="../../reference/lsmr-readout/">LSMR</a> and <a href="../../migrating/">migration notes</a>.</p>
+<p>The <a href="../../workflows/benchmarks/#equal-tuning-time">comparison protocol</a>
+uses the common vanilla model family first, equal <strong>600-second</strong> tuning
+budgets, three validation seeds/origins, and reserved final seeds <strong>301–305</strong>.
+All six winners freeze before test access. Reused trajectories are held out
+from the new studies, but are historically known; one trajectory per system
+does not establish generalization across independently generated runs.
+Incomplete or late candidates cannot win, and final build/fit failures cannot
+be disguised as short but valid forecasts.</p>
+<p>The full run completed on <code>1dc8cfb</code>: <strong>2,850 eligible complete configurations</strong>,
+six excluded deadline attempts, and <strong>90 complete final forecasts</strong>, with all
+winners frozen first. All three Lorenz medians reach ≥10.016 Lyapunov times;
+Rössler medians are <strong>9.628 / 9.639 / 9.701</strong> for ResDAG, ReservoirPy and
+ReservoirComputing.jl. All selected models have 1,000 units. ResDAG is slower
+in these selected CPU workflows, so this is comparable accuracy without a
+speed-superiority claim. The <a href="../phase-five-results/">measurement report</a>
+retains full spread, both thresholds, timings, solver safeguards and complete
+downloadable records. Independent trajectories and broader profiling remain
+open.</p>
+<p>Final implementation/test acceptance on <code>1dc8cfb</code>: <strong>6,267 local tests pass</strong>
+at <strong>93.83% coverage</strong>; <strong>334 installed-wheel checks</strong> pass with two unavailable
+CUDA skips. All <strong>205 Python modules and the typing marker</strong> match source,
+wheel, sdist and installed package. All eight locked/latest full hosted lanes
+pass <strong>6,018 tests each</strong> at <strong>91.59–91.66% coverage</strong>. Both strict docs builds,
+six installed-TSDynamics lanes, configured CPU gates and the <strong>76 Python / 18
+real Julia</strong> benchmark contracts pass. See the
+<a href="../phase-five-results/#verification">full measurement record</a>.</p>
+<p>The new RNG fix separates ESN, gated and LIF default roles, preserves explicit
+initializer overrides, and documents changed newly seeded weights. Four fresh
+24-attempt studies completed <strong>70 configurations</strong> and recorded <strong>26 failures</strong>,
+with no pruning. Each complete configuration received three seeds × three
+validation starts; all four winners froze before reserved seeds <strong>401–405</strong>.
+Median horizons over 15 test forecasts are <strong>≥10.016</strong> for both Lorenz families,
+<strong>4.203</strong> for vanilla Rössler and <strong>≥10.001</strong> for OTT Rössler at the 0.3 limit.
+Vanilla Rössler therefore remains below the target. Full spread, controls,
+censoring, per-seed summaries and the 0.5 results are recorded separately.
+No retuning followed those tests.</p>
+<p>Stored-model checks remain separate: <strong>12 forecasts</strong> from four published 4.1.0
+checkpoints and their fitted tensors are byte-identical on the corrected runtime.
+Before the stream change, source <code>4439e29</code> also preserved all <strong>150</strong> frozen
+tuned/control forecasts and all <strong>50</strong> initial/fitted model fingerprints exactly.
+That historical replay does not establish equal newly seeded weights after
+the intentional stream correction.</p>
+<p>Two fresh-process ABBA runs use the same stored baseline weights in both
+revisions, 400 units, 1,501 training samples and 256 forecast steps. All forecast
+digests match. Pooled sparse-cycle fitting improves <strong>1.11–1.13×</strong>, forecasting
+<strong>1.14×</strong>, and retained tensor storage falls <strong>1,321,042 → 37,842 bytes</strong>.
+Sparse random storage falls <strong>1,351,978 → 58,466 bytes</strong>. One-thread dense
+forecasts are roughly <strong>3–5% slower</strong> in this workload; four-thread medians are
+about <strong>1% faster</strong>. Both runs, including the initially slower measurement, are
+retained. These are bounded CPU/Torch-thread observations, not native one-thread
+or process peak-RSS claims. Existing CPU gates pass unchanged; broader profiling
+remains open.</p>
+<p>The <a href="../phase-five-results/#cpu-follow-up">CPU follow-up</a> distinguishes adopted
+AutoReadout residual reuse and analytic CSR correctness fixes from rejected
+slicing experiments. The <code>18f78c83</code>/<code>dc695a6</code> matrices retain <strong>728 timed
+executions of each operation</strong>, plus <strong>104 discarded warmups of each operation</strong>.
+All case-local fitted/prediction/state hashes match, but a sharp change in
+execution conditions leaves the whole-workflow speed effect inconclusive.
+The separate within-process loop diagnostic also fails to establish a consistent
+benefit. The original sequence-loop and driver slicing are retained; these
+candidate measurements do not establish final adopted-runtime throughput.</p>
+<p>The merged first increment's post-merge release run
+<a href="https://github.com/El3ssar/ResDAG/actions/runs/39950943063">passed</a>:
+all four Python 3.11–3.14 full suites passed <strong>5,618 tests</strong> per lane at
+<strong>91.44–91.50% coverage</strong>. The published 4.1.0 wheel's 200 runtime files
+match its release tag, and installed artifact/workflow checks passed
+<strong>118 tests</strong>, with two unavailable-CUDA cases skipped. New continuation
+verification will be recorded separately; those release counts do not cover
+the unmerged implementation.</p>
+<h2 id="phase-6-experiment-readiness-and-ongoing-documentation">Phase 6: experiment readiness and ongoing documentation<a class="headerlink" href="#phase-6-experiment-readiness-and-ongoing-documentation" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P6-01</td>
+<td>Done</td>
+<td>Canonical generate → split → tune/fit → forecast → evaluate → save → PyTorch integration guide.</td>
+<td>End-to-end, trajectory and forecast-experiment guides execute in tests. Clean-wheel acceptance passes 110 checks with three unavailable-CUDA skips, including tuning, fresh-process reload and the larger trainable pipeline; all eight common-workflow Python blocks execute as written. Full locked/latest hosted suites pass.</td>
+</tr>
+<tr>
+<td>P6-02</td>
+<td>Done</td>
+<td>Progressive customization guides and generated capability facts.</td>
+<td>Initializer, cell, preprocessing, solver and graph recipes have executable examples. Current workflow/default guidance and rendered navigation are reconciled; the consolidated installed-package path passes. Four changed pages are visually checked, all three new evidence downloads match served bytes, and hosted strict docs pass.</td>
+</tr>
+<tr>
+<td>P6-03</td>
+<td>Done</td>
+<td>Bounded executable docs/examples in CI, optional compatibility and release artifact checks.</td>
+<td>Independent encoder → RC → head gradient/optimizer/state/device oracles, CPU mixed precision and full-graph forward/backward capture pass. Clean-wheel parity covers all 205 modules, the typing marker, 209 RECORD entries and installed import origins. Verification: 6,509 local tests at 93.86% coverage, all eight full hosted suites, six dynamics lanes, CPU/protocol gates and strict docs pass.</td>
+</tr>
+<tr>
+<td>P6-04</td>
+<td>Done</td>
+<td>Stable experiment configurations, manifests and migration notes.</td>
+<td>Resolved example settings, environment/data/split identities and output hashes are saved with exact replay observations. Thirteen example checks, including fresh-process replay without integration/fitting/tuning and corrupt/misaligned artifact rejection, pass against the clean wheel and minimum TSDynamics 6.0.2. Portable custom components, migration notes and persisted tuning studies remain covered; full hosted acceptance passes.</td>
+</tr>
+</tbody>
+</table>
+<p>These are candidate-readiness checks for PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/467" title="GitHub Issue: El3ssar/resdag #467">#467</a>, now merged as <code>ca40fe4b</code>.
+The actual published <strong>5.0.2</strong> wheel, sdist and release tag match all 205 runtime
+modules plus the typing marker; all 209 wheel RECORD entries verify. An isolated
+PyPI installation passes the 110-check acceptance selection and all eight common
+workflow guide blocks, including fresh-process replay. All four post-merge full
+suites pass 6,256 tests each, three dynamics lanes pass 322 tests each, and the
+release/deployed Pages files verify against their source.</p>
+<h2 id="completion-log">Completion log<a class="headerlink" href="#completion-log" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Task</th>
+<th>Status</th>
+<th>Evidence / next step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-10-22</td>
+<td>Baseline audit</td>
+<td>Done</td>
+<td>173 runtime modules reviewed; standard suite 3,809 passed, 91.63% coverage; optional TSDynamics and catalog failures independently reproduced.</td>
+</tr>
+<tr>
+<td>2026-10-22</td>
+<td>Roadmap and maintainer decisions</td>
+<td>Done</td>
+<td>Canonical tracker is in the documentation navigation; strict MkDocs build and links pass.</td>
+</tr>
+<tr>
+<td>2026-10-22</td>
+<td>Phase 1 implementation</td>
+<td>Done</td>
+<td>4,084 local tests pass at 93.06% coverage; all supported locked/latest CI lanes, strict docs, optional integration, CPU gates and wheel checks pass. See the phase 1 verification record above.</td>
+</tr>
+<tr>
+<td>2026-10-22</td>
+<td>Phase 1 merge</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/458" title="GitHub Issue: El3ssar/resdag #458">#458</a> squash-merged into <code>main</code> as <code>41a1744</code>; phase-two branch starts from that commit.</td>
+</tr>
+<tr>
+<td>2026-10-22</td>
+<td>Phase 1 release</td>
+<td>Done</td>
+<td>Post-merge full Python 3.11–3.14 matrix, optional dynamics lanes and release job passed; <a href="https://github.com/El3ssar/ResDAG/releases/tag/v1.1.1">v1.1.1</a> published. Documentation deployment passed.</td>
+</tr>
+<tr>
+<td>2026-10-22</td>
+<td>Phase 2 foundations and trajectory release</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/459" title="GitHub Issue: El3ssar/resdag #459">#459</a> merged as <code>d63905d</code>; v1.2.0 publication, full post-merge tests and documentation deployment passed.</td>
+</tr>
+<tr>
+<td>2026-10-22</td>
+<td>Phase 2 completion</td>
+<td>Done</td>
+<td>Common native ESN/Model workflow, all graph families, explicit feedback, fast/history execution, reversible per-port transforms, named trajectories and PyTorch composition implemented and documented. PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/460" title="GitHub Issue: El3ssar/resdag #460">#460</a> merged as <code>4735542</code>; v2.0.0 published. Full post-merge tests, actual published-wheel install/smoke and documentation deployment passed.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 3 initial implementation</td>
+<td>WIP</td>
+<td>Approved common tuner and automatic readout policy implemented and verified in <a href="https://github.com/El3ssar/ResDAG/pull/461">PR #461</a>: 5,231 local tests, 93.15% coverage; all eight locked/latest full hosted suites, optional integrations, strict docs, CPU gates and installed artifacts pass. Rollout pruning, staged promotion, memory budgets and raw-runner migration remain open.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 3 initial merge and release</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/461" title="GitHub Issue: El3ssar/resdag #461">#461</a> merged as <code>ad0f8c9</code>; v2.1.0 publication, full post-merge CI, actual published-wheel smoke and documentation deployment pass.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 3 completion</td>
+<td>Done</td>
+<td><a href="https://github.com/El3ssar/ResDAG/pull/462">PR #462</a>: streaming pruning, optional screening/memory admission, exact-protocol reuse and managed raw execution. 5,466 local tests at 92.98% coverage; all eight locked/latest full suites, six dynamics lanes, CPU gates, installed-wheel workflows and rendered documentation pass. Merged as <code>f8d7637</code> after final required checks; v3.0.0 publication, all post-merge tests, installed published-wheel checks and documentation deployment passed.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 4 implementation</td>
+<td>Done</td>
+<td>Complete artifacts, diagram exports, internal readout targets and P4-06 / SQ-01 one-pass training implemented. 5,715 local tests at 93.62% coverage; independent installed-wheel/fresh-process and controlled CPU depth checks pass. All eight locked/latest full suites, six dynamics lanes, strict docs and configured CPU/static jobs pass on runtime head <code>5d8f869</code>.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 4 merge and release</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/463" title="GitHub Issue: El3ssar/resdag #463">#463</a> merged as <code>0b546d6</code>; v4.0.0 release job, full post-merge CI and documentation deployment pass. Actual PyPI wheel's 199 runtime files match the release tag; installed-wheel artifact/guide selection: 118 passed, two unavailable-CUDA cases skipped. Updated executable tuning guide also passes.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 first increment</td>
+<td>WIP</td>
+<td>Python comparison preparation/alignment repaired; 36 frozen matched cases and four validation-only HPO studies completed. 150 matched tuned/control cases preserve exact phase-four accuracy. Primary and supplementary seed banks, censored horizons and remaining vanilla Rössler variability documented; Julia execution and broader controlled competitor comparisons remain pending.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 first-increment merge and release</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/464" title="GitHub Issue: El3ssar/resdag #464">#464</a> merged as <code>041db61</code>; 4.1.0 release, all post-merge Python suites, installed published-wheel workflows and documentation deployment verified.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 execution and comparison continuation</td>
+<td>WIP</td>
+<td><a href="https://github.com/El3ssar/ResDAG/pull/465">PR #465</a>: compact-only CSR, sparse-native construction, structured updates, opt-in LSMR, native forecast hooks and explicit tensor release implemented. Full tests, package and hosted CI pass on <code>1dc8cfb</code>; fresh initialization studies and the full six-track equal-time comparison are complete. Reporting/reproduction follow-up passes 6,328 local tests, 145 focused checks and 334 installed-wheel checks. Broader CPU profiling and independent trajectories remain open.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 continuation merge and release</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/465" title="GitHub Issue: El3ssar/resdag #465">#465</a> merged as <code>18f78c83</code>; <a href="https://github.com/El3ssar/ResDAG/releases/tag/v5.0.0">v5.0.0</a> published from release commit <code>5399e466</code>. All four post-merge full suites pass 6,079 tests each at 91.61–91.66% coverage; three dynamics lanes pass 315 tests each. Published wheel, sdist and tag match across all 205 Python modules and the typing marker. Release and live documentation deployment pass.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 CPU follow-up</td>
+<td>Done</td>
+<td><a href="https://github.com/El3ssar/ResDAG/pull/466">PR #466</a>, merged as <code>3b34005</code>: unchanged-solution AutoReadout residual reuse and analytic CSR cycle/zero/complex-value fixes. Rejected the timestep-view and driver-slicing rewrites after inconclusive timing; all candidate samples remain available. All 30 frozen forecasts are byte-identical. Final verification: 6,410 local tests at 93.85% coverage, 960 installed-wheel checks, all eight locked/latest full suites (6,160 passes each), six dynamics lanes, CPU gates, 103 Python protocol checks, 18 real Julia checks and strict docs pass. Post-merge release verification is recorded separately.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 CPU follow-up merge and release</td>
+<td>Done</td>
+<td><a href="https://github.com/El3ssar/ResDAG/releases/tag/v5.0.1">v5.0.1</a>, release commit <code>eb70bf11</code>: all four post-merge full suites pass 6,160 tests each at 91.62–91.69% coverage; three dynamics lanes pass 315 tests each. Published wheel, sdist and tag match all 205 modules plus the typing marker, 209 wheel RECORD entries verify, and an isolated installed-wheel fit/forecast/save/load replay is exact. Release documentation and actual Pages deployment pass; all eight live JSON records match the published source.</td>
+</tr>
+<tr>
+<td>2026-10-23</td>
+<td>Phase 5 CPU throughput</td>
+<td>WIP</td>
+<td>Profiled public fit/history/forecast workflows and matched recurrence/readout work on frozen synthetic development inputs with controlled native threads. Recurrence dominates; solver guards and transactional copies are smaller costs. A private SciPy CSR bridge improves full sparse fit by about 3× and forecasting by about 2.8× in two fresh processes, with exact outputs in this fixture; the maintainer declined adopting that backend. Four per-row dense GEMVs improve batch-four timing but change fitted results substantially and are not adopted. CPU teacher-forced compilation is deferred after reviewing its priority and costs. Continue with all-PyTorch execution and measured improvements to ordinary workflows and larger-model GPU composition. The existing cross-library CPU gap remains open.</td>
+</tr>
+<tr>
+<td>2026-10-24</td>
+<td>All-PyTorch closeout and experiment readiness</td>
+<td>Done</td>
+<td><a href="https://github.com/El3ssar/ResDAG/pull/467">PR #467</a>, runtime <code>941cd8bf</code>: larger-network gradient/optimizer/state/device acceptance, CPU CSR autocast and full-graph compatibility repairs, guarded parallel forecasting and exact experiment replay pass. Independent study: 90 fits / 270 forecasts, exact paired baseline and corrected-runtime checkpoint replay. Verification: 6,509 local tests at 93.86% coverage, 110 clean-wheel checks plus eight guide blocks, minimum TSDynamics replay, all eight full hosted suites, six dynamics lanes, CPU/protocol/real-Julia gates and strict rendered docs. Phase five's friendly vanilla robustness and comparative CPU speed gap remain open. Final prose head <code>7246d5fa</code> also passes all eight full suites, package-source parity and rendered docs.</td>
+</tr>
+<tr>
+<td>2026-10-24</td>
+<td>PyTorch closeout merge and release</td>
+<td>Done</td>
+<td>PR <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/El3ssar/resdag/issues/467" title="GitHub Issue: El3ssar/resdag #467">#467</a> squash-merged as <code>ca40fe4b</code>; <a href="https://github.com/El3ssar/ResDAG/releases/tag/v5.0.2">v5.0.2</a> published from <code>cd14753c</code>. Four post-merge full suites pass 6,256 tests each; three dynamics lanes pass 322 each. Published wheel/sdist/tag match all 205 modules and typing marker, 209 RECORD entries verify, and isolated published-wheel acceptance plus eight guide blocks pass. Release and live Pages verification pass.</td>
+</tr>
+<tr>
+<td>2026-10-24</td>
+<td>Phase 5 vanilla robustness and resource planning</td>
+<td>WIP</td>
+<td>Approved classic <code>input_to_readout</code> switch and default search over both choices; ordinary construction and OTT wiring stay unchanged. Parallel memory planning now accounts for patch-folded sequences, actual supervised rows, warmup/history and sampled washout. Existing default saved models replay exactly. The <a href="../phase-five-robustness/">controlled study</a> and final exact replay are complete: Lorenz ≥10.016 LT, selected Rössler 6.750 LT at 0.3. Local, installed-package and full locked/latest hosted acceptance pass; the scientific target remains open.</td>
+</tr>
+<tr>
+<td>2026-10-24</td>
+<td>Public API, documentation and hygiene sweep</td>
+<td>Done</td>
+<td><a href="https://github.com/El3ssar/ResDAG/pull/468">PR #468</a>: intended extension contracts retained, implementation helpers hidden, complete API reference and executable examples reconciled, recorded figures/animations added, raw generator defaults and training-only preparation corrected, restricted/atomic checkpoints and dependency-audit disposition verified. See SQ-02–05 and the completion verification below.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="standard-tools-to-reuse">Standard tools to reuse<a class="headerlink" href="#standard-tools-to-reuse" title="Permanent link">¶</a></h2>
+<ul>
+<li><a href="https://docs.pytorch.org/docs/stable/notes/serialization.html">PyTorch serialization</a>
+  for tensor/state storage, device mapping and established checkpoint conventions.</li>
+<li><a href="https://graphviz.readthedocs.io/en/stable/manual.html">Graphviz</a> for DOT layouts
+  and diagram formats; ResDAG already has optional Graphviz integration.</li>
+<li>Existing <code>pytorch_symbolic</code> functional composition while graph requirements
+  are evaluated; ordinary <code>nn.Module</code> and standard Torch tooling for execution.</li>
+<li>Optuna for studies, samplers, pruners and storage; Torch/SciPy for numerical
+  solvers; TSDynamics for dynamical-system generation and analysis.</li>
+</ul>
+<h2 id="final-api-documentation-and-hygiene-sweep">Final API, documentation and hygiene sweep<a class="headerlink" href="#final-api-documentation-and-hygiene-sweep" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Status</th>
+<th>Work</th>
+<th>Acceptance checks / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SQ-02</td>
+<td>Done</td>
+<td>Keep the intended public API discoverable and hide implementation helpers.</td>
+<td>Existing package layout and custom initializer/cell/readout/codec extension points remain. Internal memory-context builders, cell validators and worker adapters become private; duplicate top-level HPO aliases are removed in favor of <code>rd.hpo</code>. Public exports and rendered reference coverage have executable guards. See <a href="../esn-migration/">migration guidance</a>. Verification scope is recorded below.</td>
+</tr>
+<tr>
+<td>SQ-03</td>
+<td>Done</td>
+<td>Reconcile all guides, examples and scientific visuals with current behavior.</td>
+<td>All 18 example main bodies execute with explicit bounded budgets; 15 ordinary full-default tutorials and optional plot branches pass. Every registered built-in initializer has an inspected gallery figure (51 total). Recorded, predeclared Lorenz/Rössler cases drive plots and TSDynamics animations; asset generation does not refit or select cases. The source reference uses Markdown throughout; repeated module headings, incorrect parsed defaults and duplicate source-line anchors are repaired; all 1,762 documented parameters have defaults checked against source. Strict MkDocs and built-page link/media/anchor/prose checks are required in CI. Verification scope is recorded below.</td>
+</tr>
+<tr>
+<td>SQ-04</td>
+<td>Done</td>
+<td>Sanitize persistence and development dependencies without changing model mathematics.</td>
+<td>Ordinary raw checkpoints use restricted tensor loading, full Python model loads require explicit trust, unsupported metadata is rejected before writing, and saves replace files atomically. Malicious-payload, metadata and failed-write regressions cover raw and portable paths. The <a href="../security/">dependency audit</a> refreshes affected non-numerical packages and records two remaining upstream Torch advisories without suppression. Final package identity and verification scope are recorded below.</td>
+</tr>
+<tr>
+<td>SQ-05</td>
+<td>Done</td>
+<td>Keep held-out observations out of generator preparation and tutorial state replay.</td>
+<td>All seven built-in generators return raw values by default; explicit standard normalization preserves the previous transform. Sixteen new tests cover raw defaults, exact prefix invariance and training-only statistics, with unchanged explicit-standard golden fixtures. Low-level examples fit scaling on training rows, replay the continuous observed prefix and use stable SVD for their algebraic teaching paths. Verification scope is recorded below.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="completion-verification-24-october-2026">Completion verification — 24 October 2026<a class="headerlink" href="#completion-verification-24-october-2026" title="Permanent link">¶</a></h3>
+<p><a href="https://github.com/El3ssar/ResDAG/pull/468">PR #468</a> separates runtime evidence
+at <code>8dc8cca</code> from the corrected docstring source at <code>4bea969</code>. All eight full
+locked/latest Python 3.11–3.14 suites pass at <code>8dc8cca</code>, along with six dynamics
+lanes, CPU gates, real Julia checks, lint and strict documentation. The final
+prose update changes no executable code; merge remains subject to the current
+PR checks.</p>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>Verified evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full local runtime suite, <code>8dc8cca</code></td>
+<td><strong>6,734 passed</strong>, 247 skipped, 13 benchmark cases deselected; <strong>93.97% coverage</strong>.</td>
+</tr>
+<tr>
+<td>Final reference and documentation, <code>4bea969</code></td>
+<td><strong>42 checks passed</strong>, including all 205 runtime modules and 1,762 parsed parameter defaults. Ruff, Black, strict MkDocs and built-site link, anchor, media and prose checks pass.</td>
+</tr>
+<tr>
+<td>Installed-package behavior</td>
+<td>The installed <code>8dc8cca</code> wheel passes <strong>514 checks</strong>, with 29 unavailable-CUDA skips. All 205 non-docstring runtime ASTs and dependency versions are identical at <code>4bea969</code>, bridging that behavioral evidence without claiming a second full run.</td>
+</tr>
+<tr>
+<td>Final package identity, <code>4bea969</code></td>
+<td>All <strong>206 runtime/typing files</strong>, <strong>205 installed module origins</strong> and <strong>209 wheel payload records</strong> match the final source and package manifest.</td>
+</tr>
+<tr>
+<td>Hosted runtime acceptance, <code>8dc8cca</code></td>
+<td>Full locked and latest-dependency matrices pass: <a href="https://github.com/El3ssar/ResDAG/actions/runs/40048167316">locked CI</a>, <a href="https://github.com/El3ssar/ResDAG/actions/runs/40048133060">latest compatibility</a>. All six dynamics lanes, CPU gates, real Julia checks, lint and strict documentation pass.</td>
+</tr>
+</tbody>
+</table>
+<p>The final prose-only corrections explain compressed-only recurrent storage,
+frozen dense Parameters and forecast history that includes the observed seam.
+They change no executable code. The documentation inventory covers the common
+workflow and extension paths, all 18 examples and all 51 initializer galleries.</p>
+<p><strong>Phase five remains WIP.</strong> Selected Rössler reaches 6.750 Lyapunov times at
+the main 0.3 threshold, below the typical 7–8 target; the comparative CPU speed
+gap and broader scale measurements remain open. These hygiene completions do
+not establish CUDA throughput, a new performance ranking, or a release.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Project">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Project
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../phase-two-design/" class="md-footer__link md-footer__link--next" aria-label="Next: Phase two design">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Phase two design
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright © 2024–2026 Daniel Estevez-Moya — MIT License
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/El3ssar/ResDAG" target="_blank" rel="noopener" title="ResDAG on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://pypi.org/project/resdag/" target="_blank" rel="noopener" title="ResDAG on PyPI" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.annotate", "content.code.copy", "content.tabs.link", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.top", "navigation.tracking", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../js/math.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

@@ -1,0 +1,437 @@
+/* =========================================================================
+   ResDAG — "precision instrument"
+   -------------------------------------------------------------------------
+   Developer-tool aesthetic: geometric sans display (Outfit), monospace for
+   structural labels (kickers, tabs, buttons, captions), neutral fields,
+   one emerald accent, hairline borders, soft layered shadows.
+   All colors and fonts come from docs/_tooling/theme.json — edit there and
+   run `uv run python docs/_tooling/apply_theme.py`.
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Figtree:ital,wght@0,300..700;1,300..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+
+/* ===== TOKENS — generated from docs/_tooling/theme.json; edit there ===== */
+
+:root {
+  --nb-display: "Outfit", sans-serif;
+  --nb-body: "Figtree", -apple-system, sans-serif;
+  --nb-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+[data-md-color-scheme="default"] {
+  --nb-paper: #f2f5fa;
+  --nb-surface: #fafcfe;
+  --nb-ink: #22293a;
+  --nb-ink-soft: #49586f;
+  --nb-muted: #76859c;
+  --nb-rule: #dde4ee;
+  --nb-rule-strong: #c4cfe0;
+  --nb-accent: #2a63d4;
+  --nb-accent-strong: #1d4ca8;
+  --nb-accent-wash: #2a63d414;
+  --nb-code-bg: #e9eef7;
+  --nb-data-true: #b06a18;
+
+  --md-default-bg-color: #f2f5fa;
+  --md-default-fg-color: #22293a;
+  --md-default-fg-color--light: #49586f;
+  --md-default-fg-color--lighter: #76859c;
+  --md-typeset-color: #22293a;
+  --md-typeset-a-color: #2a63d4;
+  --md-accent-fg-color: #2a63d4;
+  --md-primary-fg-color: #151b2a;
+  --md-primary-bg-color: #f2f4f2;
+  --md-footer-bg-color: #151b2a;
+  --md-footer-bg-color--dark: #151b2a;
+
+  --md-code-bg-color: #e9eef7;
+  --md-code-fg-color: #24292f;
+  --md-code-hl-keyword-color: #cf222e;
+  --md-code-hl-string-color: #0a3069;
+  --md-code-hl-number-color: #0550ae;
+  --md-code-hl-function-color: #8250df;
+  --md-code-hl-constant-color: #0550ae;
+  --md-code-hl-name-color: #24292f;
+  --md-code-hl-operator-color: #cf222e;
+  --md-code-hl-punctuation-color: #57606a;
+  --md-code-hl-comment-color: #6e7781;
+  --md-code-hl-special-color: #953800;
+  --md-code-hl-variable-color: #953800;
+  --md-code-hl-generic-color: #24292f;
+  --md-code-hl-color: #2a63d414;
+}
+
+[data-md-color-scheme="slate"] {
+  --nb-paper: #141821;
+  --nb-surface: #1c212c;
+  --nb-ink: #d6deea;
+  --nb-ink-soft: #a4b1c4;
+  --nb-muted: #75839b;
+  --nb-rule: #2a3240;
+  --nb-rule-strong: #3c4859;
+  --nb-accent: #7da9ef;
+  --nb-accent-strong: #a3c2f6;
+  --nb-accent-wash: #7da9ef14;
+  --nb-code-bg: #171c27;
+  --nb-data-true: #dfa260;
+
+  --md-default-bg-color: #141821;
+  --md-default-fg-color: #d6deea;
+  --md-default-fg-color--light: #a4b1c4;
+  --md-default-fg-color--lighter: #75839b;
+  --md-typeset-color: #d6deea;
+  --md-typeset-a-color: #7da9ef;
+  --md-accent-fg-color: #7da9ef;
+  --md-primary-fg-color: #10141c;
+  --md-primary-bg-color: #f2f4f2;
+  --md-footer-bg-color: #10141c;
+  --md-footer-bg-color--dark: #10141c;
+
+  --md-code-bg-color: #161b26;
+  --md-code-fg-color: #c9d3e0;
+  --md-code-hl-keyword-color: #ff7b72;
+  --md-code-hl-string-color: #a5d6ff;
+  --md-code-hl-number-color: #79c0ff;
+  --md-code-hl-function-color: #d2a8ff;
+  --md-code-hl-constant-color: #79c0ff;
+  --md-code-hl-name-color: #e6edf3;
+  --md-code-hl-operator-color: #ff7b72;
+  --md-code-hl-punctuation-color: #8b949e;
+  --md-code-hl-comment-color: #8b949e;
+  --md-code-hl-special-color: #ffa657;
+  --md-code-hl-variable-color: #ffa657;
+  --md-code-hl-generic-color: #c9d3e0;
+  --md-code-hl-color: #7da9ef14;
+}
+
+/* ===== /TOKENS ===== */
+
+:root {
+  --nb-radius: 8px;
+  --nb-radius-sm: 6px;
+  --nb-shadow:
+    0 1px 2px rgba(10, 14, 12, 0.05),
+    0 8px 24px rgba(10, 14, 12, 0.05);
+}
+
+[data-md-color-scheme="slate"] {
+  --nb-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* =========================================================================
+   Header & navigation — mono tabs, quiet bar
+   ========================================================================= */
+.md-header {
+  background: var(--md-primary-fg-color);
+  box-shadow: none;
+  border-bottom: 1px solid var(--nb-rule);
+}
+
+.md-header__topic .md-ellipsis {
+  font-family: var(--nb-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.md-tabs {
+  background: var(--md-primary-fg-color);
+  border-bottom: 1px solid var(--nb-rule);
+}
+
+.md-tabs__link {
+  font-family: var(--nb-mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.md-tabs__link--active {
+  opacity: 1;
+  color: var(--nb-accent-strong);
+  font-weight: 600;
+}
+
+[data-md-color-scheme="default"] .md-tabs__link--active { color: #5fd8b0; }
+
+.md-nav__title { font-family: var(--nb-body); letter-spacing: 0.04em; }
+
+.md-nav__link--active {
+  color: var(--nb-accent) !important;
+  font-weight: 700;
+}
+
+/* =========================================================================
+   Typeset
+   ========================================================================= */
+.md-typeset {
+  font-family: var(--nb-body);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+
+.md-typeset h1 {
+  font-family: var(--nb-display);
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--nb-ink);
+  margin-bottom: 0.9em;
+}
+
+.md-typeset h2 {
+  font-family: var(--nb-display);
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--nb-ink);
+  margin-top: 2.4em;
+}
+
+.md-typeset h3 {
+  font-family: var(--nb-display);
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+
+.md-typeset a {
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--nb-accent) 40%, transparent);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.md-typeset a:hover {
+  color: var(--nb-accent-strong);
+  border-bottom-color: var(--nb-accent);
+}
+
+/* Kicker — mono section label above page titles */
+.nb-kicker {
+  display: block;
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--nb-accent);
+  margin-bottom: 0.5rem;
+}
+
+/* The signal line — waveform divider */
+.md-typeset hr {
+  border: none;
+  height: 12px;
+  margin: 2.6em auto;
+  max-width: 14rem;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='12' viewBox='0 0 224 12'%3E%3Cpath d='M0 6 C 7 6 9 2 14 2 S 21 10 28 10 35 2 42 2 49 10 56 10 63 6 70 6 77 6 84 6 91 1 98 1 105 11 112 11 119 1 126 1 133 11 140 11 147 6 154 6 161 6 168 6 175 3 182 3 189 9 196 9 203 3 210 3 217 6 224 6' fill='none' stroke='%232a63d4' stroke-opacity='0.5' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* =========================================================================
+   Code — scheme-adaptive highlighting via Material's token variables
+   ========================================================================= */
+.md-typeset code {
+  font-family: var(--nb-mono);
+  font-size: 0.85em;
+  border-radius: var(--nb-radius-sm);
+  background: var(--nb-code-bg);
+  padding: 0.1em 0.35em;
+}
+
+.md-typeset pre > code {
+  padding: 0.95em 1.15em;
+  line-height: 1.65;
+}
+
+.md-typeset .highlight {
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius);
+  overflow: hidden;
+}
+
+/* Named specimen: <div class="nb-specimen" data-label="..."> around a fence */
+.nb-specimen { margin: 1.4em 0; }
+
+.nb-specimen::before {
+  content: attr(data-label);
+  display: inline-block;
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--nb-muted);
+  border: 1px solid var(--nb-rule);
+  border-bottom: none;
+  border-radius: var(--nb-radius-sm) var(--nb-radius-sm) 0 0;
+  padding: 0.3em 0.8em;
+  background: var(--nb-surface);
+}
+
+.nb-specimen .highlight { margin-top: 0; border-top-left-radius: 0; }
+
+/* =========================================================================
+   Admonitions — quiet panels
+   ========================================================================= */
+.md-typeset .admonition,
+.md-typeset details {
+  border: 1px solid var(--nb-rule);
+  border-left: 3px solid var(--nb-rule-strong);
+  border-radius: var(--nb-radius-sm);
+  background: var(--nb-surface);
+  box-shadow: none;
+  font-size: 0.74rem;
+  color: var(--nb-ink-soft);
+}
+
+.md-typeset .admonition-title,
+.md-typeset summary {
+  background: transparent !important;
+  font-family: var(--nb-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--nb-ink);
+}
+
+.md-typeset .admonition-title::before,
+.md-typeset summary::before { display: none; }
+
+.md-typeset .admonition.warning,
+.md-typeset .admonition.danger { border-left-color: var(--nb-accent); }
+
+/* =========================================================================
+   Tables
+   ========================================================================= */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius-sm);
+  overflow: hidden;
+  box-shadow: none;
+  font-size: 0.72rem;
+  background: var(--nb-surface);
+}
+
+.md-typeset table:not([class]) th {
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--nb-code-bg);
+  color: var(--nb-ink-soft);
+  border-bottom: 1px solid var(--nb-rule-strong);
+}
+
+.md-typeset table:not([class]) td { border-top: 1px solid var(--nb-rule); }
+
+/* =========================================================================
+   Cards — flat surfaces, hairline border, soft shadow
+   ========================================================================= */
+.md-typeset .grid.cards > ol > li,
+.md-typeset .grid.cards > ul > li {
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius);
+  background: var(--nb-surface);
+  box-shadow: var(--nb-shadow);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.md-typeset .grid.cards > ol > li:hover,
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--nb-accent);
+  transform: translateY(-2px);
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  background: none;
+  height: 1px;
+  max-width: none;
+  margin: 0.7em 0;
+  border-bottom: 1px solid var(--nb-rule);
+}
+
+.md-typeset .grid.cards strong { font-family: var(--nb-display); font-weight: 650; }
+
+/* =========================================================================
+   Buttons — flat, mono label, accent primary
+   ========================================================================= */
+.md-typeset .md-button {
+  font-family: var(--nb-mono);
+  font-weight: 500;
+  font-size: 0.64rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid var(--nb-rule-strong);
+  border-radius: var(--nb-radius-sm);
+  color: var(--nb-ink);
+  background: var(--nb-surface);
+  box-shadow: none;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+
+.md-typeset .md-button--primary {
+  background: var(--nb-accent);
+  border-color: var(--nb-accent);
+  color: #ffffff !important;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  color: #07120d !important;
+}
+
+.md-typeset .md-button:hover {
+  border-color: var(--nb-accent);
+  color: var(--nb-accent-strong);
+  transform: translateY(-1px);
+}
+
+.md-typeset .md-button--primary:hover {
+  background: var(--nb-accent-strong);
+  border-color: var(--nb-accent-strong);
+  color: #ffffff !important;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary:hover {
+  color: #07120d !important;
+}
+
+/* =========================================================================
+   Math, figures, legends
+   ========================================================================= */
+.md-typeset .katex-display {
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius-sm);
+  background: var(--nb-surface);
+  overflow-x: auto;
+}
+
+.md-typeset figure {
+  border: 1px solid var(--nb-rule);
+  border-radius: var(--nb-radius);
+  background: var(--nb-surface);
+  padding: 0.7rem;
+}
+
+.md-typeset figcaption {
+  font-family: var(--nb-mono);
+  font-size: 0.6rem;
+  font-style: normal;
+  color: var(--nb-muted);
+  max-width: none;
+}
+
+.nb-legend .nb-leg-true i { background: var(--nb-data-true); }
+
+/* API reference headings */
+.md-typeset .doc-heading { font-family: var(--nb-mono); letter-spacing: 0; }
+
+/* Footer */
+.md-footer-meta { border-top: 1px solid var(--nb-rule); }

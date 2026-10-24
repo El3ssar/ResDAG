@@ -1,0 +1,4910 @@
+{
+  "schema": "resdag.capability-evidence.v1",
+  "experiment": "phase-five independent initialization capability",
+  "status": "complete; vanilla Rossler does not meet the 7-8 Lyapunov-time target",
+  "sources": {
+    "measured_runtime_commit": "dcedbbae23d96c26136cd77918546f1053766c54",
+    "runtime_equivalence_verified_through_commit": "1dc8cfb51f67bcd7a3061687366485eb6315b96f",
+    "current_semantic_source_note": "Runtime src/resdag and executable Python/Julia benchmark sources are byte-identical between these commits. Test fixtures and documentation changed. These scores remain measurements of dcedbba; later reproduction-CLI or documentation work is not a new measured execution.",
+    "published_4_1_0_checkpoint_reference_commit": "1caea0bab9373294e0d3b10fc95037839442531e",
+    "source_archive_sha256": {
+      "after": "bdd046b42ff1bd10ca8d73ea152a155f238de0b40d109a6649d41522d53f8def",
+      "published41": "7d19f93605df267f249626298a84dfb2e764a39f5bb8a68fd344dbac4eb0f8e9"
+    },
+    "sealed_evidence_sha256": {
+      "manifest.json": "ff64fdb94fd97c0c8b37db722a2221f8e546306ebc8a41e64147194b70fbaa5f",
+      "report.json": "ee4b2bc26aa70f7b9a70244b8ad014166b8a4c725996695461bdfa57c37bde48",
+      "verification.json": "5e9a1fba88e5117f94a548416dc34b8861cab229afc07e9790675e7029910458",
+      "predeclared.json": "0ccc843a8b70844479db131dc206490cff240d9c903dd22916fe187d88627590",
+      "frozen-winners.json": "6e3ab2bfb8af6832c584a09991401d444ea9fa8cd0e7955ebf596bec8fa80b46",
+      "after-test.json": "e7ed6a960acffcfaf0a00fd0960847a7a38dabb53294825c02e9d90566a0d9f3"
+    },
+    "original_wrapper_worker_helper_sha256": {
+      "run.py": "7b9d0b452edc94f2cf2e5ed43220d9261fb42000e394d90384b7ea579e960eb4",
+      "runner/tuned_accuracy.py": "6683f3468cf9b0e0ef645b2dfea74cb491ca1f654aa086f30b80402f1a290fc7",
+      "runner/accuracy_regression.py": "4489397c669e9e273e0a4524844bc487223d03a412907f964721cff6a0e3d00a",
+      "runner/_threads.py": "5c6c8db3c8f47937af4ffdada12ec4b8d0d769097b4c4f0a8b8b5aa6819e2e30"
+    },
+    "data_manifest_file_sha256": "1e819533968bf6a6bd4215e1352fc9733b4e38cf47b110f81a75598902428cbe",
+    "public_summary_kind": "Curated derived evidence. No original sealed artifact was modified; local paths, imported-module inventories, full transient trial attributes and binary arrays/checkpoints are omitted."
+  },
+  "protocol": {
+    "predeclared_utc": "2026-10-23T14:02:29.746734+00:00",
+    "training_initialization_seeds": [
+      7,
+      42,
+      12345
+    ],
+    "reserved_final_initialization_seeds": [
+      401,
+      402,
+      403,
+      404,
+      405
+    ],
+    "attempts_per_study": 24,
+    "validation_origins_per_seed": 3,
+    "test_origins_per_seed": 3,
+    "window_indexing": "Zero-based sample indices; training, validation and test intervals are half-open [start, stop).",
+    "primary_threshold": 0.3,
+    "secondary_threshold": 0.5,
+    "step_error_definition": "sqrt(mean_j(((prediction_j - truth_j) / training_sigma_j)**2))",
+    "valid_horizon_steps": "First step index whose normalized error is nonfinite or >= threshold; if none, the complete horizon length. Forecasts are scored individually before pooling.",
+    "scale_definition": "Fixed population standard deviation (correction=0) of admitted training labels after washout: raw[washout+1:training_stop], washout=500, next-sample lead=1. Constant channels use 1; nonconstant scales have a dtype-epsilon floor. No validation or test values determine the scales.",
+    "prediction_units": "Original signal units; training-only learned preprocessing.",
+    "lyapunov_time_definition": "steps * dt * lambda_max; fixed reference exponents in each system protocol, not newly estimated per trajectory.",
+    "censoring_definition": "right_censored=true when valid_steps equals horizon_steps; those reported horizons and their censored aggregate limits are lower bounds.",
+    "selection_objective": "Median of nine valid-horizon scores across three initialization seeds and three chronological validation origins, threshold 0.3.",
+    "summary_aggregation": "Pooled median/min/max over 15 individual forecasts per system/family/variant; five per-seed medians are also retained. A pooled median can differ from the median of per-seed medians.",
+    "validation_and_refit": "Explicit chronological validation is held out from fitting and final refit. All four winners froze before reserved final evaluation; no after-test retuning.",
+    "history_conditioning": "Each origin uses all earlier observed samples as history and then rolls autonomously for at least 10 Lyapunov times. Later origins may use prior observed test samples as context; model fitting remains training-only.",
+    "novelty_boundary": "Raw trajectories, initial conditions and chronological origins were used in prior experiments and are historically known. Fresh reserved initialization seeds only; one trajectory per system. No independent-trajectory generalization claim.",
+    "capability_family": {
+      "classic": "tanh leaky reservoir; readout features concatenate current input with reservoir state; fitted unpenalized readout intercept.",
+      "ott": "tanh leaky reservoir; alternate reservoir coordinates are squared, then concatenated with current input; fitted unpenalized readout intercept.",
+      "readout": "SVD ridge, CPU float64; per-candidate alpha; frozen reservoir.",
+      "reservoir": "Directed Erdos-Renyi recurrence, self-loops allowed, independent Bernoulli edges at p=degree/width; separate deterministic initialization roles.",
+      "feedback_weights": "Dense uniform[-input_scale,input_scale].",
+      "reservoir_bias": "Random uniform[-bias_scale,bias_scale], not a constant offset.",
+      "difference_from_equal_time_protocol": "This explicit classic/OTT capability experiment uses an input skip and a readout intercept. The separate equal-time cross-library comparison uses a common state-only/no-intercept vanilla family. Their scores and model families must not be conflated."
+    },
+    "parameter_names": {
+      "width": "reservoir units",
+      "rho": "target recurrent spectral radius",
+      "leak": "leak rate",
+      "input_scale": "feedback uniform half-range",
+      "bias_scale": "reservoir-bias uniform half-range",
+      "alpha": "SVD ridge regularization",
+      "degree": "expected recurrent entries per row, including permitted self-loop"
+    },
+    "search_space": {
+      "width": [
+        300,
+        400,
+        600,
+        1000
+      ],
+      "rho": [
+        0.05,
+        1.4
+      ],
+      "leak": [
+        0.1,
+        1.0
+      ],
+      "input_scale": {
+        "bounds": [
+          0.01,
+          1.0
+        ],
+        "log": true
+      },
+      "bias_scale": {
+        "bounds": [
+          0.01,
+          0.5
+        ],
+        "log": true
+      },
+      "alpha": {
+        "bounds": [
+          1e-12,
+          0.001
+        ],
+        "log": true
+      },
+      "degree": [
+        3,
+        6,
+        12
+      ]
+    },
+    "sampler": {
+      "class": "TPESampler",
+      "seed": 20261023
+    },
+    "pruner": "NopPruner",
+    "trial_failure_policy": "24 attempts per study without replacement or pruning; failed configurations remain failures and do not count as complete nine-run checks. Winning trials must be COMPLETE.",
+    "array_and_record_layout": {
+      "forecast_id": "case_id + \"-origin\" + origin_id",
+      "fit_seconds": "Stored once per case_fit_observations entry; the original report repeats the same single fit observation on its three forecast rows.",
+      "full_horizon_nrmse": "Shared by both threshold scores and stored once per forecast; original 0.3/0.5 values were asserted identical.",
+      "forecasts": "Every original 150 final row is retained; no binary arrays are included."
+    },
+    "timing_boundary": "Fit/forecast seconds are observations from concurrent correctness/quality work, not controlled speed evidence. No timing ranking or causal old/new initialization attribution follows from this capability experiment."
+  },
+  "environment": {
+    "torch": "2.10.0",
+    "numpy": "2.4.6",
+    "thread_policy_observations": {
+      "tune": {
+        "workers": 1,
+        "dtype": "float64",
+        "requested_environment": {
+          "VECLIB_MAXIMUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1",
+          "MKL_NUM_THREADS": "1",
+          "OMP_NUM_THREADS": "1",
+          "BLIS_NUM_THREADS": "1",
+          "JULIA_NUM_THREADS": "1"
+        },
+        "fresh_cli_bootstrap": false,
+        "torch_intraop_threads": 1,
+        "torch_interop_threads": 1,
+        "verification_boundary": "Observed native API settings on the synchronous calling thread; not an OS/kernel thread-occupancy measurement.",
+        "accelerate": {
+          "BLASGetThreading": 1,
+          "mode": "BLAS_THREADING_SINGLE_THREADED",
+          "scope": "calling thread"
+        }
+      },
+      "after": {
+        "workers": 1,
+        "dtype": "float64",
+        "requested_environment": {
+          "VECLIB_MAXIMUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1",
+          "MKL_NUM_THREADS": "1",
+          "OMP_NUM_THREADS": "1",
+          "BLIS_NUM_THREADS": "1",
+          "JULIA_NUM_THREADS": "1"
+        },
+        "fresh_cli_bootstrap": false,
+        "torch_intraop_threads": 1,
+        "torch_interop_threads": 1,
+        "verification_boundary": "Observed native API settings on the synchronous calling thread; not an OS/kernel thread-occupancy measurement.",
+        "accelerate": {
+          "BLASGetThreading": 1,
+          "mode": "BLAS_THREADING_SINGLE_THREADED",
+          "scope": "calling thread"
+        }
+      }
+    }
+  },
+  "data_and_generator_metadata": {
+    "lorenz": {
+      "protocol": {
+        "dt": 0.02,
+        "lambda_max": 0.9056,
+        "washout": 500,
+        "training": [
+          0,
+          10001
+        ],
+        "validation": [
+          10001,
+          11660
+        ],
+        "test": [
+          11660,
+          13319
+        ],
+        "test_origins": [
+          11660,
+          12213,
+          12766
+        ],
+        "horizon_steps": 553,
+        "horizon_lyapunov_times": 10.015936
+      },
+      "shape": [
+        13319,
+        3
+      ],
+      "parameters": "Lorenz(sigma=10.0, rho=28.0, beta=2.6666666666666665)",
+      "initial_condition": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "discard_samples": 2000,
+      "solver": "dop853",
+      "rtol": 1e-10,
+      "atol": 1e-12,
+      "tsdynamics": "6.0.3",
+      "raw_sha256": "5f5cbd02e9fe9707f0b4c7ea311704115dabd1fad244541982569f2b0dd877f1",
+      "file_sha256": "e519ebefdc2fecaa126ccb89044445755cf444b3c4e1d46243ff9f151e938eb2",
+      "training_label_population_std": [
+        7.930214243103547,
+        8.989154315325628,
+        8.55390881781894
+      ]
+    },
+    "rossler": {
+      "protocol": {
+        "dt": 0.145,
+        "lambda_max": 0.0714,
+        "washout": 500,
+        "training": [
+          0,
+          8501
+        ],
+        "validation": [
+          8501,
+          11399
+        ],
+        "test": [
+          11399,
+          14297
+        ],
+        "test_origins": [
+          11399,
+          12365,
+          13331
+        ],
+        "horizon_steps": 966,
+        "horizon_lyapunov_times": 10.000998000000001
+      },
+      "shape": [
+        14297,
+        3
+      ],
+      "parameters": "Rossler(a=0.2, b=0.2, c=5.7)",
+      "initial_condition": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "discard_samples": 1000,
+      "solver": "dop853",
+      "rtol": 1e-10,
+      "atol": 1e-12,
+      "tsdynamics": "6.0.3",
+      "raw_sha256": "573341585d5f0485e2f6ad357216d563224468e53d752654433cb1337c232beb",
+      "file_sha256": "01d8cec504b97b1eea664b5730333dc42c72358dfff402657938c9e04c8c52de",
+      "training_label_population_std": [
+        5.13541605032828,
+        4.8315237531256034,
+        2.866849660384694
+      ]
+    }
+  },
+  "frozen_winners": {
+    "lorenz-classic": {
+      "winning_trial": 6,
+      "winning_trial_state": "COMPLETE",
+      "winning_params": {
+        "width": 1000,
+        "rho": 0.5977907533982134,
+        "leak": 0.4513399046248292,
+        "input_scale": 0.9714352963955097,
+        "bias_scale": 0.022430714325619192,
+        "alpha": 1.7623182713533754e-12,
+        "degree": 6
+      },
+      "validation_score_steps": 544.0,
+      "validation_score_lyapunov_times": 9.852928,
+      "budget": {
+        "sampler": "TPESampler",
+        "pruner": "NopPruner",
+        "attempts": 24,
+        "state_counts": {
+          "COMPLETE": 21,
+          "FAIL": 3,
+          "PRUNED": 0,
+          "RUNNING": 0,
+          "WAITING": 0
+        },
+        "runs_per_complete_trial": 9,
+        "full_horizon_steps": 553,
+        "all_attempts_complete": false,
+        "all_successful_trials_received_full_checks": true
+      },
+      "queued_candidates": [
+        {
+          "width": 1000,
+          "rho": 0.1,
+          "leak": 1.0,
+          "input_scale": 0.1,
+          "bias_scale": 0.1,
+          "alpha": 1e-08,
+          "degree": 6
+        }
+      ],
+      "validation": {
+        "source": "tensor",
+        "training_observations": 10001,
+        "development_observations": 10001,
+        "first_validation_index": 10001,
+        "horizon": 553,
+        "origins": [
+          {
+            "requested_start": 10001,
+            "last_observed": 10000,
+            "first_scored": 10001,
+            "skip": 0
+          },
+          {
+            "requested_start": 10554,
+            "last_observed": 10553,
+            "first_scored": 10554,
+            "skip": 0
+          },
+          {
+            "requested_start": 11107,
+            "last_observed": 11106,
+            "first_scored": 11107,
+            "skip": 0
+          }
+        ],
+        "automatic_validation": false,
+        "refit_includes_validation": false,
+        "score_washout": 500,
+        "score_scale": "training population std; constant=1; nonconstant floor=dtype epsilon",
+        "prediction_leads": {
+          "output": 1
+        },
+        "train_supervision": {
+          "start": 0,
+          "stop": 10000
+        },
+        "refit_supervision": {
+          "start": 0,
+          "stop": 10000
+        },
+        "train_discarded_origin_rows": 1,
+        "refit_discarded_target_rows": {
+          "output": 1
+        }
+      },
+      "protocol_hash": "cbd36e2f3a2f4bcc43832e6953c53fa3bfa4779166b28800952e10d96facc150"
+    },
+    "lorenz-ott": {
+      "winning_trial": 15,
+      "winning_trial_state": "COMPLETE",
+      "winning_params": {
+        "width": 1000,
+        "rho": 0.65505229604105,
+        "leak": 0.7333557556843455,
+        "input_scale": 0.13308018308308173,
+        "bias_scale": 0.04385019570331126,
+        "alpha": 2.5973041283061638e-09,
+        "degree": 12
+      },
+      "validation_score_steps": 553.0,
+      "validation_score_lyapunov_times": 10.015936,
+      "budget": {
+        "sampler": "TPESampler",
+        "pruner": "NopPruner",
+        "attempts": 24,
+        "state_counts": {
+          "COMPLETE": 23,
+          "FAIL": 1,
+          "PRUNED": 0,
+          "RUNNING": 0,
+          "WAITING": 0
+        },
+        "runs_per_complete_trial": 9,
+        "full_horizon_steps": 553,
+        "all_attempts_complete": false,
+        "all_successful_trials_received_full_checks": true
+      },
+      "queued_candidates": [
+        {
+          "width": 1000,
+          "rho": 0.1,
+          "leak": 1.0,
+          "input_scale": 0.1,
+          "bias_scale": 0.1,
+          "alpha": 1e-08,
+          "degree": 6
+        }
+      ],
+      "validation": {
+        "source": "tensor",
+        "training_observations": 10001,
+        "development_observations": 10001,
+        "first_validation_index": 10001,
+        "horizon": 553,
+        "origins": [
+          {
+            "requested_start": 10001,
+            "last_observed": 10000,
+            "first_scored": 10001,
+            "skip": 0
+          },
+          {
+            "requested_start": 10554,
+            "last_observed": 10553,
+            "first_scored": 10554,
+            "skip": 0
+          },
+          {
+            "requested_start": 11107,
+            "last_observed": 11106,
+            "first_scored": 11107,
+            "skip": 0
+          }
+        ],
+        "automatic_validation": false,
+        "refit_includes_validation": false,
+        "score_washout": 500,
+        "score_scale": "training population std; constant=1; nonconstant floor=dtype epsilon",
+        "prediction_leads": {
+          "output": 1
+        },
+        "train_supervision": {
+          "start": 0,
+          "stop": 10000
+        },
+        "refit_supervision": {
+          "start": 0,
+          "stop": 10000
+        },
+        "train_discarded_origin_rows": 1,
+        "refit_discarded_target_rows": {
+          "output": 1
+        }
+      },
+      "protocol_hash": "8de6c7bb97f46f274b3d169410aeaca7840045519278e8a5af2365858b2127d6"
+    },
+    "rossler-classic": {
+      "winning_trial": 0,
+      "winning_trial_state": "COMPLETE",
+      "winning_params": {
+        "width": 400,
+        "rho": 0.21,
+        "leak": 0.85,
+        "input_scale": 0.35,
+        "bias_scale": 0.11,
+        "alpha": 3e-10,
+        "degree": 6
+      },
+      "validation_score_steps": 723.0,
+      "validation_score_lyapunov_times": 7.485219,
+      "budget": {
+        "sampler": "TPESampler",
+        "pruner": "NopPruner",
+        "attempts": 24,
+        "state_counts": {
+          "COMPLETE": 15,
+          "FAIL": 9,
+          "PRUNED": 0,
+          "RUNNING": 0,
+          "WAITING": 0
+        },
+        "runs_per_complete_trial": 9,
+        "full_horizon_steps": 966,
+        "all_attempts_complete": false,
+        "all_successful_trials_received_full_checks": true
+      },
+      "queued_candidates": [
+        {
+          "width": 400,
+          "rho": 0.21,
+          "leak": 0.85,
+          "input_scale": 0.35,
+          "bias_scale": 0.11,
+          "alpha": 3e-10,
+          "degree": 6
+        }
+      ],
+      "validation": {
+        "source": "tensor",
+        "training_observations": 8501,
+        "development_observations": 8501,
+        "first_validation_index": 8501,
+        "horizon": 966,
+        "origins": [
+          {
+            "requested_start": 8501,
+            "last_observed": 8500,
+            "first_scored": 8501,
+            "skip": 0
+          },
+          {
+            "requested_start": 9467,
+            "last_observed": 9466,
+            "first_scored": 9467,
+            "skip": 0
+          },
+          {
+            "requested_start": 10433,
+            "last_observed": 10432,
+            "first_scored": 10433,
+            "skip": 0
+          }
+        ],
+        "automatic_validation": false,
+        "refit_includes_validation": false,
+        "score_washout": 500,
+        "score_scale": "training population std; constant=1; nonconstant floor=dtype epsilon",
+        "prediction_leads": {
+          "output": 1
+        },
+        "train_supervision": {
+          "start": 0,
+          "stop": 8500
+        },
+        "refit_supervision": {
+          "start": 0,
+          "stop": 8500
+        },
+        "train_discarded_origin_rows": 1,
+        "refit_discarded_target_rows": {
+          "output": 1
+        }
+      },
+      "protocol_hash": "2107e454b39edb918a2eabd05336523db45468f61a0fe286aec30e5538039258"
+    },
+    "rossler-ott": {
+      "winning_trial": 0,
+      "winning_trial_state": "COMPLETE",
+      "winning_params": {
+        "width": 400,
+        "rho": 0.21,
+        "leak": 0.85,
+        "input_scale": 0.35,
+        "bias_scale": 0.11,
+        "alpha": 3e-10,
+        "degree": 6
+      },
+      "validation_score_steps": 888.0,
+      "validation_score_lyapunov_times": 9.193464,
+      "budget": {
+        "sampler": "TPESampler",
+        "pruner": "NopPruner",
+        "attempts": 24,
+        "state_counts": {
+          "COMPLETE": 11,
+          "FAIL": 13,
+          "PRUNED": 0,
+          "RUNNING": 0,
+          "WAITING": 0
+        },
+        "runs_per_complete_trial": 9,
+        "full_horizon_steps": 966,
+        "all_attempts_complete": false,
+        "all_successful_trials_received_full_checks": true
+      },
+      "queued_candidates": [
+        {
+          "width": 400,
+          "rho": 0.21,
+          "leak": 0.85,
+          "input_scale": 0.35,
+          "bias_scale": 0.11,
+          "alpha": 3e-10,
+          "degree": 6
+        }
+      ],
+      "validation": {
+        "source": "tensor",
+        "training_observations": 8501,
+        "development_observations": 8501,
+        "first_validation_index": 8501,
+        "horizon": 966,
+        "origins": [
+          {
+            "requested_start": 8501,
+            "last_observed": 8500,
+            "first_scored": 8501,
+            "skip": 0
+          },
+          {
+            "requested_start": 9467,
+            "last_observed": 9466,
+            "first_scored": 9467,
+            "skip": 0
+          },
+          {
+            "requested_start": 10433,
+            "last_observed": 10432,
+            "first_scored": 10433,
+            "skip": 0
+          }
+        ],
+        "automatic_validation": false,
+        "refit_includes_validation": false,
+        "score_washout": 500,
+        "score_scale": "training population std; constant=1; nonconstant floor=dtype epsilon",
+        "prediction_leads": {
+          "output": 1
+        },
+        "train_supervision": {
+          "start": 0,
+          "stop": 8500
+        },
+        "refit_supervision": {
+          "start": 0,
+          "stop": 8500
+        },
+        "train_discarded_origin_rows": 1,
+        "refit_discarded_target_rows": {
+          "output": 1
+        }
+      },
+      "protocol_hash": "405262eb1851ff503181cf0cc17c33da3ceaf7a1c96edcb6094be3f0054b81db"
+    }
+  },
+  "all_variant_params": {
+    "lorenz-classic-unoptimized": {
+      "width": 300,
+      "rho": 0.9,
+      "leak": 1.0,
+      "input_scale": 1.0,
+      "bias_scale": 1.0,
+      "alpha": 1e-06,
+      "degree": 6
+    },
+    "lorenz-classic-winner": {
+      "width": 1000,
+      "rho": 0.5977907533982134,
+      "leak": 0.4513399046248292,
+      "input_scale": 0.9714352963955097,
+      "bias_scale": 0.022430714325619192,
+      "alpha": 1.7623182713533754e-12,
+      "degree": 6
+    },
+    "lorenz-ott-unoptimized": {
+      "width": 300,
+      "rho": 0.9,
+      "leak": 1.0,
+      "input_scale": 1.0,
+      "bias_scale": 1.0,
+      "alpha": 1e-06,
+      "degree": 6
+    },
+    "lorenz-ott-winner": {
+      "width": 1000,
+      "rho": 0.65505229604105,
+      "leak": 0.7333557556843455,
+      "input_scale": 0.13308018308308173,
+      "bias_scale": 0.04385019570331126,
+      "alpha": 2.5973041283061638e-09,
+      "degree": 12
+    },
+    "rossler-classic-unoptimized": {
+      "width": 400,
+      "rho": 0.9,
+      "leak": 1.0,
+      "input_scale": 1.0,
+      "bias_scale": 1.0,
+      "alpha": 1e-06,
+      "degree": 6
+    },
+    "rossler-classic-winner": {
+      "width": 400,
+      "rho": 0.21,
+      "leak": 0.85,
+      "input_scale": 0.35,
+      "bias_scale": 0.11,
+      "alpha": 3e-10,
+      "degree": 6
+    },
+    "rossler-classic-known_recipe": {
+      "width": 400,
+      "rho": 0.21,
+      "leak": 0.85,
+      "input_scale": 0.35,
+      "bias_scale": 0.11,
+      "alpha": 3e-10,
+      "degree": 6
+    },
+    "rossler-ott-unoptimized": {
+      "width": 400,
+      "rho": 0.9,
+      "leak": 1.0,
+      "input_scale": 1.0,
+      "bias_scale": 1.0,
+      "alpha": 1e-06,
+      "degree": 6
+    },
+    "rossler-ott-winner": {
+      "width": 400,
+      "rho": 0.21,
+      "leak": 0.85,
+      "input_scale": 0.35,
+      "bias_scale": 0.11,
+      "alpha": 3e-10,
+      "degree": 6
+    },
+    "rossler-ott-known_recipe": {
+      "width": 400,
+      "rho": 0.21,
+      "leak": 0.85,
+      "input_scale": 0.35,
+      "bias_scale": 0.11,
+      "alpha": 3e-10,
+      "degree": 6
+    }
+  },
+  "study_totals": {
+    "attempts": 96,
+    "COMPLETE": 70,
+    "FAIL": 26,
+    "PRUNED": 0,
+    "complete_validation_forecasts": 630,
+    "final_fit_cases": 50,
+    "final_forecast_rows": 150,
+    "winner_forecast_rows": 60,
+    "nonfinite_final_rows_retained": 0
+  },
+  "case_fit_observations": [
+    {
+      "case_id": "lorenz-classic-unoptimized-seed401",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 401,
+      "fit_seconds": 0.2093097910110373
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed402",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 402,
+      "fit_seconds": 0.13223062502220273
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed403",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 403,
+      "fit_seconds": 0.13519100000848994
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed404",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 404,
+      "fit_seconds": 0.12829937500646338
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed405",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 405,
+      "fit_seconds": 0.12813229201128706
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed401",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 401,
+      "fit_seconds": 0.9155223330017179
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed402",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 402,
+      "fit_seconds": 0.7514052079932299
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed403",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 403,
+      "fit_seconds": 0.8252299590094481
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed404",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 404,
+      "fit_seconds": 9.423757457989268
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed405",
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 405,
+      "fit_seconds": 9.422461292007938
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed401",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 401,
+      "fit_seconds": 0.9956514590012375
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed402",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 402,
+      "fit_seconds": 0.9310298749769572
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed403",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 403,
+      "fit_seconds": 0.9425100419903174
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed404",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 404,
+      "fit_seconds": 0.9887065830116626
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed405",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 405,
+      "fit_seconds": 0.9274794170050882
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed401",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 401,
+      "fit_seconds": 10.091838916996494
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed402",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 402,
+      "fit_seconds": 10.321608458005358
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed403",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 403,
+      "fit_seconds": 9.905573458003346
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed404",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 404,
+      "fit_seconds": 8.700546750013018
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed405",
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 405,
+      "fit_seconds": 9.758298541011754
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed401",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 401,
+      "fit_seconds": 0.8902630829834379
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed402",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 402,
+      "fit_seconds": 1.0441666249826085
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed403",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 403,
+      "fit_seconds": 1.1709826670121402
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed404",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 404,
+      "fit_seconds": 1.03996525000548
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed405",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "unoptimized",
+      "initialization_seed": 405,
+      "fit_seconds": 1.1012976249912754
+    },
+    {
+      "case_id": "rossler-classic-winner-seed401",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 401,
+      "fit_seconds": 1.0790802080009598
+    },
+    {
+      "case_id": "rossler-classic-winner-seed402",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 402,
+      "fit_seconds": 1.0372224999882746
+    },
+    {
+      "case_id": "rossler-classic-winner-seed403",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 403,
+      "fit_seconds": 1.0665384169842582
+    },
+    {
+      "case_id": "rossler-classic-winner-seed404",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 404,
+      "fit_seconds": 1.0749955000064801
+    },
+    {
+      "case_id": "rossler-classic-winner-seed405",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "winner",
+      "initialization_seed": 405,
+      "fit_seconds": 1.3332979170081671
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed401",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "known_recipe",
+      "initialization_seed": 401,
+      "fit_seconds": 1.057015958998818
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed402",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "known_recipe",
+      "initialization_seed": 402,
+      "fit_seconds": 1.0870919159788173
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed403",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "known_recipe",
+      "initialization_seed": 403,
+      "fit_seconds": 1.1343690000067
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed404",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "known_recipe",
+      "initialization_seed": 404,
+      "fit_seconds": 1.3346880830067676
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed405",
+      "system": "rossler",
+      "family": "classic",
+      "variant": "known_recipe",
+      "initialization_seed": 405,
+      "fit_seconds": 1.1460352080175653
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed401",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 401,
+      "fit_seconds": 1.4800675000005867
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed402",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 402,
+      "fit_seconds": 1.082472083013272
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed403",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 403,
+      "fit_seconds": 1.0044019159977324
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed404",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 404,
+      "fit_seconds": 1.0958032500057016
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed405",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "unoptimized",
+      "initialization_seed": 405,
+      "fit_seconds": 1.4652370419935323
+    },
+    {
+      "case_id": "rossler-ott-winner-seed401",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 401,
+      "fit_seconds": 1.1925362089823466
+    },
+    {
+      "case_id": "rossler-ott-winner-seed402",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 402,
+      "fit_seconds": 1.5136022079968825
+    },
+    {
+      "case_id": "rossler-ott-winner-seed403",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 403,
+      "fit_seconds": 1.1478214169910643
+    },
+    {
+      "case_id": "rossler-ott-winner-seed404",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 404,
+      "fit_seconds": 1.2294275840104092
+    },
+    {
+      "case_id": "rossler-ott-winner-seed405",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "winner",
+      "initialization_seed": 405,
+      "fit_seconds": 1.1414864170073997
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed401",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "known_recipe",
+      "initialization_seed": 401,
+      "fit_seconds": 1.131341042026179
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed402",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "known_recipe",
+      "initialization_seed": 402,
+      "fit_seconds": 1.4744307920045685
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed403",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "known_recipe",
+      "initialization_seed": 403,
+      "fit_seconds": 1.1895178749982733
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed404",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "known_recipe",
+      "initialization_seed": 404,
+      "fit_seconds": 0.9937366250087507
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed405",
+      "system": "rossler",
+      "family": "ott",
+      "variant": "known_recipe",
+      "initialization_seed": 405,
+      "fit_seconds": 0.37692587499623187
+    }
+  ],
+  "final_forecasts": [
+    {
+      "case_id": "lorenz-classic-unoptimized-seed401",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 223.0,
+          "lyapunov_times": 4.038976,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 225.0,
+          "lyapunov_times": 4.0752,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.780795232389159,
+      "forecast_seconds": 0.1309883339854423,
+      "forecast_sha256": "e424e6317b7988449a693bcf1626c37fd81e214811cf73bc5e55df7f75075e6c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed401",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 293.0,
+          "lyapunov_times": 5.306816,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 362.0,
+          "lyapunov_times": 6.556544,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.9736592825249627,
+      "forecast_seconds": 0.10695787501754239,
+      "forecast_sha256": "fe4fbf709a8b132a396533f54b12b75ef5e4976f240fc734a938754b18435d08",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed401",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 309.0,
+          "lyapunov_times": 5.596608,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 345.0,
+          "lyapunov_times": 6.24864,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.886854218665112,
+      "forecast_seconds": 0.11185958300484344,
+      "forecast_sha256": "db09fb49c6715ab0624afce180748049565f2075cb6cde823faa37a70e5b1bc9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed402",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 219.0,
+          "lyapunov_times": 3.966528,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 222.0,
+          "lyapunov_times": 4.020864,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.294776367878984,
+      "forecast_seconds": 0.09721466599148698,
+      "forecast_sha256": "17b9e96520c5ef090c439917788cade3e2ad3cba056a6673e9198f8fea784175",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed402",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 363.0,
+          "lyapunov_times": 6.574655999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 367.0,
+          "lyapunov_times": 6.647104,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.4976864781905301,
+      "forecast_seconds": 0.11247049999656156,
+      "forecast_sha256": "a222dee890b8b06f3240b4617b6281d2f68d875aec726b36a0f9d4bdd916880a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed402",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 343.0,
+          "lyapunov_times": 6.212416,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 346.0,
+          "lyapunov_times": 6.266751999999999,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7579755236829298,
+      "forecast_seconds": 0.10947808300261386,
+      "forecast_sha256": "5e8b44ae63063905bf8fae2ad3edf842fa8f43c571965cb1acb57da9621283a0",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed403",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 214.0,
+          "lyapunov_times": 3.875968,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 217.0,
+          "lyapunov_times": 3.9303039999999996,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.2582369941057339,
+      "forecast_seconds": 0.10075599999981932,
+      "forecast_sha256": "50acac08b38bb07dca64968e22d9ae6439b8336ad0c3eb2216b474aeba990f8a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed403",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 328.0,
+          "lyapunov_times": 5.940736,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 365.0,
+          "lyapunov_times": 6.61088,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7465265373263889,
+      "forecast_seconds": 0.1057007499912288,
+      "forecast_sha256": "fe5dc8e623d5b94dfe3b9a56ad1a8f2d6e86921193ea8249126326f6be22d25c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed403",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 308.0,
+          "lyapunov_times": 5.5784959999999995,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 344.0,
+          "lyapunov_times": 6.230528,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.812764619473206,
+      "forecast_seconds": 0.10467512501054443,
+      "forecast_sha256": "997e5b57f727713fbaa6b9569af355b692c667aa5ad204b257299737d345c140",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed404",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 215.0,
+          "lyapunov_times": 3.8940799999999998,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 217.0,
+          "lyapunov_times": 3.9303039999999996,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.995530835893292,
+      "forecast_seconds": 0.12841104200924747,
+      "forecast_sha256": "57ae6c33e03949b1e5f04504ee92f79034e6fcef470ab91617eaa4c5c1ceb3e5",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed404",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.048004040552624735,
+      "forecast_seconds": 0.09980812499998137,
+      "forecast_sha256": "2f6aeda299cd825d1e613a3588a5948262d370a2abbfc8889d7529462dd3b757",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed404",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 338.0,
+          "lyapunov_times": 6.121855999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 342.0,
+          "lyapunov_times": 6.194304,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.0510174692030227,
+      "forecast_seconds": 0.1031464169791434,
+      "forecast_sha256": "c96b2c48c75de24d113bf4f3a98f0da02bf5b96d32bedc2c0aabe75065156207",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed405",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 220.0,
+          "lyapunov_times": 3.98464,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 223.0,
+          "lyapunov_times": 4.038976,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.2906156764293635,
+      "forecast_seconds": 0.09543429198674858,
+      "forecast_sha256": "78c6bebea8bb6df3bf04c7df912f8db5f30db15c4d7ae8dbacc2fc6b3f12cc0a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed405",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 293.0,
+          "lyapunov_times": 5.306816,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 362.0,
+          "lyapunov_times": 6.556544,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.974446669829494,
+      "forecast_seconds": 0.1008452920068521,
+      "forecast_sha256": "e7c5071f5a3cd50a200da5354cb667fe2cb34fa47b43e9f5a83f19222032bbe3",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-unoptimized-seed405",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 348.0,
+          "lyapunov_times": 6.302976,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 352.0,
+          "lyapunov_times": 6.375424,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7440195287821627,
+      "forecast_seconds": 0.10634620898053981,
+      "forecast_sha256": "5c9cb942271e387a925094d2f7fc9b7ff512bdb4200b04e0e51bc86d3fc195fb",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed401",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0002772110958007722,
+      "forecast_seconds": 0.37627891698502935,
+      "forecast_sha256": "17c900d36bfe08b869ffc21ac1e7edff90b75a85248510cdd3f01b4c088c72e4",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed401",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.011906580497005619,
+      "forecast_seconds": 0.45613954099826515,
+      "forecast_sha256": "3693a57b01469a516a0f593892607ccce0896432bb000966dba2553f0ef72036",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed401",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.00048075660029230115,
+      "forecast_seconds": 0.3987207500031218,
+      "forecast_sha256": "f2753e92d890dc11061e19491cd6ea5dc32369efc87de28758d98e3a000d8758",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed402",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.004937655381690909,
+      "forecast_seconds": 0.3478614999912679,
+      "forecast_sha256": "c06db447c19b5519a2f91789b2c7bb32ca938a257f5857040f8e0f601a1dbfaa",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed402",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.012559646246108171,
+      "forecast_seconds": 0.3839407920022495,
+      "forecast_sha256": "2c4590d9131e802a25046ff75d1d788dec9365911b845a2e7caa3acc611f9dc8",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed402",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.01346150706391074,
+      "forecast_seconds": 0.37498383299680427,
+      "forecast_sha256": "5de39e786e708bfa9d2f3ef1b680b85e98a0ef123b75ee3032bfda943129a81b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed403",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 422.0,
+          "lyapunov_times": 7.643263999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 426.0,
+          "lyapunov_times": 7.715711999999999,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.5745985779124421,
+      "forecast_seconds": 4.942056041007163,
+      "forecast_sha256": "ad0bdc7ec499df42d7d8c0d5468f96042fe94a5d91de56f66f3bd54c11b923ea",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed403",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 247.0,
+          "lyapunov_times": 4.473664,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 249.0,
+          "lyapunov_times": 4.509888,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.0342811376939605,
+      "forecast_seconds": 8.418648916995153,
+      "forecast_sha256": "96da9bdfd207ffbb222669eb30b28d02fd3414cd7cf1aa9d0b74aef2ade16d08",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed403",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.014373315936805487,
+      "forecast_seconds": 11.302139165985864,
+      "forecast_sha256": "39563a66f25361480a9ffd537a0460120b319bc2ac51df5802d0096012916ade",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed404",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.009211363432654841,
+      "forecast_seconds": 8.424092417000793,
+      "forecast_sha256": "c233348f3f2ea2d2084cd4df0529fc32597518e050b9f2625402adc291b9afc4",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed404",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 489.0,
+          "lyapunov_times": 8.856767999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 493.0,
+          "lyapunov_times": 8.929215999999998,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.08185042390812253,
+      "forecast_seconds": 7.372291707986733,
+      "forecast_sha256": "324dab11e37bff7130a4372e4e62c0b3222b33d8e0485687f011e38d851e50ed",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed404",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 466.0,
+          "lyapunov_times": 8.440192,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.06894310420629683,
+      "forecast_seconds": 7.539643541997066,
+      "forecast_sha256": "048ba344182654a55114c8ecb49c446b019faf73f53887b7154b584bdfb39973",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed405",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 416.0,
+          "lyapunov_times": 7.534592,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 418.0,
+          "lyapunov_times": 7.570815999999999,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7531981089949414,
+      "forecast_seconds": 7.302801958983764,
+      "forecast_sha256": "f4f136acef32cb04c233c93b3c633a6f26fce3501180ea5d6b87437f9ebaa322",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed405",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 286.0,
+          "lyapunov_times": 5.180032,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 289.0,
+          "lyapunov_times": 5.234368,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7327045595514748,
+      "forecast_seconds": 7.172318124998128,
+      "forecast_sha256": "605b29feb01e0265dfaa37293ac2c6b2073c40b7f392b00cf59cede4d6b4bf67",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-classic-winner-seed405",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.013063296104269779,
+      "forecast_seconds": 6.916333583008964,
+      "forecast_sha256": "891eefc45f8ab38f3cefd022e5fafdeecdb01a069f027751f548ab00aefd588f",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed401",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 219.0,
+          "lyapunov_times": 3.966528,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 222.0,
+          "lyapunov_times": 4.020864,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.2946067263325678,
+      "forecast_seconds": 0.8953748329950031,
+      "forecast_sha256": "7e51be3e5ee876fde1c25ec311f8850d4eddbf315ee6be1f4d5e67284ae969cc",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed401",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 292.0,
+          "lyapunov_times": 5.288704,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 331.0,
+          "lyapunov_times": 5.9950719999999995,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7986113184817403,
+      "forecast_seconds": 0.7587870839925017,
+      "forecast_sha256": "7b2a7a716655a06bd73fcbe632a1759e9fb675d87a83a8f1bdf5ac3e38feb511",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed401",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 228.0,
+          "lyapunov_times": 4.129536,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 270.0,
+          "lyapunov_times": 4.89024,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.9923457648610553,
+      "forecast_seconds": 0.8291131669830065,
+      "forecast_sha256": "ae58408fafc9dfde4e8c9d30f7a6a029b9dfe21849c0e0b03b7c99047922d8a5",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed402",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 506.0,
+          "lyapunov_times": 9.164672000000001,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.08109806787395027,
+      "forecast_seconds": 0.5459382919943891,
+      "forecast_sha256": "58e0ae8c5ce7b75019ae1b34f852cc46fb0b0678478f98df30eb0b1f86ae44e3",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed402",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 365.0,
+          "lyapunov_times": 6.61088,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 368.0,
+          "lyapunov_times": 6.665216,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7856572320299032,
+      "forecast_seconds": 0.5948393339931499,
+      "forecast_sha256": "62fc88d211d47f92481ba60bf11547cca5abae4fd2b3af2b855e619301ed70d4",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed402",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 268.0,
+          "lyapunov_times": 4.854016,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 272.0,
+          "lyapunov_times": 4.926464,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.8350247799048229,
+      "forecast_seconds": 0.7470050420088228,
+      "forecast_sha256": "48b98257c76c1a96af69033a81028d27d607dadfcf54b9dbff74e67ae617cdca",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed403",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.01745619438098212,
+      "forecast_seconds": 0.5837669589964207,
+      "forecast_sha256": "6a8b2733086f432d7e410b44c24234fb8793eb96ac17626467aac8203bece8d0",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed403",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 483.0,
+          "lyapunov_times": 8.748096,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 486.0,
+          "lyapunov_times": 8.802432,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.1569488350158721,
+      "forecast_seconds": 0.550362749985652,
+      "forecast_sha256": "0ec27da2889e1525de83ca036f7048b1615173813d11aa0469dca8f5870f976c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed403",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 352.0,
+          "lyapunov_times": 6.375424,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 456.0,
+          "lyapunov_times": 8.259072,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7511759850887054,
+      "forecast_seconds": 0.7203857080021407,
+      "forecast_sha256": "5980460c80342e328b9146b419dcd61a430be1d2c76bdf25944d2777117df0a9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed404",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 224.0,
+          "lyapunov_times": 4.057088,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 227.0,
+          "lyapunov_times": 4.1114239999999995,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6549836018618895,
+      "forecast_seconds": 0.6900546659890097,
+      "forecast_sha256": "deed024257bda18288c51e5cb58f764727c37d927cf64b94e5060f99093a1897",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed404",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 370.0,
+          "lyapunov_times": 6.70144,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 373.0,
+          "lyapunov_times": 6.755776,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.639825477315606,
+      "forecast_seconds": 0.7054446660040412,
+      "forecast_sha256": "85731074ac2a3de5583c13869287629409331dd510b52fd32d861bbc3187171b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed404",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 338.0,
+          "lyapunov_times": 6.121855999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 341.0,
+          "lyapunov_times": 6.176192,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.7487443402812471,
+      "forecast_seconds": 0.7271823750052135,
+      "forecast_sha256": "bb7514baebde3be5effab5415402aa2d52f6a7718a09bf8fe4c3aa7082a500b0",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed405",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 216.0,
+          "lyapunov_times": 3.912192,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 219.0,
+          "lyapunov_times": 3.966528,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.9259811716405733,
+      "forecast_seconds": 0.9014526249957271,
+      "forecast_sha256": "2bbd8fd4f1eb53b4bce02ce3271f9cf35975287b70448f6e31b38f564b497755",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed405",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 286.0,
+          "lyapunov_times": 5.180032,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 289.0,
+          "lyapunov_times": 5.234368,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6627812005239583,
+      "forecast_seconds": 0.8254628329887055,
+      "forecast_sha256": "909d3b9e549e1801bdff1ce3a9441ab17353dd53af9292838f7ca56eb196e4f5",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-unoptimized-seed405",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 457.0,
+          "lyapunov_times": 8.277184,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 460.0,
+          "lyapunov_times": 8.331520000000001,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.38444997785966784,
+      "forecast_seconds": 0.6598199589934666,
+      "forecast_sha256": "108b3c7c7428a156f427eacfb50a602796c2eaef43c4b6b83f0d1e66a7806dd8",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed401",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.008365891899454667,
+      "forecast_seconds": 7.469085457996698,
+      "forecast_sha256": "5c9746d1bff44cc57a8c1a118ba443b9525d99492fbd1d3d8243b9283d8cde3d",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed401",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.02585990829630821,
+      "forecast_seconds": 6.757726667012321,
+      "forecast_sha256": "19b4bd8d1fe246f776b0255b9ba5b069dcbd575a924284773ee25c0668308c9c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed401",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.006242677691253803,
+      "forecast_seconds": 7.322582207998494,
+      "forecast_sha256": "59e396a5ddfa573752942e4807d9216a41ced2cb2c0250fa403381902ad068ce",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed402",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0032185119392977653,
+      "forecast_seconds": 8.4515109580243,
+      "forecast_sha256": "2fd19c4a2f31e0cad789b9b4ac371823b18ac35181bbc8d84e1d217ba849fed6",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed402",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0064614391625155395,
+      "forecast_seconds": 6.423570708022453,
+      "forecast_sha256": "c53cff361e3d172577e80980d2efeb81a593c756365eb620b4600535037a353e",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed402",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.010433511268676292,
+      "forecast_seconds": 6.3185807920235675,
+      "forecast_sha256": "065326daa99e1e06d88c78934e65a38ea442d2ad190acaac6b883d00dd279ac2",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed403",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0013762486111253203,
+      "forecast_seconds": 6.5661380420206115,
+      "forecast_sha256": "7dab327a7fb80947b7fd659efd29aa6815e088e85d641fb56135c06bdef4e58e",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed403",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.03587093323437022,
+      "forecast_seconds": 6.450073000014527,
+      "forecast_sha256": "16c0212eaac2a7f4194814f703aff51c25d9ac1d35db41e0592bc2e1a9221158",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed403",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.011707017530547956,
+      "forecast_seconds": 7.047844334010733,
+      "forecast_sha256": "1fcd4c3fc3ea079a309fa04f255235bfcd33f2368f4bba253aff525e18dbea62",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed404",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.001153136031029667,
+      "forecast_seconds": 6.199831667006947,
+      "forecast_sha256": "ff64e985efd2ea30a5befd1d298db3c734ba574db60d4375dbef90b17268786b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed404",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.031540713015652776,
+      "forecast_seconds": 6.7224379160034005,
+      "forecast_sha256": "543aa6fe91cdd20751ea5dd9b45a54fe43122515c1aee1e9c1819f01cfae8efe",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed404",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.011267980352252417,
+      "forecast_seconds": 9.022162375011249,
+      "forecast_sha256": "201389d1bb010964ca7c2049bab404c5b79f3704ac2ca7b03735dbb37efdbad9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed405",
+      "origin_id": 0,
+      "origin_index": 11660,
+      "history_steps": 11660,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.004569976581343576,
+      "forecast_seconds": 6.405348250002135,
+      "forecast_sha256": "e45fcbc6e8c5b95bf17372665ec6519b890cb2bfba946a1dc203aede71f2c673",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed405",
+      "origin_id": 1,
+      "origin_index": 12213,
+      "history_steps": 12213,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.023983812252266645,
+      "forecast_seconds": 6.0830180830089375,
+      "forecast_sha256": "9f9b6066449af5fd367a908aee98af4f4d582fa94b3ec4e2bf96cc8e4f885024",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "lorenz-ott-winner-seed405",
+      "origin_id": 2,
+      "origin_index": 12766,
+      "history_steps": 12766,
+      "scores": {
+        "0.3": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 553.0,
+          "lyapunov_times": 10.015936,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.023238998711718417,
+      "forecast_seconds": 6.509864124993328,
+      "forecast_sha256": "1ff2e6e312d68de321564e4fd760986510a6d38231479ee2201065f293fb9023",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed401",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 708.3733639511784,
+      "forecast_seconds": 0.9232034579908941,
+      "forecast_sha256": "a4f78fe5f02683c8e01503fb3f5a479f60d5768d62dc53e7fdc0c165d29cc070",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed401",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 28.0,
+          "lyapunov_times": 0.289884,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 29.0,
+          "lyapunov_times": 0.30023700000000003,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 862.1938713712569,
+      "forecast_seconds": 0.7800007080077194,
+      "forecast_sha256": "ad0966156c4e139eb9eeaf2acab28710ee498fe606b2d72891ccab0f5ad5bd13",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed401",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 34.0,
+          "lyapunov_times": 0.352002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 34.0,
+          "lyapunov_times": 0.352002,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 823.7297638380228,
+      "forecast_seconds": 0.7798004159994889,
+      "forecast_sha256": "73bbae24219cb589254aff94dba0fc55c173ab7394baddee4d264651859ca856",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed402",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 22.0,
+          "lyapunov_times": 0.22776600000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 24.0,
+          "lyapunov_times": 0.248472,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 4734433352.097728,
+      "forecast_seconds": 0.7814979999966454,
+      "forecast_sha256": "b6e1b6b618f2f1e7b71371f8452973835759c6069884855ccf13993484ed5068",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed402",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 26.0,
+          "lyapunov_times": 0.269178,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 3308692797.8332415,
+      "forecast_seconds": 0.8602985839825124,
+      "forecast_sha256": "fbcbd15350e0d5279b87ba14183f7a4e5adcdc8e1961861c8bccf0ce6eecdd7b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed402",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 22.0,
+          "lyapunov_times": 0.22776600000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 22.0,
+          "lyapunov_times": 0.22776600000000002,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 4401557212.820748,
+      "forecast_seconds": 0.9400741250137798,
+      "forecast_sha256": "ee971c92b88d4cb792fe80f727c3ecd07339c627ff320fb40f77af14d1401d53",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed403",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 20.0,
+          "lyapunov_times": 0.20706000000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 20.0,
+          "lyapunov_times": 0.20706000000000002,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.9779921978625263,
+      "forecast_seconds": 0.6300285409961361,
+      "forecast_sha256": "ed258e7027584ed228a67d7301ad058002514e438ea91126c0fda44c37dff89d",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed403",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 24.0,
+          "lyapunov_times": 0.248472,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 2.208669607793129,
+      "forecast_seconds": 0.6336934159917291,
+      "forecast_sha256": "a25e46ae721e64bc12cdec7629ac02a58336f1caadcdf436069c05a24650be15",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed403",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 21.0,
+          "lyapunov_times": 0.21741300000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 21.0,
+          "lyapunov_times": 0.21741300000000002,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 2.2827428014462843,
+      "forecast_seconds": 0.7544350840034895,
+      "forecast_sha256": "62d6460877fb687626afb23365a168fd7070e2eb2f3ceab39fba44f7cc1488eb",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed404",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 2.208607882916849e+29,
+      "forecast_seconds": 1.0709549580060411,
+      "forecast_sha256": "0ea7401979b09e446fff9c02e26e7ffe5a708942fc23baea719ffd3d8482d60c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed404",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 27.0,
+          "lyapunov_times": 0.279531,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 28.0,
+          "lyapunov_times": 0.289884,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 3.361405736367983e+29,
+      "forecast_seconds": 0.7245129580260254,
+      "forecast_sha256": "be3f9fc3f7c2b87530c72881f9a4c7c05262c40e009400e2577c02aa87c3b737",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed404",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 21.0,
+          "lyapunov_times": 0.21741300000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 22.0,
+          "lyapunov_times": 0.22776600000000002,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 3.003433214711312e+29,
+      "forecast_seconds": 0.8407427500060294,
+      "forecast_sha256": "f4ac8193b93fa6f9725fc8e5e521679f1ad08bd4ab29201c2aaed0f9ecc20d61",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed405",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 111.0,
+          "lyapunov_times": 1.149183,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 114.0,
+          "lyapunov_times": 1.180242,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.1408962258395163,
+      "forecast_seconds": 0.7788126660161652,
+      "forecast_sha256": "80f0c8318c63350b2db3330b91df157d41255dfac7d6adfc7a6cb6255cac2f28",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed405",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 134.0,
+          "lyapunov_times": 1.387302,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 135.0,
+          "lyapunov_times": 1.397655,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.2238557871690348,
+      "forecast_seconds": 0.8412786670087371,
+      "forecast_sha256": "03d23be9206ef8c7d17552ff50bb2346f658f58d6550c243d8b141c9fac5f4ac",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-unoptimized-seed405",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 98.0,
+          "lyapunov_times": 1.014594,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 99.0,
+          "lyapunov_times": 1.024947,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.2722749137404659,
+      "forecast_seconds": 0.8989226660050917,
+      "forecast_sha256": "565dace551f794b257a2868adcc6c8c60a33ea391b12028bf050fb2fe533f2ac",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed401",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 486.0,
+          "lyapunov_times": 5.031558,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 526.0,
+          "lyapunov_times": 5.445678,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.350023444476571,
+      "forecast_seconds": 1.0251977919833735,
+      "forecast_sha256": "7d4b60d9f8bda1e9cecf215f8e3ad4c0765e6c2ca9b3c3cbd6b856bb231ce627",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed401",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 530.0,
+          "lyapunov_times": 5.48709,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 531.0,
+          "lyapunov_times": 5.497443,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6395561833534401,
+      "forecast_seconds": 0.9873649999790359,
+      "forecast_sha256": "deeb120c80e57606e8dd37bfacc45a60c5aea10db8e53aba0a47078ae1fdc88f",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed401",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 411.0,
+          "lyapunov_times": 4.255083,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 412.0,
+          "lyapunov_times": 4.265436,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.30506148775679526,
+      "forecast_seconds": 0.9748450409970246,
+      "forecast_sha256": "3c53ee84fd0771af3a56bd8b5a1e8766c0ae3ac44e91363c2d66565ee11a2bc4",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed402",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 406.0,
+          "lyapunov_times": 4.203318,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 406.0,
+          "lyapunov_times": 4.203318,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6408489546336451,
+      "forecast_seconds": 0.8449486249883194,
+      "forecast_sha256": "ffbf4a1bef3f52464359d3e3619ce79ff0ab0ef8896b26559d67a55ea82e421a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed402",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 490.0,
+          "lyapunov_times": 5.07297,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 530.0,
+          "lyapunov_times": 5.48709,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.680727476289781,
+      "forecast_seconds": 0.9333303750026971,
+      "forecast_sha256": "58913e29c37b91ca9569868903f2e447ab48b1165511264fe02289f338ce2168",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed402",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 613.0,
+          "lyapunov_times": 6.346388999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 614.0,
+          "lyapunov_times": 6.356742,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.1610356757198094,
+      "forecast_seconds": 1.214208833000157,
+      "forecast_sha256": "901c16f889939ff48a3b046a9f3f10d96d2f3af16857522a1cf7c34571a8fc65",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed403",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 284.0,
+          "lyapunov_times": 2.940252,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 284.0,
+          "lyapunov_times": 2.940252,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.523877774519894,
+      "forecast_seconds": 0.8283710000105202,
+      "forecast_sha256": "54011e3ecacc8ca2262e2d0bf4355d6cf66f663af771fe94282bf14d7b49f6f5",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed403",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 489.0,
+          "lyapunov_times": 5.062617,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 489.0,
+          "lyapunov_times": 5.062617,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6815092545313145,
+      "forecast_seconds": 0.8656208330066875,
+      "forecast_sha256": "54b5a6b215e292b809c2bee502c42ccf354df2dafb53ab94a5601ae66bbe9a78",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed403",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 533.0,
+          "lyapunov_times": 5.518149,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 534.0,
+          "lyapunov_times": 5.528502,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.42850139082845057,
+      "forecast_seconds": 0.9490983340074308,
+      "forecast_sha256": "0a4beec29ff2998d848b01eb31818bff2fa1e8d2d8db4fdbe965c2705b80eebf",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed404",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 43.0,
+          "lyapunov_times": 0.445179,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 165.0,
+          "lyapunov_times": 1.708245,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.5086485289114264,
+      "forecast_seconds": 0.8701188330014702,
+      "forecast_sha256": "e286174718f5f0d813af94bbb5734561c2be6bda84f89fe41593360b6db699ec",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed404",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 288.0,
+          "lyapunov_times": 2.981664,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 409.0,
+          "lyapunov_times": 4.234376999999999,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6480994850095939,
+      "forecast_seconds": 0.9504312079807278,
+      "forecast_sha256": "7a4453d16e8aa5290232fddebbb3837498802bc4a5bae437e36499797806ff18",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed404",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 290.0,
+          "lyapunov_times": 3.00237,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 291.0,
+          "lyapunov_times": 3.0127230000000003,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6849484234909083,
+      "forecast_seconds": 1.0332467499829363,
+      "forecast_sha256": "71f7dcd91c81fb9aec5945d73344e090237f168b43dde34865ab90d89a504f59",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed405",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 43.0,
+          "lyapunov_times": 0.445179,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 163.0,
+          "lyapunov_times": 1.687539,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6895488014897411,
+      "forecast_seconds": 0.8845517090230715,
+      "forecast_sha256": "a5c9b75c5d7999eb5ef4d4882a3eecb0274a048a0426e38990dcc704ebf7a7b3",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed405",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 166.0,
+          "lyapunov_times": 1.7185979999999998,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 167.0,
+          "lyapunov_times": 1.7289510000000001,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.8120653032448724,
+      "forecast_seconds": 1.0163606249843724,
+      "forecast_sha256": "c03275cebbd1570f917d77df767a8f5ef3c63f6c7fb0da35a066f5e9a42bbe3d",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-winner-seed405",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 290.0,
+          "lyapunov_times": 3.00237,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 290.0,
+          "lyapunov_times": 3.00237,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.8077667010683766,
+      "forecast_seconds": 0.9291840000078082,
+      "forecast_sha256": "5f040177a403174ec612849ea902be397dc592bd6a50f22538c988fd3f9d203e",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed401",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 486.0,
+          "lyapunov_times": 5.031558,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 526.0,
+          "lyapunov_times": 5.445678,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.350023444476571,
+      "forecast_seconds": 0.9063039580069017,
+      "forecast_sha256": "7d4b60d9f8bda1e9cecf215f8e3ad4c0765e6c2ca9b3c3cbd6b856bb231ce627",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed401",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 530.0,
+          "lyapunov_times": 5.48709,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 531.0,
+          "lyapunov_times": 5.497443,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6395561833534401,
+      "forecast_seconds": 1.0007847090018913,
+      "forecast_sha256": "deeb120c80e57606e8dd37bfacc45a60c5aea10db8e53aba0a47078ae1fdc88f",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed401",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 411.0,
+          "lyapunov_times": 4.255083,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 412.0,
+          "lyapunov_times": 4.265436,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.30506148775679526,
+      "forecast_seconds": 0.8016854999877978,
+      "forecast_sha256": "3c53ee84fd0771af3a56bd8b5a1e8766c0ae3ac44e91363c2d66565ee11a2bc4",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed402",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 406.0,
+          "lyapunov_times": 4.203318,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 406.0,
+          "lyapunov_times": 4.203318,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6408489546336451,
+      "forecast_seconds": 0.883590124984039,
+      "forecast_sha256": "ffbf4a1bef3f52464359d3e3619ce79ff0ab0ef8896b26559d67a55ea82e421a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed402",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 490.0,
+          "lyapunov_times": 5.07297,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 530.0,
+          "lyapunov_times": 5.48709,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.680727476289781,
+      "forecast_seconds": 0.9360047089867294,
+      "forecast_sha256": "58913e29c37b91ca9569868903f2e447ab48b1165511264fe02289f338ce2168",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed402",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 613.0,
+          "lyapunov_times": 6.346388999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 614.0,
+          "lyapunov_times": 6.356742,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.1610356757198094,
+      "forecast_seconds": 1.0078626250033267,
+      "forecast_sha256": "901c16f889939ff48a3b046a9f3f10d96d2f3af16857522a1cf7c34571a8fc65",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed403",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 284.0,
+          "lyapunov_times": 2.940252,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 284.0,
+          "lyapunov_times": 2.940252,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.523877774519894,
+      "forecast_seconds": 0.8735074999858625,
+      "forecast_sha256": "54011e3ecacc8ca2262e2d0bf4355d6cf66f663af771fe94282bf14d7b49f6f5",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed403",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 489.0,
+          "lyapunov_times": 5.062617,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 489.0,
+          "lyapunov_times": 5.062617,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6815092545313145,
+      "forecast_seconds": 0.9216369580244645,
+      "forecast_sha256": "54b5a6b215e292b809c2bee502c42ccf354df2dafb53ab94a5601ae66bbe9a78",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed403",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 533.0,
+          "lyapunov_times": 5.518149,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 534.0,
+          "lyapunov_times": 5.528502,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.42850139082845057,
+      "forecast_seconds": 1.0138445000047795,
+      "forecast_sha256": "0a4beec29ff2998d848b01eb31818bff2fa1e8d2d8db4fdbe965c2705b80eebf",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed404",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 43.0,
+          "lyapunov_times": 0.445179,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 165.0,
+          "lyapunov_times": 1.708245,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.5086485289114264,
+      "forecast_seconds": 0.6129868330026511,
+      "forecast_sha256": "e286174718f5f0d813af94bbb5734561c2be6bda84f89fe41593360b6db699ec",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed404",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 288.0,
+          "lyapunov_times": 2.981664,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 409.0,
+          "lyapunov_times": 4.234376999999999,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6480994850095939,
+      "forecast_seconds": 0.9123152920219582,
+      "forecast_sha256": "7a4453d16e8aa5290232fddebbb3837498802bc4a5bae437e36499797806ff18",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed404",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 290.0,
+          "lyapunov_times": 3.00237,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 291.0,
+          "lyapunov_times": 3.0127230000000003,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6849484234909083,
+      "forecast_seconds": 1.0000044160115067,
+      "forecast_sha256": "71f7dcd91c81fb9aec5945d73344e090237f168b43dde34865ab90d89a504f59",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed405",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 43.0,
+          "lyapunov_times": 0.445179,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 163.0,
+          "lyapunov_times": 1.687539,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.6895488014897411,
+      "forecast_seconds": 0.8919729159970302,
+      "forecast_sha256": "a5c9b75c5d7999eb5ef4d4882a3eecb0274a048a0426e38990dcc704ebf7a7b3",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed405",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 166.0,
+          "lyapunov_times": 1.7185979999999998,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 167.0,
+          "lyapunov_times": 1.7289510000000001,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.8120653032448724,
+      "forecast_seconds": 0.8982686669914983,
+      "forecast_sha256": "c03275cebbd1570f917d77df767a8f5ef3c63f6c7fb0da35a066f5e9a42bbe3d",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-classic-known_recipe-seed405",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 290.0,
+          "lyapunov_times": 3.00237,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 290.0,
+          "lyapunov_times": 3.00237,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.8077667010683766,
+      "forecast_seconds": 1.1806728749943431,
+      "forecast_sha256": "5f040177a403174ec612849ea902be397dc592bd6a50f22538c988fd3f9d203e",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed401",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 11.0,
+          "lyapunov_times": 0.11388300000000001,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 12.0,
+          "lyapunov_times": 0.124236,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 8.136490170963402,
+      "forecast_seconds": 0.7109564580023289,
+      "forecast_sha256": "a8ee44cf00f85b30714209179d87e06afe178c12f6f9a24a7a0403362489f368",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed401",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 13.0,
+          "lyapunov_times": 0.134589,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 14.0,
+          "lyapunov_times": 0.144942,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 8.113682229596344,
+      "forecast_seconds": 0.8405031670117751,
+      "forecast_sha256": "1c4be93bf3896ee3782c4881a0a6b44b2ae1bf6d35273b87992647b56b6d67f7",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed401",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 52.0,
+          "lyapunov_times": 0.538356,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 57.0,
+          "lyapunov_times": 0.590121,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 7.943455006048223,
+      "forecast_seconds": 1.0728333750157617,
+      "forecast_sha256": "54c35c982a9db78a7843e9c490a1ae0dda7cb7f2714f4cf3f3520b1f0b0b6cf1",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed402",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 25.0,
+          "lyapunov_times": 0.25882499999999997,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 26.0,
+          "lyapunov_times": 0.269178,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.89517698732756e+18,
+      "forecast_seconds": 0.794201292010257,
+      "forecast_sha256": "7aa3e5ea74903229f630dc17604a08cd53de91165b486869ff923c1bea39cb5e",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed402",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 27.0,
+          "lyapunov_times": 0.279531,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 28.0,
+          "lyapunov_times": 0.289884,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.6421010429450806e+18,
+      "forecast_seconds": 0.8636540840088855,
+      "forecast_sha256": "9abc2760180e8bfcad14ba658d5432e9aa9e0cee8b9d93be7f0d1ff1bfdc8b63",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed402",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 23.0,
+          "lyapunov_times": 0.23811900000000003,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 23.0,
+          "lyapunov_times": 0.23811900000000003,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 8.336525878314779e+17,
+      "forecast_seconds": 0.876899416995002,
+      "forecast_sha256": "9b380ee3bbd6d4fc8d0e9465cd9e8b8787594b3c05980e260b7b9e73b5c60a9f",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed403",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 15.0,
+          "lyapunov_times": 0.155295,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 16.0,
+          "lyapunov_times": 0.165648,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.8435792611817316e+18,
+      "forecast_seconds": 0.8240760000189766,
+      "forecast_sha256": "c865bcc3c5a4799048548fca6018a4085dd2d452eaef2f16ea7f84534a3afdc0",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed403",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 20.0,
+          "lyapunov_times": 0.20706000000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 21.0,
+          "lyapunov_times": 0.21741300000000002,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 4.916615863937557e+21,
+      "forecast_seconds": 0.8564182090049144,
+      "forecast_sha256": "223d80b8013855994cc99c9d11df9330b9f3202cc49e5b67405d6fc33d957304",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed403",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 54.0,
+          "lyapunov_times": 0.559062,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 56.0,
+          "lyapunov_times": 0.579768,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.3173582512409391e+19,
+      "forecast_seconds": 0.9561954999808222,
+      "forecast_sha256": "2ce0749b469858dc28ff3594159d11057b22a45bf19034f08dab847196f666e0",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed404",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 91.0,
+          "lyapunov_times": 0.9421229999999999,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 93.0,
+          "lyapunov_times": 0.962829,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 543832.869363348,
+      "forecast_seconds": 0.8846154999919236,
+      "forecast_sha256": "1e5abb3bf72bb95ae5af764f425c3e4711cf466d56a06d1a3d9798ee81834e4b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed404",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 45.0,
+          "lyapunov_times": 0.465885,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 62.0,
+          "lyapunov_times": 0.6418860000000001,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 2900485.850673929,
+      "forecast_seconds": 0.8975930830056313,
+      "forecast_sha256": "46407069d7d59f04d7b1ebc561ae59443c70d305fc6ee870163649ae60cb6619",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed404",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 52.0,
+          "lyapunov_times": 0.538356,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 54.0,
+          "lyapunov_times": 0.559062,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1616504.9504229398,
+      "forecast_seconds": 0.9548666669870727,
+      "forecast_sha256": "d8185e97315274c8c4053d7a9c934813b35ebbfb959e5ed269a77f05163cb8e0",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed405",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 18.0,
+          "lyapunov_times": 0.186354,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 19.0,
+          "lyapunov_times": 0.196707,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 1.429221844643366e+30,
+      "forecast_seconds": 0.8818425830104388,
+      "forecast_sha256": "a0490677cca88a150ac5840be07d7419592440c166abb0c990f7c289c89435f8",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed405",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 24.0,
+          "lyapunov_times": 0.248472,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 26.0,
+          "lyapunov_times": 0.269178,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 2.1878490838167615e+27,
+      "forecast_seconds": 0.8668560840014834,
+      "forecast_sha256": "657d25a845f9c69ea19f3158b07630e2ccbf12919cd11125cc0257b02960c416",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-unoptimized-seed405",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 63.0,
+          "lyapunov_times": 0.652239,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 66.0,
+          "lyapunov_times": 0.683298,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 3.8042918703683187e+25,
+      "forecast_seconds": 0.9556174169993028,
+      "forecast_sha256": "620d25705d96e02cbc47ed1584198ca2ce499c25a3a45a8d3f89a46e11157e6f",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed401",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 931.0,
+          "lyapunov_times": 9.638643000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0222391221841935,
+      "forecast_seconds": 1.1617729999998119,
+      "forecast_sha256": "f9ac91748a748e44411187b75d3d4ba7e0394a1fc391e1b27c2f25d059b13260",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed401",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.003083891461101644,
+      "forecast_seconds": 1.093538625020301,
+      "forecast_sha256": "9f3f24ac494c4b2b601c13164e9369d7a4be6e2ca90c86c6a7f8b90c541ef31b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed401",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 816.0,
+          "lyapunov_times": 8.448048,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 936.0,
+          "lyapunov_times": 9.690408000000001,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.07741436575217549,
+      "forecast_seconds": 1.076199417002499,
+      "forecast_sha256": "ec119070c72356b2fcf0c3e9f4bf68fe9b8d3ca592236ec4869452719b2406a9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed402",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.01498316029900303,
+      "forecast_seconds": 0.914032375003444,
+      "forecast_sha256": "f891b7f90feae3ac757028513a110403d42172239177d9722ece6dccc5cf015a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed402",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.004762394617252031,
+      "forecast_seconds": 0.9567838750081137,
+      "forecast_sha256": "795c2575b6ea24f609cc08c3fffcdbadbffb383a93d6292988a387d4f0a1da97",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed402",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 938.0,
+          "lyapunov_times": 9.711114,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.033016002375932316,
+      "forecast_seconds": 1.1090921249997336,
+      "forecast_sha256": "724180f08da5a26c30b83119ced40045d54752b8bd132e1b8a2149c62c60801d",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed403",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.016384459301485244,
+      "forecast_seconds": 0.9108097080024891,
+      "forecast_sha256": "cac98702723be302e45703736ffcecdfb1dc5f5ef08c930aab10ea23d1724462",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed403",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0017113522467122866,
+      "forecast_seconds": 1.0025632079923525,
+      "forecast_sha256": "d522360e997978e92f9de6718b4e68dc08c999b4ea757b613d78e4b8577af50b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed403",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.06252909308189289,
+      "forecast_seconds": 1.2371898340061307,
+      "forecast_sha256": "dc3dfd61169600cd0488a2b8de1351c564603c7a71274b7b13c705c279cd05aa",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed404",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.01955829502603701,
+      "forecast_seconds": 0.8892114170012064,
+      "forecast_sha256": "eb232ca538cedda354530f3c45ce1ab53a4ea4fa42c3625e9eb3e09d2382190c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed404",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0025366526219434463,
+      "forecast_seconds": 0.9930948750115931,
+      "forecast_sha256": "432b7b1e1ea76054e599f0075393a4986d8d5f67b001a89434c9ef327b2b1475",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed404",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.05494867271009675,
+      "forecast_seconds": 1.2169841670256574,
+      "forecast_sha256": "b163fcc2c6e8ec0a1cb427bfb99ae03a93937bd846d27cec36c0f27ed085a199",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed405",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.004464455151788442,
+      "forecast_seconds": 0.8732031669933349,
+      "forecast_sha256": "6679f67f6e828b28f435e4f426c421a79e1c800d77f8526f8b65b3074553a2b9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed405",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.02589843761105109,
+      "forecast_seconds": 0.9212504999886733,
+      "forecast_sha256": "57267cabcca9843ac433b050b3b9f9a59fcb56bd5b0690333a948f218a4d0a58",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-winner-seed405",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 815.0,
+          "lyapunov_times": 8.437695,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 816.0,
+          "lyapunov_times": 8.448048,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.16120123505875106,
+      "forecast_seconds": 0.9355235830007587,
+      "forecast_sha256": "6469e0303ab9a34c46462bb0d25a6f3ef415e6de1cae0924cfd6a5abae7bab3e",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed401",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 931.0,
+          "lyapunov_times": 9.638643000000002,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0222391221841935,
+      "forecast_seconds": 0.7450365829863586,
+      "forecast_sha256": "f9ac91748a748e44411187b75d3d4ba7e0394a1fc391e1b27c2f25d059b13260",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed401",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.003083891461101644,
+      "forecast_seconds": 0.7417372079798952,
+      "forecast_sha256": "9f3f24ac494c4b2b601c13164e9369d7a4be6e2ca90c86c6a7f8b90c541ef31b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed401",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 816.0,
+          "lyapunov_times": 8.448048,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 936.0,
+          "lyapunov_times": 9.690408000000001,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.07741436575217549,
+      "forecast_seconds": 0.8630668749974575,
+      "forecast_sha256": "ec119070c72356b2fcf0c3e9f4bf68fe9b8d3ca592236ec4869452719b2406a9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed402",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.01498316029900303,
+      "forecast_seconds": 0.5610135000024457,
+      "forecast_sha256": "f891b7f90feae3ac757028513a110403d42172239177d9722ece6dccc5cf015a",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed402",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.004762394617252031,
+      "forecast_seconds": 0.6134157079795841,
+      "forecast_sha256": "795c2575b6ea24f609cc08c3fffcdbadbffb383a93d6292988a387d4f0a1da97",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed402",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 938.0,
+          "lyapunov_times": 9.711114,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.033016002375932316,
+      "forecast_seconds": 0.7130894169968087,
+      "forecast_sha256": "724180f08da5a26c30b83119ced40045d54752b8bd132e1b8a2149c62c60801d",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed403",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.016384459301485244,
+      "forecast_seconds": 0.7822550419950858,
+      "forecast_sha256": "cac98702723be302e45703736ffcecdfb1dc5f5ef08c930aab10ea23d1724462",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed403",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0017113522467122866,
+      "forecast_seconds": 0.8849447919928934,
+      "forecast_sha256": "d522360e997978e92f9de6718b4e68dc08c999b4ea757b613d78e4b8577af50b",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed403",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.06252909308189289,
+      "forecast_seconds": 0.8976912920188624,
+      "forecast_sha256": "dc3dfd61169600cd0488a2b8de1351c564603c7a71274b7b13c705c279cd05aa",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed404",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.01955829502603701,
+      "forecast_seconds": 0.8920211670047138,
+      "forecast_sha256": "eb232ca538cedda354530f3c45ce1ab53a4ea4fa42c3625e9eb3e09d2382190c",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed404",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.0025366526219434463,
+      "forecast_seconds": 0.8860548329830635,
+      "forecast_sha256": "432b7b1e1ea76054e599f0075393a4986d8d5f67b001a89434c9ef327b2b1475",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed404",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 937.0,
+          "lyapunov_times": 9.700761,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.05494867271009675,
+      "forecast_seconds": 0.492087915976299,
+      "forecast_sha256": "b163fcc2c6e8ec0a1cb427bfb99ae03a93937bd846d27cec36c0f27ed085a199",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed405",
+      "origin_id": 0,
+      "origin_index": 11399,
+      "history_steps": 11399,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.004464455151788442,
+      "forecast_seconds": 0.21542424999643117,
+      "forecast_sha256": "6679f67f6e828b28f435e4f426c421a79e1c800d77f8526f8b65b3074553a2b9",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed405",
+      "origin_id": 1,
+      "origin_index": 12365,
+      "history_steps": 12365,
+      "scores": {
+        "0.3": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        },
+        "0.5": {
+          "steps": 966.0,
+          "lyapunov_times": 10.000998000000001,
+          "right_censored": true
+        }
+      },
+      "full_horizon_nrmse": 0.02589843761105109,
+      "forecast_seconds": 0.16962170801707543,
+      "forecast_sha256": "57267cabcca9843ac433b050b3b9f9a59fcb56bd5b0690333a948f218a4d0a58",
+      "scoring_status": "finite"
+    },
+    {
+      "case_id": "rossler-ott-known_recipe-seed405",
+      "origin_id": 2,
+      "origin_index": 13331,
+      "history_steps": 13331,
+      "scores": {
+        "0.3": {
+          "steps": 815.0,
+          "lyapunov_times": 8.437695,
+          "right_censored": false
+        },
+        "0.5": {
+          "steps": 816.0,
+          "lyapunov_times": 8.448048,
+          "right_censored": false
+        }
+      },
+      "full_horizon_nrmse": 0.16120123505875106,
+      "forecast_seconds": 0.17064174998085946,
+      "forecast_sha256": "6469e0303ab9a34c46462bb0d25a6f3ef415e6de1cae0924cfd6a5abae7bab3e",
+      "scoring_status": "finite"
+    }
+  ],
+  "summaries": [
+    {
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "unoptimized",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 5.5784959999999995,
+          "min": 3.875968,
+          "max": 10.015936,
+          "right_censored": 1,
+          "per_seed_medians": {
+            "401": 5.306816,
+            "402": 6.212416,
+            "403": 5.5784959999999995,
+            "404": 6.121855999999999,
+            "405": 5.306816
+          }
+        },
+        "0.5": {
+          "median": 6.24864,
+          "min": 3.9303039999999996,
+          "max": 10.015936,
+          "right_censored": 1,
+          "per_seed_medians": {
+            "401": 6.24864,
+            "402": 6.266751999999999,
+            "403": 6.230528,
+            "404": 6.194304,
+            "405": 6.375424
+          }
+        }
+      }
+    },
+    {
+      "system": "lorenz",
+      "family": "classic",
+      "variant": "winner",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 10.015936,
+          "min": 4.473664,
+          "max": 10.015936,
+          "right_censored": 9,
+          "per_seed_medians": {
+            "401": 10.015936,
+            "402": 10.015936,
+            "403": 7.643263999999999,
+            "404": 8.856767999999999,
+            "405": 7.534592
+          }
+        },
+        "0.5": {
+          "median": 10.015936,
+          "min": 4.509888,
+          "max": 10.015936,
+          "right_censored": 10,
+          "per_seed_medians": {
+            "401": 10.015936,
+            "402": 10.015936,
+            "403": 7.715711999999999,
+            "404": 10.015936,
+            "405": 7.570815999999999
+          }
+        }
+      }
+    },
+    {
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "unoptimized",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 6.121855999999999,
+          "min": 3.912192,
+          "max": 10.015936,
+          "right_censored": 1,
+          "per_seed_medians": {
+            "401": 4.129536,
+            "402": 6.61088,
+            "403": 8.748096,
+            "404": 6.121855999999999,
+            "405": 5.180032
+          }
+        },
+        "0.5": {
+          "median": 6.176192,
+          "min": 3.966528,
+          "max": 10.015936,
+          "right_censored": 2,
+          "per_seed_medians": {
+            "401": 4.89024,
+            "402": 6.665216,
+            "403": 8.802432,
+            "404": 6.176192,
+            "405": 5.234368
+          }
+        }
+      }
+    },
+    {
+      "system": "lorenz",
+      "family": "ott",
+      "variant": "winner",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 10.015936,
+          "min": 10.015936,
+          "max": 10.015936,
+          "right_censored": 15,
+          "per_seed_medians": {
+            "401": 10.015936,
+            "402": 10.015936,
+            "403": 10.015936,
+            "404": 10.015936,
+            "405": 10.015936
+          }
+        },
+        "0.5": {
+          "median": 10.015936,
+          "min": 10.015936,
+          "max": 10.015936,
+          "right_censored": 15,
+          "per_seed_medians": {
+            "401": 10.015936,
+            "402": 10.015936,
+            "403": 10.015936,
+            "404": 10.015936,
+            "405": 10.015936
+          }
+        }
+      }
+    },
+    {
+      "system": "rossler",
+      "family": "classic",
+      "variant": "known_recipe",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 4.203318,
+          "min": 0.445179,
+          "max": 6.346388999999999,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 5.031558,
+            "402": 5.07297,
+            "403": 5.062617,
+            "404": 2.981664,
+            "405": 1.7185979999999998
+          }
+        },
+        "0.5": {
+          "median": 4.234376999999999,
+          "min": 1.687539,
+          "max": 6.356742,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 5.445678,
+            "402": 5.48709,
+            "403": 5.062617,
+            "404": 3.0127230000000003,
+            "405": 1.7289510000000001
+          }
+        }
+      }
+    },
+    {
+      "system": "rossler",
+      "family": "classic",
+      "variant": "unoptimized",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 0.25882499999999997,
+          "min": 0.20706000000000002,
+          "max": 1.387302,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 0.289884,
+            "402": 0.22776600000000002,
+            "403": 0.21741300000000002,
+            "404": 0.25882499999999997,
+            "405": 1.149183
+          }
+        },
+        "0.5": {
+          "median": 0.25882499999999997,
+          "min": 0.20706000000000002,
+          "max": 1.397655,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 0.30023700000000003,
+            "402": 0.248472,
+            "403": 0.21741300000000002,
+            "404": 0.25882499999999997,
+            "405": 1.180242
+          }
+        }
+      }
+    },
+    {
+      "system": "rossler",
+      "family": "classic",
+      "variant": "winner",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 4.203318,
+          "min": 0.445179,
+          "max": 6.346388999999999,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 5.031558,
+            "402": 5.07297,
+            "403": 5.062617,
+            "404": 2.981664,
+            "405": 1.7185979999999998
+          }
+        },
+        "0.5": {
+          "median": 4.234376999999999,
+          "min": 1.687539,
+          "max": 6.356742,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 5.445678,
+            "402": 5.48709,
+            "403": 5.062617,
+            "404": 3.0127230000000003,
+            "405": 1.7289510000000001
+          }
+        }
+      }
+    },
+    {
+      "system": "rossler",
+      "family": "ott",
+      "variant": "known_recipe",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 10.000998000000001,
+          "min": 8.437695,
+          "max": 10.000998000000001,
+          "right_censored": 9,
+          "per_seed_medians": {
+            "401": 9.638643000000002,
+            "402": 10.000998000000001,
+            "403": 10.000998000000001,
+            "404": 10.000998000000001,
+            "405": 10.000998000000001
+          }
+        },
+        "0.5": {
+          "median": 10.000998000000001,
+          "min": 8.448048,
+          "max": 10.000998000000001,
+          "right_censored": 11,
+          "per_seed_medians": {
+            "401": 10.000998000000001,
+            "402": 10.000998000000001,
+            "403": 10.000998000000001,
+            "404": 10.000998000000001,
+            "405": 10.000998000000001
+          }
+        }
+      }
+    },
+    {
+      "system": "rossler",
+      "family": "ott",
+      "variant": "unoptimized",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 0.25882499999999997,
+          "min": 0.11388300000000001,
+          "max": 0.9421229999999999,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 0.134589,
+            "402": 0.25882499999999997,
+            "403": 0.20706000000000002,
+            "404": 0.538356,
+            "405": 0.248472
+          }
+        },
+        "0.5": {
+          "median": 0.269178,
+          "min": 0.124236,
+          "max": 0.962829,
+          "right_censored": 0,
+          "per_seed_medians": {
+            "401": 0.144942,
+            "402": 0.269178,
+            "403": 0.21741300000000002,
+            "404": 0.6418860000000001,
+            "405": 0.269178
+          }
+        }
+      }
+    },
+    {
+      "system": "rossler",
+      "family": "ott",
+      "variant": "winner",
+      "count": 15,
+      "scores": {
+        "0.3": {
+          "median": 10.000998000000001,
+          "min": 8.437695,
+          "max": 10.000998000000001,
+          "right_censored": 9,
+          "per_seed_medians": {
+            "401": 9.638643000000002,
+            "402": 10.000998000000001,
+            "403": 10.000998000000001,
+            "404": 10.000998000000001,
+            "405": 10.000998000000001
+          }
+        },
+        "0.5": {
+          "median": 10.000998000000001,
+          "min": 8.448048,
+          "max": 10.000998000000001,
+          "right_censored": 11,
+          "per_seed_medians": {
+            "401": 10.000998000000001,
+            "402": 10.000998000000001,
+            "403": 10.000998000000001,
+            "404": 10.000998000000001,
+            "405": 10.000998000000001
+          }
+        }
+      }
+    }
+  ],
+  "stored_checkpoint_parity": {
+    "reference_runtime_commit": "1caea0bab9373294e0d3b10fc95037839442531e",
+    "corrected_runtime_commit": "dcedbbae23d96c26136cd77918546f1053766c54",
+    "checkpoint_initialization_seed": 201,
+    "fixed_checkpoint_sha256": {
+      "lorenz-classic-winner-seed201.pt": "e663dc75608af49e51946a0e98803e466a9dae12898dcfa7058a4ed60ff0e043",
+      "lorenz-ott-winner-seed201.pt": "15f552b06634bd4b47e65633b2599a503dc637d4fccf1be50134d1c84f6bd6e9",
+      "rossler-classic-winner-seed201.pt": "5bb543a858579c96d2655735b3005f710d0e70ce58f50e25f23a26b5e3237a9b",
+      "rossler-ott-winner-seed201.pt": "4e1792e7eec37872b1fb580d487787b99aaa1a131f1c8a4f21f4fba761bf8a01"
+    },
+    "history_conditioned_forecasts": 12,
+    "all_prediction_bytes_identical": true,
+    "all_fitted_tensor_fingerprints_identical": true,
+    "cases": [
+      {
+        "id": "lorenz-classic-seed201-origin0",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "e663dc75608af49e51946a0e98803e466a9dae12898dcfa7058a4ed60ff0e043",
+        "prediction_sha256": "8189e39c35ba21edf300f39d0fe85f088274fb063c01f65468d4f80230071587"
+      },
+      {
+        "id": "lorenz-classic-seed201-origin1",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "e663dc75608af49e51946a0e98803e466a9dae12898dcfa7058a4ed60ff0e043",
+        "prediction_sha256": "42029325af7ee6a80aa1457cb0931f6c39e87b4b26c8a0ec3e483d3b6ef51782"
+      },
+      {
+        "id": "lorenz-classic-seed201-origin2",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "e663dc75608af49e51946a0e98803e466a9dae12898dcfa7058a4ed60ff0e043",
+        "prediction_sha256": "ad7fefa1289549ab586fb599f13bca392f6deb9069d1008ea26507d288673882"
+      },
+      {
+        "id": "lorenz-ott-seed201-origin0",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "15f552b06634bd4b47e65633b2599a503dc637d4fccf1be50134d1c84f6bd6e9",
+        "prediction_sha256": "d8d60ca5f34eda3a081f55b2ed436c48bf47896dffba2eae3abb64d2d6f3e129"
+      },
+      {
+        "id": "lorenz-ott-seed201-origin1",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "15f552b06634bd4b47e65633b2599a503dc637d4fccf1be50134d1c84f6bd6e9",
+        "prediction_sha256": "177417307d876fba16c389f249f07acd176f89159e28ab49207d4424d5b058c4"
+      },
+      {
+        "id": "lorenz-ott-seed201-origin2",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "15f552b06634bd4b47e65633b2599a503dc637d4fccf1be50134d1c84f6bd6e9",
+        "prediction_sha256": "d423fd7415e930bb41a3e048b1df832e2629cb0e2c05bdb6a932aadc46972cc4"
+      },
+      {
+        "id": "rossler-classic-seed201-origin0",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "5bb543a858579c96d2655735b3005f710d0e70ce58f50e25f23a26b5e3237a9b",
+        "prediction_sha256": "b02f23f94b0de9af60d0c38bce0ed2279fc99b0ec607d5f13b1b03bdeb6b1035"
+      },
+      {
+        "id": "rossler-classic-seed201-origin1",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "5bb543a858579c96d2655735b3005f710d0e70ce58f50e25f23a26b5e3237a9b",
+        "prediction_sha256": "a7e5a57975531a9fc7ff5be12541443c66c8a1b704e6c4bf603d40c9c21c8861"
+      },
+      {
+        "id": "rossler-classic-seed201-origin2",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "5bb543a858579c96d2655735b3005f710d0e70ce58f50e25f23a26b5e3237a9b",
+        "prediction_sha256": "d73d675c0f655ce6259416637ed6053ed9ea6dc6e01d5b7cdee1f9401b564b8d"
+      },
+      {
+        "id": "rossler-ott-seed201-origin0",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "4e1792e7eec37872b1fb580d487787b99aaa1a131f1c8a4f21f4fba761bf8a01",
+        "prediction_sha256": "8efbf8f415cfe44bd4f3c89ad41a800067fb28a19c103950393de70227014d59"
+      },
+      {
+        "id": "rossler-ott-seed201-origin1",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "4e1792e7eec37872b1fb580d487787b99aaa1a131f1c8a4f21f4fba761bf8a01",
+        "prediction_sha256": "d0f0fe4046779bbd2ab64fe4ae778b580b7fdc8fd191f472d4e06a9d7e1f8055"
+      },
+      {
+        "id": "rossler-ott-seed201-origin2",
+        "prediction_bytes_identical": true,
+        "fitted_tensors_identical": true,
+        "maximum_absolute_difference": 0.0,
+        "artifact_sha256": "4e1792e7eec37872b1fb580d487787b99aaa1a131f1c8a4f21f4fba761bf8a01",
+        "prediction_sha256": "b92b49ca3f4ead8ae2d4128b1d096e14ef6aebadd0aa4b580d865c99d099cb05"
+      }
+    ],
+    "boundary": "Four existing materialized 4.1.0 winner checkpoints, reloaded for three observed histories each. This proves stored tensor/history-conditioned forecast parity for these cases; it does not prove new-seed equality, arbitrary online continuation, or RNG continuation without history."
+  },
+  "limitations": [
+    "Vanilla Rossler pooled median 4.203318 LT at 0.3 and 4.234377 LT at 0.5 misses 7-8 LT; no post-test winner replacement or retuning.",
+    "One historically known trajectory per system; initialization seeds 401-405 were reserved. Shared seeds and history make the 15 forecasts dependent.",
+    "No independent-trajectory generalization, superiority of default tuning, universal forecast guarantee or causal attribution of old/new score differences to RNG alone.",
+    "Lorenz classic pooled median reaches 10.015936 LT, but the median of its five per-seed medians is 8.856768 LT; both summaries remain visible.",
+    "Full horizons are 553 steps for Lorenz and 966 for Rossler; right-censored outcomes are lower bounds, not measured exact horizons beyond those limits.",
+    "Public JSON preserves recorded metrics and immutable-source hashes; independently re-running models or verifying scales from raw arrays is outside this lightweight export."
+  ]
+}

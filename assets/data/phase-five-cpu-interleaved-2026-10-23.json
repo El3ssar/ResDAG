@@ -1,0 +1,3157 @@
+{
+  "scope": "Diagnostic attribution: original/current loop functions share one current runtime; public fit/history+forecast, interleaved ABBA; not isolated revision timing",
+  "processes": [
+    {
+      "loop_ast_sha256": {
+        "before": "f5b959e458f6db860949c6ebe81d415bf151fd66a7b7afaab81f6c9bb2f31243",
+        "after": "58703a589922939c234ae6305a97d6b1a0d31f0eb7523122f0a95b8ea21cb189"
+      },
+      "cases": {
+        "classic-400-b1": {
+          "runs": [
+            {
+              "label": "before",
+              "warmup": true,
+              "fit": 0.22475795799982734,
+              "forecast": 0.06923412499963888,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": true,
+              "fit": 0.17029774999991787,
+              "forecast": 0.06267316699995717,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.16178975000002538,
+              "forecast": 0.06423712500054535,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.17551574999924924,
+              "forecast": 0.03877199999988079,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.18211233300007734,
+              "forecast": 0.05599379100021906,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.18707370799984346,
+              "forecast": 0.07586437499958265,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.17858512499969947,
+              "forecast": 0.035383875000661646,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.17634458400061703,
+              "forecast": 0.062162249999346386,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.21626370800004224,
+              "forecast": 0.06952316600018094,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.19295954199969856,
+              "forecast": 0.0618560000002617,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.212592124999901,
+              "forecast": 0.0729728750002323,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.1814178329996139,
+              "forecast": 0.06488537499990343,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.2163950409994868,
+              "forecast": 0.07258716700016521,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.20757975000014994,
+              "forecast": 0.0747110000002067,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.2158579169999939,
+              "forecast": 0.07482408400028362,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.20331670799987478,
+              "forecast": 0.07002904199998738,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.19746787499934726,
+              "forecast": 0.06913975000043138,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.20836700000018027,
+              "forecast": 0.07604454200009059,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.191763083999831,
+              "forecast": 0.0617898749997039,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.16976320800040412,
+              "forecast": 0.06901250000009895,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.21873854200021015,
+              "forecast": 0.06930829100019764,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.18394691699995747,
+              "forecast": 0.06952870800068922,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.2233046249994004,
+              "forecast": 0.03537737499937066,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.15392508399963845,
+              "forecast": 0.07222745800027042,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.21547570799975801,
+              "forecast": 0.06820041599985416,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.17667004200029623,
+              "forecast": 0.05626004199984891,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.22616624999955093,
+              "forecast": 0.07223666700065223,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.16232912499981467,
+              "forecast": 0.060930458000257204,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.2041702089991304,
+              "forecast": 0.06471012500060169,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.19672220799930074,
+              "forecast": 0.05060254199997871,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            }
+          ],
+          "case": {
+            "id": "classic-400-b1",
+            "family": "classic",
+            "reservoir_size": 400,
+            "batch": 1,
+            "features": 3,
+            "seed": 20261023,
+            "sparse": false,
+            "input_steps": 1501,
+            "washout": 100,
+            "history_steps": 100,
+            "horizon": 257,
+            "artifact_key": "classic-400"
+          }
+        },
+        "classic-1000-b4": {
+          "runs": [
+            {
+              "label": "before",
+              "warmup": true,
+              "fit": 2.1769363749999684,
+              "forecast": 0.9907382499995947,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": true,
+              "fit": 2.2500509159999638,
+              "forecast": 1.0337012919999324,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.292876417000116,
+              "forecast": 0.9941663339996012,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.237179540999932,
+              "forecast": 0.9853783750004368,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.2956375409994507,
+              "forecast": 0.9494311669996023,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.0769988749998447,
+              "forecast": 0.8839359579997108,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.1346609169995645,
+              "forecast": 0.8778220000003785,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.2317087500005073,
+              "forecast": 1.0098046660004911,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.6681814580006176,
+              "forecast": 0.9754496250006923,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.360894874999758,
+              "forecast": 1.0904762080008368,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.3905732500006707,
+              "forecast": 0.9602462499997273,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.08786520799913,
+              "forecast": 0.9075532919996476,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.799526333000358,
+              "forecast": 1.0971282079999582,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 3.9468607909993807,
+              "forecast": 1.372534583999368,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.94736283399925,
+              "forecast": 1.0531126670002777,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.544676083000013,
+              "forecast": 1.1436546250006359,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 3.2037567919996945,
+              "forecast": 1.3240990000003876,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.6229370419996485,
+              "forecast": 1.0052962499994464,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.3748814999999013,
+              "forecast": 0.9052635420002844,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.650879540999995,
+              "forecast": 1.1216419579996,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.3235100000001694,
+              "forecast": 1.0714288750004926,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.35743708300015,
+              "forecast": 0.9392369170000165,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.0788548330001504,
+              "forecast": 0.8925155839997387,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.154771833000268,
+              "forecast": 1.0319213339998896,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.549445665999883,
+              "forecast": 1.0462273339999228,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.097954666000078,
+              "forecast": 0.8272387920005713,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.165876417000618,
+              "forecast": 0.9095300419994601,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.2703122499997335,
+              "forecast": 0.8702460829999836,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.3253397500002393,
+              "forecast": 0.9254815410004085,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.440009874999305,
+              "forecast": 0.8642890420005642,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            }
+          ],
+          "case": {
+            "id": "classic-1000-b4",
+            "family": "classic",
+            "reservoir_size": 1000,
+            "batch": 4,
+            "features": 3,
+            "seed": 20261023,
+            "sparse": false,
+            "input_steps": 501,
+            "washout": 100,
+            "history_steps": 100,
+            "horizon": 129,
+            "artifact_key": "classic-1000"
+          }
+        },
+        "er-2000-b1-dense": {
+          "runs": [
+            {
+              "label": "before",
+              "warmup": true,
+              "fit": 2.576879917000042,
+              "forecast": 0.9148432090005372,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": true,
+              "fit": 2.8322536669993497,
+              "forecast": 0.7814573750001728,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.9584432499996183,
+              "forecast": 0.8681343750004089,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9664533750001283,
+              "forecast": 1.0278590419993634,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.2462585000002946,
+              "forecast": 0.7292187089997242,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.98282616600045,
+              "forecast": 0.8171616669997093,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.6559283329997925,
+              "forecast": 0.875298582999676,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9766478330002428,
+              "forecast": 0.704571083000701,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9658770409996578,
+              "forecast": 0.8828199999998105,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 3.22807258299963,
+              "forecast": 1.2050617079994481,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.383885457999895,
+              "forecast": 0.7490155830000731,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.8354670419994363,
+              "forecast": 0.8577986670006794,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.32971441600057,
+              "forecast": 1.080495083999267,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.410890291999749,
+              "forecast": 0.8321624999998676,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.278262750000067,
+              "forecast": 0.8437687080004252,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.514736625000296,
+              "forecast": 1.0632613329999003,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.275195540999448,
+              "forecast": 0.9027221669994105,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.3355482079996364,
+              "forecast": 1.0289863749994765,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.581821624999975,
+              "forecast": 0.8023335000007137,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.6269772499999817,
+              "forecast": 0.7860603339995578,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.338596042000063,
+              "forecast": 1.1005589589994997,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.262062374999914,
+              "forecast": 0.7382347499997195,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.9670294589996047,
+              "forecast": 0.7222129580004548,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9597206250000454,
+              "forecast": 0.8659552500002974,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.481259291999777,
+              "forecast": 0.8586800000002768,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.4085958750001737,
+              "forecast": 0.747304957999404,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.2728207919999477,
+              "forecast": 0.9868850000002567,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.2613470419992154,
+              "forecast": 0.8224278329998924,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 3.0219713339993177,
+              "forecast": 0.9889477080005236,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.395852417000242,
+              "forecast": 1.278193457999805,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            }
+          ],
+          "case": {
+            "id": "er-2000-b1-dense",
+            "family": "er",
+            "reservoir_size": 2000,
+            "batch": 1,
+            "features": 3,
+            "seed": 20261023,
+            "sparse": false,
+            "input_steps": 501,
+            "washout": 100,
+            "history_steps": 100,
+            "horizon": 129,
+            "artifact_key": "er-2000",
+            "storage": "dense",
+            "storage_pair": "er-2000-b1"
+          }
+        }
+      },
+      "runtime_commit": "6b3b10815a9fe64f4a392ae52036929280883d70",
+      "runtime_manifest": {
+        "src/resdag/facade.py": "e9096a624dc021d61b59b7ae1351904ec121449da82bdb23daa6bc3826ff6a4f",
+        "src/resdag/__init__.py": "37ff89b7c8207b3b5f3dba0722d0338552d84cb64d2d4db9398256a3578e0a36",
+        "src/resdag/_contracts.py": "88da074cc7adc865cba28ac6c07cbb0c674fd7d19776eb34f5ddcddfa98c7a10",
+        "src/resdag/init/recurrent.py": "e381a8453de4304b761a46ea591ae1ddb3f5e3a3b1a730d2f799826c82a82d30",
+        "src/resdag/init/__init__.py": "693dea2d9076b80f240f01453fa1c1f7cdf19b76126e3c3e456009265a406fa4",
+        "src/resdag/metrics/forecast.py": "3da46b9fe0599807610ac1abf9101b9bb27af8811e8906244ada0d47d330f318",
+        "src/resdag/metrics/__init__.py": "8a694f09c02f71c9205a8b6737d456a90701814572c2b8c11745580e15d6d815",
+        "src/resdag/metrics/lyapunov.py": "5d2f2614c862ef9918916b0aa17c0b8147217f715abb1bea4a8ef4923f2233b9",
+        "src/resdag/metrics/observables.py": "ae9fa70006690694ea08fe337586661ff3677c6389e65ba16e87b72ec76efacd",
+        "src/resdag/ensemble/__init__.py": "9663bdc37ea7d35a2707e3877c9d534171d4d5856cf51832ce16ddbb0f22a5bd",
+        "src/resdag/ensemble/coupled.py": "91030d82e38ecba87c39e837a0d7b0f5526e70f373d7f6e56a30045e5d3f8446",
+        "src/resdag/artifacts/_api.py": "e23908e4c9a644578ca64542e0fe0c6904d04db64ad9d6f46fa55238849a9689",
+        "src/resdag/artifacts/__init__.py": "1f5cc28e3e414a7e66262bc405663ada64ccc4f7c13919757020fc6c8618b699",
+        "src/resdag/artifacts/_registry.py": "308c1ed43047f158d555acfc4e2a5e19eebdf2fa45f5a9eb9e78646d03d2d564",
+        "src/resdag/artifacts/_codecs.py": "b52d6e87d37043a10a0b521d3300fa2b0e0f2dde83eb6c6025b9f9b195a046b5",
+        "src/resdag/artifacts/_models.py": "6205af9db6b2734a3316cdd18e2a7ba554a200ef14e2a47ace0b3859b10bc001",
+        "src/resdag/core/_modes.py": "65860239bec09ab9d4a05fa568ce59148b6b6816a54035bab689052babeb1869",
+        "src/resdag/core/_flat_inference.py": "8e08fe12e953b7e2dd0cd0c35b57c14a8bcb42b314acbbe2c9caf6bd86c5ec05",
+        "src/resdag/core/_forecast.py": "8c53e5cb9630b9a4f282995c55c9c3662cc79879fde924d40100242501572716",
+        "src/resdag/core/_forecast_stream.py": "daebbc8ba808d9819c7df585e72078b816443ed199af2cc445e85fd636c0ac98",
+        "src/resdag/core/_persistence.py": "b40b0bd744834065f2a49dfc6962a2ef0755bf3d42603bf6a767325828ae554d",
+        "src/resdag/core/_diagram.py": "cd37ac3af23ac9113b4e8905ffcabab2aff01db528d80bccffc6a308919e2f1f",
+        "src/resdag/core/_preprocessing.py": "9df196372ae4aae55a7287d481c0a7d0ac3557b1a23694376ed8307554689780",
+        "src/resdag/core/__init__.py": "16d46d25e14ac133f4a3712037e487c0ac732ee1050926584e829b72ed7d1da5",
+        "src/resdag/core/_execution.py": "8f0bf7815bb3f28a83643498d4b8409d74f8e2c6fc5bff7d0eb300b378035483",
+        "src/resdag/core/_hooks.py": "0dd3cb837ea4e209dd4d5b38761931e8ec40ec81bb57b35c1855984fdd90d58a",
+        "src/resdag/core/_workflow_transforms.py": "7ee5a2adaddc1e6f076c129c0bda6eb92fae48f9e82bfbe3758f55cb74270a37",
+        "src/resdag/core/_feedback.py": "2f3f9f37200eea0bc91b423da79becfeebafd3b0f0c7e241e37854390927e069",
+        "src/resdag/core/model.py": "98e9fcbdb11e8f596c637e50e6d10af6198d7220600243d0c72e32932d1ec113",
+        "src/resdag/core/feature_extractor.py": "8bbb7c694aca535402f5e9cf03c0d066e418677eaac8eb829accd82ea6ae33ce",
+        "src/resdag/core/_workflow_backends.py": "11b7d458577d52c3dba86137db5e0d315031baa4d9e45edff81cb15a972b3662",
+        "src/resdag/core/workflow.py": "0cdf5c23f685fdd2d9b2b925e4584a8c26f9258a1c3ae2ee4812e171457efe12",
+        "src/resdag/core/_forecast_capabilities.py": "04516a200598ad78bcf30dad6b660c8195be40e7805f466d66a73760c6dded8b",
+        "src/resdag/layers/__init__.py": "524ee601becb13cc7b465942f8788c7b5bbb4149470d1c3e016aafd21db5b82f",
+        "src/resdag/training/__init__.py": "ca3b8c06db95758ce233e5296167d7f69aedf861889019df9440addea71c32af",
+        "src/resdag/training/trainer.py": "c5dce421955a4ba8d0224741d889610a9f74c9b9506251d9fea77395b9b5c62f",
+        "src/resdag/training/calibration.py": "665bd6512ff0a3a7fb5e9e6aa2b9912c2c35402c9a66c5433f081c6487575d8d",
+        "src/resdag/datasets/__init__.py": "402a12335b950051a07920686453a954ecf89fdfc32a91673448b1350ee71bef",
+        "src/resdag/utils/__init__.py": "1d0737a4df8dcb238441c1fa7e2263402dc3d312a1c945d0e347df693053c1e7",
+        "src/resdag/utils/seeds.py": "d124e5c2cb37cc0775c2dce9217e75ffd0be36a0baef20ae58e7899781c29808",
+        "src/resdag/utils/general.py": "7aac12d70a3217b7426f8a7fe710d9184bd6e7cc11abf48eb9882cedbc0f4287",
+        "src/resdag/models/resesn.py": "24d24fcc48a85cc8b8c6d3774a3512cd3c1b30152885fc4b0bcb33162d0fda2b",
+        "src/resdag/models/deep_esn.py": "57f4ceeb6b35c215b779d88d526e9c6c054a87303f4e6066a8b014e7f681e77b",
+        "src/resdag/models/__init__.py": "e32f31384288e3e856f3a1ba5cfc986a8854cc57e6b071f4930f626c7f8a0287",
+        "src/resdag/models/headless_esn.py": "3ad9bfb33b311db6a87238d14774491a708cc0e47a4a7ad902c6bb35ce3d6a53",
+        "src/resdag/models/linear_esn.py": "b835fa75fbe1262d77081d978ec434982318c4fa5d77f43aeac75fb3d1fd06e1",
+        "src/resdag/models/power_augmented.py": "1f107700197133e32cb24952468fd36218bf693bb8ebf13f7cb5c3cbd76e0b49",
+        "src/resdag/models/es2n.py": "14d491cdcf194cff73219e13dcdac020be513a32c05e401f7f79ac1233b93467",
+        "src/resdag/models/_builder.py": "1d78274f9cbe06802542570a7ff90a6dbd876b3bfeaf9ed3d661f883fbd56f58",
+        "src/resdag/models/_recipes.py": "f1ba39f82bd44db29e5a147f43749bd7e36f5823975a78e68e8d5b32d348cdc5",
+        "src/resdag/models/lsm.py": "abaa3676edc6246833b26af7c4cb9eb7f681c8d01cba3038bc551a680da21ac1",
+        "src/resdag/models/coupled_ensemble_esn.py": "24554e834f33148863ad5eba1a500cdbc8487e95f739f0b4e503b41d27e9054c",
+        "src/resdag/models/gated_esn.py": "a5570d23440ba3c83513f55a7f5895eb6bff710d0591ccc0cc0498c2f21644a1",
+        "src/resdag/models/ott_esn.py": "bdfc19e8d7d76001e676c59068b9f9c882c22b2528183639812cc66da6329cef",
+        "src/resdag/models/parallel_esn.py": "6d7f22e288499fd6367fbb555eeb910b3d04c06e91e4d9e8e7297c1d93db59a6",
+        "src/resdag/models/hybrid_esn.py": "7ed1df57aa97cbcfb4b16e07e0f51b110f73bda41df1a589bb2e54f2b7bfc298",
+        "src/resdag/models/eusn.py": "003eab7f5ae64ff736573d06164ac317d2adeee451670b4e7b33b15a869ee565",
+        "src/resdag/models/classic_esn.py": "185a71710ca4806d366b782a9f02618cef0f777e641ac9917e0e439fa13c4adf",
+        "src/resdag/data/_trajectory.py": "0a74ff17d4a22f50ad355e38f43e1af6bb1bef54503060d4ab7d787231024fe4",
+        "src/resdag/data/io.py": "445eea54340bd46fd7d8d103b1f662a1cd65d2ae1984e604ac42ab4c8bf53573",
+        "src/resdag/data/__init__.py": "07dd030ed3f94267802181d4870a26b3b02980ca6257120873747c900fe91c0e",
+        "src/resdag/data/dataset.py": "72906ccf027725433de70a4a1cd9de6937a073227509d6465373593edea8667a",
+        "src/resdag/data/_trajectory_ports.py": "cdf72c65358bc16c8a5334c8be7d05b64a84f148fd5317dd546697e79492c9b4",
+        "src/resdag/data/prepare.py": "9987cb73f009a0a4fb703082aa3812caf0b5971b8895b28eb38bbef7554f94a3",
+        "src/resdag/hpo/run.py": "1932bb4fe3f51c220f3e6af7746411eb08ad3d6a36ccc086fd567cd44ae7b812",
+        "src/resdag/hpo/objective.py": "9029d3a0f6ff42356fa0db0b0bb18bc30bf0d05944a6945f4ed1bb5d406717e9",
+        "src/resdag/hpo/pruners.py": "c69bec20658a03c9b640121d93ff743d842dc1e919118aef4ee660ec0715c8c2",
+        "src/resdag/hpo/_tuning_data.py": "b7806297c49fee6e6c272520d0a2d2c615a67635af2cfef6a819533312c11c89",
+        "src/resdag/hpo/dispatch.py": "5ed2a5993545cbd05ed0153874be3dfd1a452dc7d35100d84d8271f6d9f3067f",
+        "src/resdag/hpo/trial_runner.py": "5cd5f0c53ac6d6868b476c073b019a9bad996d05f5883ab892ef1e5e51541782",
+        "src/resdag/hpo/__init__.py": "443562e7bcc84e566872eb96e2058aaf9c0d6c92067666c71d2462fe6780dbd4",
+        "src/resdag/hpo/transfer.py": "ead7c2efb06c2a9d70132c7b7d124ef2b1922084d7b0f8604e1ac5aee79f00b6",
+        "src/resdag/hpo/utils.py": "34e98a5584a9bbb496cf5954b1be625f635159db6ccd06fcec74a34e61eff5ec",
+        "src/resdag/hpo/_tuning_scores.py": "d95657d58e3b2fda468db36290e29f233154f947432aea67a4c8b9be94cca50a",
+        "src/resdag/hpo/_trial_progress.py": "4a82ad385573ced752e133e34dfcfe6246d616e4ad5fe5ebacc2dbe49d7e51f3",
+        "src/resdag/hpo/_provenance.py": "e582372ccf6e60735e4037a7888897b655570234006ff2ca2b4f42e0ae26a2c6",
+        "src/resdag/hpo/storage.py": "925a685184d4648bd2f8b0e7dd63b4f72682e183e2ac063448b1aa40b539fe6a",
+        "src/resdag/hpo/_torch_losses.py": "49daaaf381d9a12e8f29089f3f24ec3f0d04403aa374eba9c952996fb861f7b8",
+        "src/resdag/hpo/tuning.py": "bd6521926362efc4b9d4bbdf60e59f55cc2c2bbf5803a6ee7732ef1a390e6eac",
+        "src/resdag/hpo/resources.py": "d8ceb668a06caa4340700b5bd2927deba6c8d2d000d079cefa55e7484bc70d51",
+        "src/resdag/hpo/losses.py": "ce7fcc5818835af36d694470d5434e9c1aae06a51f7cf3ebafac81217f36c68c",
+        "src/resdag/hpo/_parallel.py": "de30a6a89a28793e862edc13f9fd9da1ba8d64da0fa4471562280497411b7dcc",
+        "src/resdag/utils/states/esp_index.py": "f1b9fa028206702a7007a1a49c6e305626e3f360f9982aabc910f41b39781ae6",
+        "src/resdag/utils/states/__init__.py": "ec355915994798b9a3cb160b6af30fcc65546896600ffb2ce078d83742be3daa",
+        "src/resdag/utils/data/io.py": "3f9b188416b8067e9a3dfce54bbfd938c0a3419f023329aba6516512c0641ead",
+        "src/resdag/utils/data/datasets.py": "8da92747435ea09b92f95ac8c27af7a699fd02fad232895eaa2874cddaad3a3c",
+        "src/resdag/utils/data/__init__.py": "20fc94d40e01c7d592f1263c2ac4cd5892c7e20764a5dfc00d15ab530e9390a0",
+        "src/resdag/utils/data/prepare.py": "75fab72a5c2cc2a04811a9110abc6de3f1e4fc0f0b82a441de1629246166e5e4",
+        "src/resdag/layers/cells/ngrc_cell.py": "f51fb1706956c7df9b3974e7b107e67b3c628d3c751bb24310558d22b67bea0d",
+        "src/resdag/layers/cells/legendre_delay_cell.py": "cc57f69602ed51ebd9ea20355fe143114629802fa2d44748e17d8174ab6756f4",
+        "src/resdag/layers/cells/lif_cell.py": "1da640bea3654eb6c1cfde1d430abea8e7a1ffbe39cd3ab2a99b32a2441a2121",
+        "src/resdag/layers/cells/_structured_recurrent.py": "b0f493ef7da9b9bb579afbe586c169472d28162ff66da155162a6e2d6548a167",
+        "src/resdag/layers/cells/base_cell.py": "02abd9249c173abe926b8d0895e5ddaa93f5ef50ad10d57b2b1c046422c3b613",
+        "src/resdag/layers/cells/_projected.py": "0b63466840fa57e5f1157fe5d9e6a40d11930749338d3a4778026d19e6989c13",
+        "src/resdag/layers/cells/_compact_recurrent.py": "2b4c79395dfbda78daeec5482dd4996671c89fea560a4c8b78c1f3bb3feee6a3",
+        "src/resdag/layers/cells/spiking_cell.py": "ce83293d4d0e5b05ef25dd3431e81ad5347935cd1614f3822276a2aeb56d5540",
+        "src/resdag/layers/cells/continuous_cell.py": "2ac6131537f0d436554d81e7bf0242a35267c8e3658f266053a51047b3e8be82",
+        "src/resdag/layers/cells/__init__.py": "d56811b2c03792d7062b561a09f676802fe0435da89e796b5316db9bf5f7a1c5",
+        "src/resdag/layers/cells/esn_cell.py": "0038ef392395c68ab36cbfe8a665390879dd3f48317d043c0f2a68cb955594ac",
+        "src/resdag/layers/cells/es2n_cell.py": "c3045f48c70995321685cf50e920d7c5f1e6b4a4d63e556a056994106eb1b83d",
+        "src/resdag/layers/cells/cornn_cell.py": "c415eff19222258e4bbd8b3e8a226101da41af699b8a531fcf763aca4867539f",
+        "src/resdag/layers/cells/eusn_cell.py": "3227feae8d5de136e937142d80501d92a318a01bc0f0a5ba35d5f74b245a943e",
+        "src/resdag/layers/cells/gated_cell.py": "b87f1ce0c7ee9dc67c3693750c41e67e2bd53b3acf704b54005faf72c31eb3ba",
+        "src/resdag/layers/cells/_skip_cell.py": "f142d16bf56ed12c67145fa767da9f45131d8ed2c0296553a52af7d3532c826d",
+        "src/resdag/layers/cells/torch_recurrent_cell.py": "fb82d5f8d7c2309b6230fccd3462bb9cde487730718cb30639e5ce6f50589e24",
+        "src/resdag/layers/cells/_initialization.py": "e45ad0187b2719f788934376fe9103cbd0e8832ee0afdfed36e612905ff89f2b",
+        "src/resdag/layers/cells/resesn_cell.py": "2f004b33b36776c42cfef3cc7e86390f3f0aac96f2933b94e88a169e9d83b7e8",
+        "src/resdag/layers/reservoirs/gated.py": "2debd889c4c1e236383a7fe464617c06dd0715bb9ae1b23142892bf287af203e",
+        "src/resdag/layers/reservoirs/lif.py": "6dc7b08c9eaa70cb53bed7a50a1607e891e4edcfe1b14ced2e5f020f98cf166f",
+        "src/resdag/layers/reservoirs/resesn.py": "faaa770527f685ec0d2a96b3dc1899e518f107af88c38369015075c1acda025b",
+        "src/resdag/layers/reservoirs/base_reservoir.py": "edae816b53f0397dfc1f8cf5894204fddadd998ab1c20585e2c4434c791d0454",
+        "src/resdag/layers/reservoirs/cornn.py": "2e8e351c5109002f6a34b00e75c7ed521fa6d07d797b22fb2cde11014adab806",
+        "src/resdag/layers/reservoirs/legendre_delay.py": "01bfcbe32694cd9a02bc73d0f3d1b259eb331f7e3d0b1d3d8cfa2fc83f11448e",
+        "src/resdag/layers/reservoirs/__init__.py": "9d4dcb7c184a1c77ba5246b6c87895cf0e9ca29cdbdd2656e176c6f3a7b312f0",
+        "src/resdag/layers/reservoirs/ngrc.py": "a5ea928c7777ae40488bd8d055ee3e722e1b32597c0b3c26b1ee1be7318253ef",
+        "src/resdag/layers/reservoirs/es2n.py": "db72ebcbe9a38b92453e7b5dbef5ae836c1ef87d2cda561b7bf57132c2103160",
+        "src/resdag/layers/reservoirs/_cell_layer.py": "749dd38f93949c5378eb978361da56cc8e95fae506316aeb85e68644878919b1",
+        "src/resdag/layers/reservoirs/eusn.py": "ce6c5fa1eddb3ddf13047d0ef7a7e4b17810bb282742cb3e41a79426e60da7f7",
+        "src/resdag/layers/reservoirs/torch_recurrent.py": "9996074fa8f218e3915c281d1a9fd709ebcae9f14c104d72ff6ded93248fa09d",
+        "src/resdag/layers/reservoirs/esn.py": "d5a7493619adc35e1a4a7d0a0f425875fd6fbd8db7815d37555b861576748010",
+        "src/resdag/layers/transforms/concatenate.py": "e998757a367f5dc6390f54f54ed4395429a306c6b956d9f7daccfda37492dec7",
+        "src/resdag/layers/transforms/extended_square.py": "7fd5920d8ecaca96655abb150c999f3dc7e214916e903a84f41cc7797cc16059",
+        "src/resdag/layers/transforms/__init__.py": "032cf9486e3c56d958c9c29184f5ee9424362889db6aa51a20ce0109297428d0",
+        "src/resdag/layers/transforms/standardize.py": "20dccc68de043fba93a79f4b9d0a96e8d03e0af50b9bd297eb098b530d2e3a4c",
+        "src/resdag/layers/transforms/pad.py": "509e886189b16410c2b643f26023325cafe13d70dc10c8ad84640795ff2de576",
+        "src/resdag/layers/transforms/partial_square.py": "120505f3f0c0a77249fe9c293a280a09de07ca53e1342532bfa8d3622043aaea",
+        "src/resdag/layers/transforms/feature_partitioner.py": "b1410e8df2da9e0a42c8ed6ab1545ea474a71b0abd46ce22bcca6c5d55fa3db7",
+        "src/resdag/layers/transforms/nlat.py": "d37f8286dd5e1ce89ba4de10526238af76590acd5ef93d6af9111d5f2c4cd430",
+        "src/resdag/layers/transforms/selective_dropout.py": "4ea2e1eecd98fa204f2cbde9b941017799b2a98f8e8a1a47f85c2a498b5358a9",
+        "src/resdag/layers/transforms/selective_exponentiation.py": "1664bbe1dc439f522a6d99f64b06ae4ec9186dbd9151d1f930accbce6e89a24e",
+        "src/resdag/layers/transforms/power.py": "0dcea9e03099ccbc07eef89c378b74d8449c10f4d82bb687a5d636a61366cb7e",
+        "src/resdag/layers/readouts/ridge_readout.py": "29ac7b0fd61582bd018db8e566a1a75b485407c70a0e17c5f09120164d1db920",
+        "src/resdag/layers/readouts/lsmr_readout.py": "49e54144fe2add7ba982c1c4a376316d60d87e6736f20b33be2e7245bda5e325",
+        "src/resdag/layers/readouts/rls_readout.py": "f61aebeb940bef8c4f1e5e739b2f1dd85c091948973a8753842c9918ef9b3ca4",
+        "src/resdag/layers/readouts/cholesky_readout.py": "c240a45504eccaf6a4168c60a0a89c11808b539db485e097b7a870924ac77127",
+        "src/resdag/layers/readouts/pinv_readout.py": "6f875bbf8618beea062caddd6f6c98459cb0403b07de7619c5f6dfedde05314b",
+        "src/resdag/layers/readouts/__init__.py": "45d072a28ccb4c699822c859105ed562bc70c95ff07c12987c98cd20495bf3f3",
+        "src/resdag/layers/readouts/svd_readout.py": "e4a79b9195d263a81e7fa23aaf31c54ada38fcf6f4c7189a65ef88443fc66891",
+        "src/resdag/layers/readouts/_solve_utils.py": "df157a90dccc3e147981c184a543311f0786d338d99f24f0149954eccad6d3c5",
+        "src/resdag/layers/readouts/cg_readout.py": "b23c00c83a334d3bff69206280ab2754796155e795ffe16f8704ddec94b312a2",
+        "src/resdag/layers/readouts/auto_readout.py": "4fcf8e63085a00d2ec407452c9561e2b4eece9b6a622f84293a66928e5b31d0c",
+        "src/resdag/layers/readouts/fista_readout.py": "e4f0a326f986ce412ef66302fce457e4f38b2f03495ed8991130a1d104c09d4c",
+        "src/resdag/layers/readouts/base.py": "55c0e7c9b8c955412f4c2281312b2c86e72d2203b5676b1e8adb33418075c65f",
+        "src/resdag/layers/readouts/incremental_ridge.py": "8385c0c68ab2b3425288c218af8819f8ed9b90c72a9f237ea91952a917fc5cb7",
+        "src/resdag/ensemble/aggregators/outliers_filtered_mean.py": "6768a76a989c85c5e289a62e040c2b7fea11111c35e38d01a88d8576307e876d",
+        "src/resdag/ensemble/aggregators/__init__.py": "4bb5444d0f53a5c07e26e903b14bcf2fd430f7eaaab758592c17ffed8ea388f9",
+        "src/resdag/init/topology/registry.py": "65695d210e266f659a51f893551a51b0067adcaa9182253f2a7355aa6a198e43",
+        "src/resdag/init/topology/__init__.py": "d68bdd19da61d53fb43731f94122ddd5d896f935a66cd6a6f111df70f4a97857",
+        "src/resdag/init/topology/_structured.py": "4a9f26fc9bade9645d5320f6e0ba27e5370c581a9cc2a7a80ebdc4aa5fb759f3",
+        "src/resdag/init/topology/base.py": "b2a15a5bd6bc5ffea1af1fd6dea1ca508731a99ba150e174f73b31c69b942ca0",
+        "src/resdag/init/input_feedback/logistic_mapping.py": "d34741496fa9515b0f95073f6f0b90a5da767f2109ac3c7bc5170c2bb5f585d5",
+        "src/resdag/init/input_feedback/chain_of_neurons_input.py": "a725ff24c15c1825503a48eaeaf5261de7834e6c7e758ddbbb66c7a7111ed3e2",
+        "src/resdag/init/input_feedback/random_binary.py": "d0633ded78a4cb679ae57c74beb14316a86d2a83948e5a130df453878d0615cb",
+        "src/resdag/init/input_feedback/weighted.py": "877cae56ea1b204a15bf0729166ba855abd5c6c7794f713ce56412867084acab",
+        "src/resdag/init/input_feedback/opposite_anchors.py": "9a8c2a3894491758823263d666dfadd7a53433e495739de2334c01d3b1267471",
+        "src/resdag/init/input_feedback/normal.py": "aca3c5a4cbe993722201072ab0299756c0d7c39e1b81c26345ada65a90d832e9",
+        "src/resdag/init/input_feedback/registry.py": "aa407e5d92b296dfe518e83887e259a6e4c48308aba396d8c161ffb3b1caab31",
+        "src/resdag/init/input_feedback/__init__.py": "708ba4b80ac8983a1e944e85e65cc88e8f92d7b2a94ae1032a49770c11b2e82d",
+        "src/resdag/init/input_feedback/zero.py": "dffbcd650a4752edf116d0568b3eb290018352c5b54cd3a9d1272d9b5c4434f5",
+        "src/resdag/init/input_feedback/ring_window.py": "ffe21ab2f0de06e9b48d0712cc3d76636a55f612bc5735807c38229939caff37",
+        "src/resdag/init/input_feedback/random.py": "b32018dcd7e11b1bfdf476ec3de9c5f8894faa3e83b111e399ccf683855fb100",
+        "src/resdag/init/input_feedback/informed.py": "be7f7db1c3eadbb2f538bcf8d3b2e919cd4274728380b50e4c2a71a274553813",
+        "src/resdag/init/input_feedback/chessboard.py": "8fb0626923cf42078ed17c61ca451e813f3a3f55bab914beaa99b89ffe8cf69f",
+        "src/resdag/init/input_feedback/chebyshev.py": "f168fd899c7e3c35d708c016128be7880cdf593b734f9e512eca98899fbf31d4",
+        "src/resdag/init/input_feedback/pseudo_diagonal.py": "aa64cc288836aa1cb35e7b4738508eb6ac13f0a8628a2ec9b9de682de40dc51f",
+        "src/resdag/init/input_feedback/minimal.py": "79655eedb8cb6daf86c6a4371cea76a2a5fb799d37ccfff8263ed117ca455460",
+        "src/resdag/init/input_feedback/uniform.py": "376d7ce7941ad8e8c111cec4d6880c677a3cbff1ed6d8f89d13db9a8c6816dca",
+        "src/resdag/init/input_feedback/bernoulli.py": "43d87f6cc8ef466e80854d9f480e29bad265cb22b15d69e3e65d0def992c75a2",
+        "src/resdag/init/input_feedback/binary_balanced.py": "53675a1e9c70163ad97925e5c55dbc028f7682d248970f614b276be5f58781e8",
+        "src/resdag/init/input_feedback/dendrocycle_input.py": "8a6288cc0d33d0a6855c93bfb08cc403ff97308dcade31eed782afd4f7a59614",
+        "src/resdag/init/input_feedback/_sign_sampling.py": "c27e79fc538a8b5f3305f8de5feda2de5f7dd68aa56fa7e4d7491a3fdf896a9d",
+        "src/resdag/init/input_feedback/base.py": "a0093c432c69da7805378af14ca03bfb957cedfad5aa5485d52db6d9101b70f5",
+        "src/resdag/init/input_feedback/function.py": "8e72c5e3fd854d95bd610af04b23e2fe3a5c42b375e96b5d84f421c78d938c38",
+        "src/resdag/init/utils/resolve.py": "671a3cae60d4a1af6126fe404b7103dffce68cfeae09c11c779cb7939aa09db8",
+        "src/resdag/init/utils/__init__.py": "05f52bd7820e0a15713c238fbe48b0b06c9460060dfe1859150296bee67b5c80",
+        "src/resdag/init/utils/graph_tools.py": "b87c219785992c6f7b71b3233c5ad0a4243a64efae23dc22575a2704ac87467c",
+        "src/resdag/init/graphs/connected_erdos_renyi.py": "11cac53111282a40e22e1a93f221e0d8aa5bf83ef6f41072163f59bd8f169fc1",
+        "src/resdag/init/graphs/watts_strogatz.py": "9e134327c097d0f2518594ecfdc85fee19b2888a5d4f386d1ff4a4da8cb7dddc",
+        "src/resdag/init/graphs/regular.py": "42b65129f4b9a491ca7afebee788ad21985f25b86fa57997cb36c0ec71e11b98",
+        "src/resdag/init/graphs/_dense.py": "63230c37085569f929155e4b58bf749036dbeec9333992ee56433933393217a4",
+        "src/resdag/init/graphs/connected_watts_strogatz.py": "d5026a579ed242089facdba63a56f9ead2ad3bbcc5fbe6dae46b0a78a27ccaeb",
+        "src/resdag/init/graphs/newman_watts_strogatz.py": "22448a8775182eb632f7289618e7e8d62fa97c676e38039b8b5555a0804d165d",
+        "src/resdag/init/graphs/spectral_cascade.py": "30ae1e8dda3593159b35f283d9cbe4372c5c72e85a10d83fbc7ffd1ea770516f",
+        "src/resdag/init/graphs/dendrocycle.py": "cd2d612a02fa79770bf82b819da1019d9d8bff842aa2fd7a848ee1bc3f2aae0f",
+        "src/resdag/init/graphs/_sparse.py": "1f32032dc1a3a62aed94c63c9c00b051f12e92ae1ee339707fc3841efe75c073",
+        "src/resdag/init/graphs/chord_dendrocycle.py": "767db6261bea6ade8d74e782577dfe7e6ee3261dae8291c49ef309fab6af298c",
+        "src/resdag/init/graphs/__init__.py": "72a620e96a6f611ebc8fc15bee581fa8cefbe453e5752ac586b8a4ed8c001f2a",
+        "src/resdag/init/graphs/kleinberg_small_world.py": "c8282657ed3e0d5950c3b18510e9d639eb607818bc54dcddceecd5e3d39c27df",
+        "src/resdag/init/graphs/zero.py": "f20b4c62c720afd3f05c2707b8a607d91eadf487bad988befa4f2895d9dd14ef",
+        "src/resdag/init/graphs/random.py": "a5fd59473257a9e626408a04d3e5188611512c77e74652f14616258af9c6c904",
+        "src/resdag/init/graphs/barabasi_albert.py": "16d1c4612e7a66666287829539d1518a4b52cc56c65b36e11bfa39e46a502825",
+        "src/resdag/init/graphs/erdos_renyi.py": "f7d7cc1bafd9bad5dfcb0c5c8ed2f9c43b427b5a6f447eead3e550d8d98c1d88",
+        "src/resdag/init/graphs/complete.py": "57396b4b16c83c4a253834843ad18cbe32179fdc6b41e35e6d91f4a1213ea387",
+        "src/resdag/init/graphs/ring_chord.py": "d2b241df32c18460ee5794514c42f683548f1a222b9cbee8212e474c5d6dc922",
+        "src/resdag/init/graphs/multi_cycle.py": "d4e71f43d5f4850d05c14dc7a5ca53c6225ecf2c436b5b357ca26cf53d65e854",
+        "src/resdag/init/graphs/simple_cycle_jumps.py": "d88e0c35a225dd84e78a179a630ae13e8d80b2154eb7635234302760577837cc",
+        "src/resdag/init/matrices/orthogonal_structures.py": "4e2fa149229cb6a6b391643379743b5fc4d742942fce87650e89e689d0245e91",
+        "src/resdag/init/matrices/_common.py": "0fbd8956b1fc19dfd14ccd4ca1da34d5e916a6c3a32e8b5b9e9e6d9e926839f4",
+        "src/resdag/init/matrices/__init__.py": "a8a66d7f933145e0f6b2c4ffe89ffa55bddbecc9d43bab2e4e0de56be09770f4",
+        "src/resdag/init/matrices/antisymmetric.py": "96c5b9b3384df3a8e5185bcf8a9ec3b08feefb834d310451cccc672d01646189",
+        "src/resdag/init/matrices/structured.py": "78f992c40ee2a00c46e2d85337c900a5c5e4524caec2355347f5b540b54f8ac1",
+        "src/resdag/init/matrices/spectral.py": "b16dd21047efb5582707fc0d8fe25a174689cd763d27daec49a2cbcef029136a",
+        "src/resdag/init/matrices/minimal.py": "79e9169055a4a529847528c14f3b6842f8ffcdde12cec24dbef3c55c5c75b56c",
+        "src/resdag/init/matrices/orthogonal.py": "d44540819fa15e05bff1d3d143187b7233048b670f2f59b8297d542d9615b65d",
+        "src/resdag/init/matrices/fsi.py": "bf6e30a856ae1b3b2f2f2f16cd7685f44707371e298b3c8ff30a70ac654e550d"
+      },
+      "policy": {
+        "workers": 1,
+        "dtype": "float64",
+        "requested_environment": {
+          "VECLIB_MAXIMUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1",
+          "MKL_NUM_THREADS": "1",
+          "OMP_NUM_THREADS": "1",
+          "BLIS_NUM_THREADS": "1",
+          "JULIA_NUM_THREADS": "1"
+        },
+        "fresh_cli_bootstrap": true,
+        "torch_intraop_threads": 1,
+        "torch_interop_threads": 1,
+        "native_pools": [
+          {
+            "user_api": "openmp",
+            "internal_api": "openmp",
+            "num_threads": 1,
+            "prefix": "libomp",
+            "filepath": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/torch/lib/libomp.dylib",
+            "version": null
+          }
+        ],
+        "build_configurations": {
+          "numpy": {
+            "Compilers": {
+              "c": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "cc"
+              },
+              "cython": {
+                "name": "cython",
+                "linker": "cython",
+                "version": "3.2.4",
+                "commands": "cython"
+              },
+              "c++": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "c++"
+              }
+            },
+            "Machine Information": {
+              "host": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              },
+              "build": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              }
+            },
+            "Build Dependencies": {
+              "blas": {
+                "name": "accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "system",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown"
+              },
+              "lapack": {
+                "name": "accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "system",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown"
+              }
+            },
+            "Python Information": {
+              "path": "/private/var/folders/k4/_09nqs851t35bpkk8lr_p43c0000gn/T/build-env-legy_ptj/bin/python",
+              "version": "3.14"
+            },
+            "SIMD Extensions": {
+              "baseline": [
+                "NEON",
+                "NEON_FP16",
+                "NEON_VFPV4",
+                "ASIMD"
+              ],
+              "found": [
+                "ASIMDHP",
+                "ASIMDDP"
+              ],
+              "not found": [
+                "ASIMDFHM"
+              ]
+            }
+          },
+          "scipy": {
+            "Compilers": {
+              "c": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "cc"
+              },
+              "cython": {
+                "name": "cython",
+                "linker": "cython",
+                "version": "3.2.4",
+                "commands": "cython"
+              },
+              "c++": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "c++"
+              },
+              "fortran": {
+                "name": "gcc",
+                "linker": "ld64",
+                "version": "13.4.0",
+                "commands": "gfortran"
+              },
+              "pythran": {
+                "version": "0.18.1",
+                "include directory": "../../../../../../private/var/folders/pr/_3h4tm913_l56k6hrhpm89z00000gn/T/build-env-j1vdxgxp/lib/python3.14/site-packages/pythran"
+              }
+            },
+            "Machine Information": {
+              "host": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              },
+              "build": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              },
+              "cross-compiled": false
+            },
+            "Build Dependencies": {
+              "blas": {
+                "name": "Accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "extraframeworks",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown",
+                "has ilp64": false
+              },
+              "lapack": {
+                "name": "Accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "extraframeworks",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown",
+                "has ilp64": false
+              },
+              "pybind11": {
+                "name": "pybind11",
+                "version": "3.0.1",
+                "detection method": "config-tool",
+                "include directory": "unknown"
+              }
+            },
+            "Python Information": {
+              "path": "/private/var/folders/pr/_3h4tm913_l56k6hrhpm89z00000gn/T/build-env-j1vdxgxp/bin/python",
+              "version": "3.14"
+            }
+          }
+        },
+        "torch_build_configuration": "PyTorch built with:\n  - GCC 4.2\n  - C++ Version: 201703\n  - clang 15.0.0\n  - OpenMP 201811\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: DEFAULT\n  - Build settings: BLAS_INFO=accelerate, BUILD_TYPE=Release, COMMIT_SHA=449b1768410104d3ed79d3bcfe4ba1d65c7f22c0, CXX_COMPILER=/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOCUPTI -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_PYTORCH_QNNPACK -DAT_BUILD_ARM_VEC256_WITH_SLEEF -DUSE_XNNPACK -DUSE_PYTORCH_METAL_EXPORT -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -DUSE_COREML_DELEGATE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=braced-scalar-init -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wvla-extension -Wsuggest-override -Wnewline-eof -Winconsistent-missing-override -Winconsistent-missing-destructor-override -Wno-pass-failed -Wno-error=old-style-cast -Wconstant-conversion -Qunused-arguments -faligned-new -fno-math-errno -fno-trapping-math -Werror=format -DUSE_MPS -Wno-missing-braces, LAPACK_INFO=accelerate, TORCH_VERSION=2.10.0, USE_CUDA=OFF, USE_CUDNN=OFF, USE_CUSPARSELT=OFF, USE_EIGEN_FOR_BLAS=ON, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+        "torch_parallel_configuration": "ATen/Parallel:\n\tat::get_num_threads() : 1\n\tat::get_num_interop_threads() : 1\nOpenMP 201811\n\tomp_get_max_threads() : 1\nMKLDNN not found\nstd::thread::hardware_concurrency() : 10\nEnvironment variables:\n\tOMP_NUM_THREADS : 1\nATen parallel backend: OpenMP\n",
+        "module_origins": {
+          "numpy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/numpy/__init__.py",
+          "scipy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/scipy/__init__.py",
+          "torch": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/torch/__init__.py",
+          "threadpoolctl": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/threadpoolctl.py"
+        },
+        "configuration_origins": {
+          "numpy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/numpy/__config__.py",
+          "scipy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/scipy/__config__.py",
+          "torch": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/torch/__config__.py"
+        },
+        "accelerate": {
+          "library": "/System/Library/Frameworks/Accelerate.framework/Accelerate",
+          "BLASGetThreading": 1,
+          "mode": "BLAS_THREADING_SINGLE_THREADED",
+          "scope": "calling thread"
+        },
+        "verification_boundary": "Observed native API settings on the synchronous calling thread; not an OS/kernel thread-occupancy measurement."
+      }
+    },
+    {
+      "loop_ast_sha256": {
+        "before": "f5b959e458f6db860949c6ebe81d415bf151fd66a7b7afaab81f6c9bb2f31243",
+        "after": "58703a589922939c234ae6305a97d6b1a0d31f0eb7523122f0a95b8ea21cb189"
+      },
+      "cases": {
+        "classic-400-b1": {
+          "runs": [
+            {
+              "label": "before",
+              "warmup": true,
+              "fit": 0.25952945800054295,
+              "forecast": 0.05429670800003805,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": true,
+              "fit": 0.2131067919999623,
+              "forecast": 0.08420033299989882,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.2258040839997193,
+              "forecast": 0.0721746669996719,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.18756712499998685,
+              "forecast": 0.08438187499996275,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.19317233299989311,
+              "forecast": 0.06303837499945075,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.14263183399998525,
+              "forecast": 0.03249537500050792,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.18296620799992525,
+              "forecast": 0.06771620800009259,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.12694604100033757,
+              "forecast": 0.05959020800037251,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.12509370800034958,
+              "forecast": 0.05234512500010169,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.16751670800022112,
+              "forecast": 0.06783387499945093,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.21142008399965562,
+              "forecast": 0.061028832999909355,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.15295145799973398,
+              "forecast": 0.032425207999949635,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.1575289590000466,
+              "forecast": 0.07272283400016022,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.18620104199999332,
+              "forecast": 0.0736525829997845,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.17236987500018586,
+              "forecast": 0.04916712500016729,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.21403683299922704,
+              "forecast": 0.059394500000053085,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.1450307499999326,
+              "forecast": 0.052806333000262384,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.17902466699979414,
+              "forecast": 0.04383708299974387,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.17707554200023878,
+              "forecast": 0.0558110840001973,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.24412583299999824,
+              "forecast": 0.09666849999939586,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.2825634999999238,
+              "forecast": 0.11125512499984325,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.2926952079997136,
+              "forecast": 0.09020354199947178,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.30274433300019155,
+              "forecast": 0.12724941700071213,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.33273320799980866,
+              "forecast": 0.12441329099965515,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.2784893750003903,
+              "forecast": 0.11963862500033429,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.3412670829993658,
+              "forecast": 0.06315266700039501,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.10771658399971784,
+              "forecast": 0.06420145799984311,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.2763320419999218,
+              "forecast": 0.12099012500038953,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 0.2949051670002518,
+              "forecast": 0.12089224999999715,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 0.2774099580001348,
+              "forecast": 0.09158270799980528,
+              "hashes": {
+                "fitted": "74e6df8217ed8fbbd9d74fc5e3c9a63566c15812b5865ce1ee638a073bea9b45",
+                "prediction": "aad60b116197c48a14d27dc5e2116c843cdeed422d3d3e98ed23efdb19188363",
+                "state": "28b20324cfc54cf66e0a5de68536984250dfabd283ae247ee39fd785c2288945"
+              }
+            }
+          ],
+          "case": {
+            "id": "classic-400-b1",
+            "family": "classic",
+            "reservoir_size": 400,
+            "batch": 1,
+            "features": 3,
+            "seed": 20261023,
+            "sparse": false,
+            "input_steps": 1501,
+            "washout": 100,
+            "history_steps": 100,
+            "horizon": 257,
+            "artifact_key": "classic-400"
+          }
+        },
+        "classic-1000-b4": {
+          "runs": [
+            {
+              "label": "before",
+              "warmup": true,
+              "fit": 3.319303375000345,
+              "forecast": 1.2098823750002339,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": true,
+              "fit": 2.754098041999896,
+              "forecast": 1.193094000000201,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 3.435884041999998,
+              "forecast": 1.3213117919995057,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.8046803750003164,
+              "forecast": 1.7437994590000017,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 5.383735125000385,
+              "forecast": 2.7759117499999775,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.3977244580000843,
+              "forecast": 0.8698534999994081,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.8289134590004323,
+              "forecast": 0.9762661660006415,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.5352449590000106,
+              "forecast": 1.2174387499999284,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 3.0507269580002685,
+              "forecast": 1.3561162919995695,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 3.022670415999528,
+              "forecast": 1.829878125000505,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 4.144469417000437,
+              "forecast": 1.8207486669998616,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.6903641250000874,
+              "forecast": 1.2050782920005076,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.6811513749998994,
+              "forecast": 0.7696845840000606,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.7034159580007326,
+              "forecast": 0.7355230409993965,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.9262497079998866,
+              "forecast": 0.9879339580002124,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.7568371249999473,
+              "forecast": 0.7230609159996675,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.7284559589998025,
+              "forecast": 0.7187467499998093,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.037511208000069,
+              "forecast": 0.7817169169993576,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.785825666999699,
+              "forecast": 0.7660176250001314,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.900079832999836,
+              "forecast": 0.8661662080003225,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.1456872500002646,
+              "forecast": 0.7640119999996386,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.839945333000287,
+              "forecast": 0.809989792000124,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.957265042000472,
+              "forecast": 0.7985435830005372,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.852204625000013,
+              "forecast": 0.7423625000001266,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.8536205000000336,
+              "forecast": 0.7691216670000358,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.9846688340003311,
+              "forecast": 0.7730886669996835,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.7667321250000896,
+              "forecast": 0.8156291659997805,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.819871165999757,
+              "forecast": 0.7763643329999468,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.96617229200001,
+              "forecast": 1.4600197080008002,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 5.13193075000072,
+              "forecast": 0.8108601670001008,
+              "hashes": {
+                "fitted": "0209893ca890e06f40d1eb8e9be0ae2e2dd3757131021ac73731baad450ee590",
+                "prediction": "38e5a24e308ff31236a2a54922eacdbab75d926f027f078435d8f12c861d7329",
+                "state": "20b62c4c92b57328f09f95700b9c6cb28ba82f01c3e312c286433a440df2e299"
+              }
+            }
+          ],
+          "case": {
+            "id": "classic-1000-b4",
+            "family": "classic",
+            "reservoir_size": 1000,
+            "batch": 4,
+            "features": 3,
+            "seed": 20261023,
+            "sparse": false,
+            "input_steps": 501,
+            "washout": 100,
+            "history_steps": 100,
+            "horizon": 129,
+            "artifact_key": "classic-1000"
+          }
+        },
+        "er-2000-b1-dense": {
+          "runs": [
+            {
+              "label": "before",
+              "warmup": true,
+              "fit": 1.9676957080000648,
+              "forecast": 0.7351379159999851,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": true,
+              "fit": 2.1392375420000462,
+              "forecast": 0.8182888330002243,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 3.260728250000284,
+              "forecast": 0.8004857500000071,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.42767695800012,
+              "forecast": 0.7277572090006288,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.6024242090006737,
+              "forecast": 0.7174879590002092,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.5375844999998662,
+              "forecast": 0.8883095000001049,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.5022275000001173,
+              "forecast": 0.7792036250002639,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.1988030000002254,
+              "forecast": 0.7526303749991712,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.235129957999561,
+              "forecast": 0.7411761659996046,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.2290612920005515,
+              "forecast": 0.7467940839997027,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.0193307500003357,
+              "forecast": 0.7452171249997264,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9479023750000124,
+              "forecast": 0.6991700830003538,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.117255041000135,
+              "forecast": 0.7531422079991898,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.949264583000513,
+              "forecast": 0.7554431250000562,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.3643425000000207,
+              "forecast": 0.9457081670007028,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.415138041999853,
+              "forecast": 1.126588250000168,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.986993208000058,
+              "forecast": 1.1173275840001224,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 3.270252375000382,
+              "forecast": 1.231499834000715,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.3515035840000564,
+              "forecast": 0.9825342079993789,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.2408301669993307,
+              "forecast": 0.7811792909997166,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.6366915830003563,
+              "forecast": 0.8209730830003537,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.2717394169994805,
+              "forecast": 0.6625239169998167,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 2.2269451659994957,
+              "forecast": 0.6951107909999337,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.8878539170000295,
+              "forecast": 0.8398324159998083,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 2.0483443330003865,
+              "forecast": 0.7361325419997229,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.794616958000006,
+              "forecast": 0.7301944580003692,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.9359500830005345,
+              "forecast": 0.6456919580004978,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9451435829996626,
+              "forecast": 0.7461067909998746,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "after",
+              "warmup": false,
+              "fit": 1.9904814580004313,
+              "forecast": 0.6237321670005258,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            },
+            {
+              "label": "before",
+              "warmup": false,
+              "fit": 1.8368272919997253,
+              "forecast": 0.7330431660002432,
+              "hashes": {
+                "fitted": "c0da911f500961dbd8407b261bbefd286b1690aa1f10d0c9014dceb71be903bb",
+                "prediction": "385b19c223aa4f48ee6ae4b95cc1f2a8849dafbbc81d9e741a7ea224f784c0ac",
+                "state": "4008cc6340cd37b832401f0d2ee7e2415cea00ffa29e3017f90976a597cffaf8"
+              }
+            }
+          ],
+          "case": {
+            "id": "er-2000-b1-dense",
+            "family": "er",
+            "reservoir_size": 2000,
+            "batch": 1,
+            "features": 3,
+            "seed": 20261023,
+            "sparse": false,
+            "input_steps": 501,
+            "washout": 100,
+            "history_steps": 100,
+            "horizon": 129,
+            "artifact_key": "er-2000",
+            "storage": "dense",
+            "storage_pair": "er-2000-b1"
+          }
+        }
+      },
+      "runtime_commit": "6b3b10815a9fe64f4a392ae52036929280883d70",
+      "runtime_manifest": {
+        "src/resdag/facade.py": "e9096a624dc021d61b59b7ae1351904ec121449da82bdb23daa6bc3826ff6a4f",
+        "src/resdag/__init__.py": "37ff89b7c8207b3b5f3dba0722d0338552d84cb64d2d4db9398256a3578e0a36",
+        "src/resdag/_contracts.py": "88da074cc7adc865cba28ac6c07cbb0c674fd7d19776eb34f5ddcddfa98c7a10",
+        "src/resdag/init/recurrent.py": "e381a8453de4304b761a46ea591ae1ddb3f5e3a3b1a730d2f799826c82a82d30",
+        "src/resdag/init/__init__.py": "693dea2d9076b80f240f01453fa1c1f7cdf19b76126e3c3e456009265a406fa4",
+        "src/resdag/metrics/forecast.py": "3da46b9fe0599807610ac1abf9101b9bb27af8811e8906244ada0d47d330f318",
+        "src/resdag/metrics/__init__.py": "8a694f09c02f71c9205a8b6737d456a90701814572c2b8c11745580e15d6d815",
+        "src/resdag/metrics/lyapunov.py": "5d2f2614c862ef9918916b0aa17c0b8147217f715abb1bea4a8ef4923f2233b9",
+        "src/resdag/metrics/observables.py": "ae9fa70006690694ea08fe337586661ff3677c6389e65ba16e87b72ec76efacd",
+        "src/resdag/ensemble/__init__.py": "9663bdc37ea7d35a2707e3877c9d534171d4d5856cf51832ce16ddbb0f22a5bd",
+        "src/resdag/ensemble/coupled.py": "91030d82e38ecba87c39e837a0d7b0f5526e70f373d7f6e56a30045e5d3f8446",
+        "src/resdag/artifacts/_api.py": "e23908e4c9a644578ca64542e0fe0c6904d04db64ad9d6f46fa55238849a9689",
+        "src/resdag/artifacts/__init__.py": "1f5cc28e3e414a7e66262bc405663ada64ccc4f7c13919757020fc6c8618b699",
+        "src/resdag/artifacts/_registry.py": "308c1ed43047f158d555acfc4e2a5e19eebdf2fa45f5a9eb9e78646d03d2d564",
+        "src/resdag/artifacts/_codecs.py": "b52d6e87d37043a10a0b521d3300fa2b0e0f2dde83eb6c6025b9f9b195a046b5",
+        "src/resdag/artifacts/_models.py": "6205af9db6b2734a3316cdd18e2a7ba554a200ef14e2a47ace0b3859b10bc001",
+        "src/resdag/core/_modes.py": "65860239bec09ab9d4a05fa568ce59148b6b6816a54035bab689052babeb1869",
+        "src/resdag/core/_flat_inference.py": "8e08fe12e953b7e2dd0cd0c35b57c14a8bcb42b314acbbe2c9caf6bd86c5ec05",
+        "src/resdag/core/_forecast.py": "8c53e5cb9630b9a4f282995c55c9c3662cc79879fde924d40100242501572716",
+        "src/resdag/core/_forecast_stream.py": "daebbc8ba808d9819c7df585e72078b816443ed199af2cc445e85fd636c0ac98",
+        "src/resdag/core/_persistence.py": "b40b0bd744834065f2a49dfc6962a2ef0755bf3d42603bf6a767325828ae554d",
+        "src/resdag/core/_diagram.py": "cd37ac3af23ac9113b4e8905ffcabab2aff01db528d80bccffc6a308919e2f1f",
+        "src/resdag/core/_preprocessing.py": "9df196372ae4aae55a7287d481c0a7d0ac3557b1a23694376ed8307554689780",
+        "src/resdag/core/__init__.py": "16d46d25e14ac133f4a3712037e487c0ac732ee1050926584e829b72ed7d1da5",
+        "src/resdag/core/_execution.py": "8f0bf7815bb3f28a83643498d4b8409d74f8e2c6fc5bff7d0eb300b378035483",
+        "src/resdag/core/_hooks.py": "0dd3cb837ea4e209dd4d5b38761931e8ec40ec81bb57b35c1855984fdd90d58a",
+        "src/resdag/core/_workflow_transforms.py": "7ee5a2adaddc1e6f076c129c0bda6eb92fae48f9e82bfbe3758f55cb74270a37",
+        "src/resdag/core/_feedback.py": "2f3f9f37200eea0bc91b423da79becfeebafd3b0f0c7e241e37854390927e069",
+        "src/resdag/core/model.py": "98e9fcbdb11e8f596c637e50e6d10af6198d7220600243d0c72e32932d1ec113",
+        "src/resdag/core/feature_extractor.py": "8bbb7c694aca535402f5e9cf03c0d066e418677eaac8eb829accd82ea6ae33ce",
+        "src/resdag/core/_workflow_backends.py": "11b7d458577d52c3dba86137db5e0d315031baa4d9e45edff81cb15a972b3662",
+        "src/resdag/core/workflow.py": "0cdf5c23f685fdd2d9b2b925e4584a8c26f9258a1c3ae2ee4812e171457efe12",
+        "src/resdag/core/_forecast_capabilities.py": "04516a200598ad78bcf30dad6b660c8195be40e7805f466d66a73760c6dded8b",
+        "src/resdag/layers/__init__.py": "524ee601becb13cc7b465942f8788c7b5bbb4149470d1c3e016aafd21db5b82f",
+        "src/resdag/training/__init__.py": "ca3b8c06db95758ce233e5296167d7f69aedf861889019df9440addea71c32af",
+        "src/resdag/training/trainer.py": "c5dce421955a4ba8d0224741d889610a9f74c9b9506251d9fea77395b9b5c62f",
+        "src/resdag/training/calibration.py": "665bd6512ff0a3a7fb5e9e6aa2b9912c2c35402c9a66c5433f081c6487575d8d",
+        "src/resdag/datasets/__init__.py": "402a12335b950051a07920686453a954ecf89fdfc32a91673448b1350ee71bef",
+        "src/resdag/utils/__init__.py": "1d0737a4df8dcb238441c1fa7e2263402dc3d312a1c945d0e347df693053c1e7",
+        "src/resdag/utils/seeds.py": "d124e5c2cb37cc0775c2dce9217e75ffd0be36a0baef20ae58e7899781c29808",
+        "src/resdag/utils/general.py": "7aac12d70a3217b7426f8a7fe710d9184bd6e7cc11abf48eb9882cedbc0f4287",
+        "src/resdag/models/resesn.py": "24d24fcc48a85cc8b8c6d3774a3512cd3c1b30152885fc4b0bcb33162d0fda2b",
+        "src/resdag/models/deep_esn.py": "57f4ceeb6b35c215b779d88d526e9c6c054a87303f4e6066a8b014e7f681e77b",
+        "src/resdag/models/__init__.py": "e32f31384288e3e856f3a1ba5cfc986a8854cc57e6b071f4930f626c7f8a0287",
+        "src/resdag/models/headless_esn.py": "3ad9bfb33b311db6a87238d14774491a708cc0e47a4a7ad902c6bb35ce3d6a53",
+        "src/resdag/models/linear_esn.py": "b835fa75fbe1262d77081d978ec434982318c4fa5d77f43aeac75fb3d1fd06e1",
+        "src/resdag/models/power_augmented.py": "1f107700197133e32cb24952468fd36218bf693bb8ebf13f7cb5c3cbd76e0b49",
+        "src/resdag/models/es2n.py": "14d491cdcf194cff73219e13dcdac020be513a32c05e401f7f79ac1233b93467",
+        "src/resdag/models/_builder.py": "1d78274f9cbe06802542570a7ff90a6dbd876b3bfeaf9ed3d661f883fbd56f58",
+        "src/resdag/models/_recipes.py": "f1ba39f82bd44db29e5a147f43749bd7e36f5823975a78e68e8d5b32d348cdc5",
+        "src/resdag/models/lsm.py": "abaa3676edc6246833b26af7c4cb9eb7f681c8d01cba3038bc551a680da21ac1",
+        "src/resdag/models/coupled_ensemble_esn.py": "24554e834f33148863ad5eba1a500cdbc8487e95f739f0b4e503b41d27e9054c",
+        "src/resdag/models/gated_esn.py": "a5570d23440ba3c83513f55a7f5895eb6bff710d0591ccc0cc0498c2f21644a1",
+        "src/resdag/models/ott_esn.py": "bdfc19e8d7d76001e676c59068b9f9c882c22b2528183639812cc66da6329cef",
+        "src/resdag/models/parallel_esn.py": "6d7f22e288499fd6367fbb555eeb910b3d04c06e91e4d9e8e7297c1d93db59a6",
+        "src/resdag/models/hybrid_esn.py": "7ed1df57aa97cbcfb4b16e07e0f51b110f73bda41df1a589bb2e54f2b7bfc298",
+        "src/resdag/models/eusn.py": "003eab7f5ae64ff736573d06164ac317d2adeee451670b4e7b33b15a869ee565",
+        "src/resdag/models/classic_esn.py": "185a71710ca4806d366b782a9f02618cef0f777e641ac9917e0e439fa13c4adf",
+        "src/resdag/data/_trajectory.py": "0a74ff17d4a22f50ad355e38f43e1af6bb1bef54503060d4ab7d787231024fe4",
+        "src/resdag/data/io.py": "445eea54340bd46fd7d8d103b1f662a1cd65d2ae1984e604ac42ab4c8bf53573",
+        "src/resdag/data/__init__.py": "07dd030ed3f94267802181d4870a26b3b02980ca6257120873747c900fe91c0e",
+        "src/resdag/data/dataset.py": "72906ccf027725433de70a4a1cd9de6937a073227509d6465373593edea8667a",
+        "src/resdag/data/_trajectory_ports.py": "cdf72c65358bc16c8a5334c8be7d05b64a84f148fd5317dd546697e79492c9b4",
+        "src/resdag/data/prepare.py": "9987cb73f009a0a4fb703082aa3812caf0b5971b8895b28eb38bbef7554f94a3",
+        "src/resdag/hpo/run.py": "1932bb4fe3f51c220f3e6af7746411eb08ad3d6a36ccc086fd567cd44ae7b812",
+        "src/resdag/hpo/objective.py": "9029d3a0f6ff42356fa0db0b0bb18bc30bf0d05944a6945f4ed1bb5d406717e9",
+        "src/resdag/hpo/pruners.py": "c69bec20658a03c9b640121d93ff743d842dc1e919118aef4ee660ec0715c8c2",
+        "src/resdag/hpo/_tuning_data.py": "b7806297c49fee6e6c272520d0a2d2c615a67635af2cfef6a819533312c11c89",
+        "src/resdag/hpo/dispatch.py": "5ed2a5993545cbd05ed0153874be3dfd1a452dc7d35100d84d8271f6d9f3067f",
+        "src/resdag/hpo/trial_runner.py": "5cd5f0c53ac6d6868b476c073b019a9bad996d05f5883ab892ef1e5e51541782",
+        "src/resdag/hpo/__init__.py": "443562e7bcc84e566872eb96e2058aaf9c0d6c92067666c71d2462fe6780dbd4",
+        "src/resdag/hpo/transfer.py": "ead7c2efb06c2a9d70132c7b7d124ef2b1922084d7b0f8604e1ac5aee79f00b6",
+        "src/resdag/hpo/utils.py": "34e98a5584a9bbb496cf5954b1be625f635159db6ccd06fcec74a34e61eff5ec",
+        "src/resdag/hpo/_tuning_scores.py": "d95657d58e3b2fda468db36290e29f233154f947432aea67a4c8b9be94cca50a",
+        "src/resdag/hpo/_trial_progress.py": "4a82ad385573ced752e133e34dfcfe6246d616e4ad5fe5ebacc2dbe49d7e51f3",
+        "src/resdag/hpo/_provenance.py": "e582372ccf6e60735e4037a7888897b655570234006ff2ca2b4f42e0ae26a2c6",
+        "src/resdag/hpo/storage.py": "925a685184d4648bd2f8b0e7dd63b4f72682e183e2ac063448b1aa40b539fe6a",
+        "src/resdag/hpo/_torch_losses.py": "49daaaf381d9a12e8f29089f3f24ec3f0d04403aa374eba9c952996fb861f7b8",
+        "src/resdag/hpo/tuning.py": "bd6521926362efc4b9d4bbdf60e59f55cc2c2bbf5803a6ee7732ef1a390e6eac",
+        "src/resdag/hpo/resources.py": "d8ceb668a06caa4340700b5bd2927deba6c8d2d000d079cefa55e7484bc70d51",
+        "src/resdag/hpo/losses.py": "ce7fcc5818835af36d694470d5434e9c1aae06a51f7cf3ebafac81217f36c68c",
+        "src/resdag/hpo/_parallel.py": "de30a6a89a28793e862edc13f9fd9da1ba8d64da0fa4471562280497411b7dcc",
+        "src/resdag/utils/states/esp_index.py": "f1b9fa028206702a7007a1a49c6e305626e3f360f9982aabc910f41b39781ae6",
+        "src/resdag/utils/states/__init__.py": "ec355915994798b9a3cb160b6af30fcc65546896600ffb2ce078d83742be3daa",
+        "src/resdag/utils/data/io.py": "3f9b188416b8067e9a3dfce54bbfd938c0a3419f023329aba6516512c0641ead",
+        "src/resdag/utils/data/datasets.py": "8da92747435ea09b92f95ac8c27af7a699fd02fad232895eaa2874cddaad3a3c",
+        "src/resdag/utils/data/__init__.py": "20fc94d40e01c7d592f1263c2ac4cd5892c7e20764a5dfc00d15ab530e9390a0",
+        "src/resdag/utils/data/prepare.py": "75fab72a5c2cc2a04811a9110abc6de3f1e4fc0f0b82a441de1629246166e5e4",
+        "src/resdag/layers/cells/ngrc_cell.py": "f51fb1706956c7df9b3974e7b107e67b3c628d3c751bb24310558d22b67bea0d",
+        "src/resdag/layers/cells/legendre_delay_cell.py": "cc57f69602ed51ebd9ea20355fe143114629802fa2d44748e17d8174ab6756f4",
+        "src/resdag/layers/cells/lif_cell.py": "1da640bea3654eb6c1cfde1d430abea8e7a1ffbe39cd3ab2a99b32a2441a2121",
+        "src/resdag/layers/cells/_structured_recurrent.py": "b0f493ef7da9b9bb579afbe586c169472d28162ff66da155162a6e2d6548a167",
+        "src/resdag/layers/cells/base_cell.py": "02abd9249c173abe926b8d0895e5ddaa93f5ef50ad10d57b2b1c046422c3b613",
+        "src/resdag/layers/cells/_projected.py": "0b63466840fa57e5f1157fe5d9e6a40d11930749338d3a4778026d19e6989c13",
+        "src/resdag/layers/cells/_compact_recurrent.py": "2b4c79395dfbda78daeec5482dd4996671c89fea560a4c8b78c1f3bb3feee6a3",
+        "src/resdag/layers/cells/spiking_cell.py": "ce83293d4d0e5b05ef25dd3431e81ad5347935cd1614f3822276a2aeb56d5540",
+        "src/resdag/layers/cells/continuous_cell.py": "2ac6131537f0d436554d81e7bf0242a35267c8e3658f266053a51047b3e8be82",
+        "src/resdag/layers/cells/__init__.py": "d56811b2c03792d7062b561a09f676802fe0435da89e796b5316db9bf5f7a1c5",
+        "src/resdag/layers/cells/esn_cell.py": "0038ef392395c68ab36cbfe8a665390879dd3f48317d043c0f2a68cb955594ac",
+        "src/resdag/layers/cells/es2n_cell.py": "c3045f48c70995321685cf50e920d7c5f1e6b4a4d63e556a056994106eb1b83d",
+        "src/resdag/layers/cells/cornn_cell.py": "c415eff19222258e4bbd8b3e8a226101da41af699b8a531fcf763aca4867539f",
+        "src/resdag/layers/cells/eusn_cell.py": "3227feae8d5de136e937142d80501d92a318a01bc0f0a5ba35d5f74b245a943e",
+        "src/resdag/layers/cells/gated_cell.py": "b87f1ce0c7ee9dc67c3693750c41e67e2bd53b3acf704b54005faf72c31eb3ba",
+        "src/resdag/layers/cells/_skip_cell.py": "f142d16bf56ed12c67145fa767da9f45131d8ed2c0296553a52af7d3532c826d",
+        "src/resdag/layers/cells/torch_recurrent_cell.py": "fb82d5f8d7c2309b6230fccd3462bb9cde487730718cb30639e5ce6f50589e24",
+        "src/resdag/layers/cells/_initialization.py": "e45ad0187b2719f788934376fe9103cbd0e8832ee0afdfed36e612905ff89f2b",
+        "src/resdag/layers/cells/resesn_cell.py": "2f004b33b36776c42cfef3cc7e86390f3f0aac96f2933b94e88a169e9d83b7e8",
+        "src/resdag/layers/reservoirs/gated.py": "2debd889c4c1e236383a7fe464617c06dd0715bb9ae1b23142892bf287af203e",
+        "src/resdag/layers/reservoirs/lif.py": "6dc7b08c9eaa70cb53bed7a50a1607e891e4edcfe1b14ced2e5f020f98cf166f",
+        "src/resdag/layers/reservoirs/resesn.py": "faaa770527f685ec0d2a96b3dc1899e518f107af88c38369015075c1acda025b",
+        "src/resdag/layers/reservoirs/base_reservoir.py": "edae816b53f0397dfc1f8cf5894204fddadd998ab1c20585e2c4434c791d0454",
+        "src/resdag/layers/reservoirs/cornn.py": "2e8e351c5109002f6a34b00e75c7ed521fa6d07d797b22fb2cde11014adab806",
+        "src/resdag/layers/reservoirs/legendre_delay.py": "01bfcbe32694cd9a02bc73d0f3d1b259eb331f7e3d0b1d3d8cfa2fc83f11448e",
+        "src/resdag/layers/reservoirs/__init__.py": "9d4dcb7c184a1c77ba5246b6c87895cf0e9ca29cdbdd2656e176c6f3a7b312f0",
+        "src/resdag/layers/reservoirs/ngrc.py": "a5ea928c7777ae40488bd8d055ee3e722e1b32597c0b3c26b1ee1be7318253ef",
+        "src/resdag/layers/reservoirs/es2n.py": "db72ebcbe9a38b92453e7b5dbef5ae836c1ef87d2cda561b7bf57132c2103160",
+        "src/resdag/layers/reservoirs/_cell_layer.py": "749dd38f93949c5378eb978361da56cc8e95fae506316aeb85e68644878919b1",
+        "src/resdag/layers/reservoirs/eusn.py": "ce6c5fa1eddb3ddf13047d0ef7a7e4b17810bb282742cb3e41a79426e60da7f7",
+        "src/resdag/layers/reservoirs/torch_recurrent.py": "9996074fa8f218e3915c281d1a9fd709ebcae9f14c104d72ff6ded93248fa09d",
+        "src/resdag/layers/reservoirs/esn.py": "d5a7493619adc35e1a4a7d0a0f425875fd6fbd8db7815d37555b861576748010",
+        "src/resdag/layers/transforms/concatenate.py": "e998757a367f5dc6390f54f54ed4395429a306c6b956d9f7daccfda37492dec7",
+        "src/resdag/layers/transforms/extended_square.py": "7fd5920d8ecaca96655abb150c999f3dc7e214916e903a84f41cc7797cc16059",
+        "src/resdag/layers/transforms/__init__.py": "032cf9486e3c56d958c9c29184f5ee9424362889db6aa51a20ce0109297428d0",
+        "src/resdag/layers/transforms/standardize.py": "20dccc68de043fba93a79f4b9d0a96e8d03e0af50b9bd297eb098b530d2e3a4c",
+        "src/resdag/layers/transforms/pad.py": "509e886189b16410c2b643f26023325cafe13d70dc10c8ad84640795ff2de576",
+        "src/resdag/layers/transforms/partial_square.py": "120505f3f0c0a77249fe9c293a280a09de07ca53e1342532bfa8d3622043aaea",
+        "src/resdag/layers/transforms/feature_partitioner.py": "b1410e8df2da9e0a42c8ed6ab1545ea474a71b0abd46ce22bcca6c5d55fa3db7",
+        "src/resdag/layers/transforms/nlat.py": "d37f8286dd5e1ce89ba4de10526238af76590acd5ef93d6af9111d5f2c4cd430",
+        "src/resdag/layers/transforms/selective_dropout.py": "4ea2e1eecd98fa204f2cbde9b941017799b2a98f8e8a1a47f85c2a498b5358a9",
+        "src/resdag/layers/transforms/selective_exponentiation.py": "1664bbe1dc439f522a6d99f64b06ae4ec9186dbd9151d1f930accbce6e89a24e",
+        "src/resdag/layers/transforms/power.py": "0dcea9e03099ccbc07eef89c378b74d8449c10f4d82bb687a5d636a61366cb7e",
+        "src/resdag/layers/readouts/ridge_readout.py": "29ac7b0fd61582bd018db8e566a1a75b485407c70a0e17c5f09120164d1db920",
+        "src/resdag/layers/readouts/lsmr_readout.py": "49e54144fe2add7ba982c1c4a376316d60d87e6736f20b33be2e7245bda5e325",
+        "src/resdag/layers/readouts/rls_readout.py": "f61aebeb940bef8c4f1e5e739b2f1dd85c091948973a8753842c9918ef9b3ca4",
+        "src/resdag/layers/readouts/cholesky_readout.py": "c240a45504eccaf6a4168c60a0a89c11808b539db485e097b7a870924ac77127",
+        "src/resdag/layers/readouts/pinv_readout.py": "6f875bbf8618beea062caddd6f6c98459cb0403b07de7619c5f6dfedde05314b",
+        "src/resdag/layers/readouts/__init__.py": "45d072a28ccb4c699822c859105ed562bc70c95ff07c12987c98cd20495bf3f3",
+        "src/resdag/layers/readouts/svd_readout.py": "e4a79b9195d263a81e7fa23aaf31c54ada38fcf6f4c7189a65ef88443fc66891",
+        "src/resdag/layers/readouts/_solve_utils.py": "df157a90dccc3e147981c184a543311f0786d338d99f24f0149954eccad6d3c5",
+        "src/resdag/layers/readouts/cg_readout.py": "b23c00c83a334d3bff69206280ab2754796155e795ffe16f8704ddec94b312a2",
+        "src/resdag/layers/readouts/auto_readout.py": "4fcf8e63085a00d2ec407452c9561e2b4eece9b6a622f84293a66928e5b31d0c",
+        "src/resdag/layers/readouts/fista_readout.py": "e4f0a326f986ce412ef66302fce457e4f38b2f03495ed8991130a1d104c09d4c",
+        "src/resdag/layers/readouts/base.py": "55c0e7c9b8c955412f4c2281312b2c86e72d2203b5676b1e8adb33418075c65f",
+        "src/resdag/layers/readouts/incremental_ridge.py": "8385c0c68ab2b3425288c218af8819f8ed9b90c72a9f237ea91952a917fc5cb7",
+        "src/resdag/ensemble/aggregators/outliers_filtered_mean.py": "6768a76a989c85c5e289a62e040c2b7fea11111c35e38d01a88d8576307e876d",
+        "src/resdag/ensemble/aggregators/__init__.py": "4bb5444d0f53a5c07e26e903b14bcf2fd430f7eaaab758592c17ffed8ea388f9",
+        "src/resdag/init/topology/registry.py": "65695d210e266f659a51f893551a51b0067adcaa9182253f2a7355aa6a198e43",
+        "src/resdag/init/topology/__init__.py": "d68bdd19da61d53fb43731f94122ddd5d896f935a66cd6a6f111df70f4a97857",
+        "src/resdag/init/topology/_structured.py": "4a9f26fc9bade9645d5320f6e0ba27e5370c581a9cc2a7a80ebdc4aa5fb759f3",
+        "src/resdag/init/topology/base.py": "b2a15a5bd6bc5ffea1af1fd6dea1ca508731a99ba150e174f73b31c69b942ca0",
+        "src/resdag/init/input_feedback/logistic_mapping.py": "d34741496fa9515b0f95073f6f0b90a5da767f2109ac3c7bc5170c2bb5f585d5",
+        "src/resdag/init/input_feedback/chain_of_neurons_input.py": "a725ff24c15c1825503a48eaeaf5261de7834e6c7e758ddbbb66c7a7111ed3e2",
+        "src/resdag/init/input_feedback/random_binary.py": "d0633ded78a4cb679ae57c74beb14316a86d2a83948e5a130df453878d0615cb",
+        "src/resdag/init/input_feedback/weighted.py": "877cae56ea1b204a15bf0729166ba855abd5c6c7794f713ce56412867084acab",
+        "src/resdag/init/input_feedback/opposite_anchors.py": "9a8c2a3894491758823263d666dfadd7a53433e495739de2334c01d3b1267471",
+        "src/resdag/init/input_feedback/normal.py": "aca3c5a4cbe993722201072ab0299756c0d7c39e1b81c26345ada65a90d832e9",
+        "src/resdag/init/input_feedback/registry.py": "aa407e5d92b296dfe518e83887e259a6e4c48308aba396d8c161ffb3b1caab31",
+        "src/resdag/init/input_feedback/__init__.py": "708ba4b80ac8983a1e944e85e65cc88e8f92d7b2a94ae1032a49770c11b2e82d",
+        "src/resdag/init/input_feedback/zero.py": "dffbcd650a4752edf116d0568b3eb290018352c5b54cd3a9d1272d9b5c4434f5",
+        "src/resdag/init/input_feedback/ring_window.py": "ffe21ab2f0de06e9b48d0712cc3d76636a55f612bc5735807c38229939caff37",
+        "src/resdag/init/input_feedback/random.py": "b32018dcd7e11b1bfdf476ec3de9c5f8894faa3e83b111e399ccf683855fb100",
+        "src/resdag/init/input_feedback/informed.py": "be7f7db1c3eadbb2f538bcf8d3b2e919cd4274728380b50e4c2a71a274553813",
+        "src/resdag/init/input_feedback/chessboard.py": "8fb0626923cf42078ed17c61ca451e813f3a3f55bab914beaa99b89ffe8cf69f",
+        "src/resdag/init/input_feedback/chebyshev.py": "f168fd899c7e3c35d708c016128be7880cdf593b734f9e512eca98899fbf31d4",
+        "src/resdag/init/input_feedback/pseudo_diagonal.py": "aa64cc288836aa1cb35e7b4738508eb6ac13f0a8628a2ec9b9de682de40dc51f",
+        "src/resdag/init/input_feedback/minimal.py": "79655eedb8cb6daf86c6a4371cea76a2a5fb799d37ccfff8263ed117ca455460",
+        "src/resdag/init/input_feedback/uniform.py": "376d7ce7941ad8e8c111cec4d6880c677a3cbff1ed6d8f89d13db9a8c6816dca",
+        "src/resdag/init/input_feedback/bernoulli.py": "43d87f6cc8ef466e80854d9f480e29bad265cb22b15d69e3e65d0def992c75a2",
+        "src/resdag/init/input_feedback/binary_balanced.py": "53675a1e9c70163ad97925e5c55dbc028f7682d248970f614b276be5f58781e8",
+        "src/resdag/init/input_feedback/dendrocycle_input.py": "8a6288cc0d33d0a6855c93bfb08cc403ff97308dcade31eed782afd4f7a59614",
+        "src/resdag/init/input_feedback/_sign_sampling.py": "c27e79fc538a8b5f3305f8de5feda2de5f7dd68aa56fa7e4d7491a3fdf896a9d",
+        "src/resdag/init/input_feedback/base.py": "a0093c432c69da7805378af14ca03bfb957cedfad5aa5485d52db6d9101b70f5",
+        "src/resdag/init/input_feedback/function.py": "8e72c5e3fd854d95bd610af04b23e2fe3a5c42b375e96b5d84f421c78d938c38",
+        "src/resdag/init/utils/resolve.py": "671a3cae60d4a1af6126fe404b7103dffce68cfeae09c11c779cb7939aa09db8",
+        "src/resdag/init/utils/__init__.py": "05f52bd7820e0a15713c238fbe48b0b06c9460060dfe1859150296bee67b5c80",
+        "src/resdag/init/utils/graph_tools.py": "b87c219785992c6f7b71b3233c5ad0a4243a64efae23dc22575a2704ac87467c",
+        "src/resdag/init/graphs/connected_erdos_renyi.py": "11cac53111282a40e22e1a93f221e0d8aa5bf83ef6f41072163f59bd8f169fc1",
+        "src/resdag/init/graphs/watts_strogatz.py": "9e134327c097d0f2518594ecfdc85fee19b2888a5d4f386d1ff4a4da8cb7dddc",
+        "src/resdag/init/graphs/regular.py": "42b65129f4b9a491ca7afebee788ad21985f25b86fa57997cb36c0ec71e11b98",
+        "src/resdag/init/graphs/_dense.py": "63230c37085569f929155e4b58bf749036dbeec9333992ee56433933393217a4",
+        "src/resdag/init/graphs/connected_watts_strogatz.py": "d5026a579ed242089facdba63a56f9ead2ad3bbcc5fbe6dae46b0a78a27ccaeb",
+        "src/resdag/init/graphs/newman_watts_strogatz.py": "22448a8775182eb632f7289618e7e8d62fa97c676e38039b8b5555a0804d165d",
+        "src/resdag/init/graphs/spectral_cascade.py": "30ae1e8dda3593159b35f283d9cbe4372c5c72e85a10d83fbc7ffd1ea770516f",
+        "src/resdag/init/graphs/dendrocycle.py": "cd2d612a02fa79770bf82b819da1019d9d8bff842aa2fd7a848ee1bc3f2aae0f",
+        "src/resdag/init/graphs/_sparse.py": "1f32032dc1a3a62aed94c63c9c00b051f12e92ae1ee339707fc3841efe75c073",
+        "src/resdag/init/graphs/chord_dendrocycle.py": "767db6261bea6ade8d74e782577dfe7e6ee3261dae8291c49ef309fab6af298c",
+        "src/resdag/init/graphs/__init__.py": "72a620e96a6f611ebc8fc15bee581fa8cefbe453e5752ac586b8a4ed8c001f2a",
+        "src/resdag/init/graphs/kleinberg_small_world.py": "c8282657ed3e0d5950c3b18510e9d639eb607818bc54dcddceecd5e3d39c27df",
+        "src/resdag/init/graphs/zero.py": "f20b4c62c720afd3f05c2707b8a607d91eadf487bad988befa4f2895d9dd14ef",
+        "src/resdag/init/graphs/random.py": "a5fd59473257a9e626408a04d3e5188611512c77e74652f14616258af9c6c904",
+        "src/resdag/init/graphs/barabasi_albert.py": "16d1c4612e7a66666287829539d1518a4b52cc56c65b36e11bfa39e46a502825",
+        "src/resdag/init/graphs/erdos_renyi.py": "f7d7cc1bafd9bad5dfcb0c5c8ed2f9c43b427b5a6f447eead3e550d8d98c1d88",
+        "src/resdag/init/graphs/complete.py": "57396b4b16c83c4a253834843ad18cbe32179fdc6b41e35e6d91f4a1213ea387",
+        "src/resdag/init/graphs/ring_chord.py": "d2b241df32c18460ee5794514c42f683548f1a222b9cbee8212e474c5d6dc922",
+        "src/resdag/init/graphs/multi_cycle.py": "d4e71f43d5f4850d05c14dc7a5ca53c6225ecf2c436b5b357ca26cf53d65e854",
+        "src/resdag/init/graphs/simple_cycle_jumps.py": "d88e0c35a225dd84e78a179a630ae13e8d80b2154eb7635234302760577837cc",
+        "src/resdag/init/matrices/orthogonal_structures.py": "4e2fa149229cb6a6b391643379743b5fc4d742942fce87650e89e689d0245e91",
+        "src/resdag/init/matrices/_common.py": "0fbd8956b1fc19dfd14ccd4ca1da34d5e916a6c3a32e8b5b9e9e6d9e926839f4",
+        "src/resdag/init/matrices/__init__.py": "a8a66d7f933145e0f6b2c4ffe89ffa55bddbecc9d43bab2e4e0de56be09770f4",
+        "src/resdag/init/matrices/antisymmetric.py": "96c5b9b3384df3a8e5185bcf8a9ec3b08feefb834d310451cccc672d01646189",
+        "src/resdag/init/matrices/structured.py": "78f992c40ee2a00c46e2d85337c900a5c5e4524caec2355347f5b540b54f8ac1",
+        "src/resdag/init/matrices/spectral.py": "b16dd21047efb5582707fc0d8fe25a174689cd763d27daec49a2cbcef029136a",
+        "src/resdag/init/matrices/minimal.py": "79e9169055a4a529847528c14f3b6842f8ffcdde12cec24dbef3c55c5c75b56c",
+        "src/resdag/init/matrices/orthogonal.py": "d44540819fa15e05bff1d3d143187b7233048b670f2f59b8297d542d9615b65d",
+        "src/resdag/init/matrices/fsi.py": "bf6e30a856ae1b3b2f2f2f16cd7685f44707371e298b3c8ff30a70ac654e550d"
+      },
+      "policy": {
+        "workers": 1,
+        "dtype": "float64",
+        "requested_environment": {
+          "VECLIB_MAXIMUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1",
+          "MKL_NUM_THREADS": "1",
+          "OMP_NUM_THREADS": "1",
+          "BLIS_NUM_THREADS": "1",
+          "JULIA_NUM_THREADS": "1"
+        },
+        "fresh_cli_bootstrap": true,
+        "torch_intraop_threads": 1,
+        "torch_interop_threads": 1,
+        "native_pools": [
+          {
+            "user_api": "openmp",
+            "internal_api": "openmp",
+            "num_threads": 1,
+            "prefix": "libomp",
+            "filepath": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/torch/lib/libomp.dylib",
+            "version": null
+          }
+        ],
+        "build_configurations": {
+          "numpy": {
+            "Compilers": {
+              "c": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "cc"
+              },
+              "cython": {
+                "name": "cython",
+                "linker": "cython",
+                "version": "3.2.4",
+                "commands": "cython"
+              },
+              "c++": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "c++"
+              }
+            },
+            "Machine Information": {
+              "host": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              },
+              "build": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              }
+            },
+            "Build Dependencies": {
+              "blas": {
+                "name": "accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "system",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown"
+              },
+              "lapack": {
+                "name": "accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "system",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown"
+              }
+            },
+            "Python Information": {
+              "path": "/private/var/folders/k4/_09nqs851t35bpkk8lr_p43c0000gn/T/build-env-legy_ptj/bin/python",
+              "version": "3.14"
+            },
+            "SIMD Extensions": {
+              "baseline": [
+                "NEON",
+                "NEON_FP16",
+                "NEON_VFPV4",
+                "ASIMD"
+              ],
+              "found": [
+                "ASIMDHP",
+                "ASIMDDP"
+              ],
+              "not found": [
+                "ASIMDFHM"
+              ]
+            }
+          },
+          "scipy": {
+            "Compilers": {
+              "c": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "cc"
+              },
+              "cython": {
+                "name": "cython",
+                "linker": "cython",
+                "version": "3.2.4",
+                "commands": "cython"
+              },
+              "c++": {
+                "name": "clang",
+                "linker": "ld64",
+                "version": "15.0.0",
+                "commands": "c++"
+              },
+              "fortran": {
+                "name": "gcc",
+                "linker": "ld64",
+                "version": "13.4.0",
+                "commands": "gfortran"
+              },
+              "pythran": {
+                "version": "0.18.1",
+                "include directory": "../../../../../../private/var/folders/pr/_3h4tm913_l56k6hrhpm89z00000gn/T/build-env-j1vdxgxp/lib/python3.14/site-packages/pythran"
+              }
+            },
+            "Machine Information": {
+              "host": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              },
+              "build": {
+                "cpu": "aarch64",
+                "family": "aarch64",
+                "endian": "little",
+                "system": "darwin"
+              },
+              "cross-compiled": false
+            },
+            "Build Dependencies": {
+              "blas": {
+                "name": "Accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "extraframeworks",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown",
+                "has ilp64": false
+              },
+              "lapack": {
+                "name": "Accelerate",
+                "found": true,
+                "version": "unknown",
+                "detection method": "extraframeworks",
+                "include directory": "unknown",
+                "lib directory": "unknown",
+                "openblas configuration": "unknown",
+                "pc file directory": "unknown",
+                "has ilp64": false
+              },
+              "pybind11": {
+                "name": "pybind11",
+                "version": "3.0.1",
+                "detection method": "config-tool",
+                "include directory": "unknown"
+              }
+            },
+            "Python Information": {
+              "path": "/private/var/folders/pr/_3h4tm913_l56k6hrhpm89z00000gn/T/build-env-j1vdxgxp/bin/python",
+              "version": "3.14"
+            }
+          }
+        },
+        "torch_build_configuration": "PyTorch built with:\n  - GCC 4.2\n  - C++ Version: 201703\n  - clang 15.0.0\n  - OpenMP 201811\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: DEFAULT\n  - Build settings: BLAS_INFO=accelerate, BUILD_TYPE=Release, COMMIT_SHA=449b1768410104d3ed79d3bcfe4ba1d65c7f22c0, CXX_COMPILER=/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOCUPTI -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_PYTORCH_QNNPACK -DAT_BUILD_ARM_VEC256_WITH_SLEEF -DUSE_XNNPACK -DUSE_PYTORCH_METAL_EXPORT -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -DUSE_COREML_DELEGATE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=braced-scalar-init -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wvla-extension -Wsuggest-override -Wnewline-eof -Winconsistent-missing-override -Winconsistent-missing-destructor-override -Wno-pass-failed -Wno-error=old-style-cast -Wconstant-conversion -Qunused-arguments -faligned-new -fno-math-errno -fno-trapping-math -Werror=format -DUSE_MPS -Wno-missing-braces, LAPACK_INFO=accelerate, TORCH_VERSION=2.10.0, USE_CUDA=OFF, USE_CUDNN=OFF, USE_CUSPARSELT=OFF, USE_EIGEN_FOR_BLAS=ON, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+        "torch_parallel_configuration": "ATen/Parallel:\n\tat::get_num_threads() : 1\n\tat::get_num_interop_threads() : 1\nOpenMP 201811\n\tomp_get_max_threads() : 1\nMKLDNN not found\nstd::thread::hardware_concurrency() : 10\nEnvironment variables:\n\tOMP_NUM_THREADS : 1\nATen parallel backend: OpenMP\n",
+        "module_origins": {
+          "numpy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/numpy/__init__.py",
+          "scipy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/scipy/__init__.py",
+          "torch": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/torch/__init__.py",
+          "threadpoolctl": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/threadpoolctl.py"
+        },
+        "configuration_origins": {
+          "numpy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/numpy/__config__.py",
+          "scipy": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/scipy/__config__.py",
+          "torch": "/Users/daniel/Projects/resdag/.venv/lib/python3.14/site-packages/torch/__config__.py"
+        },
+        "accelerate": {
+          "library": "/System/Library/Frameworks/Accelerate.framework/Accelerate",
+          "BLASGetThreading": 1,
+          "mode": "BLAS_THREADING_SINGLE_THREADED",
+          "scope": "calling thread"
+        },
+        "verification_boundary": "Observed native API settings on the synchronous calling thread; not an OS/kernel thread-occupancy measurement."
+      }
+    }
+  ],
+  "comparisons": {
+    "classic-400-b1": {
+      "fit": {
+        "median": 1.0315499402339987,
+        "min": 0.38980851883889867,
+        "max": 1.4507357683165203,
+        "ratios": [
+          0.9217961920837158,
+          1.0272434871270582,
+          1.0127054710059857,
+          0.8922419012609405,
+          1.1718369770206298,
+          0.9592629712833495,
+          1.0616831205044244,
+          1.0551944208690605,
+          1.1295915425878056,
+          0.8409442401777586,
+          1.4507357683165203,
+          0.8199070031620207,
+          1.3932573714039864,
+          0.9635206280272682,
+          1.2038574670253923,
+          0.738365747231847,
+          1.4412911703125795,
+          1.3391297666206599,
+          1.3822691641162606,
+          1.1820115055793534,
+          0.805328095098512,
+          1.234391099817641,
+          0.7253453672813072,
+          1.0358563933409395,
+          0.9098711091090302,
+          1.2254222732874012,
+          0.38980851883889867,
+          0.940675135745919
+        ]
+      },
+      "forecast": {
+        "median": 0.8925305296663091,
+        "min": 0.48980506830571563,
+        "max": 1.8821416041495909,
+        "ratios": [
+          1.6567916279981134,
+          1.3548712034747898,
+          0.5692180543824217,
+          0.8897178244169824,
+          1.1246428798529855,
+          1.0292590699956186,
+          1.0684721918700115,
+          1.0998671820424015,
+          0.8953432349156356,
+          1.0031802400161758,
+          0.48980506830571563,
+          0.8249222702683986,
+          1.185559232138831,
+          0.7819880119147999,
+          0.8553337668747437,
+          0.5154856069940104,
+          1.136364685950908,
+          1.2958967047899714,
+          1.8821416041495909,
+          1.0127848290348838,
+          0.8278060258125474,
+          0.8301482134638293,
+          0.577345091736668,
+          0.8107810044669751,
+          1.0227960049787996,
+          0.5278618589959435,
+          0.5306338678436477,
+          0.757556485215615
+        ]
+      }
+    },
+    "classic-1000-b4": {
+      "fit": {
+        "median": 1.0027024885748914,
+        "min": 0.4453644918127195,
+        "max": 1.730152615828124,
+        "ratios": [
+          1.024896024203444,
+          0.9047590649243271,
+          0.9565141136804161,
+          0.8848329516422311,
+          1.1449844754545415,
+          1.4098316363287717,
+          1.1582467622065653,
+          0.8187066660457972,
+          0.8958843520683032,
+          1.0146016513808755,
+          0.964767963439353,
+          0.8229062081922298,
+          0.953999352732591,
+          1.0493132777690029,
+          1.225053689762995,
+          0.4453644918127195,
+          1.115834368966167,
+          0.9908033257689074,
+          1.5404864265354052,
+          0.6353300204845005,
+          1.096430443431086,
+          1.1788042370365666,
+          0.939868754977651,
+          0.857508629461288,
+          1.0567218198153772,
+          1.070698578269012,
+          0.9708006577649824,
+          1.730152615828124
+        ]
+      },
+      "forecast": {
+        "median": 0.9447482733248924,
+        "min": 0.31335776434514356,
+        "max": 1.5108965774973022,
+        "ratios": [
+          1.0089183599134297,
+          0.9310163692994514,
+          0.869298815460169,
+          1.1179216025636,
+          1.0580604560245483,
+          1.2510247881616952,
+          0.9208310306091686,
+          0.7592304276335472,
+          0.8070878015430011,
+          0.8766208741570314,
+          0.8649066111853776,
+          0.7906874205225384,
+          1.0451412074893272,
+          0.9338803679069627,
+          0.7577200378059668,
+          0.31335776434514356,
+          0.8019016693864056,
+          1.3493519219523438,
+          1.5108965774973022,
+          0.955616178742822,
+          1.3663218909216588,
+          1.0876110632842029,
+          0.8843771760256043,
+          1.0601794107952587,
+          1.0756787728372608,
+          1.0051578315497482,
+          1.0505752664449572,
+          0.5553761792095319
+        ]
+      }
+    },
+    "er-2000-b1-dense": {
+      "fit": {
+        "median": 0.9956001135016006,
+        "min": 0.7928110998424126,
+        "max": 1.6420521302584314,
+        "ratios": [
+          0.9959266133118923,
+          0.8827239456189881,
+          1.343652768418797,
+          1.6420521302584314,
+          0.8407382003350293,
+          1.034843702490597,
+          0.9059647548576977,
+          1.0265263648388114,
+          0.9828108046995813,
+          0.9672736694898816,
+          1.003729528539079,
+          0.9707151053362747,
+          1.0050738563288315,
+          0.7928110998424126,
+          1.3431475053774937,
+          0.9750848809442539,
+          1.1379953092659327,
+          0.9972848710754872,
+          1.036669381339156,
+          0.9206564845771874,
+          0.9789678514782653,
+          1.094830870804015,
+          1.049389471201616,
+          0.861587085742661,
+          1.1796173135781145,
+          0.8761305065204911,
+          0.9952736136913088,
+          0.9228055275857422
+        ]
+      },
+      "forecast": {
+        "median": 1.0141409590859058,
+        "min": 0.6707816459654616,
+        "max": 1.3650140549599088,
+        "ratios": [
+          0.8446045026871949,
+          1.1205988778327112,
+          1.2423140888380813,
+          1.3650140549599088,
+          0.8731834308148673,
+          0.770167779866023,
+          0.7935666254502122,
+          1.1398705079102687,
+          1.020702184421845,
+          0.6707816459654616,
+          0.8340072515296914,
+          0.8702950552000316,
+          1.199965468581589,
+          1.2924783056366904,
+          1.0999351708233172,
+          1.2380827982645572,
+          1.0353071718652358,
+          1.0075797337499668,
+          1.065859571396091,
+          1.003055089698105,
+          0.8394443728669829,
+          1.1021833271061354,
+          1.2577576227628586,
+          0.8069983422337506,
+          0.827677972125444,
+          0.9919334037546789,
+          0.8654149322715471,
+          1.1752531050713395
+        ]
+      }
+    }
+  }
+}

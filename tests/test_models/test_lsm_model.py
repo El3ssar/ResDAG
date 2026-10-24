@@ -172,7 +172,7 @@ class TestLSMPersistence:
 
         path = str(tmp_path) + "/lsm_full.pt"  # type: ignore[operator]
         model.save_full(path)
-        restored = ESNModel.load_full(path)
+        restored = ESNModel.load_full(path, trusted=True)
         restored.reset_reservoirs()
         out2 = restored(probe)
 

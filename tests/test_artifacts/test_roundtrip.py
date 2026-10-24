@@ -193,7 +193,7 @@ def test_noisy_stream_exact_next_chunk_and_modes(tmp_path):
         assert restored.training
 
 
-def test_custom_registered_layer_and_component_version(tmp_path):
+def test_custom_registered_layer_and_component_version(tmp_path, isolated_component_registries):
     class Scale(nn.Module):
         def __init__(self, factor):
             super().__init__()

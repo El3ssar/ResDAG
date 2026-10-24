@@ -15,8 +15,8 @@ class ArtifactError(ValueError):
 class ComponentCodec:
     """A versioned component constructor installed by the application.
 
-    ``encode(component)`` returns configuration, not its learned tensor state.
-    ``decode(config)`` constructs that component. Nested registered modules and
+    `encode(component)` returns configuration, not its learned tensor state.
+    `decode(config)` constructs that component. Nested registered modules and
     ordinary tensor/primitive configuration values are encoded automatically.
     Registering a codec trusts its Python functions; a model file cannot install
     or import a codec by itself.
@@ -43,13 +43,15 @@ def register_component(
 ) -> type:
     """Register an exact custom type for portable save/load.
 
-    Example::
+    Example:
 
-        rd.register_component(
-            "my-project.Scale", Scale,
-            encode=lambda layer: {"factor": layer.factor},
-            decode=lambda config: Scale(**config),
-        )
+    ```text
+    rd.register_component(
+        "my-project.Scale", Scale,
+        encode=lambda layer: {"factor": layer.factor},
+        decode=lambda config: Scale(**config),
+    )
+    ```
 
     Import the registration in a new process before loading. Subclasses need
     their own registration, so their custom behavior cannot disappear silently.

@@ -29,13 +29,13 @@ def orthogonal_matrix(
     over orthogonal matrices.
 
     This topology is **pre-scaled**: an orthogonal matrix already has all its
-    singular values equal to ``abs(gain)`` (norm-preserving for ``abs(gain)=1``), which is
+    singular values equal to `abs(gain)` (norm-preserving for `abs(gain)=1`), which is
     the structural property it exists to provide. Because the layer-level
     spectral-radius rescale would collapse every singular value to the target
     radius and destroy that property, it is suppressed for this topology. A
-    layer ``spectral_radius`` passed alongside this topology is therefore
-    **ignored** (with a warning); control the scale through ``gain`` instead.
-    An explicit ``get_recurrent_initializer("orthogonal", rescale=True)``
+    layer `spectral_radius` passed alongside this topology is therefore
+    **ignored** (with a warning); control the scale through `gain` instead.
+    An explicit `get_recurrent_initializer("orthogonal", rescale=True)`
     configuration opts into the outer scale, changing the specified gain.
 
     Parameters
@@ -43,12 +43,12 @@ def orthogonal_matrix(
     n : int
         Matrix size (number of reservoir units).
     gain : float, default=1.0
-        Scaling factor applied to the orthogonal matrix. With ``abs(gain)=1`` all
+        Scaling factor applied to the orthogonal matrix. With `abs(gain)=1` all
         singular values are 1 (norm-preserving). Since the layer-level
-        ``spectral_radius`` rescale is suppressed (pre-scaled topology),
-        ``gain`` is the only knob on the overall scale.
+        `spectral_radius` rescale is suppressed (pre-scaled topology),
+        `gain` is the only knob on the overall scale.
     seed : int, optional
-        Seed for the Gaussian draw. ``None`` uses the global torch RNG.
+        Seed for the Gaussian draw. `None` uses the global torch RNG.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype. CPU QR retains float64 precision;
         accelerator QR uses the requested dtype, promoting half to float32.
@@ -59,7 +59,7 @@ def orthogonal_matrix(
     Returns
     -------
     torch.Tensor
-        Dense orthogonal matrix of shape ``(n, n)`` (times ``gain``). Setup
+        Dense orthogonal matrix of shape `(n, n)` (times `gain`). Setup
         costs O(n³); storage and dense matrix-vector multiplication cost O(n²).
 
     Examples

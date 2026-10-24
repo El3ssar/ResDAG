@@ -7,61 +7,61 @@ import torch.nn as nn
 class SelectiveExponentiation(nn.Module):
     """Exponentiate even or odd feature indices based on parity.
 
-    If ``index`` is even, even positions in the last dimension are raised to
-    ``exponent``; if ``index`` is odd, odd positions are exponentiated. Other
+    If `index` is even, even positions in the last dimension are raised to
+    `exponent`; if `index` is odd, odd positions are exponentiated. Other
     elements are unchanged. Used in Ott-style state-augmented ESNs.
 
-    With ``index=0, exponent=2`` this is the T₁ / NLAT1 nonlinear algebraic
+    With `index=0, exponent=2` this is the T₁ / NLAT1 nonlinear algebraic
     transform — squaring every even-0-based feature — of Chattopadhyay,
     Hassanzadeh & Subramanian (2020) and Pathak et al. (2017), matching
-    ``NLAT1`` in ReservoirComputing.jl (which squares the *odd* entries of a
+    `NLAT1` in ReservoirComputing.jl (which squares the *odd* entries of a
     1-based feature-major state; those are the even-0-based features here). Its
-    T₂/T₃ siblings are :class:`~resdag.layers.transforms.NLAT2` and
-    :class:`~resdag.layers.transforms.NLAT3`.
+    T₂/T₃ siblings are `resdag.layers.transforms.NLAT2` and
+    `resdag.layers.transforms.NLAT3`.
 
-    The transform is implemented with a :func:`torch.where` gate so that
-    unselected positions never enter the ``pow`` node: they pass through with a
-    gradient of ``1`` and are never poisoned by the ``pow`` backward (which is
-    ``inf``/``nan`` at ``x = 0`` for ``exponent < 1``). The base fed to ``pow``
+    The transform is implemented with a `torch.where` gate so that
+    unselected positions never enter the `pow` node: they pass through with a
+    gradient of `1` and are never poisoned by the `pow` backward (which is
+    `inf`/`nan` at `x = 0` for `exponent < 1`). The base fed to `pow`
     is also masked to a safe constant at unselected positions, which keeps
     unselected gradients finite even when those positions hold negative bases
     under a non-integer exponent.
 
-    The parity mask depends only on ``(feature_dim, device)`` — never on the
-    input values or dtype — so it is computed once per ``(dim, device)`` pair and
-    cached. This keeps the autoregressive ``forecast`` loop (which calls this
-    layer once per step) off the per-step ``arange``/parity/``ones_like``
-    allocation path. The cache is a plain dict that stays out of ``state_dict``
-    and ``named_buffers``; it is rebuilt lazily when a new dim or device is seen.
-    For the common integer ``exponent=2`` with ``sign_preserving=False`` the
-    forward reduces to ``where(mask, x * x, x)`` (``x * x`` is bit-identical to
-    ``pow(x, 2)`` and finite everywhere, so the safe-base masking is
+    The parity mask depends only on `(feature_dim, device)` — never on the
+    input values or dtype — so it is computed once per `(dim, device)` pair and
+    cached. This keeps the autoregressive `forecast` loop (which calls this
+    layer once per step) off the per-step `arange`/parity/`ones_like`
+    allocation path. The cache is a plain dict that stays out of `state_dict`
+    and `named_buffers`; it is rebuilt lazily when a new dim or device is seen.
+    For the common integer `exponent=2` with `sign_preserving=False` the
+    forward reduces to `where(mask, x * x, x)` (`x * x` is bit-identical to
+    `pow(x, 2)` and finite everywhere, so the safe-base masking is
     unnecessary); the full safe-base path is retained for every other case.
 
     Parameters
     ----------
     index : int
-        Parity selector: even ``index`` targets even indices; odd ``index``
+        Parity selector: even `index` targets even indices; odd `index`
         targets odd indices.
     exponent : float
         Power applied to the selected positions.
     sign_preserving : bool, default=False
-        If ``True``, selected positions use the sign-preserving power
-        ``sign(x) * abs(x) ** exponent``. This keeps the forward and backward
+        If `True`, selected positions use the sign-preserving power
+        `sign(x) * abs(x) ** exponent`. This keeps the forward and backward
         passes finite for *negative selected bases* under a non-integer
-        ``exponent`` (e.g. tanh reservoir states in ``[-1, 1]``). If ``False``
-        (default), selected positions use plain :func:`torch.pow`, whose
-        real-valued result is ``nan`` for a negative base with a non-integer
+        `exponent` (e.g. tanh reservoir states in `[-1, 1]`). If `False`
+        (default), selected positions use plain `torch.pow`, whose
+        real-valued result is `nan` for a negative base with a non-integer
         exponent.
 
     Notes
     -----
-    With ``sign_preserving=False`` and a non-integer ``exponent``, selected
-    positions holding a *negative* value produce ``nan`` in both the forward
+    With `sign_preserving=False` and a non-integer `exponent`, selected
+    positions holding a *negative* value produce `nan` in both the forward
     and backward pass — this is the mathematically correct behaviour of a real
-    ``pow`` and matches :func:`torch.pow`. Unselected positions are always
-    finite. For integer exponents (including the default ``ott_esn`` path,
-    ``exponent=2.0``) the two modes are identical for non-negative bases and
+    `pow` and matches `torch.pow`. Unselected positions are always
+    finite. For integer exponents (including the default `ott_esn` path,
+    `exponent=2.0`) the two modes are identical for non-negative bases and
     differ only in sign for negative bases raised to an *odd* integer power.
 
     Examples
@@ -90,7 +90,7 @@ class SelectiveExponentiation(nn.Module):
         exponent : float
             Power applied to selected positions.
         sign_preserving : bool, default=False
-            If ``True``, apply ``sign(x) * abs(x) ** exponent`` at selected
+            If `True`, apply `sign(x) * abs(x) ** exponent` at selected
             positions so negative bases stay finite under a non-integer
             exponent.
         """
@@ -108,10 +108,10 @@ class SelectiveExponentiation(nn.Module):
         self._mask_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
 
     def _get_mask(self, dim: int, device: torch.device) -> torch.Tensor:
-        """Return the cached boolean parity mask for ``(dim, device)``.
+        """Return the cached boolean parity mask for `(dim, device)`.
 
         The mask is dtype-independent (boolean) and depends only on the feature
-        dimension and target parity, so it is computed once per ``(dim, device)``
+        dimension and target parity, so it is computed once per `(dim, device)`
         pair. Broadcasting against the input's dtype happens at use time.
 
         Parameters
@@ -124,7 +124,7 @@ class SelectiveExponentiation(nn.Module):
         Returns
         -------
         torch.Tensor
-            Boolean tensor of shape ``(dim,)`` — ``True`` at selected positions.
+            Boolean tensor of shape `(dim,)` — `True` at selected positions.
         """
         key = (dim, device)
         mask = self._mask_cache.get(key)
@@ -140,14 +140,14 @@ class SelectiveExponentiation(nn.Module):
         Parameters
         ----------
         input : torch.Tensor
-            Tensor of shape ``(batch, ..., features)``.
+            Tensor of shape `(batch, ..., features)`.
 
         Returns
         -------
         torch.Tensor
-            Same shape as *input*; selected indices are raised to ``exponent``,
+            Same shape as *input*; selected indices are raised to `exponent`,
             others are unchanged. Gradients at unselected positions are always
-            finite; selected positions are finite when ``sign_preserving`` is
+            finite; selected positions are finite when `sign_preserving` is
             set or the base/exponent combination is real-valued.
         """
         mask = self._get_mask(input.shape[-1], input.device)

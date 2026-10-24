@@ -1,7 +1,7 @@
 """Forecast capabilities and complete-prefix execution for custom sequence nodes.
 
 Ordinary graph execution accepts arbitrary modules. Fast forecasting additionally
-requires time-separable operations, or explicit ``BaseReservoirLayer`` state.
+requires time-separable operations, or explicit `BaseReservoirLayer` state.
 """
 
 from __future__ import annotations

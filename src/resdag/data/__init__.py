@@ -5,29 +5,29 @@ Data Pipeline: Preparation, I/O, and Streaming Windows
 Canonical public home for resdag's data plumbing. Three layers live here:
 
 **Whole-tensor preparation** — split a long trajectory into the fixed
-warmup/train/target/f_warmup/val tensors the algebraic (:class:`resdag.training.ESNTrainer`)
+warmup/train/target/f_warmup/val tensors the algebraic (`resdag.training.ESNTrainer`)
 path consumes, with optional normalization.
 
 **File I/O** — load and save time series from CSV / NPY / NPZ / NetCDF, always
-returning the ``(B, T, D)`` convention.
+returning the `(B, T, D)` convention.
 
 **Streaming / SGD windows** — slice a long trajectory (or many) into
 fixed-length, batchable windows behind a standard
-:class:`torch.utils.data.DataLoader`, for the SGD and streaming-algebraic paths.
+`torch.utils.data.DataLoader`, for the SGD and streaming-algebraic paths.
 
 Classes
 -------
 TimeSeriesWindowDataset
-    Sliding-window ``Dataset`` over a ``(T, D)`` tensor, a ``(B, T, D)`` tensor,
+    Sliding-window `Dataset` over a `(T, D)` tensor, a `(B, T, D)` tensor,
     or a list of variable-length trajectories. Yields
-    ``(input_window, target_window, washout)`` triples that never straddle a
+    `(input_window, target_window, washout)` triples that never straddle a
     trajectory boundary.
 
 Functions
 ---------
 make_dataloader
-    Wrap :class:`TimeSeriesWindowDataset` in a ``DataLoader`` whose batches are
-    ``(B, window_len, D)`` and feed straight into ``ESNLayer`` / ``ESNModel``.
+    Wrap `TimeSeriesWindowDataset` in a `DataLoader` whose batches are
+    `(B, window_len, D)` and feed straight into `ESNLayer` / `ESNModel`.
 prepare_esn_data
     Split a series into warmup, train, target, f_warmup, val.
 normalize_data, denormalize_data
@@ -105,5 +105,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

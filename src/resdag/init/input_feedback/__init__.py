@@ -6,8 +6,8 @@ This module contains initializers for rectangular weight matrices used in
 reservoir input and feedback connections.
 
 For reservoirs:
-- Feedback weights: ``(reservoir_size, feedback_size)``
-- Input weights: ``(reservoir_size, input_size)``
+- Feedback weights: `(reservoir_size, feedback_size)`
+- Input weights: `(reservoir_size, input_size)`
 
 Classes
 -------
@@ -18,25 +18,25 @@ RandomInputInitializer
 RandomBinaryInitializer
     Binary {-1, +1} values.
 NormalInputInitializer
-    Gaussian ``Normal(loc, scale)`` entries (reservoirpy ``mat_gen.normal``).
+    Gaussian `Normal(loc, scale)` entries (reservoirpy `mat_gen.normal`).
 UniformInputInitializer
-    Bounded ``Uniform(low, high)`` entries (reservoirpy ``mat_gen.uniform``).
+    Bounded `Uniform(low, high)` entries (reservoirpy `mat_gen.uniform`).
 BernoulliInputInitializer
-    Bernoulli ``±1`` signs with density (reservoirpy ``mat_gen.bernoulli``).
+    Bernoulli `±1` signs with density (reservoirpy `mat_gen.bernoulli`).
 PseudoDiagonalInitializer
     Structured block-diagonal pattern.
 ChebyshevInitializer
     Deterministic chaotic initialization.
 LogisticMappingInitializer
-    Deterministic logistic-map initialization (RC.jl ``logistic_mapping``).
+    Deterministic logistic-map initialization (RC.jl `logistic_mapping`).
 MinimalInputInitializer
-    Rodan & Tiňo minimal-complexity dense input (RC.jl ``minimal_init``).
+    Rodan & Tiňo minimal-complexity dense input (RC.jl `minimal_init`).
 WeightedInputInitializer
-    Block-diagonal random input (RC.jl ``weighted_init``).
+    Block-diagonal random input (RC.jl `weighted_init`).
 WeightedMinimalInitializer
-    Block-diagonal constant-magnitude input (RC.jl ``weighted_minimal``).
+    Block-diagonal constant-magnitude input (RC.jl `weighted_minimal`).
 InformedInputInitializer
-    State/model split for hybrid ESNs (RC.jl ``informed_init``).
+    State/model split for hybrid ESNs (RC.jl `informed_init`).
 ChessboardInitializer
     Alternating {-1, +1} pattern.
 BinaryBalancedInitializer
@@ -146,5 +146,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

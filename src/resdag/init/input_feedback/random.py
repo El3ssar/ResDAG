@@ -25,17 +25,17 @@ class RandomInputInitializer(InputFeedbackInitializer):
     ----------
     input_scaling : float, optional
         Uniform magnitude knob from the shared scaling contract (see
-        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
-        (the default) applies no scaling, leaving entries in ``[-1, 1]``; a float
-        ``s`` multiplies every entry by ``s``, so ``max|W|`` scales linearly with
-        ``s`` (``input_scaling=0.5`` halves it). Controls the strength of input
+        `resdag.init.input_feedback.InputFeedbackInitializer`). `None`
+        (the default) applies no scaling, leaving entries in `[-1, 1]`; a float
+        `s` multiplies every entry by `s`, so `max|W|` scales linearly with
+        `s` (`input_scaling=0.5` halves it). Controls the strength of input
         signals entering the reservoir. Typical values: 0.1-5.0.
     seed : int, torch.Generator, or None, optional
-        Reproducibility seed for the uniform draw. Accepts a plain ``int``, a
-        :class:`torch.Generator` (whose ``initial_seed()`` is used, so a
-        generator and the equivalent int agree), or ``None`` (defer to torch's
+        Reproducibility seed for the uniform draw. Accepts a plain `int`, a
+        `torch.Generator` (whose `initial_seed()` is used, so a
+        generator and the equivalent int agree), or `None` (defer to torch's
         global RNG). The draw is **device-native**: it happens directly on the
-        target weight's device via a torch generator, so the same ``seed`` is
+        target weight's device via a torch generator, so the same `seed` is
         reproducible per device (CPU and CUDA each reproduce, though their RNG
         streams differ from each other). Ensures the same weight matrix is
         generated for the same seed, shape, *and* device.
@@ -93,22 +93,22 @@ class RandomInputInitializer(InputFeedbackInitializer):
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with uniform random values.
 
-        The draw uses a :class:`torch.Generator` built from ``self.seed`` on the
+        The draw uses a `torch.Generator` built from `self.seed` on the
         target weight's **device** (no CPU build + copy), so the produced matrix
-        is a pure function of ``(seed, shape, device)``. Repeated calls on the
+        is a pure function of `(seed, shape, device)`. Repeated calls on the
         same instance with equal shapes on the same device therefore yield
-        identical matrices. Pass ``seed=None`` for a draw tied to torch's global
-        RNG (reproducible under ``torch.manual_seed``).
+        identical matrices. Pass `seed=None` for a draw tied to torch's global
+        RNG (reproducible under `torch.manual_seed`).
 
         Parameters
         ----------
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored.
 
         Returns

@@ -1,9 +1,9 @@
 """Shared ESN-model builder behind the premade factories.
 
-This private module hosts :func:`_esn_builder`, the single construction routine
-that every premade factory in :mod:`resdag.models` delegates to.  The premade
-architectures (``classic_esn``, ``ott_esn``, ``power_augmented``,
-``headless_esn``, ``linear_esn``) differ only in a few orthogonal choices:
+This private module hosts `_esn_builder`, the single construction routine
+that every premade factory in `resdag.models` delegates to.  The premade
+architectures (`classic_esn`, `ott_esn`, `power_augmented`,
+`headless_esn`, `linear_esn`) differ only in a few orthogonal choices:
 
 - which augmentation node (if any) is applied to the reservoir output,
 - whether the raw input is concatenated back in before the readout,
@@ -11,19 +11,18 @@ architectures (``classic_esn``, ``ott_esn``, ``power_augmented``,
 - which readout solver the readout uses (a direct Cholesky ridge solve by
   default, automatic selection or an explicit algorithm on request).
 
-Rather than repeat the ``reservoir_input -> ESNLayer -> Concatenate ->
-RidgeReadoutLayer -> ESNModel`` chain in five places, those choices are
-expressed as arguments to :func:`_esn_builder`.
+Rather than repeat the `reservoir_input -> ESNLayer -> Concatenate -> RidgeReadoutLayer -> ESNModel` chain in five places, those choices are
+expressed as arguments to `_esn_builder`.
 
-The default readout is :class:`~resdag.layers.RidgeReadoutLayer` with
-``solver='cholesky'``. Normal equations can reduce fitting cost for tall,
+The default readout is `resdag.layers.RidgeReadoutLayer` with
+`solver='cholesky'`. Normal equations can reduce fitting cost for tall,
 well-conditioned data, but forming a Gram matrix squares the design's
-condition number. Choose ``readout="auto"`` for precision-aware selection
+condition number. Choose `readout="auto"` for precision-aware selection
 and structured solve diagnostics, or select an algorithm/class explicitly.
 Measure accuracy and runtime on the actual data, dtype and device.
 
 This module is intentionally private; the public surface is the factory
-functions exported from :mod:`resdag.models`.
+functions exported from `resdag.models`.
 """
 
 from collections.abc import Callable
@@ -71,13 +70,13 @@ _READOUT_REGISTRY: dict[str, type[ReadoutLayer]] = {
 
 
 def _resolve_readout_cls(readout: ReadoutSpec) -> type[ReadoutLayer]:
-    """Resolve a readout spec to a concrete :class:`ReadoutLayer` subclass.
+    """Resolve a readout spec to a concrete `ReadoutLayer` subclass.
 
     Parameters
     ----------
     readout : str or type[ReadoutLayer]
-        Either a built-in key (such as ``"auto"``, ``"ridge"`` or ``"svd"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass to use directly.
+        Either a built-in key (such as `"auto"`, `"ridge"` or `"svd"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass to use directly.
 
     Returns
     -------
@@ -87,9 +86,9 @@ def _resolve_readout_cls(readout: ReadoutSpec) -> type[ReadoutLayer]:
     Raises
     ------
     ValueError
-        If ``readout`` is an unknown string key.
+        If `readout` is an unknown string key.
     TypeError
-        If ``readout`` is neither a known string nor a ``ReadoutLayer``
+        If `readout` is neither a known string nor a `ReadoutLayer`
         subclass.
     """
     if isinstance(readout, str):
@@ -171,20 +170,22 @@ def _esn_builder(
     """Build an ESN model from composable, orthogonal building blocks.
 
     This is the shared construction routine behind every premade factory in
-    :mod:`resdag.models`.  It always builds a reservoir, then optionally applies
+    `resdag.models`.  It always builds a reservoir, then optionally applies
     an augmentation node, optionally concatenates the raw input back in, and
     optionally attaches a ridge-regression readout.
 
-    The readout defaults to :class:`~resdag.layers.RidgeReadoutLayer` with
-    ``solver='cholesky'``. This direct normal-equations route suits
-    well-conditioned data. Use ``readout="auto"`` to check conditioning and
+    The readout defaults to `resdag.layers.RidgeReadoutLayer` with
+    `solver='cholesky'`. This direct normal-equations route suits
+    well-conditioned data. Use `readout="auto"` to check conditioning and
     select stable alternatives without changing the L2 penalty. An explicit
-    key or :class:`~resdag.layers.readouts.ReadoutLayer` subclass selects a
+    key or `resdag.layers.readouts.ReadoutLayer` subclass selects a
     custom readout.
 
-    Architecture (each optional stage is skipped when not requested)::
+    Architecture (each optional stage is skipped when not requested):
 
-        Input -> Reservoir -> [augment] -> [Concatenate(Input, .)] -> [Readout]
+    ```text
+    Input -> Reservoir -> [augment] -> [Concatenate(Input, .)] -> [Readout]
+    ```
 
     Parameters
     ----------
@@ -193,13 +194,13 @@ def _esn_builder(
     feedback_size : int
         Number of feedback features (input dimension).
     output_size : int or None, optional
-        Number of output features.  Required (non-``None``) when a readout is
-        attached; ignored when ``output_size`` is ``None`` (no readout, e.g. the
+        Number of output features.  Required (non-`None`) when a readout is
+        attached; ignored when `output_size` is `None` (no readout, e.g. the
         headless and linear architectures).
     augment : callable, optional
-        Zero-argument factory returning an :class:`~torch.nn.Module` applied to
-        the reservoir output (e.g. ``SelectiveExponentiation`` or ``Power``).
-        ``None`` (default) leaves the reservoir output untouched.
+        Zero-argument factory returning an `torch.nn.Module` applied to
+        the reservoir output (e.g. `SelectiveExponentiation` or `Power`).
+        `None` (default) leaves the reservoir output untouched.
     concat_input : bool, default=True
         Whether to concatenate the raw input with the (possibly augmented)
         reservoir output before the readout.  Only meaningful when a readout is
@@ -207,45 +208,45 @@ def _esn_builder(
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input passed to the
         reservoir.  When given (a positive integer), a second symbolic input is
-        built via :func:`~resdag.core.reservoir_input`, the reservoir is called
-        as ``ESNLayer(...)(feedback, driver)``, and both inputs are wired into
-        the returned :class:`~resdag.core.ESNModel`.  The driver is deliberately
-        kept out of the input concatenation, so the readout ``in_features`` stays
-        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        built via `resdag.core.reservoir_input`, the reservoir is called
+        as `ESNLayer(...)(feedback, driver)`, and both inputs are wired into
+        the returned `resdag.core.ESNModel`.  The driver is deliberately
+        kept out of the input concatenation, so the readout `in_features` stays
+        `feedback_size + reservoir_size`.  `None` (default) builds a
         feedback-only reservoir, leaving the non-driven path unchanged.
     input_initializer : InitializerSpec, optional
         Initializer for the driving-input weights.  Same accepted forms as
-        ``topology``.  Only used when ``input_size`` is given.
+        `topology`.  Only used when `input_size` is given.
     reservoir_cls : type[BaseReservoirLayer], default=ESNLayer
         Reservoir layer class to instantiate.  Defaults to
-        :class:`~resdag.layers.ESNLayer`; the edge-of-stability factories pass
-        :class:`~resdag.layers.reservoirs.es2n.ES2NLayer` or
-        :class:`~resdag.layers.reservoirs.resesn.ResESNLayer`.  ``leak_rate`` is
-        forwarded only to ``ESNLayer`` (and subclasses accepting it); the
+        `resdag.layers.ESNLayer`; the edge-of-stability factories pass
+        `resdag.layers.reservoirs.es2n.ES2NLayer` or
+        `resdag.layers.reservoirs.resesn.ResESNLayer`.  `leak_rate` is
+        forwarded only to `ESNLayer` (and subclasses accepting it); the
         skip layers replace leaky integration with their orthogonal skip and
-        receive their own knobs (``beta`` / ``alpha`` / ``orthogonal_scaling``)
-        through ``reservoir_kwargs``.
+        receive their own knobs (`beta` / `alpha` / `orthogonal_scaling`)
+        through `reservoir_kwargs`.
     topology : TopologySpec, optional
         Topology for recurrent weights.  Accepts a registry name, a
-        ``(name, params)`` tuple, a callable, or a pre-configured
-        :class:`~resdag.init.topology.TopologyInitializer`.
+        `(name, params)` tuple, a callable, or a pre-configured
+        `resdag.init.topology.TopologyInitializer`.
     spectral_radius : float, default=0.9
         Desired spectral radius for recurrent weights.
     leak_rate : float, default=1.0
         Leaky integration rate (1.0 = no leak).
     feedback_initializer : InitializerSpec, optional
-        Initializer for feedback weights.  Same accepted forms as ``topology``.
+        Initializer for feedback weights.  Same accepted forms as `topology`.
     activation : str, default="tanh"
-        Activation function (``"tanh"``, ``"relu"``, ``"sigmoid"``,
-        ``"identity"``).
+        Activation function (`"tanh"`, `"relu"`, `"sigmoid"`,
+        `"identity"`).
     bias : bool, default=True
         Whether to use bias in the reservoir.
     trainable : bool, default=False
         Whether reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"auto"``, ``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
+        A built-in name (`"auto"`, `"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.
     readout_bias : bool, default=True
@@ -257,23 +258,23 @@ def _esn_builder(
         Architecture dimensions cannot be overridden.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
-        :class:`~resdag.layers.ESNLayer`.
+        `resdag.layers.ESNLayer`.
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
-        The assembled model.  Its output is the readout when ``output_size`` is
+    `resdag.core.ESNModel`
+        The assembled model.  Its output is the readout when `output_size` is
         given, otherwise the (possibly augmented) reservoir output.
 
     Raises
     ------
     ValueError
-        If a readout is requested (``output_size`` is not ``None``) but
-        ``output_size`` is not a positive integer, or if ``readout`` is an
+        If a readout is requested (`output_size` is not `None`) but
+        `output_size` is not a positive integer, or if `readout` is an
         unknown string key.
     TypeError
-        If ``readout`` is neither a known string key nor a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
+        If `readout` is neither a known string key nor a
+        `resdag.layers.readouts.ReadoutLayer` subclass.
 
     See Also
     --------

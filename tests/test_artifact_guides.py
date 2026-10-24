@@ -6,7 +6,9 @@ from pathlib import Path
 import torch
 
 
-def test_save_load_guide_executes_in_temporary_directory(tmp_path, monkeypatch, graphviz_rendering):
+def test_save_load_guide_executes_in_temporary_directory(
+    tmp_path, monkeypatch, graphviz_rendering, isolated_component_registries
+):
     source_path = Path(__file__).parents[1] / "docs" / "workflows" / "save-load.md"
     source = source_path.read_text()
     monkeypatch.chdir(tmp_path)

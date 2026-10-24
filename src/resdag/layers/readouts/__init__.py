@@ -15,31 +15,31 @@ CGReadoutLayer
 LSMRReadoutLayer
     Opt-in CPU float64 matrix-free ridge fit with SciPy LSMR.
 RidgeReadoutLayer
-    Direct ridge readout via Cholesky (``solver='cholesky'``) or LU
-    (``solver='solve'``) factorisation of the normal equations.
+    Direct ridge readout via Cholesky (`solver='cholesky'`) or LU
+    (`solver='solve'`) factorisation of the normal equations.
 CholeskyReadoutLayer
     Single-shot Cholesky ridge readout; the streaming-path direct solver.
 SVDReadoutLayer
     Readout solved via SVD with Tikhonov filter factors; robust to
-    rank-deficient Gram matrices and ``alpha=0``.
+    rank-deficient Gram matrices and `alpha=0`.
 PinvReadoutLayer
-    Least-squares readout via ``torch.linalg.lstsq`` / ``pinv`` with an
-    ``rcond`` cutoff.
+    Least-squares readout via `torch.linalg.lstsq` / `pinv` with an
+    `rcond` cutoff.
 IncrementalRidgeReadoutLayer
-    Streaming ridge readout: ``partial_fit`` accumulates sufficient
-    statistics chunk-by-chunk, ``finalize`` solves once. For the
+    Streaming ridge readout: `partial_fit` accumulates sufficient
+    statistics chunk-by-chunk, `finalize` solves once. For the
     DataLoader / long-sequence path.
 RLSReadout
     True-online Recursive Least Squares readout with a forgetting factor:
-    ``partial_fit`` refines the weights one sample at a time from a running
-    inverse-correlation matrix. Tracks non-stationary targets (``lambda < 1``)
-    and converges to ordinary least squares (``lambda = 1``).
+    `partial_fit` refines the weights one sample at a time from a running
+    inverse-correlation matrix. Tracks non-stationary targets (`lambda < 1`)
+    and converges to ordinary least squares (`lambda = 1`).
 FISTAReadoutLayer
     Sparse / robust readout: L1 (lasso) or elastic-net regression solved
     with FISTA (accelerated proximal gradient), batched over all outputs.
 
-The old names ``IncrementalRidgeReadout`` and ``FISTAReadout`` are retained as
-deprecated aliases of ``IncrementalRidgeReadoutLayer`` / ``FISTAReadoutLayer``.
+The old names `IncrementalRidgeReadout` and `FISTAReadout` are retained as
+deprecated aliases of `IncrementalRidgeReadoutLayer` / `FISTAReadoutLayer`.
 
 Examples
 --------
@@ -93,5 +93,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

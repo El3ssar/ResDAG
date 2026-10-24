@@ -15,7 +15,7 @@ CANONICAL_LAMBDA_MAX, MACKEY_GLASS_LAMBDA
     generators.
 largest_lyapunov
     Estimate the largest Lyapunov exponent of a generator name (canonical),
-    a measured series, or a ``tsdynamics`` System.
+    a measured series, or a `tsdynamics` System.
 reservoir_lyapunov
     Native-torch Benettin/QR estimate of a trained reservoir's own maximal
     Lyapunov exponent (an edge-of-chaos / Echo-State-Property diagnostic).
@@ -26,27 +26,27 @@ valid_prediction_time
     Contiguous valid forecast horizon (NRMSE below a threshold), reportable in
     steps or Lyapunov times.
 rmse, nrmse, r2
-    Pointwise forecast-error helpers.  ``nrmse`` normalises by the per-dimension
+    Pointwise forecast-error helpers.  `nrmse` normalises by the per-dimension
     truth standard deviation (default) or range, matching the NRMSE inside
-    ``valid_prediction_time``.
+    `valid_prediction_time`.
 
 Reservoir and attractor observables
 -----------------------------------
 memory_capacity
-    Linear short-term memory capacity (Jaeger 2001): ``MC = sum_k R^2_k`` of
+    Linear short-term memory capacity (Jaeger 2001): `MC = sum_k R^2_k` of
     reconstructing a delayed i.i.d. input, bounded above by the reservoir size.
 effective_spectral_radius
     Mean spectral radius of the state-dependent recurrent Jacobian over an
     attractor trajectory, accounting for activation saturation and leakage.
 correlation_dimension
     Grassberger-Procaccia correlation dimension of a trajectory (attractor
-    fidelity): Lorenz-63 ~2.05, a limit cycle ~1.0, ``d``-dim noise ~``d``.
+    fidelity): Lorenz-63 ~2.05, a limit cycle ~1.0, `d`-dim noise ~`d`.
 
 Optional dependency
 -------------------
 The series- and System-based Lyapunov estimators require the optional
-``tsdynamics`` package (``pip install resdag[dynamics]``, Python >= 3.12);
-every ``tsdynamics`` import is lazy and guarded.  Everything else — the
+`tsdynamics` package (`pip install resdag[dynamics]`, Python >= 3.12);
+every `tsdynamics` import is lazy and guarded.  Everything else — the
 conversions, the canonical constants, the reservoir Jacobian estimate, and the
 forecast metrics — is pure PyTorch/NumPy and always available.
 
@@ -102,5 +102,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

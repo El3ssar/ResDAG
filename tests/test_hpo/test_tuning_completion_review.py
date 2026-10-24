@@ -385,7 +385,7 @@ def test_sparse_trajectory_preroll_streams_full_original_unit_objective():
 @pytest.mark.parametrize("batch", [None, 3])
 def test_memory_plan_reserves_known_long_validation_warmup_clone(batch):
     from resdag.hpo._tuning_data import prepare_tuning_data
-    from resdag.hpo.resources import estimate_memory, memory_context
+    from resdag.hpo.resources import _memory_context, estimate_memory
 
     model = _affine()
     train = torch.arange(20, dtype=torch.float64)[:, None]
@@ -396,7 +396,7 @@ def test_memory_plan_reserves_known_long_validation_warmup_clone(batch):
     prepared = prepare_tuning_data(
         model, train, validation=(validation, None), horizon=1, n_origins=2
     )
-    context = memory_context(model, prepared)
+    context = _memory_context(model, prepared)
     estimate = estimate_memory({}, context)
     # Each Origin.stream clones every observed input before warming the model.
     # This is a known live allocation beyond the resident protocol storage,

@@ -5,9 +5,9 @@ NG-RC Reservoir Layer
 This module provides the Next Generation Reservoir Computer (NG-RC) sequence
 layer:
 
-- :class:`NGReservoirLayer` — stateful sequence layer wrapping :class:`NGCell`.
+- `NGReservoirLayer` — stateful sequence layer wrapping `NGCell`.
 
-The old name :class:`NGReservoir` is retained as a deprecated alias.
+The old name `NGReservoir` is retained as a deprecated alias.
 
 See Also
 --------
@@ -29,7 +29,7 @@ class NGReservoirLayer(BaseReservoirLayer):
     """
     Stateful sequence layer for Next Generation Reservoir Computing.
 
-    Wraps :class:`NGCell` and processes a full input sequence by scanning
+    Wraps `NGCell` and processes a full input sequence by scanning
     causally over the time axis, maintaining an internal FIFO delay buffer as
     state.
 
@@ -47,20 +47,20 @@ class NGReservoirLayer(BaseReservoirLayer):
         Spacing between delay taps, in timesteps.
     p : int, default=2
         Polynomial degree for nonlinear feature construction.  By default
-        (``cumulative=False``) only monomials of *exactly* degree ``p`` are
-        emitted; lower-order cross terms (degrees ``2, ..., p-1``) are excluded.
-        With ``cumulative=True`` every monomial of degree up to ``p`` is emitted
-        (the "degree up to ``p``" / full polynomial basis used by many NVAR
-        implementations).  When ``p == 1`` and ``include_linear`` is ``True``
+        (`cumulative=False`) only monomials of *exactly* degree `p` are
+        emitted; lower-order cross terms (degrees `2, ..., p-1`) are excluded.
+        With `cumulative=True` every monomial of degree up to `p` is emitted
+        (the "degree up to `p`" / full polynomial basis used by many NVAR
+        implementations).  When `p == 1` and `include_linear` is `True`
         the nonlinear block is omitted, because the degree-1 monomials are
         identical to the linear features (see
-        :class:`~resdag.layers.cells.ngrc_cell.NGCell`).
+        `resdag.layers.cells.ngrc_cell.NGCell`).
     cumulative : bool, default=False
-        Degree convention for the nonlinear block.  ``False`` keeps only
-        exact-degree-``p`` monomials (default, unchanged behaviour); ``True``
-        includes all monomials of every degree up to ``p``.
+        Degree convention for the nonlinear block.  `False` keeps only
+        exact-degree-`p` monomials (default, unchanged behaviour); `True`
+        includes all monomials of every degree up to `p`.
     include_constant : bool, default=True
-        Whether to prepend a constant ``1.0`` to the feature vector.
+        Whether to prepend a constant `1.0` to the feature vector.
     include_linear : bool, default=True
         Whether to include the linear delay-embedded features in the output.
 
@@ -69,19 +69,19 @@ class NGReservoirLayer(BaseReservoirLayer):
     cell : NGCell
         The inner single-step cell.
     state : torch.Tensor or None
-        Current delay buffer of shape ``(batch, state_size, input_dim)``,
-        or ``None`` if not yet initialized.
+        Current delay buffer of shape `(batch, state_size, input_dim)`,
+        or `None` if not yet initialized.
 
     Notes
     -----
-    The delay buffer needs ``warmup_length = (k-1)*s`` steps to fill.  Steps
+    The delay buffer needs `warmup_length = (k-1)*s` steps to fill.  Steps
     before that produce valid features, but those features contain zeros from
     unfilled buffer slots.  The layer returns all steps; the caller can discard
-    the first ``warmup_length`` outputs if desired.
+    the first `warmup_length` outputs if desired.
 
-    State management is inherited from :class:`BaseReservoirLayer` with the
-    exception of :meth:`set_state`, which is overridden to validate the 3-D
-    buffer shape ``(batch, state_size, input_dim)``.
+    State management is inherited from `BaseReservoirLayer` with the
+    exception of `set_state`, which is overridden to validate the 3-D
+    buffer shape `(batch, state_size, input_dim)`.
 
     Examples
     --------
@@ -144,26 +144,26 @@ class NGReservoirLayer(BaseReservoirLayer):
         compile: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Pure whole-sequence NG-RC feature map: thread ``state`` in and out.
+        Pure whole-sequence NG-RC feature map: thread `state` in and out.
 
         Overrides the per-step loop of
-        :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.forward_stateless`
+        `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.forward_stateless`
         with the vectorized
-        :meth:`~resdag.layers.cells.ngrc_cell.NGCell.forward_sequence`, which
+        `resdag.layers.cells.ngrc_cell.NGCell.forward_sequence`, which
         builds every delay-embedded and monomial feature in one pass.  Like the
-        base method it never reads or writes :attr:`state` and contains no
+        base method it never reads or writes `state` and contains no
         per-timestep Python loop or data-dependent branch, so it slots into the
         compile-scan / vmap / export paths.
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            ``inputs[0]`` is the input sequence of shape
-            ``(batch, timesteps, input_dim)``.  NG-RC has no driving inputs;
-            :meth:`forward` rejects them before reaching this method, so only
-            ``inputs[0]`` is consumed.
+            `inputs[0]` is the input sequence of shape
+            `(batch, timesteps, input_dim)`.  NG-RC has no driving inputs;
+            `forward` rejects them before reaching this method, so only
+            `inputs[0]` is consumed.
         state : torch.Tensor
-            Incoming delay buffer of shape ``(batch, state_size, input_dim)``.
+            Incoming delay buffer of shape `(batch, state_size, input_dim)`.
         compile : bool, default=False
             Accepted for signature parity with the base layer's opt-in compiled
             teacher-forced scan, but a **no-op** here: NG-RC is a vectorized
@@ -173,9 +173,9 @@ class NGReservoirLayer(BaseReservoirLayer):
         -------
         outputs : torch.Tensor
             NG-RC features for all timesteps, shape
-            ``(batch, timesteps, feature_dim)``.
+            `(batch, timesteps, feature_dim)`.
         new_state : torch.Tensor
-            Updated delay buffer of shape ``(batch, state_size, input_dim)``.
+            Updated delay buffer of shape `(batch, state_size, input_dim)`.
         """
         cell = cast(NGCell, self.cell)  # narrow from Tensor | Module for the type checker
         if len(inputs) != 1:
@@ -193,21 +193,21 @@ class NGReservoirLayer(BaseReservoirLayer):
 
         NG-RC is a feedforward map, so the whole sequence is vectorized: there
         is **no per-timestep Python loop** on this path.  The output is
-        numerically identical to scanning the cell step-by-step (``0.0``
+        numerically identical to scanning the cell step-by-step (`0.0`
         max-abs-diff, including the warmup region); the per-step
-        :meth:`~resdag.layers.cells.ngrc_cell.NGCell.forward` is retained for
+        `resdag.layers.cells.ngrc_cell.NGCell.forward` is retained for
         streaming / stateful use and continues seamlessly after a batch call.
         This is a thin stateful wrapper over the pure
-        :meth:`forward_stateless`, mirroring the base layer.
+        `forward_stateless`, mirroring the base layer.
 
         Parameters
         ----------
         feedback : torch.Tensor
-            Input sequence of shape ``(batch, timesteps, input_dim)``.
+            Input sequence of shape `(batch, timesteps, input_dim)`.
         *driving_inputs : torch.Tensor
             **Rejected.** NG-RC is a weightless feedforward feature map with no
             input weight matrix, so it cannot consume driving inputs.  Passing
-            any raises :class:`ValueError` rather than silently discarding them
+            any raises `ValueError` rather than silently discarding them
             and producing a misconfigured-but-running model.
         compile : bool, default=False
             Accepted for signature parity with the base layer but a **no-op**:
@@ -217,22 +217,22 @@ class NGReservoirLayer(BaseReservoirLayer):
         -------
         torch.Tensor
             NG-RC features for all timesteps, shape
-            ``(batch, timesteps, feature_dim)``.
+            `(batch, timesteps, feature_dim)`.
 
         Raises
         ------
         ValueError
-            If ``feedback`` is not 3-D, if any ``driving_inputs`` are passed, or
-            if ``feedback``'s feature dimension does not equal
-            :attr:`input_dim`.
+            If `feedback` is not 3-D, if any `driving_inputs` are passed, or
+            if `feedback`'s feature dimension does not equal
+            `input_dim`.
 
         Notes
         -----
         The layer maintains internal state across forward calls (the FIFO delay
-        buffer).  Use :meth:`reset_state` to clear it between independent
+        buffer).  Use `reset_state` to clear it between independent
         sequences.  As in the base class, the stored state is detached from the
         autograd graph at call boundaries when
-        :attr:`detach_state_between_calls` is ``True`` (truncated BPTT).
+        `detach_state_between_calls` is `True` (truncated BPTT).
         """
         if feedback.dim() != 3:
             raise ValueError(f"Feedback must be 3D (B, T, F), got shape {feedback.shape}")
@@ -288,7 +288,7 @@ class NGReservoirLayer(BaseReservoirLayer):
 
         Steps before this index contain zeros from unfilled buffer slots.
         Outputs are still produced for all timesteps; the caller may discard
-        the first ``warmup_length`` outputs if needed.
+        the first `warmup_length` outputs if needed.
         """
         return self.cell.state_size  # == (k-1)*s
 
@@ -315,16 +315,17 @@ class NGReservoirLayer(BaseReservoirLayer):
 
 
 class NGReservoir(NGReservoirLayer):
-    """Deprecated alias for :class:`NGReservoirLayer`.
+    """Deprecated alias for `NGReservoirLayer`.
 
     Retained for backward compatibility.  Instantiating this class emits a
-    :class:`DeprecationWarning` and constructs an :class:`NGReservoirLayer`;
-    the two are otherwise identical (``NGReservoir`` is a subclass, so
-    ``isinstance(NGReservoir(...), NGReservoirLayer)`` holds).
+    `DeprecationWarning` and constructs an `NGReservoirLayer`;
+    the two are otherwise identical (`NGReservoir` is a subclass, so
+    `isinstance(NGReservoir(...), NGReservoirLayer)` holds).
 
-    .. deprecated::
-        Use :class:`NGReservoirLayer` instead.  ``NGReservoir`` will be removed
-        in a future release.
+    **Deprecated.**
+
+    Use `NGReservoirLayer` instead.  `NGReservoir` will be removed
+    in a future release.
 
     See Also
     --------

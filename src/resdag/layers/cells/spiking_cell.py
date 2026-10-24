@@ -2,55 +2,55 @@ r"""
 Spiking Reservoir Cell (shared base)
 ====================================
 
-This module provides :class:`SpikingReservoirCell`, an intermediate abstract
+This module provides `SpikingReservoirCell`, an intermediate abstract
 base for **spiking** reservoir cells — the substrate of a Liquid State Machine
 (LSM; Maass, Natschläger & Markram, *Neural Computation* 14(11), 2002).  It is
 the groundwork for the spiking family; the first concrete subclass is the leaky
-integrate-and-fire cell (:class:`~resdag.layers.cells.lif_cell.LIFCell`).
+integrate-and-fire cell (`resdag.layers.cells.lif_cell.LIFCell`).
 
 Unlike the ESN / continuous cells, a spiking reservoir carries **multiple**
-per-neuron state tensors — a membrane potential ``V``, an optional synaptic
-current ``I``, and a low-pass **synaptic trace** of the spike train — and emits
+per-neuron state tensors — a membrane potential `V`, an optional synaptic
+current `I`, and a low-pass **synaptic trace** of the spike train — and emits
 *binary spikes* internally.  The base owns:
 
 * the **packed multi-tensor state** (the Phase-9 convention re-used verbatim from
-  :mod:`resdag.layers.cells.gated_cell`): every ``(batch, hidden)`` state tensor
-  is packed side-by-side into one 2-D ``(batch, n_state_tensors * hidden)``
-  tensor, so the single-tensor :class:`~resdag.layers.cells.base_cell.ReservoirCell`
+  `resdag.layers.cells.gated_cell`): every `(batch, hidden)` state tensor
+  is packed side-by-side into one 2-D `(batch, n_state_tensors * hidden)`
+  tensor, so the single-tensor `resdag.layers.cells.base_cell.ReservoirCell`
   contract is honoured;
 * the **surrogate-gradient spike** — a straight-through estimator whose forward
   is the exact Heaviside threshold and whose backward flows through a smooth
-  surrogate, so the cell is ``torch.compile(fullgraph=True)``-clean *and*
-  trainable by SGD (no custom :class:`torch.autograd.Function`);
+  surrogate, so the cell is `torch.compile(fullgraph=True)`-clean *and*
+  trainable by SGD (no custom `torch.autograd.Function`);
 * the **spike reset** (subtract or zero);
 * the **readout trace** — a real-valued low-pass filter of the spike train, the
   cell's per-step *output*.  A ridge / CG readout cannot regress on raw binary
   spikes, so the readable output is this filtered response, **not** the spikes.
 
 A concrete subclass supplies only the neuron's sub-threshold dynamics via
-:meth:`neuron_update`; this base wires the spike, reset, trace, packing, and the
-``forward`` / ``project_inputs`` / ``step`` plumbing (so the compiled forecast
+`neuron_update`; this base wires the spike, reset, trace, packing, and the
+`forward` / `project_inputs` / `step` plumbing (so the compiled forecast
 engine applies unchanged).
 
-Why a straight-through surrogate (and not ``autograd.Function``)
+Why a straight-through surrogate (and not `autograd.Function`)
 ---------------------------------------------------------------
 The spike is
 
-.. math::
+$$
+s = \operatorname{surrogate} + (\operatorname{hard} - \operatorname{surrogate})
+    .\mathrm{detach}(),
+$$
 
-    s = \operatorname{surrogate} + (\operatorname{hard} - \operatorname{surrogate})
-        .\mathrm{detach}(),
-
-with ``hard = (V - V_\text{th} > 0)`` the exact Heaviside forward and
-``surrogate = σ(β (V - V_\text{th}))`` (a fast sigmoid) the smooth backward.  In
-the forward pass the detached bracket cancels the surrogate, so ``s == hard``
+with `hard = (V - V_\text{th} > 0)` the exact Heaviside forward and
+`surrogate = σ(β (V - V_\text{th}))` (a fast sigmoid) the smooth backward.  In
+the forward pass the detached bracket cancels the surrogate, so `s == hard`
 *exactly* (binary spikes).  In the backward pass the detached bracket has zero
-gradient, so ``∂s/∂V == ∂surrogate/∂V = β σ' `` — nonzero near threshold,
+gradient, so `∂s/∂V == ∂surrogate/∂V = β σ'` — nonzero near threshold,
 vanishing far away.  This is the standard *surrogate-gradient* trick (Neftci,
 Mostafa & Zenke, *IEEE Signal Processing Magazine* 36(6), 2019).  Expressing it
-with :func:`torch.Tensor.detach` (rather than a custom
-:class:`torch.autograd.Function`) keeps the whole step a pure composition of
-tensor ops, which :func:`torch.compile` can trace ``fullgraph=True``.
+with `torch.Tensor.detach` (rather than a custom
+`torch.autograd.Function`) keeps the whole step a pure composition of
+tensor ops, which `torch.compile` can trace `fullgraph=True`.
 
 See Also
 --------
@@ -87,34 +87,34 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     Owns the machinery shared by every spiking neuron model — the packed
     multi-tensor state, the surrogate-gradient spike, the spike reset, and the
     low-pass **readout trace** — and delegates only the sub-threshold membrane
-    dynamics to a concrete subclass through :meth:`neuron_update`.
+    dynamics to a concrete subclass through `neuron_update`.
 
     Packed state layout
     -------------------
-    A spiking cell carries several ``(batch, reservoir_size)`` state tensors,
-    packed side-by-side into one 2-D ``(batch, n_state_tensors * reservoir_size)``
+    A spiking cell carries several `(batch, reservoir_size)` state tensors,
+    packed side-by-side into one 2-D `(batch, n_state_tensors * reservoir_size)`
     tensor (the convention documented in
-    :mod:`resdag.layers.cells.gated_cell`).  The layout is **fixed by the
-    subclass** via :attr:`n_state_tensors`; the last packed block is *always* the
-    synaptic trace ``r`` (owned by this base), and the leading blocks are the
-    subclass's neuron state, which **ends with the previous step's spikes ``s``**
-    (the recurrent input) — e.g. ``V`` then ``s``, or ``I``, ``V`` then ``s``.
+    `resdag.layers.cells.gated_cell`).  The layout is **fixed by the
+    subclass** via `n_state_tensors`; the last packed block is *always* the
+    synaptic trace `r` (owned by this base), and the leading blocks are the
+    subclass's neuron state, which **ends with the previous step's spikes `s`**
+    (the recurrent input) — e.g. `V` then `s`, or `I`, `V` then `s`.
     Concretely:
 
-    * first-order LIF (:attr:`n_state_tensors` = 3): ``[V | s | r]``;
-    * CuBa-LIF (:attr:`n_state_tensors` = 4): ``[I | V | s | r]``.
+    * first-order LIF (`n_state_tensors` = 3): `[V | s | r]`;
+    * CuBa-LIF (`n_state_tensors` = 4): `[I | V | s | r]`.
 
-    :meth:`neuron_update` receives / returns only the *neuron* tensors (all but
+    `neuron_update` receives / returns only the *neuron* tensors (all but
     the trace); the base peels the trace off before the call and re-appends the
     updated trace after, so a subclass never handles the trace.  Because those
-    neuron tensors end with ``s``, the membrane potential ``V`` is the
-    second-to-last neuron tensor — this is what ``output="voltage"`` returns.
+    neuron tensors end with `s`, the membrane potential `V` is the
+    second-to-last neuron tensor — this is what `output="voltage"` returns.
 
     The surrogate-gradient spike
     ----------------------------
-    :meth:`spike` implements the straight-through estimator: an exact Heaviside
-    forward with a fast-sigmoid surrogate backward (slope :attr:`surrogate_beta`).
-    Subclasses call it from :meth:`neuron_update` to emit spikes from the
+    `spike` implements the straight-through estimator: an exact Heaviside
+    forward with a fast-sigmoid surrogate backward (slope `surrogate_beta`).
+    Subclasses call it from `neuron_update` to emit spikes from the
     (updated) membrane potential.
 
     Parameters
@@ -122,27 +122,27 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     reservoir_size : int
         Number of spiking units (hidden dimension of each packed state tensor).
     v_threshold : float, default=1.0
-        Firing threshold :math:`V_\text{th}`.  A neuron spikes when its membrane
+        Firing threshold $V_\text{th}$.  A neuron spikes when its membrane
         potential crosses this value from below.
     reset : {'subtract', 'zero'}, default='subtract'
-        Membrane reset on a spike.  ``'subtract'`` does the soft reset
-        :math:`V \leftarrow V - V_\text{th}\,s` (preserves overshoot);
-        ``'zero'`` does the hard reset :math:`V \leftarrow V (1 - s)`.
+        Membrane reset on a spike.  `'subtract'` does the soft reset
+        $V \leftarrow V - V_\text{th}\,s$ (preserves overshoot);
+        `'zero'` does the hard reset $V \leftarrow V (1 - s)$.
     surrogate_beta : float, default=10.0
-        Slope :math:`\beta` of the fast-sigmoid surrogate
-        :math:`\sigma(\beta (V - V_\text{th}))` used for the straight-through
+        Slope $\beta$ of the fast-sigmoid surrogate
+        $\sigma(\beta (V - V_\text{th}))$ used for the straight-through
         backward pass.  Larger values sharpen the surrogate toward the true
         (non-differentiable) step; the default follows common SNN practice.
     trace_decay : float, default=0.9
-        Decay :math:`\kappa \in [0, 1)` of the low-pass readout trace
-        :math:`r_t = \kappa\, r_{t-1} + s_t`.  The trace is the cell's readable
-        output (a real-valued filtered spike response).  ``0.0`` makes the trace
-        the instantaneous spike; values near ``1`` give long synaptic memory.
+        Decay $\kappa \in [0, 1)$ of the low-pass readout trace
+        $r_t = \kappa\, r_{t-1} + s_t$.  The trace is the cell's readable
+        output (a real-valued filtered spike response).  `0.0` makes the trace
+        the instantaneous spike; values near `1` give long synaptic memory.
     output : {'trace', 'voltage', 'spikes'}, default='trace'
-        Which quantity :meth:`forward` / :meth:`step` return as the readable
-        output.  ``'trace'`` (default) is the ridge-regressable filtered spike
-        response — **the LSM-correct choice**; ``'voltage'`` exposes the raw
-        membrane potential; ``'spikes'`` exposes the binary spike train.
+        Which quantity `forward` / `step` return as the readable
+        output.  `'trace'` (default) is the ridge-regressable filtered spike
+        response — **the LSM-correct choice**; `'voltage'` exposes the raw
+        membrane potential; `'spikes'` exposes the binary spike train.
 
     Attributes
     ----------
@@ -159,7 +159,7 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     -----
     Refractoriness is intentionally **not** modelled in this first version: a
     refractory counter is integer-valued and its "is the neuron clamped?" branch
-    is data-dependent, which fights ``torch.compile(fullgraph=True)`` and the
+    is data-dependent, which fights `torch.compile(fullgraph=True)` and the
     surrogate-gradient flow.  It is deferred as future work rather than shipped
     fragile; the soft/hard reset already yields the regular-spiking f–I behaviour
     a Liquid State Machine relies on.
@@ -217,27 +217,26 @@ class SpikingReservoirCell(ReservoirCell, ABC):
 
     @property
     def state_size(self) -> int:
-        """Packed state width: ``n_state_tensors * reservoir_size``.
+        """Packed state width: `n_state_tensors * reservoir_size`.
 
         Includes the trailing synaptic-trace block owned by this base, so a
-        first-order LIF (``n_state_tensors == 2``) has ``state_size ==
-        2 * reservoir_size`` and a CuBa-LIF (``3``) has ``3 * reservoir_size``.
+        first-order LIF (`n_state_tensors == 2`) has `state_size == 2 * reservoir_size` and a CuBa-LIF (`3`) has `3 * reservoir_size`.
         """
         return self.n_state_tensors * self.reservoir_size
 
     @property
     def output_size(self) -> int:
-        """Dimensionality of the per-step readable output (``reservoir_size``)."""
+        """Dimensionality of the per-step readable output (`reservoir_size`)."""
         return self.reservoir_size
 
     @property
     def output(self) -> str:
-        """str : Readable-output mode (``'trace'`` | ``'voltage'`` | ``'spikes'``)."""
+        """str : Readable-output mode (`'trace'` | `'voltage'` | `'spikes'`)."""
         return self._output
 
     @property
     def surrogate_beta(self) -> float:
-        r"""float : Fast-sigmoid surrogate slope :math:`\beta > 0` (live knob)."""
+        r"""float : Fast-sigmoid surrogate slope $\beta > 0$ (live knob)."""
         return self._surrogate_beta
 
     @surrogate_beta.setter
@@ -249,7 +248,7 @@ class SpikingReservoirCell(ReservoirCell, ABC):
 
     @property
     def trace_decay(self) -> float:
-        r"""float : Readout-trace decay :math:`\kappa \in [0, 1)` (live knob)."""
+        r"""float : Readout-trace decay $\kappa \in [0, 1)$ (live knob)."""
         return self._trace_decay
 
     @trace_decay.setter
@@ -265,7 +264,7 @@ class SpikingReservoirCell(ReservoirCell, ABC):
         device: torch.device,
         dtype: torch.dtype,
     ) -> torch.Tensor:
-        """Return a zero packed state of shape ``(batch_size, state_size)``."""
+        """Return a zero packed state of shape `(batch_size, state_size)`."""
         return torch.zeros(batch_size, self.state_size, device=device, dtype=dtype)
 
     # ------------------------------------------------------------------
@@ -275,24 +274,24 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     def spike(self, v: torch.Tensor) -> torch.Tensor:
         r"""Surrogate-gradient spike from a membrane potential (straight-through).
 
-        Forward is the exact Heaviside threshold ``(v - V_th > 0)``; backward
+        Forward is the exact Heaviside threshold `(v - V_th > 0)`; backward
         flows through the fast-sigmoid surrogate
-        :math:`\sigma(\beta (v - V_\text{th}))`.  The
-        ``surrogate + (hard - surrogate).detach()`` construction makes the
-        returned tensor *equal* ``hard`` in value while carrying the surrogate's
+        $\sigma(\beta (v - V_\text{th}))$.  The
+        `surrogate + (hard - surrogate).detach()` construction makes the
+        returned tensor *equal* `hard` in value while carrying the surrogate's
         gradient — a pure composition of tensor ops (no custom
-        :class:`torch.autograd.Function`), so it traces ``fullgraph=True``.
+        `torch.autograd.Function`), so it traces `fullgraph=True`.
 
         Parameters
         ----------
         v : torch.Tensor
-            Membrane potential, shape ``(batch, reservoir_size)``.
+            Membrane potential, shape `(batch, reservoir_size)`.
 
         Returns
         -------
         torch.Tensor
-            Binary spike tensor (values in ``{0, 1}``), same shape as ``v``,
-            with a surrogate gradient w.r.t. ``v``.
+            Binary spike tensor (values in `{0, 1}`), same shape as `v`,
+            with a surrogate gradient w.r.t. `v`.
         """
         shifted = v - self.v_threshold
         hard = (shifted > 0).to(v.dtype)
@@ -302,18 +301,18 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     def apply_reset(self, v: torch.Tensor, spikes: torch.Tensor) -> torch.Tensor:
         r"""Reset the membrane potential on the neurons that just spiked.
 
-        ``'subtract'`` (soft): :math:`V \leftarrow V - V_\text{th}\,s` — keeps the
-        supra-threshold overshoot, the standard LIF reset.  ``'zero'`` (hard):
-        :math:`V \leftarrow V (1 - s)` — clamps the membrane to zero on a spike.
+        `'subtract'` (soft): $V \leftarrow V - V_\text{th}\,s$ — keeps the
+        supra-threshold overshoot, the standard LIF reset.  `'zero'` (hard):
+        $V \leftarrow V (1 - s)$ — clamps the membrane to zero on a spike.
         The branch is a Python attribute compare fixed at construction, so it is
-        static under :func:`torch.compile`.
+        static under `torch.compile`.
 
         Parameters
         ----------
         v : torch.Tensor
-            Post-integration membrane potential, shape ``(batch, reservoir_size)``.
+            Post-integration membrane potential, shape `(batch, reservoir_size)`.
         spikes : torch.Tensor
-            Spike tensor from :meth:`spike`, same shape.
+            Spike tensor from `spike`, same shape.
 
         Returns
         -------
@@ -327,27 +326,27 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     def update_trace(self, trace: torch.Tensor, spikes: torch.Tensor) -> torch.Tensor:
         r"""Low-pass the spike train into the readout trace.
 
-        :math:`r_t = \kappa\, r_{t-1} + s_t` with :math:`\kappa` = :attr:`trace_decay`.
+        $r_t = \kappa\, r_{t-1} + s_t$ with $\kappa$ = `trace_decay`.
         The trace is the real-valued synaptic response a readout regresses on.
 
         Parameters
         ----------
         trace : torch.Tensor
-            Previous trace ``r_{t-1}``, shape ``(batch, reservoir_size)``.
+            Previous trace `r_{t-1}`, shape `(batch, reservoir_size)`.
         spikes : torch.Tensor
-            Current spikes ``s_t``, same shape.
+            Current spikes `s_t`, same shape.
 
         Returns
         -------
         torch.Tensor
-            Updated trace ``r_t``.
+            Updated trace `r_t`.
         """
         return self._trace_decay * trace + spikes
 
     def _select_output(
         self, trace: torch.Tensor, v: torch.Tensor, spikes: torch.Tensor
     ) -> torch.Tensor:
-        """Pick the readable output tensor per :attr:`output` (static branch)."""
+        """Pick the readable output tensor per `output` (static branch)."""
         if self._output == "voltage":
             return v
         if self._output == "spikes":
@@ -366,23 +365,23 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     ) -> tuple[tuple[torch.Tensor, ...], torch.Tensor]:
         r"""Advance the sub-threshold dynamics one step and emit spikes.
 
-        Called by :meth:`step` with the *neuron* state tensors only (the trailing
+        Called by `step` with the *neuron* state tensors only (the trailing
         trace is peeled off by the base) and the precomputed input drive.  The
         subclass integrates its membrane / current dynamics, emits spikes via the
-        shared :meth:`spike` helper, applies the reset via :meth:`apply_reset`,
+        shared `spike` helper, applies the reset via `apply_reset`,
         and returns the updated neuron tensors together with the spikes.
 
         Parameters
         ----------
         neuron_state : tuple of torch.Tensor
-            The :attr:`n_neuron_tensors` neuron state tensors in packing order —
-            ``(V,)`` for first-order LIF, ``(I, V)`` for CuBa-LIF — each of shape
-            ``(batch, reservoir_size)``.
+            The `n_neuron_tensors` neuron state tensors in packing order —
+            `(V,)` for first-order LIF, `(I, V)` for CuBa-LIF — each of shape
+            `(batch, reservoir_size)`.
         projected_input : torch.Tensor
             Precomputed input drive (recurrent-spike + feedback + driver + bias
             *excluding* the recurrent term, which the subclass adds from the
-            *previous* spikes it keeps in state — see :class:`LIFCell`), shape
-            ``(batch, reservoir_size)``.
+            *previous* spikes it keeps in state — see `LIFCell`), shape
+            `(batch, reservoir_size)`.
 
         Returns
         -------
@@ -390,7 +389,7 @@ class SpikingReservoirCell(ReservoirCell, ABC):
             The updated neuron tensors in the same packing order.
         spikes : torch.Tensor
             The binary spike tensor emitted this step, shape
-            ``(batch, reservoir_size)`` (carries the surrogate gradient).
+            `(batch, reservoir_size)` (carries the surrogate gradient).
         """
         ...
 
@@ -400,7 +399,7 @@ class SpikingReservoirCell(ReservoirCell, ABC):
 
         Concrete spiking cells own the feedback / input / bias weights, so the
         projection lives on the subclass (mirrors
-        :meth:`~resdag.layers.cells.esn_cell.ESNCell.project_inputs`).
+        `resdag.layers.cells.esn_cell.ESNCell.project_inputs`).
         """
         ...
 
@@ -413,23 +412,23 @@ class SpikingReservoirCell(ReservoirCell, ABC):
         inputs: list[torch.Tensor],
         state: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Advance one timestep: project inputs, then :meth:`step`.
+        """Advance one timestep: project inputs, then `step`.
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            ``inputs[0]`` feedback ``(batch, feedback_size)``; ``inputs[1]``
-            (optional) driving input ``(batch, input_size)``.
+            `inputs[0]` feedback `(batch, feedback_size)`; `inputs[1]`
+            (optional) driving input `(batch, input_size)`.
         state : torch.Tensor
-            Current packed state ``(batch, state_size)``.
+            Current packed state `(batch, state_size)`.
 
         Returns
         -------
         output : torch.Tensor
-            Readable per-step output ``(batch, reservoir_size)`` (see
-            :attr:`output`).
+            Readable per-step output `(batch, reservoir_size)` (see
+            `output`).
         new_state : torch.Tensor
-            Updated packed state ``(batch, state_size)``.
+            Updated packed state `(batch, state_size)`.
         """
         projected = self.project_inputs(inputs)
         return self.step(projected, state)
@@ -441,26 +440,26 @@ class SpikingReservoirCell(ReservoirCell, ABC):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         r"""Single-step spiking update from a precomputed input drive.
 
-        Peels the trailing trace ``r`` off the packed state, hands the neuron
-        tensors + drive to :meth:`neuron_update`, low-passes the returned spikes
+        Peels the trailing trace `r` off the packed state, hands the neuron
+        tensors + drive to `neuron_update`, low-passes the returned spikes
         into the new trace, and re-packs.  Branch-free apart from the static
-        reset / output selection, so it traces ``fullgraph=True`` for the
+        reset / output selection, so it traces `fullgraph=True` for the
         compiled forecast / teacher-forced engines.
 
         Parameters
         ----------
         projected_t : torch.Tensor
             Precomputed input drive for this step, shape
-            ``(batch, reservoir_size)``.
+            `(batch, reservoir_size)`.
         state : torch.Tensor
-            Current packed state ``(batch, state_size)``.
+            Current packed state `(batch, state_size)`.
 
         Returns
         -------
         output : torch.Tensor
-            Readable per-step output ``(batch, reservoir_size)``.
+            Readable per-step output `(batch, reservoir_size)`.
         new_state : torch.Tensor
-            Updated packed state ``(batch, state_size)``.
+            Updated packed state `(batch, state_size)`.
         """
         tensors = _split_state(state, self.reservoir_size)
         neuron_state = tensors[:-1]

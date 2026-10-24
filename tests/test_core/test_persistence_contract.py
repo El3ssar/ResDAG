@@ -59,7 +59,9 @@ def test_weights_states_and_full_model_roundtrip(index, tmp_path):
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     full_path = tmp_path / "other" / "full.pt"
     model.save_full(full_path, purpose="full")
-    full, metadata = type(model).load_full(full_path, return_metadata=True, map_location="cpu")
+    full, metadata = type(model).load_full(
+        full_path, return_metadata=True, map_location="cpu", trusted=True
+    )
     assert metadata == {"purpose": "full"}
     full_output, _ = full.forward_stateless(x)
     torch.testing.assert_close(full_output, expected, rtol=0, atol=0)
@@ -87,7 +89,7 @@ def test_full_loader_checks_wrapped_model_type(tmp_path):
     path = tmp_path / "wrong.pt"
     torch.save({"resdag_full_model": nn.Linear(2, 2)}, path)
     with pytest.raises(ValueError, match="does not contain a full ESNModel"):
-        rd.ESNModel.load_full(path)
+        rd.ESNModel.load_full(path, trusted=True)
 
 
 @pytest.mark.parametrize("index", range(3), ids=["graph", "parallel", "ensemble"])

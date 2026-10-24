@@ -2,15 +2,16 @@
 resdag - PyTorch Reservoir Computing Library
 ===============================================
 
-A modular, GPU-accelerated library for Echo State Networks (ESN) and
-reservoir computing in PyTorch.
+A library for reservoir computing with functional DAG composition and ordinary
+PyTorch modules. `ESN` and custom `Model` graphs share fit, forecast, tune
+and save workflows.
 
 Features
 --------
-- Pure PyTorch ``nn.Module`` components
-- Graph-based topology initialization
-- Stateful reservoir layers with Echo State Property
-- GPU acceleration throughout
+- Pure PyTorch `nn.Module` components
+- Registered graph, matrix and custom weight initializers
+- Stateful reservoir layers with explicit streaming state
+- Device-aware execution and configurable readout solver fallback
 - Modular composition for arbitrary DAGs
 - Hyperparameter optimization integration
 
@@ -77,13 +78,14 @@ Using premade models:
 
 See Also
 --------
-ESNModel : Main model class for reservoir computing.
+Model : Common training, forecasting and PyTorch integration workflow.
+ESNModel : Low-level symbolic reservoir graph.
 ESNLayer : Core reservoir layer with recurrent dynamics.
 ESNTrainer : Trainer for fitting readout layers.
 """
 
-import importlib
-from typing import Any
+import importlib as _importlib
+from typing import Any as _Any
 
 from . import core, data, datasets, ensemble, init, layers, metrics, models, training, utils
 from .artifacts import ArtifactError, ComponentCodec, load, register_component
@@ -340,31 +342,18 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> Any:
-    """Lazily resolve the optional :mod:`resdag.hpo` submodule (:pep:`562`).
+def __getattr__(name: str) -> _Any:
+    """Lazily resolve the optional `resdag.hpo` submodule ([PEP 562](https://peps.python.org/pep-0562/)).
 
-    ``hpo`` is imported only on first access, so a plain ``import resdag`` does
-    not eagerly pull in scipy/optuna.  The HPO convenience names (``run_hpo``,
-    ``LOSSES``, ``get_study_summary``) likewise resolve through
-    :mod:`resdag.hpo` on demand.
+    `hpo` is imported only on first access, so a plain `import resdag` does
+    not eagerly pull in scipy/optuna. Advanced tuning helpers live in that
+    namespace; model-level tuning uses `model.tune(...)`.
     """
     if name == "hpo":
-        return importlib.import_module(f".{name}", __name__)
-    if name == "run_hpo":
-        from .hpo import run_hpo
-
-        return run_hpo
-    if name == "LOSSES":
-        from .hpo import LOSSES
-
-        return LOSSES
-    if name == "get_study_summary":
-        from .hpo import get_study_summary
-
-        return get_study_summary
+        return _importlib.import_module(f".{name}", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

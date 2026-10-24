@@ -310,7 +310,7 @@ def test_resdag_readout_fit_forecast_and_full_checkpoint(kind: str, tmp_path: Pa
     assert forecast.shape == (1, 6, 2) and torch.isfinite(forecast).all()
     path = tmp_path / f"{kind}.pt"
     model.save_full(path)
-    restored = ESNModel.load_full(path)
+    restored = ESNModel.load_full(path, trusted=True)
     torch.testing.assert_close(restored.forecast(series[:, 65:80], horizon=6), forecast)
 
 

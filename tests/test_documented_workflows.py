@@ -22,7 +22,7 @@ import pytest
         "start/feedback.md",
     ],
 )
-def test_documented_workflow_executes(guide, tmp_path, monkeypatch):
+def test_documented_workflow_executes(guide, tmp_path, monkeypatch, isolated_component_registries):
     path = Path(__file__).parents[1] / "docs" / guide
     source = path.read_text()
     if guide in ("start/end-to-end.md", "advanced/custom-preprocessing.md"):

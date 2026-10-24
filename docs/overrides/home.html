@@ -15,7 +15,7 @@
   .md-typeset .nb-home a { border-bottom: none; }
   .nb-wrap { padding: 0 0.6rem; }
 
-  /* ---- Hero: asymmetric, oversized serif, live-drawn attractor ---- */
+  /* ---- Hero: model workflow and a recorded forecast ---- */
   .nb-hero {
     display: grid;
     grid-template-columns: 7fr 5fr;
@@ -76,9 +76,9 @@
     margin: 0; padding: 0; border: none; background: transparent; box-shadow: none;
     animation: nb-fade 0.9s 0.3s both;
   }
-  .nb-attractor canvas { width: 100%; height: auto; display: block; }
+  .nb-attractor video, .nb-attractor img { width: 100%; height: auto; display: block; }
   .nb-legend {
-    display: flex; gap: 1.1rem; justify-content: flex-end;
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; justify-content: flex-end;
     margin-top: 0.45rem;
     font-family: var(--nb-mono);
     font-size: 0.58rem; font-weight: 500; letter-spacing: 0.05em;
@@ -100,6 +100,10 @@
 
   @keyframes nb-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
   @keyframes nb-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nb-home * { animation: none !important; transition: none !important; }
+  }
 
   /* ---- Full-bleed code band (escapes the centered grid) ---- */
   .nb-band {
@@ -177,8 +181,8 @@
       <p class="nb-hero-tagline">Reservoir computing for PyTorch</p>
       <p class="nb-hero-sub">
         ResDAG treats reservoir models as ordinary PyTorch layers.
-        Compose them into arbitrary DAGs, fit readouts with a single
-        algebraic solve, and run training and forecasting on the GPU.
+        Compose them into functional DAGs, fit readouts algebraically,
+        and use the resulting model in CPU or GPU pipelines.
       </p>
       <div class="nb-hero-cta">
         <a class="nb-btn nb-btn--primary" href="start/first-forecast/">First forecast — 5 min</a>
@@ -187,42 +191,47 @@
       </div>
     </div>
     <figure class="nb-attractor">
-      <canvas id="nb-attractor-canvas" width="920" height="800"
-        aria-label="A chaotic attractor and a live ESN forecast of it, rotating in 3D"></canvas>
-      <div class="nb-legend">
-        <span class="nb-leg-true"><i></i>system</span>
-        <span class="nb-leg-pred"><i></i>ESN forecast</span>
+      <video controls muted loop playsinline preload="none" width="960" height="640"
+        poster="assets/figures/lorenz_forecast_poster.png"
+        aria-label="Recorded Lorenz continuation and autonomous reservoir forecast in original state coordinates">
+        <source src="assets/figures/lorenz_forecast.mp4" type="video/mp4">
+        <img src="assets/figures/lorenz_forecast_poster.png"
+          alt="Lorenz phase portrait comparing the observed continuation and autonomous forecast">
+      </video>
+      <div class="nb-legend" aria-label="Trajectory colors">
+        <span class="nb-leg-true"><i></i>observed continuation</span>
+        <span class="nb-leg-pred"><i></i>autonomous forecast</span>
       </div>
-      <figcaption><span id="nb-attractor-name">—</span> — a 500-unit reservoir forecast,
-      drawn live; a different system on each visit. Systems from
-      <a href="https://github.com/El3ssar/TSDynamics">TSDynamics</a></figcaption>
+      <figcaption>Lorenz: observed continuation and a trained ESN's autonomous forecast.
+      The displayed trajectory, seed and forecast start were fixed before testing.
+      <a href="assets/figures/lorenz_forecast_poster.png">Static image</a> ·
+      <a href="workflows/visualize/">Plot or animate your forecast</a> ·
+      <a href="project/phase-five-robustness/">Protocol and full results</a>.</figcaption>
     </figure>
   </section>
 
   <section class="nb-band">
     <div class="nb-band-inner">
       <div>
-        <h2>Ten lines to a trained forecaster</h2>
+        <h2>Train, forecast and save</h2>
         <p>
-          One teacher-forced pass collects reservoir states; one
-          ridge solve fits the readout. Choose a direct, iterative, or SVD
+          Fit learns scaling from training observations and solves the readout.
+          Forecasts return in the original units. Choose a direct, iterative, or SVD
           solver for your precision and memory requirements, and benchmark
           the workload on your hardware.
         </p>
       </div>
       <pre><span class="k">import</span> resdag <span class="k">as</span> rd
 
-data = rd.utils.load_file(<span class="s">"lorenz.npy"</span>)
-splits = rd.utils.prepare_esn_data(
-    data, warmup_steps=<span class="k">200</span>, train_steps=<span class="k">5000</span>, val_steps=<span class="k">2000</span>)
-warmup, train, target, f_warmup, val = splits
+series = rd.datasets.lorenz(<span class="k">6001</span>, normalize=<span class="k">None</span>, seed=<span class="k">7</span>)[<span class="k">0</span>]
+training, truth = series[:<span class="k">5001</span>], series[<span class="k">5001</span>:]
 
-model = rd.models.ott_esn(
-    reservoir_size=<span class="k">500</span>, feedback_size=<span class="k">3</span>, output_size=<span class="k">3</span>)
-rd.ESNTrainer(model).fit(
-    (warmup,), (train,), targets={<span class="s">"output"</span>: target})
-
-prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
+model = rd.ESN(
+    reservoir_size=<span class="k">300</span>, washout=<span class="k">200</span>, seed=<span class="k">7</span>)
+model.fit(training)
+prediction = model.forecast(horizon=<span class="k">1000</span>)
+model.save(<span class="s">"lorenz.pt"</span>)
+restored = rd.load(<span class="s">"lorenz.pt"</span>)</pre>
     </div>
   </section>
 
@@ -230,7 +239,7 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
     <div class="nb-principles-grid">
       <div class="nb-principle">
         <span class="no">No. 1</span>
-        <h3>Layers, not frameworks</h3>
+        <h3>Compose PyTorch modules</h3>
         <p>Reservoirs, readouts and transforms are ordinary PyTorch modules
         composed with a functional API: parallel reservoirs, multiple heads,
         state augmentation — <a href="build/">any DAG you can define</a>.</p>
@@ -244,10 +253,10 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
       </div>
       <div class="nb-principle">
         <span class="no">No. 3</span>
-        <h3>Honest mathematics</h3>
-        <p>Every update equation, solver decision and timing convention is
-        <a href="theory/">documented index by index</a>, so the implementation
-        can be validated against your own derivations.</p>
+        <h3>Defined timing and state</h3>
+        <p>Named inputs, outputs and delayed feedback have explicit
+        <a href="theory/">timing and state conventions</a>. Choose carried memory
+        or pass recurrent state explicitly when joining a larger PyTorch model.</p>
       </div>
     </div>
   </section>
@@ -284,141 +293,6 @@ prediction = model.forecast(f_warmup, horizon=<span class="k">2000</span>)</pre>
 
 </div>
 
-<script>
-(function () {
-  // The hero animation: a chaotic system (ink) and a real ResDAG forecast
-  // of it (vermilion), rotating slowly in 3D. Trajectory pairs were
-  // generated offline by docs/_tooling/figures/hero_forecasts.py — the forecast
-  // curve is a genuine 500-unit ESN running autoregressively. Systems
-  // ported from TSDynamics (github.com/El3ssar/TSDynamics).
-  var FILES = ["lorenz", "thomas", "halvorsen", "arneodo", "rucklidge", "sprott_b"];
-  var TAIL = 1050;         // samples kept on screen — enough to read the attractor
-  var SPEED = 1.1;         // samples advanced per frame — unhurried
-  var YAW_RATE = 0.07;     // rad/s — the slow rotation
-  var TILT = -0.42;        // fixed pitch for the 3D feel
-
-  var canvas = document.getElementById("nb-attractor-canvas");
-  if (!canvas || canvas.dataset.live) return;
-  canvas.dataset.live = "1";
-  var ctx = canvas.getContext("2d");
-  var label = document.getElementById("nb-attractor-name");
-  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  var W = canvas.width, H = canvas.height;
-  var colors = { true_: "#b06a18", pred: "#2a63d4" };
-  var frame = 0;
-
-  function readColors() {
-    var cs = getComputedStyle(document.body);
-    colors.true_ = (cs.getPropertyValue("--nb-data-true") || "#b06a18").trim();
-    colors.pred = (cs.getPropertyValue("--nb-accent") || "#2a63d4").trim();
-  }
-
-  function center(data) {
-    var pts = data.true.concat(data.pred, data.context || []);
-    var c = [0, 0, 0], i, j;
-    for (i = 0; i < pts.length; i++) for (j = 0; j < 3; j++) c[j] += pts[i][j];
-    for (j = 0; j < 3; j++) c[j] /= pts.length;
-    var ds = [];
-    for (i = 0; i < pts.length; i++) {
-      var dx = pts[i][0] - c[0], dy = pts[i][1] - c[1], dz = pts[i][2] - c[2];
-      ds.push(Math.sqrt(dx * dx + dy * dy + dz * dz));
-    }
-    ds.sort(function (a, b) { return a - b; });
-    // Robust radius: outlier forecast excursions must not shrink the view.
-    return { c: c, r: ds[Math.floor(ds.length * 0.97)] * 1.04 };
-  }
-
-  function project(p, geo, yaw) {
-    var x = p[0] - geo.c[0], y = p[1] - geo.c[1], z = p[2] - geo.c[2];
-    var cy = Math.cos(yaw), sy = Math.sin(yaw);
-    var x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
-    var ct = Math.cos(TILT), st = Math.sin(TILT);
-    var y2 = y * ct - z1 * st;
-    var scale = (Math.min(W, H) / 2 - 26) / geo.r;
-    return [W / 2 + x1 * scale, H / 2 - y2 * scale];
-  }
-
-  function drawTail(pts, upto, geo, yaw, color) {
-    var from = Math.max(0, upto - TAIL);
-    var n = upto - from;
-    if (n < 2) return;
-    var CHUNKS = 10, k;
-    for (k = 0; k < CHUNKS; k++) {
-      var a = from + Math.floor(n * k / CHUNKS);
-      var b = Math.min(from + Math.floor(n * (k + 1) / CHUNKS) + 1, upto);
-      if (b - a < 2) continue;
-      ctx.globalAlpha = 0.07 + 0.78 * Math.pow((k + 1) / CHUNKS, 1.6);
-      ctx.beginPath();
-      var p = project(pts[a], geo, yaw);
-      ctx.moveTo(p[0], p[1]);
-      for (var i = a + 1; i < b; i++) {
-        p = project(pts[i], geo, yaw);
-        ctx.lineTo(p[0], p[1]);
-      }
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.3;
-      ctx.lineJoin = "round";
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    var tip = project(pts[upto - 1], geo, yaw);
-    ctx.beginPath();
-    ctx.arc(tip[0], tip[1], 7, 0, 6.2832);
-    ctx.fillStyle = color;
-    ctx.fill();
-  }
-
-  function run(data) {
-    var geo = center(data);
-    // The true system runs from the start; the forecast is born at the
-    // handoff, where teacher forcing ends — it takes off from the ink
-    // curve, tracks it, then diverges. That split is the story.
-    var ctxPts = data.context || [];
-    var trueSeq = ctxPts.concat(data.true);
-    var predSeq = data.pred;
-    var birth = ctxPts.length;
-    var total = Math.min(trueSeq.length, birth + predSeq.length);
-    var t = 12;
-    var t0 = performance.now();
-    if (label) label.textContent = data.name;
-    readColors();
-
-    function tick(now) {
-      var yaw = ((now - t0) / 1000) * YAW_RATE;
-      if (++frame % 40 === 0) readColors();
-      ctx.clearRect(0, 0, W, H);
-      drawTail(trueSeq, Math.floor(t), geo, yaw, colors.true_);
-      if (t > birth) drawTail(predSeq, Math.floor(t) - birth, geo, yaw, colors.pred);
-      t += SPEED;
-      if (t >= total) t = 12;   // loop the same system; new one on reload
-      requestAnimationFrame(tick);
-    }
-
-    if (reduced) {
-      // Static frame, no motion: show the full pair at a fixed angle.
-      ctx.clearRect(0, 0, W, H);
-      drawTail(trueSeq, total, geo, 0.8, colors.true_);
-      drawTail(predSeq, total - birth, geo, 0.8, colors.pred);
-      return;
-    }
-    requestAnimationFrame(tick);
-  }
-
-  var lastFile = null;
-  function load() {
-    var pick;
-    do { pick = FILES[Math.floor(Math.random() * FILES.length)]; } while (pick === lastFile && FILES.length > 1);
-    lastFile = pick;
-    fetch("assets/forecasts/" + pick + ".json")
-      .then(function (r) { return r.json(); })
-      .then(run)
-      .catch(function () { /* leave the canvas empty rather than break the page */ });
-  }
-
-  load();
-})();
-</script>
 {% endblock %}
 
 {% block footer %}

@@ -10,6 +10,8 @@ from typing import Any, Callable
 from .base import InputFeedbackInitializer
 from .function import FunctionInitializer
 
+__all__ = ["register_input_feedback", "get_input_feedback", "show_input_initializers"]
+
 # Registry of initializer names to (class_or_function, default_kwargs).
 # Entries are either InputFeedbackInitializer subclasses (instantiated with
 # the merged kwargs) or plain matrix-building functions (wrapped in
@@ -23,9 +25,9 @@ def register_input_feedback(
 ) -> Callable[[Callable], Callable]:
     """Decorator to register an input/feedback initializer.
 
-    Registers either an :class:`InputFeedbackInitializer` subclass **or a
+    Registers either an `InputFeedbackInitializer` subclass **or a
     plain matrix-building function** in the registry at definition time,
-    making it available by name to ``ESNLayer`` and other components.
+    making it available by name to `ESNLayer` and other components.
 
     Parameters
     ----------
@@ -63,11 +65,11 @@ def register_input_feedback(
 
     Notes
     -----
-    - Classes must inherit from ``InputFeedbackInitializer`` and implement
-      ``initialize(weight, **kwargs)``.
-    - Functions follow the :class:`FunctionInitializer` conventions:
-      ``fn(rows, cols, **kwargs) -> matrix`` or in-place ``fn(tensor, **kwargs)``.
-    - Registered initializers can be accessed via ``get_input_feedback(name)``.
+    - Classes must inherit from `InputFeedbackInitializer` and implement
+      `initialize(weight, **kwargs)`.
+    - Functions follow the `FunctionInitializer` conventions:
+      `fn(rows, cols, **kwargs) -> matrix` or in-place `fn(tensor, **kwargs)`.
+    - Registered initializers can be accessed via `get_input_feedback(name)`.
     """
 
     def decorator(obj: Callable) -> Callable:
@@ -134,9 +136,9 @@ def show_input_initializers(name: str | None = None) -> list[str] | None:
     Returns
     -------
     list of str or None
-        When ``name is None``, returns the sorted list of registered
-        initializer names (in addition to printing them).  When ``name``
-        is provided, returns ``None`` after printing the parameter table.
+        When `name is None`, returns the sorted list of registered
+        initializer names (in addition to printing them).  When `name`
+        is provided, returns `None` after printing the parameter table.
 
     Raises
     ------

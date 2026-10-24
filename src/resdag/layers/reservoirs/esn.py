@@ -5,7 +5,7 @@ ESN Reservoir Layer
 This module provides the concrete Echo State Network (ESN) implementation of
 the reservoir layer:
 
-- :class:`ESNLayer` — public-facing sequence layer
+- `ESNLayer` — public-facing sequence layer
 
 See Also
 --------
@@ -32,9 +32,9 @@ class ESNLayer(BaseReservoirLayer):
     """
     Stateful RNN reservoir layer for Echo State Networks.
 
-    Public-facing class.  Internally creates an :class:`ESNCell` that owns
+    Public-facing class.  Internally creates an `ESNCell` that owns
     all parameters and performs the single-step update; the sequence loop
-    and state management live in the parent :class:`BaseReservoirLayer`.
+    and state management live in the parent `BaseReservoirLayer`.
 
     Parameters
     ----------
@@ -43,75 +43,75 @@ class ESNLayer(BaseReservoirLayer):
     feedback_size : int
         Dimension of feedback signal.  Required for all reservoirs.
     input_size : int, optional
-        Dimension of driving inputs.  If ``None``, no driving input is
+        Dimension of driving inputs.  If `None`, no driving input is
         expected.
     spectral_radius : float, optional
         Target spectral radius for recurrent weights.  Controls the
-        "memory" and stability of the reservoir.  If ``None``, no spectral
+        "memory" and stability of the reservoir.  If `None`, no spectral
         radius scaling is applied.
     bias : bool, default=True
         Whether to include a bias term.
     bias_scaling : float, default=1.0
         Scale of the random bias: entries are drawn from
-        ``uniform(-bias_scaling, bias_scaling)``.  Set to ``0.0`` for a
-        zero bias (pre-0.5 behaviour).  Ignored when ``bias=False``.
+        `uniform(-bias_scaling, bias_scaling)`.  Set to `0.0` for a
+        zero bias (pre-0.5 behaviour).  Ignored when `bias=False`.
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
-    leak_rate : float or 1-D tensor/sequence of shape ``(reservoir_size,)``, default=1.0
-        Leaky integration rate in ``(0, 1]``.  A scalar 1.0 means no leaking
+    leak_rate : float or 1-D tensor/sequence of shape `(reservoir_size,)`, default=1.0
+        Leaky integration rate in `(0, 1]`.  A scalar 1.0 means no leaking
         (standard RNN update); smaller values create slower dynamics.  A 1-D
-        tensor/sequence of length ``reservoir_size`` assigns a **per-neuron**
+        tensor/sequence of length `reservoir_size` assigns a **per-neuron**
         leak (heterogeneous timescales in one reservoir, matching RC.jl's
-        ``leak_coefficient`` vector); every entry must be finite and in
-        ``(0, 1]``.  See :class:`~resdag.layers.cells.esn_cell.ESNCell` for the
+        `leak_coefficient` vector); every entry must be finite and in
+        `(0, 1]`.  See `resdag.layers.cells.esn_cell.ESNCell` for the
         full contract (a vector leak is stored as a buffer that moves with
-        ``.to()`` / ``.double()`` and round-trips through save/load).
+        `.to()` / `.double()` and round-trips through save/load).
     noise : float, default=0.0
         Standard deviation of additive Gaussian state noise injected after the
         activation (the classical ESN readout-conditioning regularizer).
         Active **only in training mode** (like dropout) and a no-op under
-        :meth:`~torch.nn.Module.eval`.  The default ``0.0`` disables it, leaving
+        `torch.nn.Module.eval`.  The default `0.0` disables it, leaving
         outputs bit-identical to the noiseless layer.  Reproducible under the
-        layer's ``seed``.  Must be non-negative.
+        layer's `seed`.  Must be non-negative.
     trainable : bool, default=False
-        If ``True``, reservoir weights are trainable via backpropagation.
+        If `True`, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
     sparse : bool or {'auto'}, default=False
-        ``False`` keeps dense recurrent weights. ``True`` stores frozen weights
-        only as compressed CSR components; ``weight_hh`` is a zero-copy CSR view.
-        Use ``weight_hh.to_dense()`` for explicit inspection. ``"auto"`` uses
+        `False` keeps dense recurrent weights. `True` stores frozen weights
+        only as compressed CSR components; `weight_hh` is a zero-copy CSR view.
+        Use `weight_hh.to_dense()` for explicit inspection. `"auto"` uses
         size/density heuristics, not hardware calibration. Compact storage saves
         recurrent-weight memory but does not guarantee faster execution or remove
-        sequence/readout allocations. See :class:`~resdag.layers.cells.ESNCell`
+        sequence/readout allocations. See `resdag.layers.cells.ESNCell`
         for initialization, numerical, device and trainability boundaries.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
-        name, ``(name, params)``, any matrix-building callable
-        ``fn(rows, cols, **kw) -> matrix`` (or in-place ``fn(tensor)``,
-        e.g. ``torch.nn.init.xavier_uniform_``), ``(callable, params)``,
+        name, `(name, params)`, any matrix-building callable
+        `fn(rows, cols, **kw) -> matrix` (or in-place `fn(tensor)`,
+        e.g. `torch.nn.init.xavier_uniform_`), `(callable, params)`,
         or a configured initializer object.
     input_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the input weight matrix.  Same formats as
-        ``feedback_initializer``.  Only used when ``input_size`` is provided.
+        `feedback_initializer`.  Only used when `input_size` is provided.
     topology : str, callable, tuple, or TopologyInitializer, optional
         Structure of the recurrent weight matrix.  Accepts a registry name
-        (graph or matrix topology), ``(name, params)``, any matrix-building
-        callable ``fn(n, **kw) -> matrix | nx.Graph`` (or in-place
-        ``fn(tensor)``), ``(callable, params)``, or a configured topology
+        (graph or matrix topology), `(name, params)`, any matrix-building
+        callable `fn(n, **kw) -> matrix | nx.Graph` (or in-place
+        `fn(tensor)`), `(callable, params)`, or a configured topology
         object.
     recurrent_initializer : str, callable, tuple, or TopologyInitializer, optional
-        First-class alias for ``topology`` accepting graph and matrix builders,
+        First-class alias for `topology` accepting graph and matrix builders,
         registered names and custom callables. Supply only one of the two.
     bias_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Override the default random bias. Uses the same formats as input
-        initialization on a ``(1, reservoir_size)`` tensor, then flattens to
-        the bias vector. Requires ``bias=True``. Explicit hook values take
-        precedence over ``bias_scaling``.
+        initialization on a `(1, reservoir_size)` tensor, then flattens to
+        the bias vector. Requires `bias=True`. Explicit hook values take
+        precedence over `bias_scaling`.
     initial_state_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
-        Initialize a persistent ``(1, reservoir_size)`` state template once
+        Initialize a persistent `(1, reservoir_size)` state template once
         at construction. Every reset broadcasts an independent copy to each
-        batch item. ``None`` keeps the zero-state default. The template moves
-        with ``.to()`` and is included in checkpoints.
+        batch item. `None` keeps the zero-state default. The template moves
+        with `.to()` and is included in checkpoints.
     device : torch.device or str, optional
         Device on which parameters are constructed. Defaults to the Torch
         default device. CUDA initialization runs on the requested device;
@@ -119,28 +119,28 @@ class ESNLayer(BaseReservoirLayer):
         preserving compatibility across supported Torch versions.
     dtype : torch.dtype, optional
         Floating-point initialization precision. Defaults to Torch's default
-        dtype. ``torch.float64`` constructs in double precision rather than
+        dtype. `torch.float64` constructs in double precision rather than
         rounding float32 weights and converting afterward.
     seed : int or torch.Generator, optional
         Reproducibility seed that deterministically fixes the *entire*
         reservoir — topology (recurrent) matrix, feedback weights, input
         weights, and bias — so two layers built with the same seed are
-        identical down to the last entry.  Accepts a plain ``int`` or a
-        :class:`torch.Generator` (handy for threading a per-trial generator
+        identical down to the last entry.  Accepts a plain `int` or a
+        `torch.Generator` (handy for threading a per-trial generator
         from an HPO loop).  This covers both explicit initializers/topologies
-        *and* the default ``uniform(-1, 1)`` draws used when none is given.
-        With ``seed`` set, a string-form ``topology='erdos_renyi'`` is
-        reproducible without the ``('erdos_renyi', {'seed': ...})`` tuple form;
-        an explicit seed in a tuple/object spec always wins.  When ``seed=None``
+        *and* the default `uniform(-1, 1)` draws used when none is given.
+        With `seed` set, a string-form `topology='erdos_renyi'` is
+        reproducible without the `('erdos_renyi', {'seed': ...})` tuple form;
+        an explicit seed in a tuple/object spec always wins.  When `seed=None`
         (the default), the reservoir is still reproducible under
-        ``torch.manual_seed`` because every generator (NumPy and torch) is
+        `torch.manual_seed` because every generator (NumPy and torch) is
         derived from torch's global RNG.
 
     Attributes
     ----------
     state : torch.Tensor or None
-        Current reservoir state of shape ``(batch, reservoir_size)``.
-        ``None`` if not yet initialized.
+        Current reservoir state of shape `(batch, reservoir_size)`.
+        `None` if not yet initialized.
 
     Examples
     --------
@@ -183,7 +183,7 @@ class ESNLayer(BaseReservoirLayer):
     ...     spectral_radius=0.95
     ... )
 
-    Fully reproducible reservoir via the ``seed`` argument — recurrent matrix,
+    Fully reproducible reservoir via the `seed` argument — recurrent matrix,
     feedback/input weights, and bias all match:
 
     >>> a = ESNLayer(50, feedback_size=3, topology="erdos_renyi", seed=42)
@@ -195,7 +195,7 @@ class ESNLayer(BaseReservoirLayer):
     >>> torch.equal(a.bias_h, b.bias_h)
     True
 
-    A :class:`torch.Generator` works too (e.g. an HPO per-trial generator):
+    A `torch.Generator` works too (e.g. an HPO per-trial generator):
 
     >>> g1 = torch.Generator().manual_seed(7)
     >>> g2 = torch.Generator().manual_seed(7)
@@ -204,8 +204,8 @@ class ESNLayer(BaseReservoirLayer):
     >>> torch.equal(a.weight_feedback, b.weight_feedback)
     True
 
-    The reservoir is also reproducible under ``torch.manual_seed`` without an
-    explicit ``seed``:
+    The reservoir is also reproducible under `torch.manual_seed` without an
+    explicit `seed`:
 
     >>> torch.manual_seed(0)
     >>> a = ESNLayer(50, feedback_size=3, topology="erdos_renyi")

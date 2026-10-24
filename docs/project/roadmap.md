@@ -27,7 +27,11 @@ The CPU correctness/readout follow-up was merged through
 [PR #466](https://github.com/El3ssar/ResDAG/pull/466) as `3b34005`.
 Its **5.0.1** release, four full post-merge suites, three dynamics lanes,
 installed published package and live documentation deployment are verified.
-The current closeout checks trained reservoirs inside larger PyTorch networks,
+The PyTorch closeout was merged through
+[PR #467](https://github.com/El3ssar/ResDAG/pull/467) as `ca40fe4b`.
+Its **5.0.2** release, all four full post-merge suites, installed published
+package and live documentation deployment are verified.
+The closeout checks trained reservoirs inside larger PyTorch networks,
 adopts a measured parallel-forecast improvement, validates frozen recipes on
 independent trajectories and adds exact experiment replay. The measured
 cross-library CPU gap and the friendly vanilla recipes' accuracy shortfall
@@ -82,7 +86,7 @@ after its acceptance checks pass and its public behavior is documented.
 | 3. Reliable automatic tuning | Done | Robust tuning with little setup and complete winner provenance. | Quick/balanced/thorough studies, streaming pruning, optional screening/memory budgets, protocol-safe reuse and fitted winners pass local/package/hosted verification. Completion PR #462 merged as `f8d7637`. |
 | 4. Model artifacts, diagrams and efficient training | Done | Save complete models, reconstruct their DAGs, export diagrams, and train cascaded readouts without replaying upstream work. | Fresh-process load/forecast parity, diagrams and one-pass training oracles pass across supported graph families. PR #463 merged as `0b546d6`. |
 | 5. Performance and competitive evidence | WIP | Improve measured bottlenecks; publish fair speed–accuracy–memory comparisons. | Reproducible matched-workload and equal-budget results across systems, seeds and scale regimes. First increment repairs chronological windows and establishes classical accuracy baselines. |
-| 6. Experiments and release readiness | Done | Stable experiment recipes, executable documentation and migration guidance. | Clean candidate packages, exact experiment replay, executable guides and full hosted compatibility pass in PR #467. Published-package and deployment verification follow merge and release. |
+| 6. Experiments and release readiness | Done | Stable experiment recipes, executable documentation and migration guidance. | Clean candidate packages, exact experiment replay, executable guides and full hosted compatibility pass in PR #467. Published 5.0.2 wheel, sdist, release tag and live Pages bytes are verified. |
 
 Phase four is merged under the approved artifact/state contract. Phase five
 starts with [the agreed measurement design](phase-five-design.md).
@@ -115,9 +119,9 @@ are intentional mathematical corrections approved for phase 1: regenerated
 weights and experiment results can change even with the same seed. Migration
 notes accompany both initializers.
 
-Phase 1 does not silently change dataset normalization defaults, deep-stack
+Phase 1 did not change dataset normalization defaults, deep-stack
 seed schedules, feedback routing or the meaning of existing `save()` files.
-Those require the documented major-release migration below.
+Later breaking changes are recorded in the major-release migration below.
 
 ### Verification record
 
@@ -523,7 +527,7 @@ them alone would not improve performance.
 | P5-04 | WIP | Profile-driven batching and compilation improvements. | Explicit-state DAG execution releases tensors after their last consumer. Native PyTorch hooks are honored during forecasting, with independent state/gradient/failure oracles. The CPU follow-up adopts unchanged-solution AutoReadout residual reuse. Earlier slicing rewrites are rejected after inconclusive full-workflow timing. [Fresh recurrence profiling](phase-five-results.md#cpu-recurrence-investigation) records a private SciPy CPU CSR diagnostic; the maintainer declined that execution backend to retain all-PyTorch execution. A faster dense batch candidate changes fitted results and is not adopted. Extending CPU teacher-forced compilation is deferred: its startup/maintenance costs are not justified by established workflow gains. Prioritize standard PyTorch fit/forecast performance and composition inside larger GPU models, preserving gradients and device placement. |
 | P5-05 | WIP | Publish speed–accuracy–memory tradeoffs against current competitors. | [First full comparison](phase-five-results.md#equal-tuning-time-across-libraries) and downloadable records are complete. Its state-only vanilla accuracy is close to both competitors; selected CPU workflows are slower. Independent-trajectory testing now separates those recipes from friendly vanilla and OTT recipes: OTT reaches the ten-LT median test limit, but friendly vanilla medians are about six LT. Wider hardware/model scales and closing the CPU gap remain open. |
 | P5-06 | Done | Bring the broader forecasting search into built-in vanilla and OTT tuning. | Approved seven-control default search with unchanged preset budgets and replaceable ranges. Real tuning, MPS, custom components, current workflow settings, edited-graph protection and portable recipe reload are covered. Sparse workflow copying now rebuilds derived CSR weights instead of copying unsupported storage. |
-| P5-07 | Pending | Improve friendly vanilla recipe robustness across independent trajectories. | Current frozen recipes miss the main 7–8 LT target despite exact baseline regression parity. Agree any broader feature/solver search or default-policy changes with the maintainer, select on separate validation trajectories, then freeze the recipe before a fresh final bank. Do not tune against the newly inspected test results. |
+| P5-07 | WIP | Improve friendly vanilla recipe robustness across independent trajectories. | The approved `input_to_readout` switch is implemented and both choices enter automatic vanilla tuning; ordinary defaults stay unchanged. The [completed controlled study](phase-five-robustness.md) records 432 validation fits / 1,296 forecasts and 60 final fits / 180 forecasts on fresh independent trajectories. Lorenz retains ≥10.016 LT; selected Rössler improves from 3.013 to 6.750 LT at the main 0.3 threshold, still below the typical 7–8 LT target. Both selected recipes use the input. All 180 final prediction hashes replay exactly after cleanup; 104 nonfinite Rössler validation forecasts are retained and scored. |
 
 Python 3.14 emits fourteen `torch.jit.script_method` deprecation warnings when
 Torch 2.10 imports its own MKLDNN helpers through the `torch.compile` backend.
@@ -688,8 +692,13 @@ the unmerged implementation.
 | P6-03 | Done | Bounded executable docs/examples in CI, optional compatibility and release artifact checks. | Independent encoder → RC → head gradient/optimizer/state/device oracles, CPU mixed precision and full-graph forward/backward capture pass. Clean-wheel parity covers all 205 modules, the typing marker, 209 RECORD entries and installed import origins. Verification: 6,509 local tests at 93.86% coverage, all eight full hosted suites, six dynamics lanes, CPU/protocol gates and strict docs pass. |
 | P6-04 | Done | Stable experiment configurations, manifests and migration notes. | Resolved example settings, environment/data/split identities and output hashes are saved with exact replay observations. Thirteen example checks, including fresh-process replay without integration/fitting/tuning and corrupt/misaligned artifact rejection, pass against the clean wheel and minimum TSDynamics 6.0.2. Portable custom components, migration notes and persisted tuning studies remain covered; full hosted acceptance passes. |
 
-These are candidate-readiness checks for PR #467. Verification of the actual
-published package and deployed documentation follows merge and release.
+These are candidate-readiness checks for PR #467, now merged as `ca40fe4b`.
+The actual published **5.0.2** wheel, sdist and release tag match all 205 runtime
+modules plus the typing marker; all 209 wheel RECORD entries verify. An isolated
+PyPI installation passes the 110-check acceptance selection and all eight common
+workflow guide blocks, including fresh-process replay. All four post-merge full
+suites pass 6,256 tests each, three dynamics lanes pass 322 tests each, and the
+release/deployed Pages files verify against their source.
 
 ## Completion log
 
@@ -714,7 +723,10 @@ published package and deployed documentation follows merge and release.
 | 2026-10-23 | Phase 5 CPU follow-up | Done | [PR #466](https://github.com/El3ssar/ResDAG/pull/466), merged as `3b34005`: unchanged-solution AutoReadout residual reuse and analytic CSR cycle/zero/complex-value fixes. Rejected the timestep-view and driver-slicing rewrites after inconclusive timing; all candidate samples remain available. All 30 frozen forecasts are byte-identical. Final verification: 6,410 local tests at 93.85% coverage, 960 installed-wheel checks, all eight locked/latest full suites (6,160 passes each), six dynamics lanes, CPU gates, 103 Python protocol checks, 18 real Julia checks and strict docs pass. Post-merge release verification is recorded separately. |
 | 2026-10-23 | Phase 5 CPU follow-up merge and release | Done | [v5.0.1](https://github.com/El3ssar/ResDAG/releases/tag/v5.0.1), release commit `eb70bf11`: all four post-merge full suites pass 6,160 tests each at 91.62–91.69% coverage; three dynamics lanes pass 315 tests each. Published wheel, sdist and tag match all 205 modules plus the typing marker, 209 wheel RECORD entries verify, and an isolated installed-wheel fit/forecast/save/load replay is exact. Release documentation and actual Pages deployment pass; all eight live JSON records match the published source. |
 | 2026-10-23 | Phase 5 CPU throughput | WIP | Profiled public fit/history/forecast workflows and matched recurrence/readout work on frozen synthetic development inputs with controlled native threads. Recurrence dominates; solver guards and transactional copies are smaller costs. A private SciPy CSR bridge improves full sparse fit by about 3× and forecasting by about 2.8× in two fresh processes, with exact outputs in this fixture; the maintainer declined adopting that backend. Four per-row dense GEMVs improve batch-four timing but change fitted results substantially and are not adopted. CPU teacher-forced compilation is deferred after reviewing its priority and costs. Continue with all-PyTorch execution and measured improvements to ordinary workflows and larger-model GPU composition. The existing cross-library CPU gap remains open. |
-| 2026-10-24 | All-PyTorch closeout and experiment readiness | Done | [PR #467](https://github.com/El3ssar/ResDAG/pull/467), runtime `941cd8bf`: larger-network gradient/optimizer/state/device acceptance, CPU CSR autocast and full-graph compatibility repairs, guarded parallel forecasting and exact experiment replay pass. Independent study: 90 fits / 270 forecasts, exact paired baseline and corrected-runtime checkpoint replay. Verification: 6,509 local tests at 93.86% coverage, 110 clean-wheel checks plus eight guide blocks, minimum TSDynamics replay, all eight full hosted suites, six dynamics lanes, CPU/protocol/real-Julia gates and strict rendered docs. Phase five's friendly vanilla robustness and comparative CPU speed gap remain open. Candidate is unmerged; published-release verification follows merge. |
+| 2026-10-24 | All-PyTorch closeout and experiment readiness | Done | [PR #467](https://github.com/El3ssar/ResDAG/pull/467), runtime `941cd8bf`: larger-network gradient/optimizer/state/device acceptance, CPU CSR autocast and full-graph compatibility repairs, guarded parallel forecasting and exact experiment replay pass. Independent study: 90 fits / 270 forecasts, exact paired baseline and corrected-runtime checkpoint replay. Verification: 6,509 local tests at 93.86% coverage, 110 clean-wheel checks plus eight guide blocks, minimum TSDynamics replay, all eight full hosted suites, six dynamics lanes, CPU/protocol/real-Julia gates and strict rendered docs. Phase five's friendly vanilla robustness and comparative CPU speed gap remain open. Final prose head `7246d5fa` also passes all eight full suites, package-source parity and rendered docs. |
+| 2026-10-24 | PyTorch closeout merge and release | Done | PR #467 squash-merged as `ca40fe4b`; [v5.0.2](https://github.com/El3ssar/ResDAG/releases/tag/v5.0.2) published from `cd14753c`. Four post-merge full suites pass 6,256 tests each; three dynamics lanes pass 322 each. Published wheel/sdist/tag match all 205 modules and typing marker, 209 RECORD entries verify, and isolated published-wheel acceptance plus eight guide blocks pass. Release and live Pages verification pass. |
+| 2026-10-24 | Phase 5 vanilla robustness and resource planning | WIP | Approved classic `input_to_readout` switch and default search over both choices; ordinary construction and OTT wiring stay unchanged. Parallel memory planning now accounts for patch-folded sequences, actual supervised rows, warmup/history and sampled washout. Existing default saved models replay exactly. The [controlled study](phase-five-robustness.md) and final exact replay are complete: Lorenz ≥10.016 LT, selected Rössler 6.750 LT at 0.3. Local, installed-package and full locked/latest hosted acceptance pass; the scientific target remains open. |
+| 2026-10-24 | Public API, documentation and hygiene sweep | Done | [PR #468](https://github.com/El3ssar/ResDAG/pull/468): intended extension contracts retained, implementation helpers hidden, complete API reference and executable examples reconciled, recorded figures/animations added, raw generator defaults and training-only preparation corrected, restricted/atomic checkpoints and dependency-audit disposition verified. See SQ-02–05 and the completion verification below. |
 
 ## Standard tools to reuse
 
@@ -726,3 +738,39 @@ published package and deployed documentation follows merge and release.
   are evaluated; ordinary `nn.Module` and standard Torch tooling for execution.
 - Optuna for studies, samplers, pruners and storage; Torch/SciPy for numerical
   solvers; TSDynamics for dynamical-system generation and analysis.
+
+## Final API, documentation and hygiene sweep
+
+| ID | Status | Work | Acceptance checks / evidence |
+| --- | --- | --- | --- |
+| SQ-02 | Done | Keep the intended public API discoverable and hide implementation helpers. | Existing package layout and custom initializer/cell/readout/codec extension points remain. Internal memory-context builders, cell validators and worker adapters become private; duplicate top-level HPO aliases are removed in favor of `rd.hpo`. Public exports and rendered reference coverage have executable guards. See [migration guidance](esn-migration.md). Verification scope is recorded below. |
+| SQ-03 | Done | Reconcile all guides, examples and scientific visuals with current behavior. | All 18 example main bodies execute with explicit bounded budgets; 15 ordinary full-default tutorials and optional plot branches pass. Every registered built-in initializer has an inspected gallery figure (51 total). Recorded, predeclared Lorenz/Rössler cases drive plots and TSDynamics animations; asset generation does not refit or select cases. The source reference uses Markdown throughout; repeated module headings, incorrect parsed defaults and duplicate source-line anchors are repaired; all 1,762 documented parameters have defaults checked against source. Strict MkDocs and built-page link/media/anchor/prose checks are required in CI. Verification scope is recorded below. |
+| SQ-04 | Done | Sanitize persistence and development dependencies without changing model mathematics. | Ordinary raw checkpoints use restricted tensor loading, full Python model loads require explicit trust, unsupported metadata is rejected before writing, and saves replace files atomically. Malicious-payload, metadata and failed-write regressions cover raw and portable paths. The [dependency audit](security.md) refreshes affected non-numerical packages and records two remaining upstream Torch advisories without suppression. Final package identity and verification scope are recorded below. |
+| SQ-05 | Done | Keep held-out observations out of generator preparation and tutorial state replay. | All seven built-in generators return raw values by default; explicit standard normalization preserves the previous transform. Sixteen new tests cover raw defaults, exact prefix invariance and training-only statistics, with unchanged explicit-standard golden fixtures. Low-level examples fit scaling on training rows, replay the continuous observed prefix and use stable SVD for their algebraic teaching paths. Verification scope is recorded below. |
+
+### Completion verification — 24 October 2026
+
+[PR #468](https://github.com/El3ssar/ResDAG/pull/468) separates runtime evidence
+at `8dc8cca` from the corrected docstring source at `4bea969`. All eight full
+locked/latest Python 3.11–3.14 suites pass at `8dc8cca`, along with six dynamics
+lanes, CPU gates, real Julia checks, lint and strict documentation. The final
+prose update changes no executable code; merge remains subject to the current
+PR checks.
+
+| Scope | Verified evidence |
+| --- | --- |
+| Full local runtime suite, `8dc8cca` | **6,734 passed**, 247 skipped, 13 benchmark cases deselected; **93.97% coverage**. |
+| Final reference and documentation, `4bea969` | **42 checks passed**, including all 205 runtime modules and 1,762 parsed parameter defaults. Ruff, Black, strict MkDocs and built-site link, anchor, media and prose checks pass. |
+| Installed-package behavior | The installed `8dc8cca` wheel passes **514 checks**, with 29 unavailable-CUDA skips. All 205 non-docstring runtime ASTs and dependency versions are identical at `4bea969`, bridging that behavioral evidence without claiming a second full run. |
+| Final package identity, `4bea969` | All **206 runtime/typing files**, **205 installed module origins** and **209 wheel payload records** match the final source and package manifest. |
+| Hosted runtime acceptance, `8dc8cca` | Full locked and latest-dependency matrices pass: [locked CI](https://github.com/El3ssar/ResDAG/actions/runs/40048167316), [latest compatibility](https://github.com/El3ssar/ResDAG/actions/runs/40048133060). All six dynamics lanes, CPU gates, real Julia checks, lint and strict documentation pass. |
+
+The final prose-only corrections explain compressed-only recurrent storage,
+frozen dense Parameters and forecast history that includes the observed seam.
+They change no executable code. The documentation inventory covers the common
+workflow and extension paths, all 18 examples and all 51 initializer galleries.
+
+**Phase five remains WIP.** Selected Rössler reaches 6.750 Lyapunov times at
+the main 0.3 threshold, below the typical 7–8 target; the comparative CPU speed
+gap and broader scale measurements remain open. These hygiene completions do
+not establish CUDA throughput, a new performance ranking, or a release.

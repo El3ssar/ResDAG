@@ -8,20 +8,20 @@ when configuring a layer; the legacy layer default still measures and rescales.
 The construction follows Gallicchio (2020), *Fast Spectral Radius
 Initialization for Recurrent Neural Networks* (in *Recent Advances in Big Data
 and Deep Learning*, INNSBDDL 2019, pp. 380–390): draw the entries i.i.d. from a
-symmetric uniform distribution :math:`\\mathcal{U}(-a, a)` and choose the
-half-width :math:`a` so that the matrix's spectral radius matches the target.
+symmetric uniform distribution $\\mathcal{U}(-a, a)$ and choose the
+half-width $a$ so that the matrix's spectral radius matches the target.
 
-For an :math:`N \\times N` matrix with i.i.d. zero-mean entries of variance
-:math:`\\sigma^2`, Girko's circular law places the eigenvalues asymptotically
-uniformly in a disk of radius :math:`\\sqrt{N}\\,\\sigma`, so the spectral
-radius concentrates at :math:`\\rho \\approx \\sqrt{N}\\,\\sigma`.  For
-:math:`\\mathcal{U}(-a, a)` the variance is :math:`\\sigma^2 = a^2 / 3`, hence
+For an $N \\times N$ matrix with i.i.d. zero-mean entries of variance
+$\\sigma^2$, Girko's circular law places the eigenvalues asymptotically
+uniformly in a disk of radius $\\sqrt{N}\\,\\sigma$, so the spectral
+radius concentrates at $\\rho \\approx \\sqrt{N}\\,\\sigma$.  For
+$\\mathcal{U}(-a, a)$ the variance is $\\sigma^2 = a^2 / 3$, hence
 
-.. math::
-
-    \\rho \\approx \\sqrt{N}\\,\\frac{a}{\\sqrt{3}}
-    \\quad\\Longrightarrow\\quad
-    a = \\rho \\, \\sqrt{\\frac{3}{N}}.
+$$
+\\rho \\approx \\sqrt{N}\\,\\frac{a}{\\sqrt{3}}
+\\quad\\Longrightarrow\\quad
+a = \\rho \\, \\sqrt{\\frac{3}{N}}.
+$$
 
 See Also
 --------
@@ -51,30 +51,29 @@ def fast_spectral_initialization(
     """Build a recurrent matrix at a target spectral radius without eigvals.
 
     Implements Gallicchio's Fast Spectral Initialization (FSI): entries are
-    drawn i.i.d. from :math:`\\mathcal{U}(-a, a)` with
-    :math:`a = \\rho \\sqrt{3 / n}`, so by the circular law the matrix's
-    spectral radius is :math:`\\approx \\rho` *by construction*.  No
+    drawn i.i.d. from $\\mathcal{U}(-a, a)$ with
+    $a = \\rho \\sqrt{3 / n}$, so by the circular law the matrix's
+    spectral radius is $\\approx \\rho$ *by construction*.  No
     eigendecomposition or power iteration is performed; the whole cost is the
-    random draw, which is what makes it attractive for large ``n``.
+    random draw, which is what makes it attractive for large `n`.
 
     The finite-size radius is approximate. The legacy registration retains
     the layer's outer spectral estimation and rescaling. To skip that cost,
-    configure ``get_recurrent_initializer("fast_spectral_initialization",
-    spectral_radius=0.9, rescale=False)`` and pass the resulting object to the
+    configure `get_recurrent_initializer("fast_spectral_initialization", spectral_radius=0.9, rescale=False)` and pass the resulting object to the
     layer. That explicitly accepts the finite-size approximation; the layer's
-    ``spectral_radius`` is then ignored without a warning.
+    `spectral_radius` is then ignored without a warning.
 
     Parameters
     ----------
     n : int
         Matrix size (number of reservoir units).
     spectral_radius : float, default=0.9
-        Target spectral radius :math:`\\rho`.  For finite ``n`` the realized
+        Target spectral radius $\\rho$.  For finite `n` the realized
         radius fluctuates around this value (the circular law is asymptotic);
-        the relative error shrinks as ``n`` grows.
+        the relative error shrinks as `n` grows.
     seed : int, optional
-        Seed for the uniform draw.  ``None`` uses the global torch RNG, so the
-        result is reproducible under :func:`torch.manual_seed`.
+        Seed for the uniform draw.  `None` uses the global torch RNG, so the
+        result is reproducible under `torch.manual_seed`.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output and random-draw dtype.
     device : torch.device or str, optional
@@ -83,8 +82,8 @@ def fast_spectral_initialization(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` recurrent matrix on the requested dtype/device, with
-        spectral radius approximately equal to ``spectral_radius``.
+        Dense `(n, n)` recurrent matrix on the requested dtype/device, with
+        spectral radius approximately equal to `spectral_radius`.
 
     Examples
     --------

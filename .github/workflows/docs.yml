@@ -53,8 +53,17 @@ jobs:
           extras: docs
           dependency-mode: ${{ github.event_name == 'workflow_dispatch' && inputs.dependency-mode || 'locked' }}
 
+      - name: Validate API reference contracts
+        run: >-
+          pytest --no-cov -q tests/test_docs/test_docstring_markdown.py
+          tests/test_docs/test_public_api_reference.py
+          tests/test_tooling/test_check_docs_site.py
+
       - name: Build documentation
         run: mkdocs build --strict
+
+      - name: Validate rendered links and media
+        run: python tools/check_docs_site.py site --base-path /ResDAG/
 
   deploy:
     needs: build
@@ -83,6 +92,9 @@ jobs:
 
       - name: Build documentation
         run: mkdocs build --strict
+
+      - name: Validate rendered links and media
+        run: python tools/check_docs_site.py site --base-path /ResDAG/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

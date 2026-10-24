@@ -10,7 +10,7 @@ from torch import nn
 def evaluating(module: nn.Module) -> Iterator[None]:
     """Enter eval mode and restore each existing module's training flag.
 
-    Restoring only the root with ``train(previous)`` would also overwrite
+    Restoring only the root with `train(previous)` would also overwrite
     children deliberately kept in a different mode, such as frozen backbones.
     This context does not change gradient tracking or recurrent states.
     """

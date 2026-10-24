@@ -16,16 +16,18 @@ class GeneratorLayer(nn.Module):
         return x + torch.rand(x.shape, device=x.device, generator=self.generator)
 
 
-register_component(
-    "test.generator_recipes.Layer",
-    GeneratorLayer,
-    encode=lambda m: {"generator": m.generator},
-    decode=lambda c: GeneratorLayer(**c),
-)
+@pytest.fixture
+def registered_generator_layer(isolated_component_registries):
+    register_component(
+        "test.generator_recipes.Layer",
+        GeneratorLayer,
+        encode=lambda m: {"generator": m.generator},
+        decode=lambda c: GeneratorLayer(**c),
+    )
 
 
 @pytest.mark.parametrize("trusted", [False, True])
-def test_cpu_generator_current_stream_is_preserved(tmp_path, trusted):
+def test_cpu_generator_current_stream_is_preserved(tmp_path, trusted, registered_generator_layer):
     generator = torch.Generator(device="cpu").manual_seed(73)
     torch.rand(17, generator=generator)
     model = GeneratorLayer(generator)
@@ -38,7 +40,9 @@ def test_cpu_generator_current_stream_is_preserved(tmp_path, trusted):
 
 
 @pytest.mark.parametrize("trusted", [False, True])
-def test_synthetic_cuda_to_cpu_metadata_restarts_seed_with_warning(tmp_path, trusted):
+def test_synthetic_cuda_to_cpu_metadata_restarts_seed_with_warning(
+    tmp_path, trusted, registered_generator_layer
+):
     generator = torch.Generator().manual_seed(73)
     torch.rand(17, generator=generator)
     save_model(GeneratorLayer(generator), tmp_path / "generator.pt", trusted=trusted)
@@ -72,7 +76,9 @@ def test_synthetic_cuda_to_cpu_metadata_restarts_seed_with_warning(tmp_path, tru
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA hardware")
 @pytest.mark.parametrize("trusted", [False, True])
-def test_cuda_generator_same_backend_preserves_current_stream(tmp_path, trusted):
+def test_cuda_generator_same_backend_preserves_current_stream(
+    tmp_path, trusted, registered_generator_layer
+):
     generator = torch.Generator(device="cuda").manual_seed(73)
     torch.rand(17, device="cuda", generator=generator)
     model = GeneratorLayer(generator)
@@ -85,7 +91,9 @@ def test_cuda_generator_same_backend_preserves_current_stream(tmp_path, trusted)
 
 
 @pytest.mark.parametrize("trusted", [False, True])
-def test_generator_object_identity_preserves_shared_stream(tmp_path, trusted):
+def test_generator_object_identity_preserves_shared_stream(
+    tmp_path, trusted, isolated_component_registries
+):
     class Shared(nn.Module):
         def __init__(self, left, right):
             super().__init__()

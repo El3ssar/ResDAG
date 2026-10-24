@@ -2,8 +2,8 @@
 Deep ESN Architecture (stacked reservoirs)
 ==========================================
 
-This module provides :func:`deep_esn`, which builds a *hierarchical* Echo State
-Network by stacking ``N`` reservoir layers so that each layer's state sequence
+This module provides `deep_esn`, which builds a *hierarchical* Echo State
+Network by stacking `N` reservoir layers so that each layer's state sequence
 drives the next.  The readout, by default, sees the **concatenation of every
 layer's state** (the standard DeepESN readout), giving it access to the whole
 multiple-timescale hierarchy the stack develops rather than just its top layer.
@@ -14,7 +14,7 @@ temporal features, because successive layers develop progressively longer,
 more structured memory timescales.  A per-layer **leak-rate schedule** exposes
 that directly: the modern DeepESN literature recommends leak rates that
 *decrease with depth* (fast dynamics near the input, slow dynamics deep in the
-stack), which :func:`deep_esn` supports by accepting a list of leak rates (one
+stack), which `deep_esn` supports by accepting a list of leak rates (one
 per layer).
 
 References
@@ -45,15 +45,15 @@ def _resolve_reservoir_sizes(
     reservoir_sizes: Sequence[int] | int,
     n_layers: int | None,
 ) -> list[int]:
-    """Resolve the ``(reservoir_sizes, n_layers)`` pair to a per-layer size list.
+    """Resolve the `(reservoir_sizes, n_layers)` pair to a per-layer size list.
 
     Parameters
     ----------
     reservoir_sizes : sequence of int or int
         Either an explicit per-layer list of reservoir sizes, or a single int
-        broadcast to every layer (which then requires ``n_layers``).
+        broadcast to every layer (which then requires `n_layers`).
     n_layers : int or None
-        Number of layers.  Required (and used) only when ``reservoir_sizes`` is a
+        Number of layers.  Required (and used) only when `reservoir_sizes` is a
         scalar; ignored (but validated for consistency) when it is a sequence.
 
     Returns
@@ -65,8 +65,8 @@ def _resolve_reservoir_sizes(
     ------
     ValueError
         If the resolved stack is empty, any size is not a positive integer, a
-        scalar size is given without ``n_layers``, or ``n_layers`` contradicts an
-        explicit ``reservoir_sizes`` list.
+        scalar size is given without `n_layers`, or `n_layers` contradicts an
+        explicit `reservoir_sizes` list.
     """
     if isinstance(reservoir_sizes, int):
         if n_layers is None:
@@ -105,7 +105,7 @@ def _broadcast_leak_rates(leak_rate: float | Sequence[float], n_layers: int) -> 
     ----------
     leak_rate : float or sequence of float
         A scalar applied to every layer, or a per-layer schedule whose length
-        must equal ``n_layers``.
+        must equal `n_layers`.
     n_layers : int
         Number of layers in the stack.
 
@@ -117,7 +117,7 @@ def _broadcast_leak_rates(leak_rate: float | Sequence[float], n_layers: int) -> 
     Raises
     ------
     ValueError
-        If a per-layer schedule length does not match ``n_layers``.
+        If a per-layer schedule length does not match `n_layers`.
     """
     if isinstance(leak_rate, (int, float)):
         return [float(leak_rate)] * n_layers
@@ -158,56 +158,57 @@ def deep_esn(
 ) -> ESNModel:
     """Build a Deep (hierarchical, stacked-reservoir) Echo State Network.
 
-    Stacks ``N`` reservoir layers so that layer ``i``'s state sequence is the
-    feedback input of layer ``i + 1``.  The readout, by default, is fitted on the
+    Stacks `N` reservoir layers so that layer `i`'s state sequence is the
+    feedback input of layer `i + 1`.  The readout, by default, is fitted on the
     **concatenation of all layers' states** — the standard DeepESN readout — so
     it can exploit the progressively slower, more structured memory timescales
-    the deeper layers develop.  Set ``concat_all_states=False`` to read out from
+    the deeper layers develop.  Set `concat_all_states=False` to read out from
     the last layer alone.
 
-    Architecture (``concat_all_states=True``)::
+    Architecture (`concat_all_states=True`):
 
-        Input -> Reservoir_1 -> Reservoir_2 -> ... -> Reservoir_N
-                     |              |                     |
-                     +--------------+----- Concatenate ---+---> Readout
+    ```text
+    Input -> Reservoir_1 -> Reservoir_2 -> ... -> Reservoir_N
+                 |              |                     |
+                 +--------------+----- Concatenate ---+---> Readout
+    ```
 
     Only the first layer receives the raw feedback; every subsequent layer's
-    feedback dimension is the previous layer's ``reservoir_size``.
+    feedback dimension is the previous layer's `reservoir_size`.
 
     Parameters
     ----------
     reservoir_sizes : sequence of int or int
         Per-layer reservoir sizes as a list (one entry per layer), or a single
-        int broadcast to all ``n_layers`` layers.  When a single int is given,
-        ``n_layers`` is required.
+        int broadcast to all `n_layers` layers.  When a single int is given,
+        `n_layers` is required.
     n_layers : int or None, optional
-        Number of stacked layers.  Required when ``reservoir_sizes`` is a single
-        int; ignored (but must be consistent) when ``reservoir_sizes`` is a list.
+        Number of stacked layers.  Required when `reservoir_sizes` is a single
+        int; ignored (but must be consistent) when `reservoir_sizes` is a list.
     feedback_size : int, default=1
         Number of feedback features driving the *first* layer (the input
         dimension of the model).
     output_size : int, default=1
-        Number of output features.  For autoregressive :meth:`forecast`, this
-        must equal ``feedback_size`` (the first model output is fed back).
+        Number of output features.  For autoregressive `forecast`, this
+        must equal `feedback_size` (the first model output is fed back).
     concat_all_states : bool, default=True
-        When ``True`` (the standard DeepESN readout) the readout sees the
-        concatenation of every layer's state, so its ``in_features`` is
-        ``sum(reservoir_sizes)``.  When ``False`` the readout sees only the last
-        layer's state, so ``in_features`` is ``reservoir_sizes[-1]``.
+        When `True` (the standard DeepESN readout) the readout sees the
+        concatenation of every layer's state, so its `in_features` is
+        `sum(reservoir_sizes)`.  When `False` the readout sees only the last
+        layer's state, so `in_features` is `reservoir_sizes[-1]`.
     interlayer_scaling : float, default=0.5
-        Magnitude of the inter-layer coupling weights (layers ``2..N``).  Each
+        Magnitude of the inter-layer coupling weights (layers `2..N`).  Each
         deeper layer's feedback is the *previous layer's high-dimensional state*,
-        so the default ``uniform(-1, 1)`` feedback weights would over-saturate the
-        ``tanh``; scaling them down (via a ``uniform(-interlayer_scaling,
-        interlayer_scaling)`` initializer) keeps the deeper reservoirs in their
-        useful dynamic range.  Applied only when ``feedback_initializer`` is left
-        as ``None``; an explicit ``feedback_initializer`` is used verbatim on
+        so the default `uniform(-1, 1)` feedback weights would over-saturate the
+        `tanh`; scaling them down (via a `uniform(-interlayer_scaling, interlayer_scaling)` initializer) keeps the deeper reservoirs in their
+        useful dynamic range.  Applied only when `feedback_initializer` is left
+        as `None`; an explicit `feedback_initializer` is used verbatim on
         every layer and this knob is ignored.  The first layer always uses the raw
         (unscaled) input path.
     topology : TopologySpec, optional
         Topology for the recurrent weights, shared by every layer.  Accepts a
-        registry name, a ``(name, params)`` tuple, a callable, or a configured
-        :class:`~resdag.init.topology.TopologyInitializer`.
+        registry name, a `(name, params)` tuple, a callable, or a configured
+        `resdag.init.topology.TopologyInitializer`.
     spectral_radius : float, default=0.9
         Target spectral radius for the recurrent weights of every layer.
     leak_rate : float or sequence of float, default=1.0
@@ -215,22 +216,22 @@ def deep_esn(
         entry per layer) sets a per-layer schedule.  The DeepESN literature
         recommends leak rates that **decrease with depth** — fast dynamics near
         the input, slow dynamics deep in the stack — e.g.
-        ``leak_rate=[1.0, 0.7, 0.4]`` for a 3-layer network.
+        `leak_rate=[1.0, 0.7, 0.4]` for a 3-layer network.
     feedback_initializer : InitializerSpec, optional
         Initializer for the feedback weights, shared by every layer.  Same
-        accepted forms as ``topology``.
+        accepted forms as `topology`.
     activation : str, default="tanh"
-        Activation function for every layer (``"tanh"``, ``"relu"``,
-        ``"sigmoid"``, ``"identity"``).
+        Activation function for every layer (`"tanh"`, `"relu"`,
+        `"sigmoid"`, `"identity"`).
     bias : bool, default=True
         Whether every reservoir layer uses a bias term.
     trainable : bool, default=False
         Whether the reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.
     readout_bias : bool, default=True
@@ -238,24 +239,24 @@ def deep_esn(
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
     readout_kwargs : dict, optional
-        Extra readout options, such as ``trainable=True``, ``solver``,
-        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
+        Extra readout options, such as `trainable=True`, `solver`,
+        `state_noise` or `gram_dtype`. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to **every**
-        :class:`~resdag.layers.ESNLayer`.
+        `resdag.layers.ESNLayer`.
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
+    `resdag.core.ESNModel`
         The assembled deep ESN, ready for training and forecasting.
 
     Raises
     ------
     ValueError
         If the layer stack is empty, a reservoir size is not a positive integer,
-        ``reservoir_sizes`` is a scalar without ``n_layers``, the per-layer
-        ``leak_rate`` schedule length does not match the number of layers, or
-        ``output_size`` is not a positive integer.
+        `reservoir_sizes` is a scalar without `n_layers`, the per-layer
+        `leak_rate` schedule length does not match the number of layers, or
+        `output_size` is not a positive integer.
 
     Notes
     -----
@@ -263,10 +264,10 @@ def deep_esn(
     without any extra gradient training; only the readout is fitted (by ridge
     regression).  Depth is not a free win over a single wide reservoir: on a
     short, single-timescale task (e.g. a brief Lorenz-63 window) a single
-    ``classic_esn`` of the combined width usually forecasts *further*, because
+    `classic_esn` of the combined width usually forecasts *further*, because
     one large reservoir already spans the needed dynamics.  DeepESN pays off on
     **multi-timescale / hierarchical** signals — where a decreasing-with-depth
-    leak schedule (see ``leak_rate`` below) lets successive layers specialise on
+    leak schedule (see `leak_rate` below) lets successive layers specialise on
     progressively slower dynamics (Gallicchio & Micheli 2017; the layer-specific
     time-scale separation of Frontiers in AI 2024).  Reach for it when the signal
     has structure at several timescales, not as a drop-in replacement for a wide

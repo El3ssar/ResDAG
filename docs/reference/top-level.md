@@ -6,8 +6,9 @@ description: Every symbol importable directly from the resdag namespace, mapped 
 
 # Top level
 
-Every symbol below is importable directly from the `resdag` namespace. Each
-is a re-export; the canonical page listed alongside it documents it in full.
+The tables below cover every name in `resdag.__all__`, including its modules,
+types and release string. Most are re-exports from the canonical home shown
+alongside them. Optional HPO convenience attributes are listed separately.
 
 ```python
 import resdag as rd
@@ -21,8 +22,12 @@ trainer = rd.ESNTrainer(model)
 | Symbol | Canonical home |
 | ------ | -------------- |
 | [`ESN`][resdag.facade.ESN] | `resdag.facade` |
+| [`Model`][resdag.core.Model] | `resdag.core` |
+| [`Feedback`][resdag.core.Feedback] | `resdag.core` |
 | [`ESNModel`][resdag.core.ESNModel] | `resdag.core` |
 | [`ReservoirFeatureExtractor`][resdag.core.ReservoirFeatureExtractor] | `resdag.core` |
+| [`ReservoirModelModule`][resdag.core.ReservoirModelModule] | `resdag.core` |
+| [`ReservoirStates`][resdag.core.ReservoirStates] | `resdag.core` |
 | [`Input`][resdag.core.Input] | `resdag.core` (re-export of `pytorch_symbolic.Input`) |
 | [`reservoir_input`][resdag.core.reservoir_input] | `resdag.core` |
 
@@ -51,6 +56,12 @@ trainer = rd.ESNTrainer(model)
 | [`EuSNLayer`][resdag.layers.reservoirs.EuSNLayer] | `resdag.layers.reservoirs` |
 | [`LIFReservoirLayer`][resdag.layers.reservoirs.LIFReservoirLayer] | `resdag.layers.reservoirs` |
 | [`LIFReservoir`][resdag.layers.reservoirs.LIFReservoir] | `resdag.layers.reservoirs` |
+| [`CoRNNCell`][resdag.layers.cells.CoRNNCell] | `resdag.layers.cells` |
+| [`CoRNNLayer`][resdag.layers.reservoirs.CoRNNLayer] | `resdag.layers.reservoirs` |
+| [`LegendreDelayCell`][resdag.layers.cells.LegendreDelayCell] | `resdag.layers.cells` |
+| [`LegendreDelayLayer`][resdag.layers.reservoirs.LegendreDelayLayer] | `resdag.layers.reservoirs` |
+| [`TorchRecurrentCell`][resdag.layers.cells.TorchRecurrentCell] | `resdag.layers.cells` |
+| [`TorchRecurrentLayer`][resdag.layers.reservoirs.TorchRecurrentLayer] | `resdag.layers.reservoirs` |
 
 ## Readouts and transforms
 
@@ -62,6 +73,9 @@ trainer = rd.ESNTrainer(model)
 | [`RidgeReadoutLayer`][resdag.layers.readouts.RidgeReadoutLayer] | `resdag.layers.readouts` |
 | [`CholeskyReadoutLayer`][resdag.layers.readouts.CholeskyReadoutLayer] | `resdag.layers.readouts` |
 | [`CGReadoutLayer`][resdag.layers.readouts.CGReadoutLayer] | `resdag.layers.readouts` |
+| [`LSMRReadoutLayer`][resdag.layers.readouts.LSMRReadoutLayer] | `resdag.layers.readouts` ([CPU fitting contract](lsmr-readout.md)) |
+| [`LSMRColumnReport`][resdag.layers.readouts.LSMRColumnReport] | `resdag.layers.readouts` |
+| [`LSMRSolveReport`][resdag.layers.readouts.LSMRSolveReport] | `resdag.layers.readouts` |
 | [`SVDReadoutLayer`][resdag.layers.readouts.SVDReadoutLayer] | `resdag.layers.readouts` |
 | [`PinvReadoutLayer`][resdag.layers.readouts.PinvReadoutLayer] | `resdag.layers.readouts` |
 | [`IncrementalRidgeReadout`][resdag.layers.readouts.IncrementalRidgeReadout] | `resdag.layers.readouts` |
@@ -109,6 +123,18 @@ trainer = rd.ESNTrainer(model)
 | Symbol | Canonical home |
 | ------ | -------------- |
 | [`ESNTrainer`][resdag.training.ESNTrainer] | `resdag.training` |
+| [`CalibrationReport`][resdag.training.CalibrationReport] | `resdag.training` |
+| [`calibrate_flow_control`][resdag.training.calibrate_flow_control] | `resdag.training` |
+| [`calibrate_intrinsic_plasticity`][resdag.training.calibrate_intrinsic_plasticity] | `resdag.training` |
+
+## Model artifacts
+
+| Symbol | Canonical home |
+| ------ | -------------- |
+| [`load`][resdag.artifacts.load] | `resdag.artifacts` |
+| [`register_component`][resdag.artifacts.register_component] | `resdag.artifacts` |
+| [`ComponentCodec`][resdag.artifacts.ComponentCodec] | `resdag.artifacts` |
+| [`ArtifactError`][resdag.artifacts.ArtifactError] | `resdag.artifacts` |
 
 ## Data, datasets, and diagnostics
 
@@ -116,7 +142,14 @@ trainer = rd.ESNTrainer(model)
 | ------ | -------------- |
 | [`TimeSeriesWindowDataset`][resdag.data.TimeSeriesWindowDataset] | `resdag.data` |
 | [`make_dataloader`][resdag.data.make_dataloader] | `resdag.data` |
-| `lorenz`, `rossler`, `henon`, `mackey_glass`, `narma`, `sine`, `kuramoto_sivashinsky` | `resdag.datasets` |
+| [`lorenz`][resdag.datasets.lorenz] | `resdag.datasets` |
+| [`rossler`][resdag.datasets.rossler] | `resdag.datasets` |
+| [`henon`][resdag.datasets.henon] | `resdag.datasets` |
+| [`mackey_glass`][resdag.datasets.mackey_glass] | `resdag.datasets` |
+| [`narma`][resdag.datasets.narma] | `resdag.datasets` |
+| [`sine`][resdag.datasets.sine] | `resdag.datasets` |
+| [`kuramoto_sivashinsky`][resdag.datasets.kuramoto_sivashinsky] | `resdag.datasets` |
+| [`SeedStreams`][resdag.utils.SeedStreams] | `resdag.utils` |
 | [`esp_index`][resdag.utils.states.esp_index.esp_index] | `resdag.utils.states` |
 
 The generators in `resdag.datasets` each return a `(1, n_timesteps, features)`
@@ -126,18 +159,30 @@ and `make_dataloader` are the torch `DataLoader` path — see
 
 ---
 
-## Lazy HPO attributes
+## Optional HPO namespace
 
 [`run_hpo`][resdag.hpo.run_hpo], [`LOSSES`][resdag.hpo.losses.LOSSES], and
-[`get_study_summary`][resdag.hpo.utils.get_study_summary] are also reachable
-as `rd.run_hpo`, `rd.LOSSES`, and `rd.get_study_summary`. They are resolved
-lazily via module `__getattr__`. `optuna` is required for running studies and
+[`get_study_summary`][resdag.hpo.utils.get_study_summary] live under `rd.hpo`.
+That namespace is imported lazily. Use `model.tune(...)` for the common workflow;
+advanced runners and losses keep their own documented module. `optuna` is required for running studies and
 inspecting study objects; the losses remain available without it.
 
 ## Submodules
 
-`resdag.core`, `resdag.data`, `resdag.datasets`, `resdag.layers`, `resdag.init`, `resdag.training`,
-`resdag.metrics`, `resdag.models`, `resdag.ensemble`, `resdag.hpo`, and
-`resdag.utils` are all importable as attributes, alongside the convenience
-aliases `resdag.graphs`, `resdag.topology`, and `resdag.input_feedback`
-(re-exports of the matching `resdag.init` subpackages).
+| Symbol | Canonical home or reference |
+| ------ | --------------------------- |
+| `core` | [Core](core.md) |
+| `data` | [Data](data.md) |
+| `datasets` | [Dataset generators](data.md#dataset-generators) |
+| `ensemble` | [Models and ensembles](models.md) |
+| `hpo` | [Hyperparameter tuning](hpo.md); imported lazily |
+| `init` | [Initialization](init.md) |
+| `layers` | [Layers](layers.md) |
+| `metrics` | [Metrics](metrics.md) |
+| `models` | [Models and ensembles](models.md) |
+| `training` | [Training](training.md) |
+| `utils` | [Utilities](utils.md) |
+| `graphs` | `resdag.init.graphs`; [initialization](init.md) |
+| `topology` | `resdag.init.topology`; [initialization](init.md) |
+| `input_feedback` | `resdag.init.input_feedback`; [initialization](init.md) |
+| `__version__` | Installed ResDAG release string |

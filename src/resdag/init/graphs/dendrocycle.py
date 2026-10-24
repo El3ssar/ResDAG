@@ -26,19 +26,19 @@ def _dendrocycle_adjacency(
 ) -> np.ndarray:
     """Build the dense directed adjacency shared by both dendrocycle builders.
 
-    The core ring, dendritic chains, and optional core chords are ``O(n)``
-    structural loops. The quiescent DAG — previously an ``O(A^2)`` Python pair
-    loop drawing one scalar ``rng.random()`` per pair — is drawn as a single
-    vectorized strict-upper-triangular ``rng.random((A, A)) < quiescent_prob``
+    The core ring, dendritic chains, and optional core chords are `O(n)`
+    structural loops. The quiescent DAG — previously an `O(A^2)` Python pair
+    loop drawing one scalar `rng.random()` per pair — is drawn as a single
+    vectorized strict-upper-triangular `rng.random((A, A)) < quiescent_prob`
     mask under the shuffled topological ordering.
 
-    ``require_positive_c`` selects the ``0 <= c`` (dendrocycle) vs. ``0 < c``
+    `require_positive_c` selects the `0 <= c` (dendrocycle) vs. `0 < c`
     (chord_dendrocycle) validation to match each public wrapper's contract.
 
     Returns
     -------
     numpy.ndarray
-        An ``(n, n)`` ``float32`` directed weighted adjacency.
+        An `(n, n)` `float32` directed weighted adjacency.
     """
     if require_positive_c:
         if not (0 < c <= 1):
@@ -150,13 +150,13 @@ def dendrocycle_adjacency(
 ) -> np.ndarray:
     """Build the dense directed adjacency of a dendrocycle graph in NumPy.
 
-    Vectorized construction of the same adjacency :func:`dendrocycle_graph`
+    Vectorized construction of the same adjacency `dendrocycle_graph`
     describes. The quiescent DAG uses a strict-upper-triangular
-    ``rng.random((A, A)) < 0.5`` draw rather than the original ``O(A^2)`` Python
+    `rng.random((A, A)) < 0.5` draw rather than the original `O(A^2)` Python
     pair loop, so the draw order — and therefore the exact set of quiescent
     edges under a given seed — differs from the pre-vectorization builder while
     remaining deterministic and statistically equivalent (Bernoulli(0.5) forward
-    edges on the shuffled ordering). See :func:`dendrocycle_graph`.
+    edges on the shuffled ordering). See `dendrocycle_graph`.
 
     See Also
     --------
@@ -227,15 +227,16 @@ def dendrocycle_graph(
     affect dendritic or quiescent nodes.
 
     The adjacency is built with vectorized NumPy (see
-    :func:`dendrocycle_adjacency`); the NetworkX object is materialised only for
+    `dendrocycle_adjacency`); the NetworkX object is materialised only for
     direct callers, and the dense topology fast path skips it entirely.
 
-    .. note::
-       The quiescent DAG block is now drawn with a single vectorized
-       ``rng.random((A, A)) < 0.5`` mask instead of a per-pair scalar loop. The
-       result is still deterministic under a seed and statistically identical
-       (Bernoulli(0.5) forward edges on the shuffled ordering), but the exact
-       edge set for a given ``seed`` differs from earlier versions.
+    **Note.**
+
+    The quiescent DAG block is now drawn with a single vectorized
+    `rng.random((A, A)) < 0.5` mask instead of a per-pair scalar loop. The
+    result is still deterministic under a seed and statistically identical
+    (Bernoulli(0.5) forward edges on the shuffled ordering), but the exact
+    edge set for a given `seed` differs from earlier versions.
 
     Parameters
     ----------
@@ -244,11 +245,11 @@ def dendrocycle_graph(
 
     c : float
         Fraction of nodes assigned to the core cycle. The effective number
-        of core nodes is ``C = max(2, round(c * n))``.
+        of core nodes is `C = max(2, round(c * n))`.
 
     d : float
         Fraction of nodes assigned to dendritic chains. Must satisfy
-        ``0 <= d`` and ``c + d <= 1``.
+        `0 <= d` and `c + d <= 1`.
 
     core_weight : float, default=1.0
         Weight assigned to edges in the core cycle.
@@ -260,17 +261,17 @@ def dendrocycle_graph(
         Weight assigned to edges in the quiescent DAG.
 
     L : int or iterable of int, optional
-        Backward chord lengths on the core ring. For each ``L_k`` in ``L``,
-        edges of the form ``i -> (i - L_k) mod C`` are added for all core
-        nodes ``i``. If ``None``, no chords are added.
+        Backward chord lengths on the core ring. For each `L_k` in `L`,
+        edges of the form `i -> (i - L_k) mod C` are added for all core
+        nodes `i`. If `None`, no chords are added.
 
     w : float, default=0.5
         Base weight assigned to chord edges.
 
     alpha : float, default=1.0
         Geometric decay factor for chord weights. The weight assigned to
-        chords of index ``k`` in ``L`` is ``w * alpha**k``. Decay is applied
-        according to the order of ``L``, not the magnitude of ``L_k``.
+        chords of index `k` in `L` is `w * alpha**k`. Decay is applied
+        according to the order of `L`, not the magnitude of `L_k`.
 
     seed : int, optional
         Seed for the random number generator used in constructing the

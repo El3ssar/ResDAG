@@ -34,7 +34,7 @@ class LSMRColumnReport:
     """One output's solve against a unit-scaled target, before parameter casting.
 
     Residual/operator/solution norms are SciPy's diagnostics for that normalized
-    system. Multiply the solution by ``target_scale`` to recover original units.
+    system. Multiply the solution by `target_scale` to recover original units.
     Condition estimates and stopping tests do not guarantee forecast accuracy.
     """
 
@@ -117,22 +117,22 @@ def _centered_operator(
 
 
 class LSMRReadoutLayer(ReadoutLayer):
-    r"""Fit ``||X W + b - Y||² + alpha ||W||²`` without a Gram matrix.
+    r"""Fit `||X W + b - Y||² + alpha ||W||²` without a Gram matrix.
 
-    This explicit solver uses SciPy ``LinearOperator`` and ``lsmr`` on CPU in
-    float64, one output at a time. ``damp=sqrt(alpha)`` preserves the requested
+    This explicit solver uses SciPy `LinearOperator` and `lsmr` on CPU in
+    float64, one output at a time. `damp=sqrt(alpha)` preserves the requested
     ridge penalty. With a bias, row blocks are centered on demand and the
     unpenalized intercept is recovered afterwards. Targets are scaled per output
     to keep tiny target magnitudes meaningful to relative stopping tests.
 
     The supplied feature matrix remains resident. Working storage additionally
-    includes its CPU float64 representation, at most ``chunk_size * in_features``
+    includes its CPU float64 representation, at most `chunk_size * in_features`
     centered scratch entries and linear-size solver vectors. This avoids a
     feature-by-feature Gram matrix, QR augmentation and a complete retained
     centered design; it does not make reservoir feature extraction streaming.
 
     Accelerator inputs require an explicit CPU bridge: the default
-    ``cpu_fallback=True`` allows it with a warning, while ``False`` rejects the
+    `cpu_fallback=True` allows it with a warning, while `False` rejects the
     transfer. Fitted parameters remain on the layer's device and dtype; ordinary
     forward calls are Torch operations and retain upstream gradients.
 

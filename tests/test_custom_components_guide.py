@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 
 
-def test_custom_component_guide_executes_public_recipes():
+def test_custom_component_guide_executes_public_recipes(isolated_component_registries):
     path = Path(__file__).parents[1] / "docs" / "advanced" / "custom-components.md"
     namespace = {"__name__": "__main__"}
     source = path.read_text()

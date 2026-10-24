@@ -58,7 +58,7 @@ def _ranges(
 
 @dataclass(frozen=True)
 class ForecastChunk:
-    """Aligned output samples; ``start`` includes any unscored origin preroll."""
+    """Aligned output samples; `start` includes any unscored origin preroll."""
 
     start: int
     outputs: Outputs

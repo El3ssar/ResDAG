@@ -3,42 +3,44 @@ Windowed Time-Series Dataset
 ============================
 
 This module provides the data half of resdag's frictionless plain-PyTorch / SGD
-story: a :class:`torch.utils.data.Dataset` that slices a long trajectory (or a
+story: a `torch.utils.data.Dataset` that slices a long trajectory (or a
 batch of trajectories, or a ragged list of variable-length trajectories) into
-fixed-length, batchable windows, and a :func:`make_dataloader` convenience that
-wraps it in a :class:`torch.utils.data.DataLoader` with a collate that stacks
-windows to a ``(B, window_len, D)`` tensor — exactly the shape
-:class:`~resdag.layers.ESNLayer` / :class:`~resdag.core.ESNModel` expect.
+fixed-length, batchable windows, and a `make_dataloader` convenience that
+wraps it in a `torch.utils.data.DataLoader` with a collate that stacks
+windows to a `(B, window_len, D)` tensor — exactly the shape
+`resdag.layers.ESNLayer` / `resdag.core.ESNModel` expect.
 
-Each item is an ``(input_window, target_window)`` pair where the target is the
-input shifted forward by ``horizon`` steps (the forecasting default) or sliced
-from an external ``targets`` tensor (the regression case). A ``washout`` field
+Each item is an `(input_window, target_window)` pair where the target is the
+input shifted forward by `horizon` steps (the forecasting default) or sliced
+from an external `targets` tensor (the regression case). A `washout` field
 marks the leading steps of every window that should be excluded from the loss
 (the reservoir state has not yet synchronised). Because windows never straddle
-trajectory boundaries, a per-window ``reset_reservoirs()`` plus a post-washout
+trajectory boundaries, a per-window `reset_reservoirs()` plus a post-washout
 mask keeps state from leaking across unrelated trajectories.
 
 Canonical SGD loop
 ------------------
-The intended training loop over a :func:`make_dataloader` is::
+The intended training loop over a `make_dataloader` is:
 
-    loader = make_dataloader(series, batch_size=16, window_len=200, washout=50)
-    for epoch in range(n_epochs):
-        for x, y, washout in loader:           # x, y: (B, window_len, D)
-            model.reset_reservoirs()           # each window is independent
-            pred = model(x)                    # (B, window_len, D_out)
-            loss = mse(pred[:, washout:], y[:, washout:])
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+```python
+loader = make_dataloader(series, batch_size=16, window_len=200, washout=50)
+for epoch in range(n_epochs):
+    for x, y, washout in loader:           # x, y: (B, window_len, D)
+        model.reset_reservoirs()           # each window is independent
+        pred = model(x)                    # (B, window_len, D_out)
+        loss = mse(pred[:, washout:], y[:, washout:])
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+```
 
-``ESNLayer.detach_state_between_calls`` (on by default) severs the autograd
+`ESNLayer.detach_state_between_calls` (on by default) severs the autograd
 graph at each forward-call boundary, so even without the per-window
-``reset_reservoirs()`` consecutive minibatches do not raise "backward through
+`reset_reservoirs()` consecutive minibatches do not raise "backward through
 the graph a second time". Pair this loader with
-:class:`~resdag.layers.IncrementalRidgeReadoutLayer` for an *algebraic*
-over-:class:`DataLoader` path — call ``partial_fit(states, targets)`` per batch,
-then ``finalize()`` once.
+`resdag.layers.IncrementalRidgeReadoutLayer` for an *algebraic*
+over-`DataLoader` path — call `partial_fit(states, targets)` per batch,
+then `finalize()` once.
 
 See Also
 --------
@@ -67,31 +69,31 @@ WindowBatch = tuple[torch.Tensor, torch.Tensor, int]
 def _as_trajectory_list(
     series: torch.Tensor | Sequence[torch.Tensor],
 ) -> list[torch.Tensor]:
-    """Normalise any accepted ``series`` form to a list of ``(T, D)`` tensors.
+    """Normalise any accepted `series` form to a list of `(T, D)` tensors.
 
-    Accepts a single ``(T, D)`` tensor, a batched ``(B, T, D)`` tensor (each of
-    the ``B`` slices becomes one trajectory), or an already-ragged sequence of
-    ``(T, D)`` tensors of possibly differing length. Every trajectory must be
-    2-D ``(T, D)`` and share the same feature dimension ``D``.
+    Accepts a single `(T, D)` tensor, a batched `(B, T, D)` tensor (each of
+    the `B` slices becomes one trajectory), or an already-ragged sequence of
+    `(T, D)` tensors of possibly differing length. Every trajectory must be
+    2-D `(T, D)` and share the same feature dimension `D`.
 
     Parameters
     ----------
     series : torch.Tensor or sequence of torch.Tensor
-        ``(T, D)`` tensor, ``(B, T, D)`` tensor, or a list of ``(T, D)``
+        `(T, D)` tensor, `(B, T, D)` tensor, or a list of `(T, D)`
         tensors of varying length.
 
     Returns
     -------
     list of torch.Tensor
-        One ``(T, D)`` tensor per trajectory.
+        One `(T, D)` tensor per trajectory.
 
     Raises
     ------
     ValueError
-        If ``series`` is empty, has an unsupported number of dimensions, or its
+        If `series` is empty, has an unsupported number of dimensions, or its
         trajectories disagree on the feature dimension.
     TypeError
-        If ``series`` is neither a tensor nor a sequence of tensors.
+        If `series` is neither a tensor nor a sequence of tensors.
     """
     if isinstance(series, torch.Tensor):
         if series.dim() == 2:
@@ -137,39 +139,39 @@ def _as_trajectory_list(
 
 
 class TimeSeriesWindowDataset(Dataset[WindowItem]):
-    """Sliding-window :class:`~torch.utils.data.Dataset` over time-series data.
+    """Sliding-window `torch.utils.data.Dataset` over time-series data.
 
     Slices one or more trajectories into fixed-length windows suitable for SGD
     (or streaming-algebraic) training of a reservoir model. Each item is an
-    ``(input_window, target_window, washout)`` triple where ``input_window`` and
-    ``target_window`` both have shape ``(window_len, D)``:
+    `(input_window, target_window, washout)` triple where `input_window` and
+    `target_window` both have shape `(window_len, D)`:
 
-    - **Forecasting** (default, no external ``targets``): the target is the input
-      shifted forward by ``horizon`` steps, so window ``i`` covers source steps
-      ``[start, start + window_len)`` for the input and
-      ``[start + horizon, start + horizon + window_len)`` for the target.
-    - **Regression** (external ``targets`` given): the target is the matching
-      window sliced from ``targets`` at the same source positions as the input
-      (``horizon`` is ignored — supply pre-aligned targets).
+    - **Forecasting** (default, no external `targets`): the target is the input
+      shifted forward by `horizon` steps, so window `i` covers source steps
+      `[start, start + window_len)` for the input and
+      `[start + horizon, start + horizon + window_len)` for the target.
+    - **Regression** (external `targets` given): the target is the matching
+      window sliced from `targets` at the same source positions as the input
+      (`horizon` is ignored — supply pre-aligned targets).
 
     Windows are generated **per trajectory** and never straddle a trajectory
     boundary, so feeding the loader's batches with a per-batch
-    ``reset_reservoirs()`` keeps reservoir state from leaking across unrelated
+    `reset_reservoirs()` keeps reservoir state from leaking across unrelated
     trajectories. The first
-    ``washout`` steps of every window are reported in the returned triple so the
+    `washout` steps of every window are reported in the returned triple so the
     caller can exclude them from the loss while the reservoir synchronises.
 
     Parameters
     ----------
     series : torch.Tensor or sequence of torch.Tensor
-        Source data. A ``(T, D)`` tensor (one trajectory), a ``(B, T, D)``
-        tensor (``B`` trajectories), or a list of ``(T, D)`` tensors of varying
+        Source data. A `(T, D)` tensor (one trajectory), a `(B, T, D)`
+        tensor (`B` trajectories), or a list of `(T, D)` tensors of varying
         length (ragged trajectories).
     window_len : int
         Number of timesteps in each input/target window. Must be positive.
     horizon : int, default=1
         Forecast offset: the target window is the input window shifted forward
-        by ``horizon`` steps. Ignored when ``targets`` is provided. Must be
+        by `horizon` steps. Ignored when `targets` is provided. Must be
         non-negative.
     stride : int, default=1
         Step between successive window start positions within a trajectory. Must
@@ -177,20 +179,21 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
     washout : int, default=0
         Number of leading steps in each window the caller should exclude from
         the loss (transient reservoir warmup). Reported per item; must satisfy
-        ``0 <= washout < window_len``.
+        `0 <= washout < window_len`.
     targets : torch.Tensor or sequence of torch.Tensor, optional
-        External regression targets aligned step-for-step with ``series``. Must
-        have the same form and per-trajectory length as ``series`` (the feature
+        External regression targets aligned step-for-step with `series`. Must
+        have the same form and per-trajectory length as `series` (the feature
         dimension may differ). When given, the dataset returns input/target
-        windows sliced from the *same* source positions and ``horizon`` is
+        windows sliced from the *same* source positions and `horizon` is
         ignored.
     stats : dict, optional
         Pre-computed input normalization statistics from
-        :func:`resdag.data.normalize_data`. Applied to inputs and shifted forecast
+        `resdag.data.normalize_data`. Applied to inputs and shifted forecast
         targets; external regression targets retain their own units. Requires
-        ``norm_method``.
-    norm_method : {"minmax", "standard", "noncentered", "meanpreserving"}, optional
-        Normalization method matching ``stats``. Required when ``stats`` is
+        `norm_method`.
+    norm_method : str or None, optional
+        Normalization method matching `stats`: `"minmax"`, `"standard"`,
+        `"noncentered"`, or `"meanpreserving"`. Required when `stats` is
         given, ignored otherwise.
 
     target_stats, target_norm_method : optional, keyword-only
@@ -208,19 +211,19 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
     washout : int
         Leading steps to exclude from the loss.
     feature_dim : int
-        Input feature dimension ``D``.
+        Input feature dimension `D`.
     target_dim : int
-        Target feature dimension (equals ``feature_dim`` in forecasting mode).
+        Target feature dimension (equals `feature_dim` in forecasting mode).
 
     Raises
     ------
     ValueError
-        For invalid ``window_len``/``horizon``/``stride``/``washout``, mismatched
-        ``targets``, or an incomplete ``stats``/``norm_method`` pair.
+        For invalid `window_len`/`horizon`/`stride`/`washout`, mismatched
+        `targets`, or an incomplete `stats`/`norm_method` pair.
 
     Examples
     --------
-    Forecasting windows over a single ``(T, D)`` series:
+    Forecasting windows over a single `(T, D)` series:
 
     >>> import torch
     >>> from resdag.data import TimeSeriesWindowDataset
@@ -232,8 +235,8 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
 
     See Also
     --------
-    make_dataloader : Wrap this dataset in a batched ``DataLoader``.
-    resdag.layers.IncrementalRidgeReadoutLayer : Algebraic over-``DataLoader`` fit.
+    make_dataloader : Wrap this dataset in a batched `DataLoader`.
+    resdag.layers.IncrementalRidgeReadoutLayer : Algebraic over-`DataLoader` fit.
     """
 
     def __init__(
@@ -320,7 +323,7 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         return self._window_ends[-1]
 
     def _normalize(self, window: torch.Tensor) -> torch.Tensor:
-        """Normalize ``window`` in place-free fashion using the stored ``stats``.
+        """Normalize `window` in place-free fashion using the stored `stats`.
 
         Imported lazily so the dataset module does not pull the preparation
         utilities (and their type machinery) at import time.
@@ -335,21 +338,21 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         return normalized.squeeze(0)
 
     def __getitem__(self, idx: int) -> WindowItem:
-        """Return the ``idx``-th window as ``(input, target, washout)``.
+        """Return the `idx`-th window as `(input, target, washout)`.
 
         Parameters
         ----------
         idx : int
-            Window index in ``[0, len(self))``.
+            Window index in `[0, len(self))`.
 
         Returns
         -------
         input_window : torch.Tensor
-            Input window of shape ``(window_len, feature_dim)``.
+            Input window of shape `(window_len, feature_dim)`.
         target_window : torch.Tensor
-            Target window of shape ``(window_len, target_dim)`` — the input
-            shifted by ``horizon`` (forecasting) or the matching slice of
-            ``targets`` (regression).
+            Target window of shape `(window_len, target_dim)` — the input
+            shifted by `horizon` (forecasting) or the matching slice of
+            `targets` (regression).
         washout : int
             Number of leading steps to exclude from the loss for this window.
         """
@@ -377,23 +380,23 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
 
 
 def _collate_windows(batch: list[WindowItem]) -> WindowBatch:
-    """Stack a list of window items into a batched ``(B, window_len, D)`` tuple.
+    """Stack a list of window items into a batched `(B, window_len, D)` tuple.
 
-    The per-window ``washout`` is identical across the dataset (it is a dataset
+    The per-window `washout` is identical across the dataset (it is a dataset
     parameter), so the collated batch carries it once as a scalar rather than a
     per-item tensor.
 
     Parameters
     ----------
     batch : list of (torch.Tensor, torch.Tensor, int)
-        Items produced by :meth:`TimeSeriesWindowDataset.__getitem__`.
+        Items produced by `TimeSeriesWindowDataset.__getitem__`.
 
     Returns
     -------
     inputs : torch.Tensor
-        Stacked inputs of shape ``(B, window_len, feature_dim)``.
+        Stacked inputs of shape `(B, window_len, feature_dim)`.
     targets : torch.Tensor
-        Stacked targets of shape ``(B, window_len, target_dim)``.
+        Stacked targets of shape `(B, window_len, target_dim)`.
     washout : int
         The shared washout length for the batch.
     """
@@ -421,53 +424,53 @@ def make_dataloader(
     target_norm_method: NormMethod | None = None,
     **dataloader_kwargs: object,
 ) -> DataLoader[WindowItem]:
-    """Build a windowed :class:`~torch.utils.data.DataLoader` over ``series``.
+    """Build a windowed `torch.utils.data.DataLoader` over `series`.
 
-    Convenience wrapper that constructs a :class:`TimeSeriesWindowDataset` from
-    ``series`` and the windowing parameters, then returns a
-    :class:`~torch.utils.data.DataLoader` whose batches are
-    ``(inputs, targets, washout)`` with ``inputs``/``targets`` of shape
-    ``(B, window_len, D)`` — ready to feed straight into
-    :class:`~resdag.layers.ESNLayer` / :class:`~resdag.core.ESNModel.forward`.
+    Convenience wrapper that constructs a `TimeSeriesWindowDataset` from
+    `series` and the windowing parameters, then returns a
+    `torch.utils.data.DataLoader` whose batches are
+    `(inputs, targets, washout)` with `inputs`/`targets` of shape
+    `(B, window_len, D)` — ready to feed straight into
+    `resdag.layers.ESNLayer` / `resdag.core.ESNModel.forward`.
 
     Parameters
     ----------
     series : torch.Tensor or sequence of torch.Tensor
-        Source data; see :class:`TimeSeriesWindowDataset`.
+        Source data; see `TimeSeriesWindowDataset`.
     batch_size : int
         Number of windows per batch.
     window_len : int
         Window length (timesteps per input/target window).
     horizon : int, default=1
-        Forecast offset (ignored when ``targets`` is given).
+        Forecast offset (ignored when `targets` is given).
     stride : int, default=1
         Spacing between window starts within a trajectory.
     washout : int, default=0
         Leading steps per window to exclude from the loss.
     targets : torch.Tensor or sequence of torch.Tensor, optional
-        External regression targets aligned with ``series``.
+        External regression targets aligned with `series`.
     stats : dict, optional
-        Pre-computed normalization statistics (with ``norm_method``).
+        Pre-computed normalization statistics (with `norm_method`).
     norm_method : str, optional
-        Normalization method matching ``stats``.
+        Normalization method matching `stats`.
     target_stats, target_norm_method : optional, keyword-only
         Separate normalization for external regression targets; see
-        :class:`TimeSeriesWindowDataset`.
+        `TimeSeriesWindowDataset`.
     shuffle : bool, default=False
         Whether to shuffle window order each epoch.
     drop_last : bool, default=False
-        Whether to drop the final, smaller-than-``batch_size`` batch.
+        Whether to drop the final, smaller-than-`batch_size` batch.
     num_workers : int, default=0
         Number of worker processes for data loading.
     **dataloader_kwargs : object
-        Extra keyword arguments forwarded to :class:`~torch.utils.data.DataLoader`
-        (e.g. ``pin_memory``, ``generator``). ``collate_fn`` is supplied here and
+        Extra keyword arguments forwarded to `torch.utils.data.DataLoader`
+        (e.g. `pin_memory`, `generator`). `collate_fn` is supplied here and
         must not be overridden.
 
     Returns
     -------
     torch.utils.data.DataLoader
-        Loader yielding ``(inputs, targets, washout)`` batches.
+        Loader yielding `(inputs, targets, washout)` batches.
 
     Examples
     --------

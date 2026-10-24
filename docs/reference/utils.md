@@ -1,5 +1,5 @@
 ---
-description: API reference for resdag.utils — data loading and splitting, random number generation, and the ESP index.
+description: Random number generation, device selection, reproducible component seeds and the ESP index.
 ---
 
 <span class="nb-kicker">Reference</span>
@@ -10,11 +10,11 @@ Use `rd.SeedStreams(master_seed)["branch_name"]` for stable, independent
 initialization seeds. Adding or reordering named branches leaves their existing
 seeds unchanged. See the [public component recipes](../advanced/custom-components.md).
 
-Data loading and ESN-shaped splitting, seeded RNG construction, and the
-echo-state-property diagnostic. `load_file` and `prepare_esn_data` are
-re-exported at `resdag.utils` for convenience; their canonical home is
-`resdag.data`. The old `resdag.utils.data` namespace remains a compatibility
-import. The ESP index, `esp_index`, is likewise re-exported at
+Use [data and datasets](data.md) for file I/O, preparation, streaming windows
+and benchmark generators. Existing convenience imports from `resdag.utils`
+and `resdag.utils.data` resolve to the same canonical functions.
+
+The ESP index, `esp_index`, is re-exported at
 `resdag.utils` and at the top level, so all three of these work:
 
 ```python
@@ -26,29 +26,14 @@ from resdag.utils.states import esp_index  # canonical home
 ::: resdag.utils
     options:
       members:
+        - DeviceLike
+        - SeedLike
         - SeedStreams
         - create_rng
         - create_torch_generator
         - coerce_seed_to_int
-
----
-
-::: resdag.data
-    options:
-      members:
-        - load_file
-        - load_csv
-        - load_npy
-        - load_npz
-        - load_nc
-        - save_csv
-        - save_npy
-        - save_npz
-        - save_nc
-        - list_files
-        - prepare_esn_data
-        - normalize_data
-        - load_and_prepare
+        - seed_everything
+        - resolve_device
 
 ---
 
@@ -62,17 +47,7 @@ from resdag.utils.states import esp_index  # canonical home
 
 ---
 
-## DataLoader path
-
-`TimeSeriesWindowDataset` and `make_dataloader` (both in `resdag.data`, and
-re-exported at the top level) are the windowed-`DataLoader` training path — see
-[Work · Streaming & DataLoaders](../workflows/streaming.md) for the worked
-loops. The time-series generators in `resdag.datasets` (`lorenz`, `rossler`,
-`henon`, `mackey_glass`, `narma`, `sine`) each return a `(1, n_timesteps,
-features)` tensor and take `n_timesteps` as their first positional argument.
-
-::: resdag.data
-    options:
-      members:
-        - TimeSeriesWindowDataset
-        - make_dataloader
+`seed_everything` explicitly seeds process-wide Python, NumPy and Torch RNGs.
+Prefer local generators or `SeedStreams` when independent components should
+not share or advance one global stream. `resolve_device` resolves the requested
+device; it does not move model parameters or data.

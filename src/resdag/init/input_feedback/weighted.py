@@ -1,19 +1,18 @@
 """Weighted block-diagonal input initializers (Lu et al. 2017; RC.jl parity).
 
 Two initializers that share RC.jl's "weighted" block-diagonal wiring, where each
-input channel connects to a *disjoint* block of ``q = floor(reservoir_size /
-in_size)`` consecutive reservoir units:
+input channel connects to a *disjoint* block of `q = floor(reservoir_size / in_size)` consecutive reservoir units:
 
-- :class:`WeightedInputInitializer` (RC.jl ``weighted_init``) — random uniform
-  block values in ``[-input_scaling, input_scaling]``.
-- :class:`WeightedMinimalInitializer` (RC.jl ``weighted_minimal``) — constant
+- `WeightedInputInitializer` (RC.jl `weighted_init`) — random uniform
+  block values in `[-input_scaling, input_scaling]`.
+- `WeightedMinimalInitializer` (RC.jl `weighted_minimal`) — constant
   magnitude block values with signed entries (the minimal-complexity variant).
 
-RC.jl's originals *recompute* the reservoir size to ``q * in_size`` and warn when
+RC.jl's originals *recompute* the reservoir size to `q * in_size` and warn when
 it differs from the requested one, leaving any trailing rows unconnected. resdag
-initializers must fill the exact ``(reservoir_size, in_size)`` weight they are
-given, so these keep the ``q``-per-channel block structure and leave the trailing
-``reservoir_size - q * in_size`` rows as zeros (equivalent to RC.jl's unconnected
+initializers must fill the exact `(reservoir_size, in_size)` weight they are
+given, so these keep the `q`-per-channel block structure and leave the trailing
+`reservoir_size - q * in_size` rows as zeros (equivalent to RC.jl's unconnected
 tail), rather than resizing the matrix.
 """
 
@@ -30,7 +29,7 @@ from .registry import register_input_feedback
 
 
 def _block_size(out_features: int, in_features: int) -> int:
-    """RC.jl ``q = floor(res_size / in_size)`` — units per input channel."""
+    """RC.jl `q = floor(res_size / in_size)` — units per input channel."""
     if in_features <= 0:
         raise ValueError(f"in_features must be >= 1; got {in_features}.")
     return out_features // in_features
@@ -38,29 +37,29 @@ def _block_size(out_features: int, in_features: int) -> int:
 
 @register_input_feedback("weighted_init", input_scaling=0.1, seed=None)
 class WeightedInputInitializer(InputFeedbackInitializer):
-    """Weighted block-diagonal random input layer (RC.jl ``weighted_init`` [Lu2017]).
+    """Weighted block-diagonal random input layer (RC.jl `weighted_init` [Lu2017]).
 
-    Each of the ``in_size`` input channels connects to a *disjoint* contiguous
-    block of ``q = floor(reservoir_size / in_size)`` reservoir units. Block
-    values are drawn uniformly from ``[-input_scaling, input_scaling]``; every
-    off-block entry is zero. Any trailing ``reservoir_size - q * in_size`` rows
+    Each of the `in_size` input channels connects to a *disjoint* contiguous
+    block of `q = floor(reservoir_size / in_size)` reservoir units. Block
+    values are drawn uniformly from `[-input_scaling, input_scaling]`; every
+    off-block entry is zero. Any trailing `reservoir_size - q * in_size` rows
     are left unconnected (all-zero), matching RC.jl's unconnected tail (RC.jl
     resizes the matrix instead; resdag keeps the requested shape — see the module
     docstring).
 
-    This differs from :class:`PseudoDiagonalInitializer` only in the block
-    sizing: ``weighted_init`` gives every channel *exactly* ``q`` units (leaving
-    a zero tail when ``reservoir_size`` is not a multiple of ``in_size``), while
-    ``pseudo_diagonal`` distributes the remainder so every unit is connected.
+    This differs from `PseudoDiagonalInitializer` only in the block
+    sizing: `weighted_init` gives every channel *exactly* `q` units (leaving
+    a zero tail when `reservoir_size` is not a multiple of `in_size`), while
+    `pseudo_diagonal` distributes the remainder so every unit is connected.
 
     Parameters
     ----------
     input_scaling : float, default=0.1
         Half-width of the uniform block draw: nonzero entries are sampled from
-        ``[-input_scaling, input_scaling]`` (RC.jl ``scaling``). This is the
-        shared scaling-contract knob, so ``max|W|`` scales linearly with it.
+        `[-input_scaling, input_scaling]` (RC.jl `scaling`). This is the
+        shared scaling-contract knob, so `max|W|` scales linearly with it.
     seed : int, torch.Generator, or None, optional
-        Reproducibility seed for the uniform block draws. ``None`` draws fresh
+        Reproducibility seed for the uniform block draws. `None` draws fresh
         each call.
 
     References
@@ -68,7 +67,7 @@ class WeightedInputInitializer(InputFeedbackInitializer):
     Z. Lu et al., "Reservoir observers: Model-free inference of unmeasured
     variables in chaotic systems," Chaos, vol. 27, no. 4, 041102, 2017.
 
-    ReservoirComputing.jl ``weighted_init`` (``src/inits/inits_input.jl``).
+    ReservoirComputing.jl `weighted_init` (`src/inits/inits_input.jl`).
 
     Examples
     --------
@@ -93,10 +92,10 @@ class WeightedInputInitializer(InputFeedbackInitializer):
         Parameters
         ----------
         weight : torch.Tensor
-            Weight tensor of shape ``(out_features, in_features)``.
+            Weight tensor of shape `(out_features, in_features)`.
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract); other keys are ignored.
 
         Returns
@@ -139,45 +138,44 @@ class WeightedInputInitializer(InputFeedbackInitializer):
     seed=None,
 )
 class WeightedMinimalInitializer(InputFeedbackInitializer):
-    """Minimal weighted block-diagonal input layer (RC.jl ``weighted_minimal``).
+    """Minimal weighted block-diagonal input layer (RC.jl `weighted_minimal`).
 
-    The deterministic-magnitude sibling of :class:`WeightedInputInitializer`:
-    each input channel connects to a disjoint block of ``q = floor(reservoir_size
-    / in_size)`` reservoir units, but every nonzero entry has the **same
-    magnitude** ``weight`` (the minimal-complexity construction of Rodan & Tiňo,
+    The deterministic-magnitude sibling of `WeightedInputInitializer`:
+    each input channel connects to a disjoint block of `q = floor(reservoir_size / in_size)` reservoir units, but every nonzero entry has the **same
+    magnitude** `weight` (the minimal-complexity construction of Rodan & Tiňo,
     applied to the weighted block wiring inspired by Lu et al. 2017). Only the
-    signs vary, chosen by ``sign_rule``.
+    signs vary, chosen by `sign_rule`.
 
-    The trailing ``reservoir_size - q * in_size`` rows are left unconnected
+    The trailing `reservoir_size - q * in_size` rows are left unconnected
     (all-zero), matching RC.jl's unconnected tail (RC.jl resizes instead; resdag
     keeps the requested shape — see the module docstring).
 
-    Sign rules (RC.jl ``sampling_type``) are applied over the **full**
-    ``(reservoir_size, in_size)`` matrix in RC.jl's column-major traversal order,
+    Sign rules (RC.jl `sampling_type`) are applied over the **full**
+    `(reservoir_size, in_size)` matrix in RC.jl's column-major traversal order,
     exactly as RC.jl runs the sampler after building the block matrix; off-block
     zeros are unaffected by a sign flip. See
-    :class:`~resdag.init.input_feedback.MinimalInputInitializer` for the rule
+    `resdag.init.input_feedback.MinimalInputInitializer` for the rule
     definitions.
 
     Parameters
     ----------
     weight : float, default=0.1
-        The single magnitude for every nonzero block entry (RC.jl ``weight``).
+        The single magnitude for every nonzero block entry (RC.jl `weight`).
     sign_rule : {"none", "bernoulli", "irrational", "regular"}, default="none"
-        Sign-assignment rule (RC.jl ``sampling_type`` without ``_sample!``).
-        RC.jl's ``weighted_minimal`` defaults to ``:no_sample`` (all positive).
+        Sign-assignment rule (RC.jl `sampling_type` without `_sample!`).
+        RC.jl's `weighted_minimal` defaults to `:no_sample` (all positive).
     positive_prob : float, default=0.5
-        Probability an entry stays positive under ``sign_rule="bernoulli"``.
+        Probability an entry stays positive under `sign_rule="bernoulli"`.
     start : int, default=1
-        First pi-digit offset under ``sign_rule="irrational"``.
+        First pi-digit offset under `sign_rule="irrational"`.
     strides : int, default=2
-        Stride under ``sign_rule="regular"``.
+        Stride under `sign_rule="regular"`.
     input_scaling : float, optional
-        Uniform magnitude knob from the shared scaling contract. ``None`` leaves
-        nonzero entries at magnitude ``weight``; a float ``s`` multiplies every
-        entry by ``s`` (applied on top of ``weight``).
+        Uniform magnitude knob from the shared scaling contract. `None` leaves
+        nonzero entries at magnitude `weight`; a float `s` multiplies every
+        entry by `s` (applied on top of `weight`).
     seed : int, torch.Generator, or None, optional
-        Reproducibility seed for the ``"bernoulli"`` sign draw; ignored by the
+        Reproducibility seed for the `"bernoulli"` sign draw; ignored by the
         deterministic rules.
 
     References
@@ -187,7 +185,7 @@ class WeightedMinimalInitializer(InputFeedbackInitializer):
 
     Z. Lu et al., "Reservoir observers," Chaos, vol. 27, no. 4, 041102, 2017.
 
-    ReservoirComputing.jl ``weighted_minimal`` (``src/inits/inits_input.jl``).
+    ReservoirComputing.jl `weighted_minimal` (`src/inits/inits_input.jl`).
 
     Examples
     --------
@@ -222,10 +220,10 @@ class WeightedMinimalInitializer(InputFeedbackInitializer):
         Parameters
         ----------
         weight : torch.Tensor
-            Weight tensor of shape ``(out_features, in_features)``.
+            Weight tensor of shape `(out_features, in_features)`.
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract); other keys are ignored.
 
         Returns

@@ -336,7 +336,7 @@ class TestSetattrDoesNotBreakModule:
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "model_full.pt"
             model.save_full(path)
-            restored = ESNModel.load_full(path)
+            restored = ESNModel.load_full(path, trusted=True)
 
         restored.reset_reservoirs()
         model.reset_reservoirs()

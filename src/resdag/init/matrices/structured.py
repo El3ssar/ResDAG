@@ -22,9 +22,9 @@ def toeplitz(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Set ``M[i,j] = weight * decay**abs(i-j)`` inside an optional band.
+    """Set `M[i,j] = weight * decay**abs(i-j)` inside an optional band.
 
-    Every diagonal is constant, and the matrix is symmetric. ``bandwidth=None``
+    Every diagonal is constant, and the matrix is symmetric. `bandwidth=None`
     fills all diagonals; otherwise only offsets up to a nonnegative bandwidth
     are populated. This is a deterministic geometric Toeplitz construction.
 
@@ -35,8 +35,8 @@ def toeplitz(
     weight : float, default=0.1
         Main-diagonal weight and the scale of every other diagonal.
     decay : float, default=1.0
-        Geometric factor per diagonal offset. ``decay=1`` fills each diagonal
-        with the same weight; ``0 < decay < 1`` weakens distant connections.
+        Geometric factor per diagonal offset. `decay=1` fills each diagonal
+        with the same weight; `0 < decay < 1` weakens distant connections.
         The sign alternates across offsets when decay is negative.
     bandwidth : int or None, default=None
         Maximum populated absolute offset. Must be nonnegative when supplied;
@@ -49,7 +49,7 @@ def toeplitz(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` symmetric Toeplitz matrix with optional band masking.
+        Dense `(n, n)` symmetric Toeplitz matrix with optional band masking.
 
     Raises
     ------
@@ -86,9 +86,9 @@ def band(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Fill ``abs(i-j) <= bandwidth`` with ``weight`` and the rest with zero.
+    """Fill `abs(i-j) <= bandwidth` with `weight` and the rest with zero.
 
-    Requires ``0 <= bandwidth < n``. Zero gives a scaled identity; one gives
+    Requires `0 <= bandwidth < n`. Zero gives a scaled identity; one gives
     a tridiagonal matrix. The in-band weights are deterministic and constant.
 
     Parameters
@@ -98,7 +98,7 @@ def band(
     weight : float, default=0.1
         Constant assigned to every in-band entry, including the main diagonal.
     bandwidth : int, default=1
-        Half-bandwidth, satisfying ``0 <= bandwidth < n``. Two populates the
+        Half-bandwidth, satisfying `0 <= bandwidth < n`. Two populates the
         main diagonal and two diagonals on either side.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype.
@@ -108,7 +108,7 @@ def band(
     Returns
     -------
     torch.Tensor
-        Dense symmetric ``(n, n)`` matrix with constant in-band weights.
+        Dense symmetric `(n, n)` matrix with constant in-band weights.
 
     Raises
     ------
@@ -146,11 +146,11 @@ def block_diagonal(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Fill complete diagonal blocks of size ``block_size`` with ``weight``.
+    """Fill complete diagonal blocks of size `block_size` with `weight`.
 
-    Requires ``1 <= block_size <= n``. Incomplete trailing rows/columns are
+    Requires `1 <= block_size <= n`. Incomplete trailing rows/columns are
     left zero. Each full block has rank at most one and eigenvalues
-    ``weight * block_size`` plus zeros. This isolates independent groups of
+    `weight * block_size` plus zeros. This isolates independent groups of
     reservoir units while retaining the original constant-block behavior.
 
     Parameters
@@ -160,7 +160,7 @@ def block_diagonal(
     weight : float, default=1.0
         Constant filling every element of each complete block.
     block_size : int, default=1
-        Square block side length, satisfying ``1 <= block_size <= n``. One
+        Square block side length, satisfying `1 <= block_size <= n`. One
         gives a scaled identity. Any trailing incomplete block is left zero.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype.
@@ -170,7 +170,7 @@ def block_diagonal(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` tensor with ``floor(n / block_size)`` constant blocks.
+        Dense `(n, n)` tensor with `floor(n / block_size)` constant blocks.
         When weight is nonzero its rank is the number of complete blocks.
 
     Raises

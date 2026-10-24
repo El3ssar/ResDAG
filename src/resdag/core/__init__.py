@@ -3,7 +3,7 @@ Core Model
 ==========
 
 This module provides the main model class and input helpers for building
-ESN architectures using the ``pytorch_symbolic`` library.
+ESN architectures using the `pytorch_symbolic` library.
 
 Classes
 -------
@@ -13,17 +13,17 @@ ESNModel
     Extended SymbolicModel with ESN-specific methods for forecasting
     and reservoir state management.
 ReservoirFeatureExtractor
-    ``nn.Sequential``-friendly adapter that packages reservoir layers as a
-    drop-in feature extractor for ordinary ``torch.nn`` pipelines.
+    `nn.Sequential`-friendly adapter that packages reservoir layers as a
+    drop-in feature extractor for ordinary `torch.nn` pipelines.
 Input
-    Alias for ``pytorch_symbolic.Input`` for defining model inputs.
+    Alias for `pytorch_symbolic.Input` for defining model inputs.
 
 Functions
 ---------
 reservoir_input
     Convenience constructor for a per-feature symbolic input tensor with
     a placeholder time dimension.  Preferred over hand-crafting
-    ``ps.Input((T, F))`` since the time dimension is purely a tracing
+    `ps.Input((T, F))` since the time dimension is purely a tracing
     hint inside reservoir models.
 
 Examples
@@ -73,7 +73,7 @@ def reservoir_input(
     """
     Build a symbolic input tensor for a reservoir model.
 
-    Constructs an :func:`pytorch_symbolic.Input` of shape ``(1, feature_size)``
+    Constructs an `pytorch_symbolic.Input` of shape `(1, feature_size)`
     where the first axis is a placeholder for the time dimension (any
     sequence length is accepted at call time).
 
@@ -82,14 +82,14 @@ def reservoir_input(
     feature_size : int
         Number of features per timestep.
     dtype : torch.dtype, optional
-        Tensor dtype. Defaults to ``torch.get_default_dtype()``.
+        Tensor dtype. Defaults to `torch.get_default_dtype()`.
     device : torch.device or str, optional
         Device for the symbolic example, matching layers initialized there.
 
     Returns
     -------
     pytorch_symbolic.SymbolicTensor
-        Placeholder input with shape ``(1, feature_size)``.
+        Placeholder input with shape `(1, feature_size)`.
 
     Examples
     --------
@@ -121,5 +121,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

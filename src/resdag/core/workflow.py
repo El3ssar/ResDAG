@@ -96,9 +96,9 @@ def _washout(value: int) -> int:
 class Model(nn.Module):
     """Wrap a named functional DAG in a common training/prediction workflow.
 
-    Supply ``inputs={name: symbolic_input}`` and ``outputs={name: symbolic_output}``,
-    or ``graph=existing_model`` with optional ordered ``input_names`` and
-    ``output_names``. The graph is registered once as :attr:`graph`; it remains
+    Supply `inputs={name: symbolic_input}` and `outputs={name: symbolic_output}`,
+    or `graph=existing_model` with optional ordered `input_names` and
+    `output_names`. The graph is registered once as `graph`; it remains
     available for raw, already-normalized tensor execution. Existing symbolic,
     parallel local-state and coupled ensemble backends are supported. Parallel
     ports describe the full field; coupled members share one aggregate output.
@@ -107,44 +107,44 @@ class Model(nn.Module):
     ordinary PyTorch. Reservoirs hidden inside an aggregator require ordinary
     stateful forward rather than explicit-state execution or forecasting.
 
-    ``fit(series)`` learns future prediction for one input/output of equal
-    width. ``fit(inputs, targets={output_name: tensor})`` instead fits explicit,
+    `fit(series)` learns future prediction for one input/output of equal
+    width. `fit(inputs, targets={output_name: tensor})` instead fits explicit,
     time-aligned targets; all streams include the same washout prefix. Declared intermediate heads may feed
-    later reservoirs; ``readout_targets`` supervises internal fitted heads
+    later reservoirs; `readout_targets` supervises internal fitted heads
     without adding them to public outputs.
 
-    ``forward`` accepts floating Torch tensors, preserves 2-D/3-D layout and
+    `forward` accepts floating Torch tensors, preserves 2-D/3-D layout and
     gradients, applies fitted scaling and returns original units. Calls carry
-    recurrent state by default; call :meth:`reset_state` between unrelated
+    recurrent state by default; call `reset_state` between unrelated
     sequences. One head returns a Tensor; several return a named dictionary.
 
-    Preprocessing is ``"standard"`` by default, any existing normalization
-    method, or ``"off"``/``None``. Statistics use training inputs/targets after
+    Preprocessing is `"standard"` by default, any existing normalization
+    method, or `"off"`/`None`. Statistics use training inputs/targets after
     washout only. Implicit targets share their input's statistics. Feedback
     automatically converts each output back to original units before applying
     its destination input's scaling.
 
-    ``prediction_lead`` declares the physical target distance for each head:
-    input at step ``t`` predicts target at ``t + lead``. The default is one;
-    a mapping overrides named heads. ``feedback`` supplies explicit
-    :class:`Feedback` connections with independent graph-step delays. Without
+    `prediction_lead` declares the physical target distance for each head:
+    input at step `t` predicts target at `t + lead`. The default is one;
+    a mapping overrides named heads. `feedback` supplies explicit
+    `Feedback` connections with independent graph-step delays. Without
     connections, the first output automatically feeds the first input after
     its prediction lead. An empty sequence leaves all inputs externally driven.
 
-    ``state_dict`` includes scaling, ordered port metadata and the observed tail;
-    reconstruct the same DAG before loading. ``tune`` compares candidates and
+    `state_dict` includes scaling, ordered port metadata and the observed tail;
+    reconstruct the same DAG before loading. `tune` compares candidates and
     installs a refitted winner; its report exposes the Optuna study. Complete
-    ``save("run.pt")`` and ``rd.load`` preserve the complete model; diagram
+    `save("run.pt")` and `rd.load` preserve the complete model; diagram
     suffixes export its declared structure without running it.
 
-    With the optional ``dynamics`` extra, bare or named TSDynamics trajectories
+    With the optional `dynamics` extra, bare or named TSDynamics trajectories
     use one shared observed clock. Explicit targets are aligned to each head's
     physical prediction lead. Forecasts return one trajectory or a named
     dictionary, with target component names and shared future times.
-    ``return_type="tensor"`` keeps predictions on the model device.
-    Ordinary ``forward`` always uses Torch tensors.
-    Uneven timestamps are automatically interpolated with ``resample_method``
-    (linear, PCHIP or cubic); ``resample_dt`` controls the physical step.
+    `return_type="tensor"` keeps predictions on the model device.
+    Ordinary `forward` always uses Torch tensors.
+    Uneven timestamps are automatically interpolated with `resample_method`
+    (linear, PCHIP or cubic); `resample_dt` controls the physical step.
     """
 
     _fitted: torch.Tensor
@@ -352,7 +352,7 @@ class Model(nn.Module):
 
     @property
     def feedback(self) -> tuple[Feedback, ...] | None:
-        """Explicit connections, or ``None`` for the automatic first-port route."""
+        """Explicit connections, or `None` for the automatic first-port route."""
         return self._feedback
 
     def _feedback_plan(self, *, validate_widths: bool = True) -> FeedbackPlan:
@@ -577,11 +577,11 @@ class Model(nn.Module):
     ) -> Any:
         """Save a complete loadable model (.pt/.pth) or a diagram by suffix.
 
-        ``rd.load(path)`` reconstructs checkpoints without a prebuilt DAG.
+        `rd.load(path)` reconstructs checkpoints without a prebuilt DAG.
         Current ordinary-forward memory is included by default. Set
-        ``trusted=True`` only to bundle notebook-defined Python code; loading
+        `trusted=True` only to bundle notebook-defined Python code; loading
         such a bundle also requires explicit trust. Diagram formats are
-        SVG/PNG/PDF/DOT and accept :meth:`plot_model` options.
+        SVG/PNG/PDF/DOT and accept `plot_model` options.
         """
         destination = Path(path)
         suffix = destination.suffix.lower().lstrip(".")
@@ -622,13 +622,13 @@ class Model(nn.Module):
     ) -> Model:
         """Tune autonomous forecasts, refit the winner and return this model.
 
-        Requires ``resdag[hpo]``. The final 20% is held out while comparing
+        Requires `resdag[hpo]`. The final 20% is held out while comparing
         candidates, then the winner is refitted on all supplied data. Keep a
         separate final test set. Built-in classic/OTT graphs have an automatic
-        rebuilding recipe. ``factory(params, seed)`` rebuilds custom DAGs;
+        rebuilding recipe. `factory(params, seed)` rebuilds custom DAGs;
         without one, custom sizes and weights stay fixed and alpha/washout can vary.
-        ``search_space(trial)`` uses ordinary Optuna suggestions. Advanced
-        options and :attr:`tuning_report` are documented in the tuning guide.
+        `search_space(trial)` uses ordinary Optuna suggestions. Advanced
+        options and `tuning_report` are documented in the tuning guide.
         A failure leaves this model unchanged. Tune before creating optimizers.
         """
         from resdag.hpo import _require_optuna
@@ -657,8 +657,8 @@ class Model(nn.Module):
     ) -> Model:
         """Fit public and internal heads transactionally and retain the original observed tail.
 
-        Implicit supervision pairs input ``t`` with observation
-        ``t + prediction_lead`` and retains the complete observed tail.
+        Implicit supervision pairs input `t` with observation
+        `t + prediction_lead` and retains the complete observed tail.
         Explicit targets are already caller-aligned to input indices; declared
         leads describe their physical timestamps without shifting those arrays.
         Successful fitting resets streaming state. Failed fitting leaves the
@@ -671,9 +671,9 @@ class Model(nn.Module):
         final observed inputs, even after the last supervised origin. Tensor
         refitting clears trajectory defaults on success.
 
-        ``readout_targets={"stage1": tensor}`` supervises internal readouts
-        without exposing them as outputs. Keys use the readout's ``name`` or
-        graph path; coupled members use ``models.<index>.<name>``. Tensors share
+        `readout_targets={"stage1": tensor}` supervises internal readouts
+        without exposing them as outputs. Keys use the readout's `name` or
+        graph path; coupled members use `models.<index>.<name>`. Tensors share
         the complete input time axis, including washout, and express the desired
         internal output units without automatic output scaling. For trajectory
         inputs, align these tensors to the prepared shared input grid.
@@ -779,7 +779,7 @@ class Model(nn.Module):
         """Fit an admitted origin window, retaining every observed input row.
 
         Private adapters supply already aligned labels for exactly
-        ``supervised_start:supervised_stop``. Absolute washout is applied once.
+        `supervised_start:supervised_stop`. Absolute washout is applied once.
         This separates regression support from the complete observed clock;
         purging future labels must not move the cached forecasting boundary.
         """
@@ -970,26 +970,26 @@ class Model(nn.Module):
     ) -> WorkflowOutput | Trajectory | dict[str, Trajectory]:
         """Return named heads aligned to the immediate unseen physical sample.
 
-        ``future_inputs`` names every input without a feedback connection.
+        `future_inputs` names every input without a feedback connection.
         Drivers start immediately after history and require
-        ``max(0, horizon - min(prediction_leads))`` samples. With the default
-        next-step head this is ``horizon - 1``. History must contain at least
+        `max(0, horizon - min(prediction_leads))` samples. With the default
+        next-step head this is `horizon - 1`. History must contain at least
         the largest prediction lead and feedback delay. Warmup predictions
         already provide the first unseen samples; they are never skipped.
-        ``return_warmup`` prepends predictions on the shared physical timeline
-        starting at history index ``max(prediction_leads)``.
+        `return_warmup` prepends predictions on the shared physical timeline
+        starting at history index `max(prediction_leads)`.
 
         Every call rebuilds pending feedback from history and temporarily
-        disables training noise. ``execution='fast'`` requires pointwise graph
-        modules or explicit reservoir adapters. ``'history'`` replays the full
+        disables training noise. `execution='fast'` requires pointwise graph
+        modules or explicit reservoir adapters. `'history'` replays the full
         growing input prefix for pure causal sequence modules, at higher cost.
-        Custom modules may declare ``supports_framewise=True`` when appropriate.
+        Custom modules may declare `supports_framewise=True` when appropriate.
         Compiled forecasting is currently available for symbolic graphs only;
-        parallel and coupled backends require ``compile=False``.
+        parallel and coupled backends require `compile=False`.
 
-        ``return_type="auto"`` returns a TSDynamics trajectory after trajectory
+        `return_type="auto"` returns a TSDynamics trajectory after trajectory
         fitting or with trajectory history; otherwise it returns tensors.
-        ``"tensor"`` avoids conversion to NumPy/CPU. A selected trajectory result
+        `"tensor"` avoids conversion to NumPy/CPU. A selected trajectory result
         needs timestamped history or the cached training context; a new tensor
         history has no absolute clock. Trajectory history is resampled to the
         fitted physical step and must retain fitted component names/order.

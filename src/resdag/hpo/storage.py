@@ -94,7 +94,7 @@ def _sqlite_memory_database(storage: optuna.storages.RDBStorage) -> bool:
 def register_temp_storage_cleanup(path: str) -> None:
     """Schedule deletion of an auto-created temporary storage file at exit.
 
-    The file is removed when the interpreter shuts down via :mod:`atexit`.
+    The file is removed when the interpreter shuts down via `atexit`.
     Missing files are ignored so the handler is safe to register even if the
     file was already cleaned up.
 
@@ -142,7 +142,7 @@ def resolve_storage(
 ) -> optuna.storages.BaseStorage | None | tuple[optuna.storages.BaseStorage | None, str | None]:
     """Resolve a user-provided storage specifier into an Optuna storage object.
 
-    For multi-worker runs the default backend is ``JournalFileStorage``
+    For multi-worker runs the default backend is `JournalFileStorage`
     (append-only, safe for concurrent processes).  When no storage path is
     given for a multi-worker study, a temporary journal file is created
     automatically and scheduled for deletion at interpreter exit.
@@ -152,26 +152,26 @@ def resolve_storage(
     storage : str or None
         Storage specifier.  Accepted forms:
 
-        - ``None`` : in-memory for single-worker, temp journal for multi-worker.
-        - Path ending in ``".db"`` or prefixed ``"sqlite:///"`` : SQLite via
-          ``RDBStorage`` with a 30 s busy timeout.
+        - `None` : in-memory for single-worker, temp journal for multi-worker.
+        - Path ending in `".db"` or prefixed `"sqlite:///"` : SQLite via
+          `RDBStorage` with a 30 s busy timeout.
         - Any other string : treated as a journal file path.
 
     n_workers : int
-        Number of parallel worker processes.  When ``> 1`` and *storage* is
-        ``None``, a temporary journal file is created.
+        Number of parallel worker processes.  When `> 1` and *storage* is
+        `None`, a temporary journal file is created.
     return_path : bool, default=False
-        When ``True``, return a ``(storage, path)`` tuple where *path* is the
-        concrete filesystem path or ``sqlite:///`` URL that workers can use to
-        reconnect (``None`` for in-memory storage).  This avoids reaching into
-        Optuna's private ``_backend._file_path`` attribute to recover the
+        When `True`, return a `(storage, path)` tuple where *path* is the
+        concrete filesystem path or `sqlite:///` URL that workers can use to
+        reconnect (`None` for in-memory storage).  This avoids reaching into
+        Optuna's private `_backend._file_path` attribute to recover the
         auto-created temp-journal path.
 
     Returns
     -------
     optuna.storages.BaseStorage or None
-        Configured storage object, or ``None`` for in-memory storage.  When
-        *return_path* is ``True``, a ``(storage, path)`` tuple is returned
+        Configured storage object, or `None` for in-memory storage.  When
+        *return_path* is `True`, a `(storage, path)` tuple is returned
         instead.
 
     Notes
@@ -179,8 +179,8 @@ def resolve_storage(
     If an existing SQLite file is empty (0 bytes), it is assumed to be a
     leftover from a crashed run and is removed so Optuna can recreate it.
 
-    Auto-created temporary journals (the ``storage=None``, ``n_workers > 1``
-    case) are registered for deletion via :mod:`atexit` so they do not leak.
+    Auto-created temporary journals (the `storage=None`, `n_workers > 1`
+    case) are registered for deletion via `atexit` so they do not leak.
 
     Examples
     --------
@@ -204,7 +204,7 @@ def _resolve_storage_with_path(
     Parameters
     ----------
     storage : str or None
-        Storage specifier (see :func:`resolve_storage`).
+        Storage specifier (see `resolve_storage`).
     n_workers : int
         Number of parallel worker processes.
 
@@ -212,7 +212,7 @@ def _resolve_storage_with_path(
     -------
     tuple[optuna.storages.BaseStorage or None, str or None]
         The configured storage object and the concrete path/URL workers can
-        reconnect with (``None`` for in-memory storage).
+        reconnect with (`None` for in-memory storage).
     """
     if storage is None:
         if n_workers > 1:
@@ -256,19 +256,19 @@ def enable_sqlite_wal(storage_path: str) -> None:
 
     Write-Ahead Logging (WAL) mode allows concurrent reads while a write is in
     progress, which is essential for multi-process HPO with SQLite storage.
-    ``PRAGMA synchronous=NORMAL`` is also set for improved write throughput
+    `PRAGMA synchronous=NORMAL` is also set for improved write throughput
     without sacrificing crash safety under WAL.
 
     Parameters
     ----------
     storage_path : str
-        Path or ``sqlite:///`` URL pointing to the SQLite database file.
+        Path or `sqlite:///` URL pointing to the SQLite database file.
 
     Notes
     -----
     This function is a no-op if *storage_path* does not look like a SQLite
-    path (i.e., does not end with ``".db"`` and does not start with
-    ``"sqlite:///"``) .
+    path (i.e., does not end with `".db"` and does not start with
+    `"sqlite:///"`) .
 
     Examples
     --------

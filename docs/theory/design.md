@@ -1,22 +1,23 @@
 ---
-description: The architecture of the library and its rationale — the cell/layer split, frozen weights as parameters, the hook-based trainer, and the callable-first init system.
+description: The common model workflow, cell/layer split, parameter storage, single-pass trainer and initializer extension contracts.
 ---
 
 <span class="nb-kicker">Theory · Design</span>
 
 # Design of the library
 
-ResDAG's architecture rests on a few decisions applied consistently
-throughout the library: a two-level reservoir stack, frozen weights
-stored as `Parameter`s, a trainer built on forward pre-hooks, and an
-init system that accepts any callable. This page records those
-decisions and the reasoning behind them.
+Presets and custom DAGs share a `Model` workflow around ordinary PyTorch
+modules. Reservoirs split into a single-step cell and a sequence layer;
+algebraic fitting traverses shared upstream work once. Initializers and custom
+components have explicit extension interfaces.
 
 ## The package map
 
 ```text
 resdag/
-├── core/             ESNModel — symbolic DAG + forecast, state, persistence
+├── facade.py         ESN — ready-made Model workflow, eager or lazy construction
+├── core/             Model workflow, ESNModel graph, feedback, state and execution
+├── artifacts/        portable DAG/state codecs and explicit trusted bundles
 ├── layers/
 │   ├── cells/          single-step updates, one per family: ESNCell, NGCell, …
 │   ├── reservoirs/     sequence loop + state API: ESNLayer, NGReservoir, …
@@ -54,16 +55,15 @@ part and a state-dependent part, and only the latter must live inside the
 loop. The layer asks the cell to precompute $W_{fb}\,u_t + W_{in}\,d_t +
 b$ for the *whole sequence* in one batched matmul, then iterates with
 `step`, where `torch.addmm` fuses the recurrent matmul with the
-precomputed slice. The loop body then issues roughly three kernel
-launches per step (addmm, activation, lerp) instead of about six; at
-typical reservoir sizes this determines whether GPU execution
-outperforms the CPU. Cells that cannot split (NG-RC's buffer update) return `None`
+precomputed slice. This moves input projection out of the sequential recurrence.
+Actual kernels and speed depend on device, dtype, layout and compilation; the
+split alone establishes no fixed launch count or CPU/GPU crossover.
+Cells that cannot split (NG-RC's buffer update) return `None`
 from `project_inputs` and the layer falls back to per-step `forward`.
 
-## Frozen weights are still `Parameter`s
+## Dense parameters and compressed buffers
 
-Reservoir weights are frozen by default, so why not store them as
-buffers? Three reasons:
+Dense reservoir weights use frozen Parameters by default for three reasons:
 
 - **`state_dict` parity.** A frozen and a trainable reservoir serialize
   identically; checkpoints do not care which experiment produced them.
@@ -73,6 +73,13 @@ buffers? Three reasons:
 - **PyTorch integration.** Optimizers can discover the same parameters after
   unfreezing. A frozen reservoir still propagates gradients to upstream inputs
   that require them; freezing weights does not detach the computation graph.
+
+Compact sparse reservoirs instead keep compressed weights as buffers, without
+a duplicate dense square matrix. They still pass gradients through the supported
+Torch operations to upstream inputs. Inspecting a dense copy or making all
+connections trainable requires an explicit representation choice; see
+[sparse storage](../workflows/sparse-reservoirs.md). Parameter discovery and
+checkpoint representation consequently depend on that choice.
 
 ## The trainer is a hook
 
@@ -114,13 +121,20 @@ only a function definition; `register_matrix_topology` /
 
 ---
 
-## Future directions
+## Workflow and extension boundaries
 
-These are under consideration, not commitments: a consistent high-level
-workflow for custom graphs and presets; explicit feedback routing and delays;
-per-layer seed streams; and a public streaming API without sequence tensors.
-Direct Cholesky, SVD, conjugate-gradient, incremental, online and sparse
-readouts are already available through the same fitting contract.
+`rd.ESN` and `rd.Model` support training-only preprocessing, named signals,
+explicit feedback routes/delays, tuning, and complete model artifacts. Seed
+streams and custom initializer registration are public controls. Single-step
+state is available through `step_stateless`; incremental readouts also support
+streaming fitting.
+
+Public extension contracts are documented in the [API reference](../reference/index.md)
+and [contributing guide](../project/contributing.md). Private execution planners,
+fit-preparation helpers and serialization plumbing are implementation details.
+Torch's checkpoint hooks retain their required method names but are omitted
+from ordinary method listings. Current compiler/export limits are stated in
+[graph tooling](../project/graph-tooling.md) and the [roadmap](../project/roadmap.md).
 
 ## See also
 

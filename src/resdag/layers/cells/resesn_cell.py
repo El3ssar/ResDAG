@@ -4,7 +4,7 @@ ResESN Cell
 
 This module provides the Residual Echo State Network (ResESN) reservoir cell:
 
-- :class:`ResESNCell` — single-timestep ResESN update with an orthogonal skip
+- `ResESNCell` — single-timestep ResESN update with an orthogonal skip
   connection and decoupled skip / nonlinear weights; owns all parameters.
 
 References
@@ -31,38 +31,38 @@ class ResESNCell(_SkipReservoirCell):
 
     ResESN (Ceni & Gallicchio, 2024) generalises ES2N by **decoupling** the
     skip and nonlinear branch weights: where ES2N ties them into a convex
-    combination :math:`(1 - \beta,\ \beta)`, ResESN gives each branch an
+    combination $(1 - \beta,\ \beta)$, ResESN gives each branch an
     independent scaling coefficient.  Its shallow-model update (Eq. 2 of
     arXiv:2508.21172, adapted to resdag's separate feedback / driving-input
     streams) is
 
-    .. math::
+    $$
+    x_t = \alpha\,O\,x_{t-1}
+          + \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
+    $$
 
-        x_t = \alpha\,O\,x_{t-1}
-              + \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
-
-    where :math:`\phi` is the activation, :math:`O` a **fixed random
-    orthogonal** matrix (the residual branch), :math:`W_r` the
-    spectral-radius-scaled frozen recurrent matrix, :math:`W_{fb}` /
-    :math:`W_{in}` the feedback / input weights, :math:`b` the random bias, and
-    :math:`\alpha` (skip) and :math:`\beta` (nonlinear) the two independent
+    where $\phi$ is the activation, $O$ a **fixed random
+    orthogonal** matrix (the residual branch), $W_r$ the
+    spectral-radius-scaled frozen recurrent matrix, $W_{fb}$ /
+    $W_{in}$ the feedback / input weights, $b$ the random bias, and
+    $\alpha$ (skip) and $\beta$ (nonlinear) the two independent
     scaling coefficients that replace the leaky-integrator leak rate.
 
     Relationship to other models:
 
-    * :math:`\alpha = 1 - \beta` recovers **ES2N** (the convex combination).
-    * :math:`O = I` with :math:`1 - \alpha = \beta` recovers a **leaky ESN**.
+    * $\alpha = 1 - \beta$ recovers **ES2N** (the convex combination).
+    * $O = I$ with $1 - \alpha = \beta$ recovers a **leaky ESN**.
 
-    Like ES2N, ResESN takes **no** ``leak_rate`` (the two branch weights
-    subsume it) and no train-mode ``noise`` (not part of the formulation).
+    Like ES2N, ResESN takes **no** `leak_rate` (the two branch weights
+    subsume it) and no train-mode `noise` (not part of the formulation).
 
     Parameters
     ----------
     reservoir_size, feedback_size, input_size, spectral_radius, bias, \
 bias_scaling, activation, trainable, feedback_initializer, input_initializer, \
 topology, orthogonal_scaling, seed
-        See :class:`~resdag.layers.cells._skip_cell._SkipReservoirCell` and
-        :class:`~resdag.layers.cells.esn_cell.ESNCell` for the shared meanings.
+        See `resdag.layers.cells._skip_cell._SkipReservoirCell` and
+        `resdag.layers.cells.esn_cell.ESNCell` for the shared meanings.
     alpha : float, default=0.5
         Scaling coefficient of the orthogonal skip (residual) branch.  Must be
         finite.  Larger values weight the linear memory branch more heavily; the
@@ -75,10 +75,10 @@ topology, orthogonal_scaling, seed
     Attributes
     ----------
     skip_matrix : torch.Tensor
-        Frozen orthogonal skip matrix ``O`` (see the base class).
+        Frozen orthogonal skip matrix `O` (see the base class).
     weight_hh, weight_feedback, weight_input, bias_h
         Recurrent, feedback, input weights and bias (see
-        :class:`~resdag.layers.cells.esn_cell.ESNCell`).
+        `resdag.layers.cells.esn_cell.ESNCell`).
 
     Examples
     --------
@@ -118,7 +118,7 @@ topology, orthogonal_scaling, seed
         float : Scaling of the orthogonal skip (residual) branch.
 
         A *live* knob: assigning to it (directly or through
-        ``ResESNLayer.alpha = ...``) validates the value and takes effect on the
+        `ResESNLayer.alpha = ...`) validates the value and takes effect on the
         next forward.
         """
         return self._alpha
@@ -136,7 +136,7 @@ topology, orthogonal_scaling, seed
         float : Scaling of the nonlinear branch.
 
         A *live* knob: assigning to it (directly or through
-        ``ResESNLayer.beta = ...``) validates the value and takes effect on the
+        `ResESNLayer.beta = ...`) validates the value and takes effect on the
         next forward.
         """
         return self._beta
@@ -149,10 +149,10 @@ topology, orthogonal_scaling, seed
         self._beta = scalar
 
     def _branch_weights(self) -> tuple[float, float]:
-        """Return ``(alpha, beta)`` — the decoupled ResESN branch weights.
+        """Return `(alpha, beta)` — the decoupled ResESN branch weights.
 
-        The skip branch is weighted by ``alpha`` and the nonlinear branch by
-        ``beta``, matching Eq. 2 of arXiv:2508.21172.
+        The skip branch is weighted by `alpha` and the nonlinear branch by
+        `beta`, matching Eq. 2 of arXiv:2508.21172.
         """
         return self._alpha, self._beta
 

@@ -10,9 +10,9 @@ from ._cell_layer import CellReservoirLayer
 
 
 class CoRNNLayer(CellReservoirLayer):
-    """Stateful coRNN layer; see :class:`CoRNNCell` for dynamics and packed states.
+    """Stateful coRNN layer; see `CoRNNCell` for dynamics and packed states.
 
-    ``forward`` returns position sequences, ``forward_stateless`` additionally
+    `forward` returns position sequences, `forward_stateless` additionally
     returns packed position/velocity state. The shared reservoir layer supports
     chunked state, differentiable scans, and projected inference/forecasting.
     """

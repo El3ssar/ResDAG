@@ -5,10 +5,10 @@ Gated Reservoir Layer
 This module provides the public-facing sequence layer for the gated
 ("reservoir GRU") cell:
 
-- :class:`GatedReservoirLayer` — stateful RNN layer wrapping
-  :class:`~resdag.layers.cells.gated_cell.GatedReservoirCell`.
+- `GatedReservoirLayer` — stateful RNN layer wrapping
+  `resdag.layers.cells.gated_cell.GatedReservoirCell`.
 
-The old name :class:`GatedReservoir` is retained as a deprecated alias.
+The old name `GatedReservoir` is retained as a deprecated alias.
 
 See Also
 --------
@@ -34,16 +34,16 @@ class GatedReservoirLayer(BaseReservoirLayer):
     Stateful RNN reservoir layer for the gated (LiGRU-style) reservoir.
 
     Public-facing class.  Internally creates a
-    :class:`~resdag.layers.cells.gated_cell.GatedReservoirCell` that owns every
+    `resdag.layers.cells.gated_cell.GatedReservoirCell` that owns every
     weight and performs the single-step light-gated update; the sequence loop and
-    state management live in the parent :class:`BaseReservoirLayer`, so this layer
-    shares the full state API (``reset_state`` / ``get_state`` / ``set_state`` /
-    ``set_random_state``), the projected fast path, and the compiled
-    teacher-forced scan with :class:`~resdag.layers.reservoirs.esn.ESNLayer`.
+    state management live in the parent `BaseReservoirLayer`, so this layer
+    shares the full state API (`reset_state` / `get_state` / `set_state` /
+    `set_random_state`), the projected fast path, and the compiled
+    teacher-forced scan with `resdag.layers.reservoirs.esn.ESNLayer`.
 
-    The state is a single packed 2-D tensor ``(batch, reservoir_size)`` (the GRU
-    hidden state ``h``), following the packed multi-tensor-state convention
-    documented in :mod:`resdag.layers.cells.gated_cell`.
+    The state is a single packed 2-D tensor `(batch, reservoir_size)` (the GRU
+    hidden state `h`), following the packed multi-tensor-state convention
+    documented in `resdag.layers.cells.gated_cell`.
 
     Parameters
     ----------
@@ -52,34 +52,34 @@ class GatedReservoirLayer(BaseReservoirLayer):
     feedback_size : int
         Dimension of the feedback signal.  Required.
     input_size : int, optional
-        Dimension of an optional driving input.  ``None`` (or ``0``) builds a
+        Dimension of an optional driving input.  `None` (or `0`) builds a
         feedback-only reservoir.
     spectral_radius : float, optional
         Target spectral radius for the recurrent **candidate** weight.  Controls
-        the echo of past state through the candidate path.  ``None`` applies no
+        the echo of past state through the candidate path.  `None` applies no
         scaling.
     bias : bool, default=True
         Whether to include the gate biases.
     bias_scaling : float, default=1.0
-        Scale of the random candidate bias ``b_h``.  The update-gate bias is the
-        constant retention bias (see ``update_gate_bias``), not randomised.
+        Scale of the random candidate bias `b_h`.  The update-gate bias is the
+        constant retention bias (see `update_gate_bias`), not randomised.
     update_gate_bias : float, default=2.0
-        Constant update-gate bias biasing ``z`` toward retention (``z≈0.88`` at
-        ``2.0``).  Keeps a frozen gated reservoir from washing out its memory.
+        Constant update-gate bias biasing `z` toward retention (`z≈0.88` at
+        `2.0`).  Keeps a frozen gated reservoir from washing out its memory.
     activation : {'relu', 'tanh', 'identity', 'sigmoid'}, default='relu'
-        Candidate nonlinearity (LiGRU default is ``"relu"``).
+        Candidate nonlinearity (LiGRU default is `"relu"`).
     gate_activation : {'sigmoid', ...}, default='sigmoid'
-        Update-gate nonlinearity; ``"sigmoid"`` keeps ``z`` a valid gate.
+        Update-gate nonlinearity; `"sigmoid"` keeps `z` a valid gate.
     trainable : bool, default=False
-        If ``True``, all weights are trainable via backpropagation.  A frozen
+        If `True`, all weights are trainable via backpropagation.  A frozen
         gated reservoir often underperforms an ESN — gated reservoirs are usually
-        best used with ``trainable=True``.
+        best used with `trainable=True`.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback drive weights.  Same accepted forms as
-        :class:`~resdag.layers.ESNLayer`.
+        `resdag.layers.ESNLayer`.
     input_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the driving-input drive weights.  Only used when
-        ``input_size`` is given.
+        `input_size` is given.
     topology : str, callable, tuple, or TopologyInitializer, optional
         Structure of the recurrent candidate weight.  The update-gate recurrent
         weight is always dense-random.
@@ -87,13 +87,13 @@ class GatedReservoirLayer(BaseReservoirLayer):
         Reproducibility seed fixing the entire reservoir.
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -107,16 +107,16 @@ class GatedReservoirLayer(BaseReservoirLayer):
         Outer radius target for the gate recurrence, respecting its scaling policy.
     gate_feedback_initializer, gate_input_initializer : spec, optional
         Separate gate projections. Omitted projections share candidate weights.
-        A driver gate initializer requires ``input_size``.
+        A driver gate initializer requires `input_size`.
     gate_bias_initializer : spec, optional
-        Gate-bias initializer on ``(1, reservoir_size)``; overrides
-        ``update_gate_bias``. Requires ``bias=True``.
+        Gate-bias initializer on `(1, reservoir_size)`; overrides
+        `update_gate_bias`. Requires `bias=True`.
 
     Attributes
     ----------
     state : torch.Tensor or None
-        Current packed reservoir state of shape ``(batch, reservoir_size)``, or
-        ``None`` if not yet initialized.
+        Current packed reservoir state of shape `(batch, reservoir_size)`, or
+        `None` if not yet initialized.
 
     Examples
     --------
@@ -216,16 +216,17 @@ class GatedReservoirLayer(BaseReservoirLayer):
 
 
 class GatedReservoir(GatedReservoirLayer):
-    """Deprecated alias for :class:`GatedReservoirLayer`.
+    """Deprecated alias for `GatedReservoirLayer`.
 
     Retained for backward compatibility.  Instantiating this class emits a
-    :class:`DeprecationWarning` and constructs a :class:`GatedReservoirLayer`;
-    the two are otherwise identical (``GatedReservoir`` is a subclass, so
-    ``isinstance(GatedReservoir(...), GatedReservoirLayer)`` holds).
+    `DeprecationWarning` and constructs a `GatedReservoirLayer`;
+    the two are otherwise identical (`GatedReservoir` is a subclass, so
+    `isinstance(GatedReservoir(...), GatedReservoirLayer)` holds).
 
-    .. deprecated::
-        Use :class:`GatedReservoirLayer` instead.  ``GatedReservoir`` will be
-        removed in a future release.
+    **Deprecated.**
+
+    Use `GatedReservoirLayer` instead.  `GatedReservoir` will be
+    removed in a future release.
 
     See Also
     --------

@@ -55,8 +55,8 @@ from .resources import (
     MemoryContext,
     MemoryEstimate,
     Screening,
+    _memory_context,
     estimate_memory,
-    memory_context,
 )
 from .storage import _close_storage, resolve_storage
 
@@ -73,7 +73,7 @@ class ScoreContext:
     """Original-unit tensors and fixed training scales for a custom objective.
 
     Return one finite scalar per seed/origin. The trial score is their median.
-    Set ``direction='minimize'`` when returning an error rather than a reward.
+    Set `direction='minimize'` when returning an error rather than a reward.
     """
 
     predictions: dict[str, torch.Tensor]
@@ -88,7 +88,7 @@ class PrefixScoreContext(ScoreContext):
     """Explicitly prefix-safe pruning objective with the complete target horizon.
 
     Predictions and truth contain only the admitted prefix. This callback
-    controls pruning, while ``objective`` still scores the complete forecast.
+    controls pruning, while `objective` still scores the complete forecast.
     Keep its direction and scale comparable across matching resource steps.
     """
 
@@ -322,6 +322,8 @@ def _fixed_recipe(template: Model | ESN) -> Factory:
 
 def _default_space(template: Model | ESN) -> SearchSpace:
     options = _automatic_options(template)
+    recipe = builtin_recipe(_workflow(template).graph) if options is not None else None
+    tune_input_to_readout = recipe is not None and recipe["family"] == "classic"
     heads = [
         module for module in _workflow(template).graph.modules() if isinstance(module, ReadoutLayer)
     ]
@@ -344,6 +346,10 @@ def _default_space(template: Model | ESN) -> SearchSpace:
                 spectral_radius=trial.suggest_float("spectral_radius", 0.05, 1.5),
                 leak_rate=trial.suggest_float("leak_rate", 0.05, 1.0),
             )
+            if tune_input_to_readout:
+                params["input_to_readout"] = trial.suggest_categorical(
+                    "input_to_readout", [True, False]
+                )
             if input_scaling_supported(options):
                 params["input_scaling"] = trial.suggest_float("input_scaling", 1e-3, 2.0, log=True)
             if options.get("bias", True) and options.get("bias_initializer") is None:
@@ -995,10 +1001,10 @@ def tune_model(
 ) -> Model | ESN:
     """Compare autonomous forecasts and install a fully refitted winner.
 
-    ``factory(params, seed)`` builds custom candidate DAGs. Without a factory,
+    `factory(params, seed)` builds custom candidate DAGs. Without a factory,
     custom models keep their weights/wiring and tune alpha/washout; presets
     rebuild automatically. New attempts, including failed configurations, count
-    toward ``n_trials``. A timeout stops new windows; running fits and final
+    toward `n_trials`. A timeout stops new windows; running fits and final
     refitting finish normally. Tune before constructing a PyTorch optimizer.
     """
     started = time.perf_counter()
@@ -1142,7 +1148,7 @@ def tune_model(
     memory = (
         None
         if budget is None
-        else memory_context(
+        else _memory_context(
             workflow,
             data,
             preset_options=_automatic_options(template),

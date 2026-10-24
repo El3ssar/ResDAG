@@ -15,29 +15,29 @@ _DEFAULT_IQR_THRESHOLD: float = 1.5
 class OutliersFilteredMean(nn.Module):
     """Mean over ensemble members after removing outlier norms.
 
-    For each ``(batch, timestep)`` location, computes the L2 norm of each
+    For each `(batch, timestep)` location, computes the L2 norm of each
     member's feature vector, flags outliers via a robust modified Z-score or
     the IQR rule, then averages the inlier members. If every member is an
     outlier at a location, falls back to the plain mean.
 
-    The ``"z_score"`` method uses the **modified Z-score**
-    ``0.6745 * (x - median) / MAD`` (Iglewicz & Hoaglin, 1993), where ``MAD``
+    The `"z_score"` method uses the **modified Z-score**
+    `0.6745 * (x - median) / MAD` (Iglewicz & Hoaglin, 1993), where `MAD`
     is the median absolute deviation. Unlike the classic mean/standard-deviation
     Z-score, the median and MAD are robust estimators: a single extreme member
     does not inflate the location/scale used to judge it, so a genuine outlier
     can be flagged even in small ensembles. (The classic non-robust Z-score
-    saturates at ``sqrt(N - 1)`` for a lone outlier among ``N`` members, so a
-    ``threshold=3.0`` cutoff could never flag anything until ``N >= 11``.)
+    saturates at `sqrt(N - 1)` for a lone outlier among `N` members, so a
+    `threshold=3.0` cutoff could never flag anything until `N >= 11`.)
 
     Parameters
     ----------
     method : {"z_score", "iqr"}, default="z_score"
         Outlier detection rule applied to per-member norms.
     threshold : float or None, default=None
-        Detection sensitivity. For ``"z_score"`` it is the modified-Z-score
-        cutoff; for ``"iqr"`` it is the Tukey fence multiplier. When ``None``,
-        a method-appropriate default is used: ``3.5`` for ``"z_score"`` (the
-        conventional modified-Z-score cutoff) and ``1.5`` for ``"iqr"`` (the
+        Detection sensitivity. For `"z_score"` it is the modified-Z-score
+        cutoff; for `"iqr"` it is the Tukey fence multiplier. When `None`,
+        a method-appropriate default is used: `3.5` for `"z_score"` (the
+        conventional modified-Z-score cutoff) and `1.5` for `"iqr"` (the
         conventional Tukey fence). Pass an explicit value to override.
 
     Examples
@@ -50,7 +50,7 @@ class OutliersFilteredMean(nn.Module):
     Raises
     ------
     ValueError
-        If *method* is not ``"z_score"`` or ``"iqr"``.
+        If *method* is not `"z_score"` or `"iqr"`.
 
     References
     ----------
@@ -67,8 +67,8 @@ class OutliersFilteredMean(nn.Module):
             How to label outlier members along the samples axis.
         threshold : float or None, default=None
             Detection sensitivity (modified-Z-score bound or IQR factor). When
-            ``None``, defaults to ``3.5`` for ``"z_score"`` and ``1.5`` for
-            ``"iqr"``.
+            `None`, defaults to `3.5` for `"z_score"` and `1.5` for
+            `"iqr"`.
 
         Raises
         ------
@@ -89,7 +89,7 @@ class OutliersFilteredMean(nn.Module):
         """Aggregate ensemble members with outlier filtering.
 
         Outlier detection is **norm-based and whole-member**: each member's L2
-        feature-vector norm is scored at every ``(batch, timestep)`` location,
+        feature-vector norm is scored at every `(batch, timestep)` location,
         and a flagged member is dropped in its entirety (the whole feature
         vector is excluded from that location's mean). A member that is an
         outlier in only one feature but normal in norm is therefore *not*
@@ -101,23 +101,23 @@ class OutliersFilteredMean(nn.Module):
         input : torch.Tensor or list of torch.Tensor
             One of:
 
-            - a 4-D tensor of shape ``(samples, batch, timesteps, features)``;
-            - a 3-D tensor of shape ``(batch, timesteps, features)``, treated
-              as a single-member ensemble (a ``samples`` axis of length one is
+            - a 4-D tensor of shape `(samples, batch, timesteps, features)`;
+            - a 3-D tensor of shape `(batch, timesteps, features)`, treated
+              as a single-member ensemble (a `samples` axis of length one is
               inserted);
             - a list of length *samples* whose members are each 3-D
-              ``(batch, timesteps, features)`` tensors.
+              `(batch, timesteps, features)` tensors.
 
         Returns
         -------
         torch.Tensor
-            Shape ``(batch, timesteps, features)``.
+            Shape `(batch, timesteps, features)`.
 
         Raises
         ------
         ValueError
             If *input* is a tensor whose rank is neither 3-D nor 4-D (for
-            example a 2-D ``(samples, features)`` tensor, which would otherwise
+            example a 2-D `(samples, features)` tensor, which would otherwise
             collapse silently to the wrong shape), or a list whose stacked
             members are not 4-D.
         """
@@ -182,7 +182,7 @@ class OutliersFilteredMean(nn.Module):
 
         Sorting masked values keeps this vectorized across batch/time and
         works on devices without nanquantile support. Every position has at
-        least one valid member, checked by ``forward`` before entering here.
+        least one valid member, checked by `forward` before entering here.
         """
         ordered = torch.where(finite, values, torch.inf).sort(dim=0).values
         counts = finite.sum(dim=0)
@@ -201,13 +201,13 @@ class OutliersFilteredMean(nn.Module):
         Parameters
         ----------
         norms : torch.Tensor
-            Per-member norms of shape ``(samples, batch, timesteps)``.
+            Per-member norms of shape `(samples, batch, timesteps)`.
 
         Returns
         -------
         torch.Tensor
-            Boolean mask of shape ``(samples, batch, timesteps)`` that is
-            ``True`` for inlier members.
+            Boolean mask of shape `(samples, batch, timesteps)` that is
+            `True` for inlier members.
         """
         median = self._masked_quantile(norms, finite, 0.5, lower=True).unsqueeze(0)
         abs_dev = torch.abs(norms - median)
@@ -234,13 +234,13 @@ class OutliersFilteredMean(nn.Module):
         Parameters
         ----------
         norms : torch.Tensor
-            Per-member norms of shape ``(samples, batch, timesteps)``.
+            Per-member norms of shape `(samples, batch, timesteps)`.
 
         Returns
         -------
         torch.Tensor
-            Boolean mask of shape ``(samples, batch, timesteps)`` that is
-            ``True`` for inlier members.
+            Boolean mask of shape `(samples, batch, timesteps)` that is
+            `True` for inlier members.
         """
         # quantile supports float32/float64; keep low-precision ensemble
         # predictions in their native dtype while computing fences in float32.

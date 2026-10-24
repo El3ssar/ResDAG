@@ -52,8 +52,8 @@ def linear_esn(
     trainable : bool, default=False
         Whether reservoir weights are trainable.
     **reservoir_kwargs
-        Additional keyword arguments passed to ESNLayer.  ``activation`` is not
-        accepted here: ``linear_esn`` forces ``activation="identity"`` by design.
+        Additional keyword arguments passed to ESNLayer.  `activation` is not
+        accepted here: `linear_esn` forces `activation="identity"` by design.
 
     Returns
     -------
@@ -63,7 +63,7 @@ def linear_esn(
     Raises
     ------
     ValueError
-        If ``activation`` is passed via ``reservoir_kwargs``.  ``linear_esn``
+        If `activation` is passed via `reservoir_kwargs`.  `linear_esn`
         forces a linear (identity) activation by design, so overriding it is
         not allowed.
 

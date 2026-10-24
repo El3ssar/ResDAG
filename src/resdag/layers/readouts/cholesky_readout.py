@@ -2,15 +2,15 @@
 Cholesky Readout Layer
 ======================
 
-This module provides :class:`CholeskyReadoutLayer`, a direct ridge readout that
-factorises the regularised normal equations ``(XᵀX + αI)`` with
-:func:`torch.linalg.cholesky` and back-substitutes with
-:func:`torch.cholesky_solve`.
+This module provides `CholeskyReadoutLayer`, a direct ridge readout that
+factorises the regularised normal equations `(XᵀX + αI)` with
+`torch.linalg.cholesky` and back-substitutes with
+`torch.cholesky_solve`.
 
 It is the readout the streaming / minibatch path needs: the same closed-form
-ridge solve that :class:`IncrementalRidgeReadoutLayer` performs in
-:meth:`~IncrementalRidgeReadoutLayer.finalize`, packaged as a standalone
-single-shot readout. It reuses the shared centering + auto ``gram_dtype``
+ridge solve that `IncrementalRidgeReadoutLayer` performs in
+`IncrementalRidgeReadoutLayer.finalize`, packaged as a standalone
+single-shot readout. It reuses the shared centering + auto `gram_dtype`
 policy (the solve dtype, float64 by default, on every device) to preserve
 accuracy for ill-conditioned reservoir states.
 
@@ -37,44 +37,44 @@ from .base import ReadoutLayer
 class CholeskyReadoutLayer(ReadoutLayer):
     """Readout layer that solves ridge regression via a Cholesky factorisation.
 
-    The regularised normal equations ``(XᵀX + αI) W = Xᵀy`` are formed (with
+    The regularised normal equations `(XᵀX + αI) W = Xᵀy` are formed (with
     analytic centering when a bias is fitted) and solved with
-    :func:`torch.linalg.cholesky` followed by :func:`torch.cholesky_solve`. The
-    ``(F, F)`` system is symmetric positive definite for ``alpha > 0``, so the
+    `torch.linalg.cholesky` followed by `torch.cholesky_solve`. The
+    `(F, F)` system is symmetric positive definite for `alpha > 0`, so the
     Cholesky factorisation is the fastest, most numerically stable exact solve
     for the readout widths typical of reservoir computing
-    (``in_features = 100``–``2000``).
+    (`in_features = 100`–`2000`).
 
-    Unlike :class:`CGReadoutLayer`, which only *approximates* the solution
+    Unlike `CGReadoutLayer`, which only *approximates* the solution
     iteratively, this layer returns the exact ridge solution (up to floating
     point) in a single shot. It is the single-batch counterpart of the
-    streaming :class:`IncrementalRidgeReadoutLayer`: both ultimately Cholesky-solve
-    the same regularised Gram system, so a full-batch ``CholeskyReadoutLayer``
-    fit and an accumulated ``IncrementalRidgeReadoutLayer`` fit over the same data
+    streaming `IncrementalRidgeReadoutLayer`: both ultimately Cholesky-solve
+    the same regularised Gram system, so a full-batch `CholeskyReadoutLayer`
+    fit and an accumulated `IncrementalRidgeReadoutLayer` fit over the same data
     agree to within floating-point tolerance.
 
-    The solver minimises the same ridge objective as :class:`CGReadoutLayer`,
+    The solver minimises the same ridge objective as `CGReadoutLayer`,
 
-    .. math::
-
-        \\lVert X W - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 .
+    $$
+    \\lVert X W - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 .
+    $$
 
     Noise-injection / LMNT regularization
     -------------------------------------
-    Pass ``state_noise > 0`` to apply **state-noise regularization** — a
+    Pass `state_noise > 0` to apply **state-noise regularization** — a
     standard, tunable tool for **closed-loop (autonomous-rollout) robustness** —
     by training on state-noise-perturbed reservoir states (Jaeger's state noise;
     Wikner et al. 2024, Chaos 34, 043105). It trades a little one-step accuracy
     for closed-loop stability; it is **not an automatic forecast-quality win**
-    (whether it helps or hurts is problem- and :math:`\\sigma`-dependent, so
-    :math:`\\sigma` must be tuned per problem — the default is off). The robust
-    guarantee is the mechanism: the default ``noise_draws=None`` uses the
+    (whether it helps or hurts is problem- and $\\sigma$-dependent, so
+    $\\sigma$ must be tuned per problem — the default is off). The robust
+    guarantee is the mechanism: the default `noise_draws=None` uses the
     closed-form **LMNT** term — the *exact analytic expectation* of the noisy
     Gram. Solving these expected normal equations is the infinite-copy limit of
     explicit-noise training; it does not average separately fitted coefficients.
-    Set ``noise_draws=M`` (seeded by ``noise_seed``) to average the normal
-    equations of ``M`` noisy copies, then solve once. See :class:`RidgeReadoutLayer` for the
-    full discussion. ``0.0`` (default) is byte-identical to a plain fit.
+    Set `noise_draws=M` (seeded by `noise_seed`) to average the normal
+    equations of `M` noisy copies, then solve once. See `RidgeReadoutLayer` for the
+    full discussion. `0.0` (default) is byte-identical to a plain fit.
 
     Parameters
     ----------
@@ -83,47 +83,47 @@ class CholeskyReadoutLayer(ReadoutLayer):
     out_features : int
         Size of output features (prediction dimension).
     bias : bool, default=True
-        Whether to include a bias term. When ``True`` the data is centered and
-        an unpenalised intercept is recovered; when ``False`` the raw normal
+        Whether to include a bias term. When `True` the data is centered and
+        an unpenalised intercept is recovered; when `False` the raw normal
         equations are solved with no intercept.
     name : str, optional
         Name for this readout layer. Used for identification in multi-readout
-        architectures and as the key into ``targets`` by :class:`ESNTrainer`.
+        architectures and as the key into `targets` by `ESNTrainer`.
     trainable : bool, default=False
-        If ``True``, weights are trainable via backpropagation.
+        If `True`, weights are trainable via backpropagation.
     alpha : float, default=1e-6
-        L2 regularization strength. Must be non-negative. ``alpha > 0``
-        guarantees the Gram is positive definite; with ``alpha == 0`` the
+        L2 regularization strength. Must be non-negative. `alpha > 0`
+        guarantees the Gram is positive definite; with `alpha == 0` the
         factorisation succeeds only on a full-rank Gram (reach for
-        :class:`SVDReadoutLayer` if the Gram may be rank deficient).
+        `SVDReadoutLayer` if the Gram may be rank deficient).
     state_noise : float, default=0.0
-        Standard deviation :math:`\\sigma` of the closed-loop state-noise
-        regulariser (see the class docstring). ``0.0`` (default) is byte-identical
-        to a plain fit. Must be non-negative. Adds ``alpha > 0`` positive
+        Standard deviation $\\sigma$ of the closed-loop state-noise
+        regulariser (see the class docstring). `0.0` (default) is byte-identical
+        to a plain fit. Must be non-negative. Adds `alpha > 0` positive
         definiteness insurance too — the LMNT term is a positive diagonal add.
     noise_draws : int, optional
-        ``None`` (default) uses the closed-form LMNT term; an integer ``M >= 1``
-        averages ``M`` noisy-state normal equations before one solve.
-        Ignored when ``state_noise == 0``.
+        `None` (default) uses the closed-form LMNT term; an integer `M >= 1`
+        averages `M` noisy-state normal equations before one solve.
+        Ignored when `state_noise == 0`.
     noise_seed : int, optional
-        Seed for the explicit-noise (``noise_draws``) draws. Ignored for the
+        Seed for the explicit-noise (`noise_draws`) draws. Ignored for the
         deterministic LMNT path.
     use_float64 : bool, default=True
-        If ``True`` the small ``(F, F)`` factorisation runs in ``float64`` and
+        If `True` the small `(F, F)` factorisation runs in `float64` and
         the result is cast back to the parameter dtype.
     gram_dtype : torch.dtype, optional
         Dtype for forming the Gram matrix and right-hand side (the heavy
-        ``(N, F)`` matmuls). Default ``None`` uses the solve dtype (``float64``
-        with ``use_float64=True``) on every device. An explicit
-        ``gram_dtype=torch.float32`` can speed up well-conditioned fits on
+        `(N, F)` matmuls). Default `None` uses the solve dtype (`float64`
+        with `use_float64=True`) on every device. An explicit
+        `gram_dtype=torch.float32` can speed up well-conditioned fits on
         CUDA, at the cost of precision when forming the normal equations.
 
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or ``None`` if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or `None` if `bias=False`.
     alpha : float
         L2 regularization strength.
 
@@ -140,7 +140,7 @@ class CholeskyReadoutLayer(ReadoutLayer):
     See Also
     --------
     CGReadoutLayer : Iterative Conjugate Gradient ridge readout.
-    RidgeReadoutLayer : Direct ridge readout with a ``solver`` switch.
+    RidgeReadoutLayer : Direct ridge readout with a `solver` switch.
     IncrementalRidgeReadoutLayer : Streaming partial_fit / finalize counterpart.
     resdag.training.ESNTrainer : Trainer that uses this for fitting.
     """
@@ -183,17 +183,17 @@ class CholeskyReadoutLayer(ReadoutLayer):
         Parameters
         ----------
         states : torch.Tensor
-            Flattened state matrix of shape ``(N, in_features)``.
+            Flattened state matrix of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened target matrix of shape ``(N, out_features)``.
+            Flattened target matrix of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
+            Coefficient matrix of shape `(in_features, out_features)`.
         intercept : torch.Tensor or None
-            Intercept vector of shape ``(out_features,)``, or ``None`` when the
-            layer was built with ``bias=False``.
+            Intercept vector of shape `(out_features,)`, or `None` when the
+            layer was built with `bias=False`.
         """
         if self.state_noise > 0 and self.noise_draws is not None:
             generator: torch.Generator | None = None

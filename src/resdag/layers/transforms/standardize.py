@@ -1,10 +1,10 @@
 """Per-feature standardization transform with buffer-stored statistics.
 
-Provides :class:`Standardize`, an ``nn.Module`` that centers and scales every
-feature to zero mean and unit standard deviation. The per-feature ``mean`` and
-``std`` are stored as registered buffers, so they travel with ``.to(device)``,
-``.double()``, ``state_dict``/``load_state_dict``, and the
-:meth:`~resdag.core.ESNModel.save_full`/``load_full`` round trip — letting
+Provides `Standardize`, an `nn.Module` that centers and scales every
+feature to zero mean and unit standard deviation. The per-feature `mean` and
+`std` are stored as registered buffers, so they travel with `.to(device)`,
+`.double()`, `state_dict`/`load_state_dict`, and the
+`resdag.core.ESNModel.save_full`/`load_full` round trip — letting
 normalization live inside the model graph rather than ad-hoc user code.
 """
 
@@ -18,25 +18,25 @@ class Standardize(nn.Module):
     r"""Per-feature standardization (z-score) with a learnable-free inverse.
 
     Centers and scales each feature of the last dimension using stored
-    statistics, applying ``(x - mean) / std`` in :meth:`forward` and the exact
-    inverse ``x * std + mean`` in :meth:`inverse`. The ``mean`` and ``std``
-    vectors are registered buffers of shape ``(num_features,)``, so they are
-    part of the ``state_dict`` and move with ``.to()``/dtype casts and the
-    :meth:`~resdag.core.ESNModel.save_full` round trip.
+    statistics, applying `(x - mean) / std` in `forward` and the exact
+    inverse `x * std + mean` in `inverse`. The `mean` and `std`
+    vectors are registered buffers of shape `(num_features,)`, so they are
+    part of the `state_dict` and move with `.to()`/dtype casts and the
+    `resdag.core.ESNModel.save_full` round trip.
 
     Statistics may be supplied at construction or estimated from data with
-    :meth:`fit`. Until either happens the layer initializes to ``mean = 0`` and
-    ``std = 1``. Supplied floating-point tensors preserve their precision and
+    `fit`. Until either happens the layer initializes to `mean = 0` and
+    `std = 1`. Supplied floating-point tensors preserve their precision and
     device; both buffers use their common promoted dtype. A missing statistic
     is created on the supplied tensor's device in the same dtype. Lists and
     integer tensors use the default floating dtype. Two tensor statistics on
     different devices are rejected rather than moved implicitly.
 
-    A finite, nonnegative ``eps`` is added to ``std`` before division to avoid
+    A finite, nonnegative `eps` is added to `std` before division to avoid
     blow-up on constant (zero-variance) features; the same padded scale is used by
-    :meth:`inverse`, so ``inverse(forward(x))`` reconstructs ``x`` to within
+    `inverse`, so `inverse(forward(x))` reconstructs `x` to within
     floating-point tolerance when the padded scale is nonzero. Setting
-    ``eps=0`` disables stabilization. In float16, a positive ``eps`` is floored
+    `eps=0` disables stabilization. In float16, a positive `eps` is floored
     at the dtype's smallest normal value, keeping the reciprocal scale
     representable for constant features. Both methods are available in TorchScript.
 
@@ -45,22 +45,22 @@ class Standardize(nn.Module):
     num_features : int
         Size of the feature (last) dimension this layer standardizes.
     mean : torch.Tensor, optional
-        Initial per-feature mean of shape ``(num_features,)``. Defaults to
-        zeros (no centering until :meth:`fit` is called).
+        Initial per-feature mean of shape `(num_features,)`. Defaults to
+        zeros (no centering until `fit` is called).
     std : torch.Tensor, optional
-        Finite, nonnegative initial standard deviation of shape ``(num_features,)``.
-        Defaults to ones (no scaling until :meth:`fit` is called).
+        Finite, nonnegative initial standard deviation of shape `(num_features,)`.
+        Defaults to ones (no scaling until `fit` is called).
     eps : float, default=1e-8
-        Numerical-stability floor added to ``std`` before dividing. Guards
+        Numerical-stability floor added to `std` before dividing. Guards
         against division by zero on constant features.
 
     Attributes
     ----------
     mean : torch.Tensor
-        Registered buffer holding the per-feature mean ``(num_features,)``.
+        Registered buffer holding the per-feature mean `(num_features,)`.
     std : torch.Tensor
         Registered buffer holding the per-feature standard deviation
-        ``(num_features,)``.
+        `(num_features,)`.
 
     Examples
     --------
@@ -77,7 +77,7 @@ class Standardize(nn.Module):
     >>> torch.allclose(layer.inverse(z), x, atol=1e-5)
     True
 
-    Inside a composable pipeline (statistics travel with ``save_full``/``.to``):
+    Inside a composable pipeline (statistics travel with `save_full`/`.to`):
 
     >>> import pytorch_symbolic as ps
     >>> from resdag import ESNModel, ESNLayer, CGReadoutLayer, Standardize
@@ -109,30 +109,30 @@ class Standardize(nn.Module):
         std: torch.Tensor | None = None,
         eps: float = 1e-8,
     ) -> None:
-        """Register the per-feature mean/std buffers and the ``eps`` floor.
+        """Register the per-feature mean/std buffers and the `eps` floor.
 
         Parameters
         ----------
         num_features : int
             Size of the feature dimension to standardize.
         mean : torch.Tensor, optional
-            Initial per-feature mean of shape ``(num_features,)`` (default
+            Initial per-feature mean of shape `(num_features,)` (default
             zeros).
         std : torch.Tensor, optional
             Initial per-feature standard deviation of shape
-            ``(num_features,)`` (default ones).
+            `(num_features,)` (default ones).
         eps : float, default=1e-8
-            Stability floor added to ``std`` before dividing.
+            Stability floor added to `std` before dividing.
 
         Raises
         ------
         ValueError
-            If ``num_features`` is not positive, or if a supplied ``mean``/
-            ``std`` has the wrong shape, nonfinite values, or conflicting
-            devices; also if ``std`` or ``eps`` is negative, or ``eps`` is
+            If `num_features` is not positive, or if a supplied `mean`/
+            `std` has the wrong shape, nonfinite values, or conflicting
+            devices; also if `std` or `eps` is negative, or `eps` is
             nonfinite.
         TypeError
-            If a supplied statistic is complex or ``eps`` is not a real number.
+            If a supplied statistic is complex or `eps` is not a real number.
         """
         super().__init__()
 
@@ -182,14 +182,14 @@ class Standardize(nn.Module):
         Parameters
         ----------
         value : torch.Tensor or None
-            Candidate statistic. ``None`` leaves the statistic unspecified.
+            Candidate statistic. `None` leaves the statistic unspecified.
         name : str
             Statistic name, used in error messages.
 
         Returns
         -------
         torch.Tensor or None
-            A floating 1-D tensor of length ``num_features``, or ``None`` for a
+            A floating 1-D tensor of length `num_features`, or `None` for a
             missing statistic. Lists and integer tensors use the default dtype.
 
         Raises
@@ -234,24 +234,24 @@ class Standardize(nn.Module):
         """Estimate per-feature mean and std from data and store them.
 
         Statistics are reduced over every dimension except the last, so an
-        input of shape ``(batch, time, features)`` (or any number of leading
-        dims) yields per-feature vectors of length ``num_features``. The
-        population standard deviation (``unbiased=False``) is used so a single
-        observation does not produce a ``nan``. The fitted buffers inherit the
+        input of shape `(batch, time, features)` (or any number of leading
+        dims) yields per-feature vectors of length `num_features`. The
+        population standard deviation (`unbiased=False`) is used so a single
+        observation does not produce a `nan`. The fitted buffers inherit the
         device/dtype of *input*. Validation and statistics calculation finish
         before either previous buffer is replaced. Fitting inside
-        ``torch.inference_mode`` still permits later differentiable calls.
+        `torch.inference_mode` still permits later differentiable calls.
 
         Parameters
         ----------
         input : torch.Tensor
-            Data of shape ``(..., num_features)`` whose last dimension matches
-            ``num_features``.
+            Data of shape `(..., num_features)` whose last dimension matches
+            `num_features`.
 
         Returns
         -------
         Standardize
-            ``self``, so calls can be chained (e.g. ``layer.fit(x)(x)``).
+            `self`, so calls can be chained (e.g. `layer.fit(x)(x)`).
 
         Raises
         ------
@@ -296,12 +296,12 @@ class Standardize(nn.Module):
         return self.std + eps
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Standardize the last dimension as ``(x - mean) / (std + eps)``.
+        """Standardize the last dimension as `(x - mean) / (std + eps)`.
 
         Parameters
         ----------
         input : torch.Tensor
-            Tensor of shape ``(..., num_features)``.
+            Tensor of shape `(..., num_features)`.
 
         Returns
         -------
@@ -312,7 +312,7 @@ class Standardize(nn.Module):
         Raises
         ------
         ValueError
-            If the last dimension of *input* does not equal ``num_features``.
+            If the last dimension of *input* does not equal `num_features`.
         """
         if input.shape[-1] != self.num_features:
             raise ValueError(
@@ -323,17 +323,17 @@ class Standardize(nn.Module):
 
     @torch.jit.export
     def inverse(self, input: torch.Tensor) -> torch.Tensor:
-        """Invert the transform as ``x * (std + eps) + mean``.
+        """Invert the transform as `x * (std + eps) + mean`.
 
-        The exact algebraic inverse of :meth:`forward`, using the same
-        ``eps``-padded scale so that ``inverse(forward(x)) == x`` up to
+        The exact algebraic inverse of `forward`, using the same
+        `eps`-padded scale so that `inverse(forward(x)) == x` up to
         floating-point error. Use it to map standardized model outputs (e.g.
         forecasts) back to the original data scale.
 
         Parameters
         ----------
         input : torch.Tensor
-            Standardized tensor of shape ``(..., num_features)``.
+            Standardized tensor of shape `(..., num_features)`.
 
         Returns
         -------
@@ -343,7 +343,7 @@ class Standardize(nn.Module):
         Raises
         ------
         ValueError
-            If the last dimension of *input* does not equal ``num_features``.
+            If the last dimension of *input* does not equal `num_features`.
         """
         if input.shape[-1] != self.num_features:
             raise ValueError(

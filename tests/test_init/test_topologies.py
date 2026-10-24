@@ -393,7 +393,7 @@ class TestMatrixTopology:
 class TestMatrixRegistry:
     """register_matrix_topology + built-in matrix topologies."""
 
-    def test_register_and_get(self) -> None:
+    def test_register_and_get(self, isolated_initializer_registries) -> None:
         """A registered matrix topology resolves through get_topology."""
 
         @register_matrix_topology("_test_blockdiag", blocks=2)

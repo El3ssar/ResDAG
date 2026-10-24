@@ -1,16 +1,18 @@
 """Gated ("reservoir GRU") ESN architecture.
 
-This module provides the :func:`gated_esn` factory, which builds a model whose
+This module provides the `gated_esn` factory, which builds a model whose
 reservoir is a frozen (or trainable) light-gated recurrent cell
-(:class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`) instead of the plain
-leaky ESN reservoir.  The architecture mirrors :func:`resdag.models.classic_esn`
-— the raw input is concatenated with the reservoir output before the readout::
+(`resdag.layers.reservoirs.gated.GatedReservoirLayer`) instead of the plain
+leaky ESN reservoir.  The architecture mirrors `resdag.models.classic_esn`
+— the raw input is concatenated with the reservoir output before the readout:
 
-    Input -> GatedReservoirLayer -> Concatenate(Input, Reservoir) -> Readout
+```text
+Input -> GatedReservoirLayer -> Concatenate(Input, Reservoir) -> Readout
+```
 
 The gated reservoir uses the LiGRU update (Ravanelli et al. 2018); see
-:mod:`resdag.layers.cells.gated_cell` for the equations and attribution.  A
-*frozen* gated reservoir often underperforms a classic ESN, so ``trainable=True``
+`resdag.layers.cells.gated_cell` for the equations and attribution.  A
+*frozen* gated reservoir often underperforms a classic ESN, so `trainable=True`
 (a BPTT rollout that updates the gates) is frequently the more useful setting.
 
 See Also
@@ -60,9 +62,11 @@ def gated_esn(
 
     The reservoir is a frozen (or trainable) LiGRU-style gated recurrent cell.
     The raw input is concatenated with the reservoir output before the readout,
-    following the classic-ESN wiring::
+    following the classic-ESN wiring:
 
-        Input -> GatedReservoirLayer -> Concatenate(Input, Reservoir) -> Readout
+    ```text
+    Input -> GatedReservoirLayer -> Concatenate(Input, Reservoir) -> Readout
+    ```
 
     Parameters
     ----------
@@ -74,11 +78,11 @@ def gated_esn(
         Number of output features.
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
-        model takes two inputs ``(feedback, driver)``; the driver feeds the
+        model takes two inputs `(feedback, driver)`; the driver feeds the
         reservoir but is kept out of the input concatenation, so the readout
-        ``in_features`` stays ``feedback_size + reservoir_size``.
+        `in_features` stays `feedback_size + reservoir_size`.
     input_initializer : InitializerSpec, optional
-        Initializer for the driving-input weights.  Only used when ``input_size``
+        Initializer for the driving-input weights.  Only used when `input_size`
         is given.
     topology : TopologySpec, optional
         Topology for the recurrent **candidate** weight.  The update-gate
@@ -88,9 +92,9 @@ def gated_esn(
     update_gate_bias : float, default=2.0
         Retention bias on the update gate (keeps a frozen gated reservoir from
         washing out its memory).  See
-        :class:`~resdag.layers.cells.gated_cell.GatedReservoirCell`.
+        `resdag.layers.cells.gated_cell.GatedReservoirCell`.
     activation : str, default="relu"
-        Candidate nonlinearity (LiGRU default is ``"relu"``).
+        Candidate nonlinearity (LiGRU default is `"relu"`).
     gate_activation : str, default="sigmoid"
         Update-gate nonlinearity.
     feedback_initializer : InitializerSpec, optional
@@ -99,19 +103,19 @@ def gated_esn(
         Whether to use gate biases in the reservoir.
     trainable : bool, default=False
         Whether reservoir weights are trainable.  A frozen gated reservoir often
-        underperforms an ESN; ``True`` (BPTT through the gates) is frequently the
+        underperforms an ESN; `True` (BPTT through the gates) is frequently the
         more useful setting.  Note the ReLU candidate is unbounded, so a *frozen*
         autoregressive forecast that drifts off the attractor can grow large in
-        magnitude (not merely track poorly) — prefer ``trainable=True`` for
+        magnitude (not merely track poorly) — prefer `trainable=True` for
         closed-loop forecasting.
     concat_input : bool, default=True
         Whether to concatenate the raw input with the reservoir output before the
         readout.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         Ridge regularization for the readout.
     readout_bias : bool, default=True
@@ -119,25 +123,25 @@ def gated_esn(
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
     readout_kwargs : dict, optional
-        Extra readout options, such as ``trainable=True``, ``solver``,
-        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
+        Extra readout options, such as `trainable=True`, `solver`,
+        `state_noise` or `gram_dtype`. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
-        :class:`~resdag.layers.reservoirs.gated.GatedReservoirLayer`.
+        `resdag.layers.reservoirs.gated.GatedReservoirLayer`.
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
+    `resdag.core.ESNModel`
         Configured gated ESN model ready for training and inference.
 
     Raises
     ------
     ValueError
-        If ``output_size`` is not a positive integer, or ``readout`` is an
+        If `output_size` is not a positive integer, or `readout` is an
         unknown string key.
     TypeError
-        If ``readout`` is neither a known string key nor a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
+        If `readout` is neither a known string key nor a
+        `resdag.layers.readouts.ReadoutLayer` subclass.
 
     Examples
     --------

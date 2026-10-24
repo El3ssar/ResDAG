@@ -17,36 +17,36 @@ Functions
 seed_everything
     Seed Python, NumPy, and torch (CPU + CUDA) for reproducible runs.
 resolve_device
-    Resolve a device spec (``'auto'``/str/``torch.device``) to a ``torch.device``.
+    Resolve a device spec (`'auto'`/str/`torch.device`) to a `torch.device`.
 create_rng
     Create a NumPy random number generator with optional seed.
 create_torch_generator
-    Create a torch ``Generator`` for reproducible weight/bias draws.
+    Create a torch `Generator` for reproducible weight/bias draws.
 coerce_seed_to_int
-    Reduce an int/``torch.Generator``/None seed to a plain int (or None).
+    Reduce an int/`torch.Generator`/None seed to a plain int (or None).
 SeedStreams
     Derive stable seeds for explicitly named model components.
 SeedLike
-    Type alias for accepted seed inputs (``int | torch.Generator | None``).
+    Type alias for accepted seed inputs (`int | torch.Generator | None`).
 DeviceLike
-    Type alias for accepted device specs (``str | torch.device | None``).
+    Type alias for accepted device specs (`str | torch.device | None`).
 load_file
-    Load a time series from disk (re-exported from ``resdag.data``).
+    Load a time series from disk (re-exported from `resdag.data`).
 prepare_esn_data
     Split a series into ESN train/forecast segments (re-exported from
-    ``resdag.data``).
+    `resdag.data`).
 normalize_data
     Normalize a series and return the fitted statistics (re-exported from
-    ``resdag.data``).
+    `resdag.data`).
 denormalize_data
     Invert a normalization back to the original scale (re-exported from
-    ``resdag.data``).
+    `resdag.data`).
 lorenz, rossler, henon, mackey_glass, narma, sine
     Canonical reservoir-computing dataset generators (re-exported from
-    ``resdag.datasets``).
+    `resdag.datasets`).
 esp_index
     Echo State Property index — the library's signature stability diagnostic
-    (re-exported from ``resdag.utils.states``).
+    (re-exported from `resdag.utils.states`).
 
 Examples
 --------
@@ -118,5 +118,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

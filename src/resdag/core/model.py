@@ -2,9 +2,9 @@
 ESNModel — core model class for reservoir computing.
 
 This module provides the main model class for building ESN architectures
-using the ``pytorch_symbolic`` library for symbolic tensor computation.
+using the `pytorch_symbolic` library for symbolic tensor computation.
 
-The :class:`ESNModel` class extends ``pytorch_symbolic.SymbolicModel`` with
+The `ESNModel` class extends `pytorch_symbolic.SymbolicModel` with
 ESN-specific functionality including forecasting, reservoir state management,
 and model persistence.
 
@@ -85,16 +85,16 @@ def _grad_context(no_grad: bool) -> AbstractContextManager[Any]:
     Parameters
     ----------
     no_grad : bool
-        If ``True``, return :func:`torch.no_grad` so the rollout builds no
+        If `True`, return `torch.no_grad` so the rollout builds no
         autograd graph (the default — preserves behaviour and memory cost of
-        the historical ``@torch.no_grad()`` decorators).  If ``False``, return
-        :class:`contextlib.nullcontext` so the per-step calls build a
+        the historical `@torch.no_grad()` decorators).  If `False`, return
+        `contextlib.nullcontext` so the per-step calls build a
         backpropagatable graph (BPTT through the rollout).
 
     Returns
     -------
     contextlib.AbstractContextManager
-        ``torch.no_grad()`` when ``no_grad=True``, else ``contextlib.nullcontext()``.
+        `torch.no_grad()` when `no_grad=True`, else `contextlib.nullcontext()`.
     """
     return torch.no_grad() if no_grad else contextlib.nullcontext()
 
@@ -103,7 +103,7 @@ class ESNModel(ps.SymbolicModel):
     """
     Echo State Network model with forecasting and state management.
 
-    This class extends ``pytorch_symbolic.SymbolicModel`` with ESN-specific
+    This class extends `pytorch_symbolic.SymbolicModel` with ESN-specific
     functionality including:
 
     - Time series forecasting with warmup and autoregressive generation
@@ -111,11 +111,11 @@ class ESNModel(ps.SymbolicModel):
     - Model persistence (save/load)
     - Architecture visualization
 
-    The model inherits all standard ``torch.nn.Module`` functionality and
-    the ``summary()`` method from pytorch_symbolic.
+    The model inherits all standard `torch.nn.Module` functionality and
+    the `summary()` method from pytorch_symbolic.
 
-    Pass symbolic ``inputs`` and ``outputs`` to the constructor (see
-    ``pytorch_symbolic.SymbolicModel``).
+    Pass symbolic `inputs` and `outputs` to the constructor (see
+    `pytorch_symbolic.SymbolicModel`).
 
     Attributes
     ----------
@@ -163,14 +163,14 @@ class ESNModel(ps.SymbolicModel):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Build the symbolic model and clear reservoir trace residue.
 
-        ``pytorch_symbolic.SymbolicModel`` propagates shapes by running each
-        layer's real ``forward`` on a ``torch.rand`` placeholder (batch size 1).
-        For a stateful :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
-        that leaves the layer holding a *saturated* trace state at ``batch=1``.
-        A fresh model used directly at ``batch=1`` (e.g. ``y = model(x)`` or
+        `pytorch_symbolic.SymbolicModel` propagates shapes by running each
+        layer's real `forward` on a `torch.rand` placeholder (batch size 1).
+        For a stateful `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
+        that leaves the layer holding a *saturated* trace state at `batch=1`.
+        A fresh model used directly at `batch=1` (e.g. `y = model(x)` or
         standard forecasting) would silently continue from this junk instead of a
-        clean zero state — batch sizes ``!= 1`` auto-resize to zeros and escape
-        it, but ``batch=1`` direct calls do not. Resetting here, once, right after
+        clean zero state — batch sizes `!= 1` auto-resize to zeros and escape
+        it, but `batch=1` direct calls do not. Resetting here, once, right after
         the graph is built, makes every freshly constructed model start from a
         clean state regardless of how it is first called.
         """
@@ -215,31 +215,31 @@ class ESNModel(ps.SymbolicModel):
         """
         Deep copy preserving the model subclass and its symbolic graph.
 
-        ``pytorch_symbolic.SymbolicModel.__deepcopy__`` rebuilds the copy as a
-        ``DetachedSymbolicModel``, silently dropping every subclass method
-        (``forecast``, ``reset_reservoirs``, ``save``, ...).  This override
-        instead produces a faithful, fully independent :class:`ESNModel`:
+        `pytorch_symbolic.SymbolicModel.__deepcopy__` rebuilds the copy as a
+        `DetachedSymbolicModel`, silently dropping every subclass method
+        (`forecast`, `reset_reservoirs`, `save`, ...).  This override
+        instead produces a faithful, fully independent `ESNModel`:
         parameters, buffers and reservoir states are copied, and the symbolic
         graph (inputs, outputs, execution order) is duplicated so that
-        ``summary()`` and ``plot_model()`` keep working on the copy.
+        `summary()` and `plot_model()` keep working on the copy.
 
         Returns
         -------
         ESNModel
             An independent copy sharing no tensors or graph nodes with
-            ``self``.  Subclasses of :class:`ESNModel` are preserved as well.
+            `self`.  Subclasses of `ESNModel` are preserved as well.
 
         Notes
         -----
-        Non-input graph nodes cache a ``_value`` that may be an autograd-tracked
-        non-leaf tensor, which :func:`copy.deepcopy` cannot duplicate.  Each node
-        is therefore pre-seeded into ``memo`` as an empty shell whose ``__dict__``
-        is filled by hand with ``_value`` cleared, so the copy machinery never
+        Non-input graph nodes cache a `_value` that may be an autograd-tracked
+        non-leaf tensor, which `copy.deepcopy` cannot duplicate.  Each node
+        is therefore pre-seeded into `memo` as an empty shell whose `__dict__`
+        is filled by hand with `_value` cleared, so the copy machinery never
         tries to copy those caches — they are recomputed on demand from the
         retained input placeholders.
 
-        Since ``pytorch-symbolic`` 1.2 the whole model is also picklable, so
-        :meth:`save_full` / :meth:`load_full` (or ``torch.save(model)``) offer an
+        Since `pytorch-symbolic` 1.2 the whole model is also picklable, so
+        `save_full` / `load_full` (or `torch.save(model)`) offer an
         alternative way to clone or persist a model, graph and all.
 
         Examples
@@ -281,11 +281,11 @@ class ESNModel(ps.SymbolicModel):
     def __getstate__(self) -> dict[str, Any]:
         """Drop the unpicklable flattened-step cache before pickling.
 
-        The cache holds an ``exec``-built step closure (and layer-bound methods)
-        that cannot be pickled — like the generated ``forward`` that
-        ``pytorch_symbolic.SymbolicModel.__getstate__`` already removes.  It is
-        rebuilt lazily on the next :meth:`forecast`, so nothing is lost; this
-        keeps :meth:`save_full` / ``torch.save(model)`` working after a forecast
+        The cache holds an `exec`-built step closure (and layer-bound methods)
+        that cannot be pickled — like the generated `forward` that
+        `pytorch_symbolic.SymbolicModel.__getstate__` already removes.  It is
+        rebuilt lazily on the next `forecast`, so nothing is lost; this
+        keeps `save_full` / `torch.save(model)` working after a forecast
         has populated the cache.
         """
         state: dict[str, Any] = super().__getstate__()
@@ -335,10 +335,10 @@ class ESNModel(ps.SymbolicModel):
     ) -> tuple[ModelOutput, ReservoirStates]:
         """Run the complete DAG with explicit recurrent states.
 
-        Inputs use ``(batch, time, features)``. Omitting ``states`` starts each
+        Inputs use `(batch, time, features)`. Omitting `states` starts each
         reservoir from its configured reset state (zero by default). Otherwise
         pass the complete state dictionary returned by an earlier call; keys
-        match :meth:`get_reservoir_states`.
+        match `get_reservoir_states`.
         The returned output includes every original transform and readout.
         Stored reservoir states and supplied state tensors are not changed.
 
@@ -374,8 +374,8 @@ class ESNModel(ps.SymbolicModel):
 
         The wrapper shares this model's parameters and readouts. The default
         processes independent batches without touching stored reservoir state.
-        Set ``stateful=True`` to carry state between calls, as ``model(x)``
-        does, or use the wrapper's ``forward_stateless`` for explicit state.
+        Set `stateful=True` to carry state between calls, as `model(x)`
+        does, or use the wrapper's `forward_stateless` for explicit state.
         """
         if stateful:
             _validate_unique_reservoir_invocations(self)
@@ -387,7 +387,7 @@ class ESNModel(ps.SymbolicModel):
         """
         Reset all reservoir layers for lazy initialization from their configured state.
 
-        This clears the internal hidden states of all :class:`BaseReservoirLayer`
+        This clears the internal hidden states of all `BaseReservoirLayer`
         modules in the model, preparing it for a new sequence.
 
         Examples
@@ -454,7 +454,7 @@ class ESNModel(ps.SymbolicModel):
         return self.get_reservoir_states()
 
     def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
-        """Restore named recurrent states; names match ``forward_stateless``."""
+        """Restore named recurrent states; names match `forward_stateless`."""
         self.set_reservoir_states(dict(states), strict=strict)
 
     def set_reservoir_states(
@@ -469,30 +469,30 @@ class ESNModel(ps.SymbolicModel):
         ----------
         states : dict of str to torch.Tensor
             Dictionary mapping layer names to state tensors.
-            Names should match those returned by :meth:`get_reservoir_states`.
+            Names should match those returned by `get_reservoir_states`.
         strict : bool, default=True
-            If ``True``, raise a ``KeyError`` when the provided ``states``
+            If `True`, raise a `KeyError` when the provided `states`
             dict is missing entries for any reservoir in the model or
-            contains keys that don't match any reservoir.  Set to ``False``
+            contains keys that don't match any reservoir.  Set to `False`
             to silently ignore both kinds of mismatch (legacy behaviour).
 
         Notes
         -----
         Each restored tensor is routed through
-        :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_state`,
+        `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_state`,
         which clones the tensor and validates its shape against the target
-        cell's contract (e.g. the 2-D ``(batch, reservoir_size)`` layout of an
+        cell's contract (e.g. the 2-D `(batch, reservoir_size)` layout of an
         ESN).  Before validation the tensor is coerced to the target
         reservoir's reference device and dtype (its first floating-point
         parameter/buffer) so that a state saved on one device/dtype is not
-        silently re-zeroed by ``_maybe_init_state`` on the next forward pass —
+        silently re-zeroed by `_maybe_init_state` on the next forward pass —
         the canonical save-on-GPU / load-on-CPU round-trip therefore preserves
         the warmed-up state values.
 
         Raises
         ------
         KeyError
-            If ``strict=True`` and the keys of ``states`` do not exactly
+            If `strict=True` and the keys of `states` do not exactly
             match the set of reservoir layer names in the model.
         ValueError
             If a restored tensor does not match the target cell's state-shape
@@ -562,10 +562,10 @@ class ESNModel(ps.SymbolicModel):
             if they don't exist.
         include_states : bool, default=False
             If True, also save current reservoir states. Only reservoirs whose
-            state is non-``None`` are persisted (see
-            :meth:`get_reservoir_states`); reservoirs that are still
+            state is non-`None` are persisted (see
+            `get_reservoir_states`); reservoirs that are still
             lazily-uninitialised at save time — e.g. a model saved before any
-            warmup — are omitted from the checkpoint. :meth:`load` restores the
+            warmup — are omitted from the checkpoint. `load` restores the
             saved states after resetting current recurrent state, so omitted
             reservoirs resume from an uninitialized state.
         **metadata
@@ -610,19 +610,19 @@ class ESNModel(ps.SymbolicModel):
             If True, strictly enforce that state_dict keys match.
         load_states : bool, default=False
             If True, also load reservoir states if available. States are
-            restored tolerantly (``strict=False``): because
-            :meth:`save` only persists reservoirs whose state is non-``None``,
+            restored tolerantly (`strict=False`): because
+            `save` only persists reservoirs whose state is non-`None`,
             a checkpoint may legitimately omit some reservoir keys (e.g. one
             saved before warmup). Current states are reset first; reservoirs
             absent from the checkpoint start uninitialized.
         map_location : optional
-            Passed to ``torch.load``. Use ``"cpu"`` to load a checkpoint
+            Passed to `torch.load`. Use `"cpu"` to load a checkpoint
             written on a GPU on a machine without that GPU.
 
         Warns
         -----
         UserWarning
-            If ``load_states=True`` but no states are found in checkpoint.
+            If `load_states=True` but no states are found in checkpoint.
 
         Examples
         --------
@@ -662,7 +662,7 @@ class ESNModel(ps.SymbolicModel):
         load_states : bool, default=False
             If True, also load reservoir states.
         map_location : optional
-            Storage-device remapping forwarded to :meth:`load`.
+            Storage-device remapping forwarded to `load`.
 
         Returns
         -------
@@ -672,7 +672,7 @@ class ESNModel(ps.SymbolicModel):
         Raises
         ------
         ValueError
-            If ``model`` is None.
+            If `model` is None.
 
         Examples
         --------
@@ -694,11 +694,11 @@ class ESNModel(ps.SymbolicModel):
         Serialize the *entire* model — architecture, weights, and reservoir
         states — to a single file.
 
-        Unlike :meth:`save`, which stores only the ``state_dict`` (so the
-        architecture must be re-created before :meth:`load`), this pickles the
-        whole model object, the ``pytorch_symbolic`` graph included.  Restore it
-        with :meth:`load_full` without rebuilding anything.  This relies on the
-        pickle support added in ``pytorch-symbolic`` 1.2.
+        Unlike `save`, which stores only the `state_dict` (so the
+        architecture must be re-created before `load`), this pickles the
+        whole model object, the `pytorch_symbolic` graph included.  Restore it
+        with `load_full` without rebuilding anything.  This relies on the
+        pickle support added in `pytorch-symbolic` 1.2.
 
         Parameters
         ----------
@@ -709,22 +709,22 @@ class ESNModel(ps.SymbolicModel):
 
         Notes
         -----
-        The file is a regular ``torch.save`` payload, loaded back with
-        ``weights_only=False`` — only open files you trust.  Current reservoir
+        The file is a regular `torch.save` payload, loaded back with
+        `weights_only=False` — only open files you trust.  Current reservoir
         states are captured as-is; reset or warm up beforehand to control what
         is persisted.
 
-        Any custom callable passed as a ``topology``, ``*_initializer``, or
-        ``activation`` spec must be importable (a module-level ``def``, not a
-        ``lambda`` or locally-defined function) for the model to pickle.  Specs
-        given as strings, ``(name, kwargs)`` tuples, or registered objects
+        Any custom callable passed as a `topology`, `*_initializer`, or
+        `activation` spec must be importable (a module-level `def`, not a
+        `lambda` or locally-defined function) for the model to pickle.  Specs
+        given as strings, `(name, kwargs)` tuples, or registered objects
         always serialize.  If a callable is not picklable, use the lighter
-        state-dict :meth:`save` instead.
+        state-dict `save` instead.
 
         Examples
         --------
         >>> model.save_full("model_full.pt", epoch=10)
-        >>> restored = ESNModel.load_full("model_full.pt")  # no rebuild needed
+        >>> restored = ESNModel.load_full("model_full.pt", trusted=True)  # trusted file
         >>> predictions = restored.forecast(warmup, horizon=100)
 
         See Also
@@ -740,22 +740,28 @@ class ESNModel(ps.SymbolicModel):
         path: str | Path,
         return_metadata: bool = False,
         map_location: Any = None,
+        *,
+        trusted: bool = False,
     ) -> "ESNModel | tuple[ESNModel, dict[str, Any]]":
         """
-        Reconstruct a complete model saved with :meth:`save_full`.
+        Reconstruct a complete model saved with `save_full`.
 
         No pre-built architecture is required — the model object, its symbolic
         graph, weights, and reservoir states are all restored from the file.
+        This executes saved Python and requires explicit `trusted=True`.
 
         Parameters
         ----------
         path : str or Path
-            File path written by :meth:`save_full`.
+            File path written by `save_full`.
         return_metadata : bool, default=False
-            If True, return ``(model, metadata)`` instead of just the model.
+            If True, return `(model, metadata)` instead of just the model.
         map_location : optional
-            Passed to ``torch.load`` to remap storage devices — e.g.
-            ``"cpu"`` to load a GPU-saved model on a CPU-only machine.
+            Passed to `torch.load` to remap storage devices — e.g.
+            `"cpu"` to load a GPU-saved model on a CPU-only machine.
+        trusted : bool, default=False
+            Required explicit opt-in to unpickle executable Python. Prefer
+            `Model.save` and `resdag.load` for portable restricted artifacts.
 
         Returns
         -------
@@ -766,32 +772,32 @@ class ESNModel(ps.SymbolicModel):
         ------
         ValueError
             If the file does not contain a whole model — e.g. it is a
-            state-dict checkpoint from :meth:`save` (rebuild the architecture
-            and use :meth:`load` / :meth:`load_from_file` for those).
+            state-dict checkpoint from `save` (rebuild the architecture
+            and use `load` / `load_from_file` for those).
 
         Warnings
         --------
-        Loads with ``weights_only=False``, which unpickles arbitrary Python
+        Loads with `weights_only=False`, which unpickles arbitrary Python
         objects.  Only call this on files from a source you trust.
 
         Notes
         -----
-        Accepts both :meth:`save_full` files (a metadata wrapper) and bare
-        ``torch.save(model)`` files (the model object on its own); the latter
+        Accepts both `save_full` files (a metadata wrapper) and bare
+        `torch.save(model)` files (the model object on its own); the latter
         carry no metadata.
 
         Examples
         --------
         >>> model.save_full("model_full.pt")
-        >>> restored = ESNModel.load_full("model_full.pt")
-        >>> model_cpu = ESNModel.load_full("gpu_model.pt", map_location="cpu")
+        >>> restored = ESNModel.load_full("model_full.pt", trusted=True)
+        >>> model_cpu = ESNModel.load_full("gpu_model.pt", map_location="cpu", trusted=True)
 
         See Also
         --------
         save_full : Serialize a complete model.
         load_from_file : Load a state-dict checkpoint into an existing model.
         """
-        return load_full_model(cls, path, return_metadata, map_location)
+        return load_full_model(cls, path, return_metadata, map_location, trusted=trusted)
 
     def plot_model(
         self,
@@ -805,7 +811,7 @@ class ESNModel(ps.SymbolicModel):
         """Return a Graphviz source or export SVG/PNG/PDF/DOT, inferred by suffix.
 
         Graph inspection does not execute layers or open a system viewer.
-        SVG/PNG/PDF require ``resdag[viz]`` and the Graphviz executable;
+        SVG/PNG/PDF require `resdag[viz]` and the Graphviz executable;
         DOT works without either optional dependency.
         """
         from resdag.core._diagram import plot_model
@@ -837,34 +843,34 @@ class ESNModel(ps.SymbolicModel):
         Parameters
         ----------
         *inputs : torch.Tensor
-            Input tensors of shape ``(batch, timesteps, features)``.
+            Input tensors of shape `(batch, timesteps, features)`.
             Convention: first input is feedback, remaining are drivers.
         return_outputs : bool, default=False
             If True, return model outputs during warmup.
         reset : bool, default=True
-            If True, reservoir states are reset to ``None`` before the
-            warmup pass.  Set to ``False`` only if you want to continue
+            If True, reservoir states are reset to `None` before the
+            warmup pass.  Set to `False` only if you want to continue
             from a previously saved state — typical workflows always reset.
         no_grad : bool, default=True
-            If True (default), the warmup pass runs under :func:`torch.no_grad`
+            If True (default), the warmup pass runs under `torch.no_grad`
             — no autograd graph is built and behaviour/performance are identical
-            to the historical ``@torch.no_grad()`` decorator.  Set ``False`` to
+            to the historical `@torch.no_grad()` decorator.  Set `False` to
             keep the graph so the teacher-forced pass is part of a wider
             backpropagation (e.g. BPTT over the warmup→forecast seam).
 
             For gradients to flow *across* the warmup→forecast boundary the
             reservoir must also keep its carried state attached: set
-            ``reservoir.detach_state_between_calls = False`` (it defaults to
-            ``True``, which detaches the stored state at every forward call —
-            see :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`).
-            Note that ``no_grad=False`` retains the full warmup graph in memory,
+            `reservoir.detach_state_between_calls = False` (it defaults to
+            `True`, which detaches the stored state at every forward call —
+            see `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`).
+            Note that `no_grad=False` retains the full warmup graph in memory,
             so cost grows with the warmup length.
 
         Returns
         -------
         torch.Tensor or tuple of torch.Tensor or None
-            If ``return_outputs=True``: the model output of shape
-            ``(batch, timesteps, output_dim)`` for a single-output model, or a
+            If `return_outputs=True`: the model output of shape
+            `(batch, timesteps, output_dim)` for a single-output model, or a
             tuple of such tensors for a multi-output model.
             Otherwise: None (only internal state is updated).
 
@@ -912,12 +918,12 @@ class ESNModel(ps.SymbolicModel):
         """
         Return the cached flattened single-step executor, building it on demand.
 
-        The flattened step (see :mod:`resdag.core._flat_inference`) compiles the
+        The flattened step (see `resdag.core._flat_inference`) compiles the
         symbolic graph into a straight-line per-step function that drives the
-        autoregressive :meth:`forecast` loop without re-walking the graph each
+        autoregressive `forecast` loop without re-walking the graph each
         step.  It is cached and reused; the cache is keyed on the identity of
-        ``self.outputs`` so it is transparently rebuilt if the graph's outputs
-        change (e.g. via :meth:`add_output`).
+        `self.outputs` so it is transparently rebuilt if the graph's outputs
+        change (e.g. via `add_output`).
         """
         validate_fast_plan(self._get_execution_plan())
         from resdag.core._flat_inference import build_hook_step
@@ -947,65 +953,65 @@ class ESNModel(ps.SymbolicModel):
         no_grad: bool = True,
         alignment: ForecastAlignment = "next",
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
-        """Predict the next ``horizon`` samples after an observed history.
+        """Predict the next `horizon` samples after an observed history.
 
-        Training pairs input ``x[t]`` with target ``x[t+1]``. Accordingly, the
+        Training pairs input `x[t]` with target `x[t+1]`. Accordingly, the
         final teacher-forced warmup output is already the prediction of the
         first unseen sample. It becomes forecast slot zero; the remaining
-        ``horizon - 1`` slots feed predictions back into the model.
+        `horizon - 1` slots feed predictions back into the model.
 
         Parameters
         ----------
         warmup_inputs : torch.Tensor or tuple of torch.Tensor
-            Observed history, shaped ``(batch, time, features)``. For a driven
-            model pass ``(feedback, driver1, ...)`` with matching batch/time axes.
-            Empty history is allowed only with ``initial_feedback``; with
-            ``reset=False`` this continues saved reservoir states.
+            Observed history, shaped `(batch, time, features)`. For a driven
+            model pass `(feedback, driver1, ...)` with matching batch/time axes.
+            Empty history is allowed only with `initial_feedback`; with
+            `reset=False` this continues saved reservoir states.
         forecast_inputs : torch.Tensor or tuple of torch.Tensor, optional
             Future drivers beginning immediately after the warmup drivers.
-            Driver ``d[t]`` pairs with input feedback ``x[t]`` to predict
-            ``x[t+1]``. The default needs ``horizon - 1`` driver samples because
+            Driver `d[t]` pairs with input feedback `x[t]` to predict
+            `x[t+1]`. The default needs `horizon - 1` driver samples because
             warmup already supplied the driver for the first prediction.
-            ``horizon=1`` needs no future drivers. Explicit ``initial_feedback``
-            and ``alignment="legacy"`` need ``horizon`` future driver samples.
+            `horizon=1` needs no future drivers. Explicit `initial_feedback`
+            and `alignment="legacy"` need `horizon` future driver samples.
             Extra trailing driver samples are ignored.
         horizon : int
             Number of predictions, a positive integer. Zero is rejected; use a
             normal forward/warmup call when no future predictions are needed.
         initial_feedback : torch.Tensor, optional
-            A distinct additional observed input of shape ``(batch, 1, features)``
+            A distinct additional observed input of shape `(batch, 1, features)`
             consumed *after* the complete warmup. Slot zero predicts the sample
             after this seed. Do not pass the last warmup observation again: that
             would consume it twice. This also seeds an empty warmup continuation.
         return_warmup : bool, default=False
             Prepend historical predictions. With default alignment, the last
             warmup prediction is already forecast slot zero, so the full result
-            has ``warmup_steps - 1 + horizon`` samples with no duplicate seam.
+            has `warmup_steps - 1 + horizon` samples with no duplicate seam.
             With an explicit seed or legacy alignment it has
-            ``warmup_steps + horizon`` samples.
+            `warmup_steps + horizon` samples.
         reset : bool, default=True
             Reset reservoir states before warmup. False continues current states.
         compile : bool, default=False
             Compile the flat autoregressive executor when supported, falling
             back to eager execution with a warning if compilation fails.
-            Incompatible with ``no_grad=False``.
+            Incompatible with `no_grad=False`.
         no_grad : bool, default=True
             Disable autograd for inference. False makes the warmup and rollout
             differentiable. For gradients through carried warmup state, set
-            each reservoir's ``detach_state_between_calls=False``. Memory grows
+            each reservoir's `detach_state_between_calls=False`. Memory grows
             with history and horizon length.
         alignment : {"next", "legacy"}, default="next"
-            ``"next"`` predicts the immediate unseen sample. ``"legacy"``
+            `"next"` predicts the immediate unseen sample. `"legacy"`
             reproduces the old low-level convention, which consumed the final
             warmup prediction before returning slot zero and therefore skipped
             the immediate unseen sample. Pair it with
-            ``prepare_esn_data(..., alignment="legacy")`` to reproduce old runs.
+            `prepare_esn_data(..., alignment="legacy")` to reproduce old runs.
 
         Returns
         -------
         torch.Tensor or tuple of torch.Tensor
-            ``(batch, horizon, output_features)`` per output head, or the longer
-            sequence described above when ``return_warmup=True``. The first
+            `(batch, horizon, output_features)` per output head, or the longer
+            sequence described above when `return_warmup=True`. The first
             output head supplies autoregressive feedback and must match the
             feedback input width.
 
@@ -1014,17 +1020,17 @@ class ESNModel(ps.SymbolicModel):
         Returned predictions have not yet been consumed as inputs. After a
         forecast, the stored state has consumed the history and all predictions
         except the final one. To continue without replaying history, pass empty
-        warmup streams, ``initial_feedback=prediction[:, -1:]`` and ``reset=False``
+        warmup streams, `initial_feedback=prediction[:, -1:]` and `reset=False`
         (plus the corresponding future drivers).
 
         Hook-free autoregressive steps use a cached flat execution plan. When
         PyTorch execution hooks are registered, native module calls preserve
         their behavior during warmup and generated steps. Hooks added or removed
         after an earlier forecast take effect automatically. Registered hooks
-        select eager compatible execution when ``compile=True`` is requested.
-        Custom non-reservoir operations must declare ``supports_framewise=True``.
-        Whole-sequence custom operations can use the common ``Model`` wrapper's
-        ``forecast(execution="history")`` instead.
+        select eager compatible execution when `compile=True` is requested.
+        Custom non-reservoir operations must declare `supports_framewise=True`.
+        Whole-sequence custom operations can use the common `Model` wrapper's
+        `forecast(execution="history")` instead.
 
         Examples
         --------
@@ -1128,21 +1134,23 @@ class ESNModel(ps.SymbolicModel):
         reservoir fading memory, every teacher-forced window pulls its state
         back onto the true trajectory, no matter how far the previous free run
         had drifted — so per-window error does not compound across windows
-        (accuracy *within* a gap still depends on keeping ``predict_len`` short
+        (accuracy *within* a gap still depends on keeping `predict_len` short
         relative to the system's predictability horizon).
 
         The reservoir state is carried across the whole pass (it is reset only
-        once, at the start, and only when ``reset=True``).  Each cycle is one
-        :meth:`forecast` call: its warmup phase is the re-sync window and its
+        once, at the start, and only when `reset=True`).  Each cycle is one
+        `forecast` call: its warmup phase is the re-sync window and its
         autoregressive phase is the gap.
 
-        Timeline (``W = warmup_len``, ``F = teacher_len``, ``P = predict_len``)::
+        Timeline (`W = warmup_len`, `F = teacher_len`, `P = predict_len`):
 
-            [== warmup W ==][~~ gap P ~~][= teacher F =][~~ gap P ~~][= F =]...
-              observed         filled       observed       filled      obs
-            (teacher-forced)  (forecast)  (teacher-forced) (forecast)
+        ```text
+        [== warmup W ==][~~ gap P ~~][= teacher F =][~~ gap P ~~][= F =]...
+          observed         filled       observed       filled      obs
+        (teacher-forced)  (forecast)  (teacher-forced) (forecast)
+        ```
 
-        Observed segments are copied verbatim from ``series``; gap segments are
+        Observed segments are copied verbatim from `series`; gap segments are
         replaced by the model's autonomous forecast.  Any trailing steps that
         cannot host a full re-sync window plus at least one forecast step are
         left as observed.
@@ -1150,73 +1158,73 @@ class ESNModel(ps.SymbolicModel):
         Parameters
         ----------
         series : torch.Tensor
-            Ground-truth feedback series of shape ``(batch, T, feedback_dim)``.
+            Ground-truth feedback series of shape `(batch, T, feedback_dim)`.
             It is both the source of every teacher-forced window and the value
             returned on observed segments.
         *driver_series : torch.Tensor
             Exogenous driver series, one per driver input of the model, each of
-            shape ``(batch, T, driver_dim)`` spanning the full timeline.  Omit
-            for feedback-only models.  Unlike :meth:`forecast` (which takes
-            *separate* warmup and ``forecast_inputs`` driver tuples), here each
-            driver covers the whole ``T``-step timeline and is sliced internally
+            shape `(batch, T, driver_dim)` spanning the full timeline.  Omit
+            for feedback-only models.  Unlike `forecast` (which takes
+            *separate* warmup and `forecast_inputs` driver tuples), here each
+            driver covers the whole `T`-step timeline and is sliced internally
             per cycle.
         predict_len : int, keyword-only
-            Length ``P`` of each autonomous forecast window (the gap to fill).
-            Must be ``>= 1``.
+            Length `P` of each autonomous forecast window (the gap to fill).
+            Must be `>= 1`.
         teacher_len : int, keyword-only
-            Length ``F`` of each teacher-forced re-synchronization window.
-            Must be ``>= 1``.  Longer windows re-sync more reliably; shorter
+            Length `F` of each teacher-forced re-synchronization window.
+            Must be `>= 1`.  Longer windows re-sync more reliably; shorter
             windows observe less of the signal.
         warmup_len : int, optional
-            Length ``W`` of the initial teacher-forced window.  Defaults to
-            ``teacher_len``.
+            Length `W` of the initial teacher-forced window.  Defaults to
+            `teacher_len`.
         reset : bool, default=True
             If True, reservoir states are reset before the first window.  Set
             False to continue from the current (already warmed) state.
         return_mask : bool, default=False
-            If True, also return a 1-D boolean mask of length ``T`` that is
+            If True, also return a 1-D boolean mask of length `T` that is
             True where the reconstruction is a real value and False where it is
             a model forecast (see Returns).
         no_grad : bool, default=True
-            If True (default), every cycle runs under :func:`torch.no_grad` —
-            graph-free and identical to the historical ``@torch.no_grad()``
-            decorator.  Set ``False`` to make the gap-fill reconstruction
+            If True (default), every cycle runs under `torch.no_grad` —
+            graph-free and identical to the historical `@torch.no_grad()`
+            decorator.  Set `False` to make the gap-fill reconstruction
             **differentiable**: the value threaded into the reconstruction on
             every forecast segment carries an autograd graph, so a loss over the
-            gaps (``reconstruction[:, ~mask]``) can be back-propagated through the
+            gaps (`reconstruction[:, ~mask]`) can be back-propagated through the
             BPTT unroll of each window into the trainable reservoir and readout
-            parameters.  The flag is threaded into the per-cycle :meth:`forecast`
+            parameters.  The flag is threaded into the per-cycle `forecast`
             calls; the same memory cost and
-            ``reservoir.detach_state_between_calls`` caveats documented on
-            :meth:`forecast` apply, multiplied across cycles (state is carried
+            `reservoir.detach_state_between_calls` caveats documented on
+            `forecast` apply, multiplied across cycles (state is carried
             across windows, so detaching it severs gradients window-to-window).
 
         Returns
         -------
         reconstruction : torch.Tensor
-            Reconstructed series of shape ``(batch, T, feedback_dim)``: real
+            Reconstructed series of shape `(batch, T, feedback_dim)`: real
             values on observed segments, forecasts on the gaps.
         mask : torch.Tensor
-            Only if ``return_mask=True``.  Boolean tensor of shape ``(T,)``,
+            Only if `return_mask=True`.  Boolean tensor of shape `(T,)`,
             True where the step is a real value (a teacher-forced window, or the
-            untouched trailing remainder copied verbatim from ``series``) and
+            untouched trailing remainder copied verbatim from `series`) and
             False where it is a model forecast.
 
         Raises
         ------
         ValueError
-            If ``series`` is not 3-D, if ``predict_len``/``teacher_len``/
-            ``warmup_len`` are not positive, if the number of ``driver_series``
+            If `series` is not 3-D, if `predict_len`/`teacher_len`/
+            `warmup_len` are not positive, if the number of `driver_series`
             does not match the model's drivers, if any driver does not span
-            ``T`` steps, or if ``series`` is too short for even one cycle.
+            `T` steps, or if `series` is too short for even one cycle.
 
         Notes
         -----
-        - The forecast steps to score are exactly ``reconstruction[:, ~mask]``
-          against ``series[:, ~mask]`` — the values the model had to infer
+        - The forecast steps to score are exactly `reconstruction[:, ~mask]`
+          against `series[:, ~mask]` — the values the model had to infer
           without ever seeing them.
         - For multi-output models the first output is fed back (as in
-          :meth:`forecast`) and only that channel is reconstructed.
+          `forecast`) and only that channel is reconstructed.
 
         Examples
         --------
@@ -1346,9 +1354,9 @@ __all__ = ["Input", "ESNModel", "ReservoirModelModule"]
 class ReservoirModelModule(torch.nn.Module):
     """A standard module preserving a trained model's full DAG and parameters.
 
-    Construct with ``model.as_module()``. The source model is registered as a
-    child module, so ``parameters()``, ``state_dict()``, ``train()/eval()`` and
-    ``to(device, dtype)`` behave like ordinary PyTorch composition. Parameters
+    Construct with `model.as_module()`. The source model is registered as a
+    child module, so `parameters()`, `state_dict()`, `train()/eval()` and
+    `to(device, dtype)` behave like ordinary PyTorch composition. Parameters
     are shared with the source, not copied.
     """
 

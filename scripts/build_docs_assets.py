@@ -1,19 +1,16 @@
-"""Thin wrapper: runs every figure generator in scripts/docs_figures/.
+"""Run the canonical documentation figure pipeline.
 
-Run::
+    python scripts/build_docs_assets.py
+    python scripts/build_docs_assets.py --animations
 
-    .venv/bin/python scripts/build_docs_assets.py
-    # or
-    .venv/bin/python -m scripts.docs_figures
-    # or one figure family at a time, e.g.
-    .venv/bin/python -m scripts.docs_figures.sine
-
-Each individual figure lives in its own module under scripts/docs_figures/
-so you can edit (and re-run) one without touching the rest.
+The source generators and shared style live in docs/_tooling/figures/.
+Forecast figures replay recorded data; this command never trains a model.
 """
 
-from scripts.docs_figures.__main__ import main
-
+import subprocess
+import sys
+from pathlib import Path
 
 if __name__ == "__main__":
-    main()
+    pipeline = Path(__file__).resolve().parents[1] / "docs/_tooling/figures/make_all.py"
+    subprocess.run([sys.executable, str(pipeline), *sys.argv[1:]], check=True)

@@ -8,13 +8,17 @@ and chaotic systems.
 
 Installation
 ------------
-This module requires the optional ``optuna`` dependency::
+This module requires the optional `optuna` dependency:
 
-    pip install resdag[hpo]
+```text
+pip install resdag[hpo]
+```
 
-or::
+or:
 
-    pip install optuna
+```text
+pip install optuna
+```
 
 Functions
 ---------
@@ -25,28 +29,28 @@ get_loss
 get_study_summary
     Generate summary of completed study.
 resolve_pruner
-    Resolve a pruner key/instance to an :class:`optuna.pruners.BasePruner`.
+    Resolve a pruner key/instance to an `optuna.pruners.BasePruner`.
 
 Pruners
 -------
-Pass ``pruner=`` to :func:`run_hpo` to enable Optuna early stopping, fed by the
-per-trial intermediate forecast-horizon reports. Registry keys (``PRUNERS``):
+Pass `pruner=` to `run_hpo` to enable Optuna early stopping, fed by the
+per-trial intermediate forecast-horizon reports. Registry keys (`PRUNERS`):
 
-- ``"asha"``: ASHA / SuccessiveHalvingPruner
-- ``"hyperband"``: Hyperband pruner
-- ``"median"``: Median pruner (recommended starting point)
-- ``"threshold"``: Threshold pruner
-- ``"none"``: NopPruner (no pruning, the default)
+- `"asha"`: ASHA / SuccessiveHalvingPruner
+- `"hyperband"`: Hyperband pruner
+- `"median"`: Median pruner (recommended starting point)
+- `"threshold"`: Threshold pruner
+- `"none"`: NopPruner (no pruning, the default)
 
 Loss Functions
 --------------
 The following loss functions are available:
 
-- ``"efh"``: Expected Forecast Horizon (default, recommended for chaotic systems)
-- ``"forecast_horizon"``: Forecast Horizon Loss (contiguous valid steps)
-- ``"lyapunov"``: Lyapunov-weighted Loss (exponential decay)
-- ``"standard"``: Standard Loss (mean geometric mean error)
-- ``"soft_horizon"``: Soft valid horizon (cumulative survival probability)
+- `"efh"`: Expected Forecast Horizon (default, recommended for chaotic systems)
+- `"forecast_horizon"`: Forecast Horizon Loss (contiguous valid steps)
+- `"lyapunov"`: Lyapunov-weighted Loss (exponential decay)
+- `"standard"`: Standard Loss (mean geometric mean error)
+- `"soft_horizon"`: Soft valid horizon (cumulative survival probability)
 
 Examples
 --------
@@ -89,7 +93,8 @@ resdag.training.ESNTrainer : Training interface.
 resdag.utils.data : Data loading utilities.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING as _TYPE_CHECKING
+from typing import Any as _Any
 
 # Loss functions don't require optuna - always available
 from .losses import (
@@ -124,7 +129,7 @@ def _require_optuna() -> None:
 
 
 # Lazy imports for optuna-dependent functions
-if TYPE_CHECKING:
+if _TYPE_CHECKING:
     from .pruners import PRUNERS as PRUNERS
     from .pruners import resolve_pruner as resolve_pruner
     from .resources import MemoryBudget as MemoryBudget
@@ -144,7 +149,7 @@ if TYPE_CHECKING:
     from .utils import make_study_name as make_study_name
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> _Any:
     """Lazy import for optuna-dependent functions."""
     if name in ("Screening", "MemoryBudget", "MemoryContext", "MemoryEstimate"):
         from . import resources
@@ -250,5 +255,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

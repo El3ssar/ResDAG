@@ -50,10 +50,10 @@ _CUDA_FORK_REINIT_MARKER = "Cannot re-initialize CUDA in forked subprocess"
 
 
 def _accepts_seed(func: Callable[..., Any]) -> bool:
-    """Return ``True`` if ``func`` accepts a ``seed`` keyword argument.
+    """Return `True` if `func` accepts a `seed` keyword argument.
 
-    A ``model_creator`` accepts ``seed`` if its signature names a ``seed``
-    parameter or declares ``**kwargs`` (variadic keyword).  When introspection
+    A `model_creator` accepts `seed` if its signature names a `seed`
+    parameter or declares `**kwargs` (variadic keyword).  When introspection
     fails (e.g. a C builtin without a signature) we conservatively assume it
     does not, so the seed is never injected blindly.
 
@@ -65,7 +65,7 @@ def _accepts_seed(func: Callable[..., Any]) -> bool:
     Returns
     -------
     bool
-        ``True`` when ``func`` can receive a ``seed=`` keyword argument.
+        `True` when `func` can receive a `seed=` keyword argument.
     """
     try:
         params = inspect.signature(func).parameters
@@ -206,11 +206,11 @@ def _cleanup() -> None:
 
 
 def _checkpoint_horizons(horizon: int, n_checkpoints: int) -> list[int]:
-    """Build growing horizon checkpoints up to and including ``horizon``.
+    """Build growing horizon checkpoints up to and including `horizon`.
 
     The checkpoints are evenly spaced emission boundaries in the forecast
     stream. Each prefix is reported before later predictions are generated.
-    The final checkpoint is always the full ``horizon``, so its reported
+    The final checkpoint is always the full `horizon`, so its reported
     loss matches the returned objective.
 
     Parameters
@@ -218,14 +218,14 @@ def _checkpoint_horizons(horizon: int, n_checkpoints: int) -> list[int]:
     horizon : int
         Full forecast horizon (number of autoregressive steps).
     n_checkpoints : int
-        Desired number of checkpoints.  Values ``<= 1`` yield a single
+        Desired number of checkpoints.  Values `<= 1` yield a single
         checkpoint at the full horizon (no intermediate reporting).
 
     Returns
     -------
     list of int
-        Strictly increasing checkpoint lengths in ``[1, horizon]`` ending at
-        ``horizon``.  De-duplicated when ``horizon < n_checkpoints``.
+        Strictly increasing checkpoint lengths in `[1, horizon]` ending at
+        `horizon`.  De-duplicated when `horizon < n_checkpoints`.
     """
     if horizon < 1:
         return [horizon]
@@ -247,14 +247,14 @@ class TrialRunner:
     """Picklable callable that evaluates a single Optuna trial.
 
     An instance of this class behaves exactly like the objective closure that
-    :func:`resdag.hpo.objective.build_objective` used to return: call it with an
-    :class:`optuna.Trial` and it returns the (possibly clipped) loss to
+    `resdag.hpo.objective.build_objective` used to return: call it with an
+    `optuna.Trial` and it returns the (possibly clipped) loss to
     minimize. Managed joblib serializes only its numerical callbacks and
     prepared jobs; parent-only study/data callbacks remain in the caller.
 
     The runner generates forecast chunks up to growing horizon
-    checkpoints, calling :meth:`optuna.Trial.report` and
-    :meth:`optuna.Trial.should_prune` at each checkpoint so configured pruners
+    checkpoints, calling `optuna.Trial.report` and
+    `optuna.Trial.should_prune` at each checkpoint so configured pruners
     can terminate diverging trials early.  Scoring stays on the forecast's
     device until the final scalar when the loss function supports tensor inputs,
     transparently falling back to NumPy otherwise.
@@ -267,74 +267,73 @@ class TrialRunner:
         factories and closures; parent-only callbacks are excluded from jobs.
     search_space : Callable[[Trial], dict[str, Any]]
         Function that defines the hyperparameter search space using Optuna's
-        ``trial.suggest_*`` methods.  Returns a dict of hyperparameters.
+        `trial.suggest_*` methods.  Returns a dict of hyperparameters.
     data_loader : Callable[[Trial], dict[str, Tensor]]
         Function that loads and returns training/validation data.  Must return a
-        dict with keys ``"warmup"``, ``"train"``, ``"target"``, ``"f_warmup"``,
-        ``"val"``.  Optionally include driver inputs (e.g. ``"warmup_driver"``).
+        dict with keys `"warmup"`, `"train"`, `"target"`, `"f_warmup"`,
+        `"val"`.  Optionally include driver inputs (e.g. `"warmup_driver"`).
     loss_fn : LossProtocol
-        Loss function to evaluate model performance.  Receives ``(y_true,
-        y_pred)`` — either both NumPy arrays or both ``torch.Tensor`` (see
-        ``torch_scoring``) — and returns a scalar to minimize.
+        Loss function to evaluate model performance.  Receives `(y_true, y_pred)` — either both NumPy arrays or both `torch.Tensor` (see
+        `torch_scoring`) — and returns a scalar to minimize.
     targets_key : str, default="output"
         Name of the readout layer target in the targets dict.
     drivers_keys : list of str, optional
         Driver input keys in the data dict.  If provided, the matching
-        ``warmup_*`` / ``train_*`` / ``f_warmup_*`` / ``forecast_*`` entries are
+        `warmup_*` / `train_*` / `f_warmup_*` / `forecast_*` entries are
         threaded through training and forecasting.
     horizon_key : str, optional
-        Key in the data dict specifying the forecast horizon.  If ``None``, uses
-        ``val.shape[1]``.
+        Key in the data dict specifying the forecast horizon.  If `None`, uses
+        `val.shape[1]`.
     catch_exceptions : bool, default=True
-        If ``True``, catch exceptions and return ``penalty_value`` instead of
-        raising.  :class:`optuna.TrialPruned` is **always** re-raised so pruning
+        If `True`, catch exceptions and return `penalty_value` instead of
+        raising.  `optuna.TrialPruned` is **always** re-raised so pruning
         works regardless of this flag.
     penalty_value : float, default=1e10
-        Value returned when a trial fails and ``catch_exceptions`` is ``True``.
+        Value returned when a trial fails and `catch_exceptions` is `True`.
     monitor_losses : list of LossProtocol, optional
         Additional loss functions to compute and log as user attributes (not
         optimized on).
     monitor_params : dict, optional
         Per-monitor-loss keyword arguments keyed by loss-function name.
     device : torch.device, optional
-        Device to place model and data on.  If ``None``, uses the model/data
+        Device to place model and data on.  If `None`, uses the model/data
         defaults.
     seed : int, optional
-        Base seed for per-trial reproducibility.  Trial ``n`` uses
-        ``seed + n`` to seed PyTorch, NumPy, and Python's :mod:`random`
-        module, and the same per-trial seed is threaded into ``model_creator``
-        (when it accepts a ``seed`` keyword) so the reservoir topology and
+        Base seed for per-trial reproducibility.  Trial `n` uses
+        `seed + n` to seed PyTorch, NumPy, and Python's `random`
+        module, and the same per-trial seed is threaded into `model_creator`
+        (when it accepts a `seed` keyword) so the reservoir topology and
         input/feedback initializers — which build their own RNGs and ignore the
         legacy global NumPy state — also reproduce.
     clip_value : float, optional
         Upper bound for the objective value.  When set and the raw loss exceeds
         it, the returned value is clamped (or the trial pruned, see
-        ``prune_on_clip``).  The unclipped value is always stored as the
-        ``"raw_loss"`` user attribute.
+        `prune_on_clip`).  The unclipped value is always stored as the
+        `"raw_loss"` user attribute.
     prune_on_clip : bool, default=False
-        If ``True`` and ``clip_value`` is set, trials whose raw loss exceeds
-        ``clip_value`` are pruned instead of returning the clipped value.
+        If `True` and `clip_value` is set, trials whose raw loss exceeds
+        `clip_value` are pruned instead of returning the clipped value.
     n_checkpoints : int, default=5
         Number of growing horizon checkpoints at which to report and check for
-        pruning.  Values ``<= 1`` disable intermediate reporting (a single
+        pruning.  Values `<= 1` disable intermediate reporting (a single
         report at the full horizon).
     torch_scoring : bool, default=True
-        If ``True``, attempt to evaluate the loss on the forecast's device using
-        ``torch.Tensor`` inputs, only moving the final scalar to the host.  If
+        If `True`, attempt to evaluate the loss on the forecast's device using
+        `torch.Tensor` inputs, only moving the final scalar to the host.  If
         the loss function does not support tensors, the runner falls back to
-        NumPy automatically.  Set ``False`` to always score in NumPy.
+        NumPy automatically.  Set `False` to always score in NumPy.
     trial_callbacks : list of TrialCallback, optional
         Per-trial callbacks invoked after each successful evaluation.  Each
-        receives ``(trial, context)`` and may call
-        ``trial.report``/``trial.should_prune`` to signal pruning.  Callback
+        receives `(trial, context)` and may call
+        `trial.report`/`trial.should_prune` to signal pruning.  Callback
         exceptions are logged and swallowed — a callback can **never** fail the
         trial.
 
     Notes
     -----
     The runner itself is picklable; whether a *given instance* pickles depends
-    on its user-supplied callables (``model_creator``, ``search_space``,
-    ``data_loader``, ``loss_fn``, monitor losses, trial callbacks).  Use
+    on its user-supplied callables (`model_creator`, `search_space`,
+    `data_loader`, `loss_fn`, monitor losses, trial callbacks).  Use
     module-level functions rather than lambdas/closures for those to keep the
     instance serializable for managed joblib distribution.
     """
@@ -391,7 +390,7 @@ class TrialRunner:
 
     # ── Public API ───────────────────────────────────────────────────────
     def __call__(self, trial: optuna.Trial) -> float:
-        """Evaluate ``trial`` and return the (possibly clipped) loss.
+        """Evaluate `trial` and return the (possibly clipped) loss.
 
         Parameters
         ----------
@@ -402,14 +401,14 @@ class TrialRunner:
         -------
         float
             Loss value for Optuna to minimize. The explicit penalty policy
-            returns ``penalty_value`` for caught failures; the fail policy
-            raises ``TrialEvaluationError`` for the backend to record.
+            returns `penalty_value` for caught failures; the fail policy
+            raises `TrialEvaluationError` for the backend to record.
 
         Raises
         ------
         optuna.TrialPruned
             When a horizon checkpoint or clipping triggers pruning.  Always
-            raised regardless of ``catch_exceptions``.
+            raised regardless of `catch_exceptions`.
         """
         try:
             return self._run(trial)
@@ -505,7 +504,7 @@ class TrialRunner:
             error_policy=self.error_policy,
         )
 
-    def evaluate_job(
+    def _evaluate_job(
         self, job: tuple[PreparedTrial, Callable[[float, int], None] | None]
     ) -> TrialResult:
         return self.evaluate(*job)
@@ -649,29 +648,29 @@ class TrialRunner:
     def _seed_trial(self, trial: optuna.Trial) -> int | None:
         """Seed the global RNGs for a trial and return the per-trial seed.
 
-        Derives a per-trial seed as ``self.seed + trial.number`` and applies it
-        to PyTorch, NumPy (legacy global state), and Python's :mod:`random`
+        Derives a per-trial seed as `self.seed + trial.number` and applies it
+        to PyTorch, NumPy (legacy global state), and Python's `random`
         module so every global RNG a user callback might draw from is pinned.
-        The returned seed is *also* threaded explicitly into ``model_creator``
-        (see :meth:`_create_model`) so the reservoir's topology and
+        The returned seed is *also* threaded explicitly into `model_creator`
+        (see `_create_model`) so the reservoir's topology and
         input/feedback initializers — which build their own
-        ``np.random.default_rng`` / :class:`torch.Generator` and **do not** read
+        `np.random.default_rng` / `torch.Generator` and **do not** read
         the legacy global NumPy state — become a pure function of the per-trial
-        seed.  Seeding ``torch.manual_seed`` here is what makes a string- or
-        callable-form topology reproducible *even when* ``model_creator`` does
-        not accept a ``seed`` (those generators derive their seed from torch's
+        seed.  Seeding `torch.manual_seed` here is what makes a string- or
+        callable-form topology reproducible *even when* `model_creator` does
+        not accept a `seed` (those generators derive their seed from torch's
         global RNG when none is passed).
 
         Parameters
         ----------
         trial : optuna.Trial
-            The trial being evaluated; its ``number`` offsets the base seed.
+            The trial being evaluated; its `number` offsets the base seed.
 
         Returns
         -------
         int or None
-            The per-trial seed (``self.seed + trial.number``), or ``None`` when
-            no base ``seed`` was configured.
+            The per-trial seed (`self.seed + trial.number`), or `None` when
+            no base `seed` was configured.
         """
         if self.seed is None:
             return None
@@ -686,21 +685,21 @@ class TrialRunner:
 
         The reservoir's topology and input/feedback initializers construct their
         own RNGs and do **not** consume the legacy global NumPy state, so seeding
-        ``np.random`` alone does not make them reproducible.  When a base
-        ``seed`` is configured and ``model_creator`` accepts a ``seed`` keyword
-        (a named parameter or ``**kwargs``), the per-trial seed is injected so
-        those initializers become a pure function of ``(seed, trial.number)`` —
-        independent of how much global RNG ``search_space`` / ``data_loader``
-        consumed first.  An explicit ``seed`` already present in ``params`` (e.g.
-        one sampled by ``search_space``) always wins and is left untouched.
+        `np.random` alone does not make them reproducible.  When a base
+        `seed` is configured and `model_creator` accepts a `seed` keyword
+        (a named parameter or `**kwargs`), the per-trial seed is injected so
+        those initializers become a pure function of `(seed, trial.number)` —
+        independent of how much global RNG `search_space` / `data_loader`
+        consumed first.  An explicit `seed` already present in `params` (e.g.
+        one sampled by `search_space`) always wins and is left untouched.
 
         Parameters
         ----------
         params : dict
-            Hyperparameters returned by ``search_space`` for this trial.
+            Hyperparameters returned by `search_space` for this trial.
         trial_seed : int or None
-            The per-trial seed from :meth:`_seed_trial`, or ``None`` when no
-            base ``seed`` was configured.
+            The per-trial seed from `_seed_trial`, or `None` when no
+            base `seed` was configured.
 
         Returns
         -------
@@ -712,7 +711,7 @@ class TrialRunner:
         return self.model_creator(**params)
 
     def _to_device(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        """Move tensor entries of ``data`` to ``self.device`` (if set)."""
+        """Move tensor entries of `data` to `self.device` (if set)."""
         if self.device is None:
             return data
         return {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in data.items()}
@@ -720,10 +719,10 @@ class TrialRunner:
     def _build_train_inputs(
         self, data: dict[str, torch.Tensor]
     ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
-        """Assemble ``(warmup_inputs, train_inputs)`` with optional drivers.
+        """Assemble `(warmup_inputs, train_inputs)` with optional drivers.
 
-        ``_validate_data_keys`` (run in :meth:`_run` before this) guarantees that
-        every declared ``drivers_keys`` entry has its ``warmup_*`` / ``train_*``
+        `_validate_data_keys` (run in `_run` before this) guarantees that
+        every declared `drivers_keys` entry has its `warmup_*` / `train_*`
         companions present, so the keys are threaded unconditionally — a missing
         driver is a hard error there, never a silent feedback-only fallback here.
         """
@@ -740,7 +739,7 @@ class TrialRunner:
     def _forecast(
         self, model: ESNModel, data: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Run a single forecast and return ``(preds, val)`` (full horizon)."""
+        """Run a single forecast and return `(preds, val)` (full horizon)."""
         if self.horizon_key and self.horizon_key in data:
             horizon = int(data[self.horizon_key])
         else:
@@ -779,20 +778,20 @@ class TrialRunner:
     ) -> float:
         """Score the *single* forecast at growing horizon checkpoints.
 
-        The forecast is computed once; each checkpoint slices ``preds``/``val``
+        The forecast is computed once; each checkpoint slices `preds`/`val`
         to a prefix length and reports the prefix loss via
-        :meth:`optuna.Trial.report`.  If the configured pruner signals pruning
-        at any checkpoint, :class:`optuna.TrialPruned` is raised.  The loss at
+        `optuna.Trial.report`.  If the configured pruner signals pruning
+        at any checkpoint, `optuna.TrialPruned` is raised.  The loss at
         the final (full-horizon) checkpoint is returned as the raw loss.
 
-        Reports are keyed by the **1-based checkpoint index** (``1, 2, …, n``),
+        Reports are keyed by the **1-based checkpoint index** (`1, 2, …, n`),
         *not* the horizon length in timesteps.  A pruner's step-based knobs
-        (e.g. :class:`~optuna.pruners.ThresholdPruner`'s ``n_warmup_steps`` or a
+        (e.g. `optuna.pruners.ThresholdPruner`'s `n_warmup_steps` or a
         successive-halving rung schedule) are therefore expressed in
-        *checkpoints* and stay horizon-independent — a warmup of ``2`` skips the
+        *checkpoints* and stay horizon-independent — a warmup of `2` skips the
         first two checkpoints whether the horizon is 100 or 10 000 steps.  The
         actual prefix length used to slice the forecast is recorded per report
-        as the ``horizon@<idx>`` user attribute so the timestep mapping is still
+        as the `horizon@<idx>` user attribute so the timestep mapping is still
         recoverable for diagnostics.
 
         Parameters
@@ -800,7 +799,7 @@ class TrialRunner:
         trial : optuna.Trial
             The trial being evaluated.
         preds, val : torch.Tensor
-            Forecast and ground truth of shape ``(B, T, D)``.
+            Forecast and ground truth of shape `(B, T, D)`.
 
         Returns
         -------
@@ -834,7 +833,7 @@ class TrialRunner:
     def _penalize_nonfinite(self, trial: Any, raw_loss: float) -> float:
         """Reject a non-finite loss, or apply an explicitly chosen legacy penalty.
 
-        Always retain the ``nonfinite_loss`` diagnostic. High-level studies use
+        Always retain the `nonfinite_loss` diagnostic. High-level studies use
         the fail policy so a divergent evaluation cannot become the winner.
         The penalty policy preserves low-level compatibility and flips the
         numeric penalty's sign for a maximization study.
@@ -849,8 +848,8 @@ class TrialRunner:
         Returns
         -------
         float
-            ``raw_loss`` unchanged when finite; otherwise the direction-aware
-            penalty value (``penalty_value`` for minimize, ``-penalty_value`` for
+            `raw_loss` unchanged when finite; otherwise the direction-aware
+            penalty value (`penalty_value` for minimize, `-penalty_value` for
             maximize).
         """
         if np.isfinite(raw_loss):
@@ -873,7 +872,7 @@ class TrialRunner:
         return self.penalty_value
 
     def _apply_clipping(self, trial: Any, raw_loss: float) -> float:
-        """Clamp or prune based on ``clip_value`` / ``prune_on_clip``."""
+        """Clamp or prune based on `clip_value` / `prune_on_clip`."""
         if self.clip_value is not None and raw_loss > self.clip_value:
             if self.prune_on_clip:
                 raise optuna.TrialPruned(
@@ -912,7 +911,7 @@ class TrialRunner:
     ) -> None:
         """Invoke per-trial callbacks; their exceptions can never fail a trial.
 
-        A callback may raise :class:`optuna.TrialPruned` to act as a pruning
+        A callback may raise `optuna.TrialPruned` to act as a pruning
         signal — that is re-raised so Optuna records the trial as pruned.  Any
         other exception is logged and swallowed.
         """
@@ -939,19 +938,19 @@ class TrialRunner:
     ) -> float:
         """Evaluate a loss, preferring on-device tensors with a NumPy fallback.
 
-        When ``torch_scoring`` is enabled the loss is first called with the
-        ``torch.Tensor`` inputs (keeping CUDA tensors on-device until the final
+        When `torch_scoring` is enabled the loss is first called with the
+        `torch.Tensor` inputs (keeping CUDA tensors on-device until the final
         scalar).  Pure-NumPy losses raise on tensor inputs; in that case — and
-        whenever ``torch_scoring`` is disabled — the tensors are detached, moved
+        whenever `torch_scoring` is disabled — the tensors are detached, moved
         to host and converted to NumPy before re-evaluating.
 
         Parameters
         ----------
         y_true, y_pred : torch.Tensor
-            Ground truth and prediction of shape ``(B, T, D)``.  The loss
-            functions take ``(y_true, y_pred)`` positionally.
+            Ground truth and prediction of shape `(B, T, D)`.  The loss
+            functions take `(y_true, y_pred)` positionally.
         loss_fn : LossProtocol, optional
-            Loss to evaluate.  Defaults to ``self.loss_fn``.
+            Loss to evaluate.  Defaults to `self.loss_fn`.
         **kwargs
             Extra keyword arguments forwarded to the loss function.
 
@@ -985,36 +984,36 @@ def _validate_data_keys(
     data: Any,
     drivers_keys: list[str] | None = None,
 ) -> None:
-    """Validate the dictionary returned by the user-provided ``data_loader``.
+    """Validate the dictionary returned by the user-provided `data_loader`.
 
-    The data dict must contain the five required keys (``"warmup"``,
-    ``"train"``, ``"target"``, ``"f_warmup"``, ``"val"``), each mapping to a 3-D
-    ``torch.Tensor`` of shape ``(batch, timesteps, features)``.  When
-    ``drivers_keys`` is non-empty, every declared key ``k`` must additionally
-    supply *all four* companion entries (``warmup_k`` / ``train_k`` /
-    ``f_warmup_k`` / ``forecast_k``); a partially- or fully-absent driver is
+    The data dict must contain the five required keys (`"warmup"`,
+    `"train"`, `"target"`, `"f_warmup"`, `"val"`), each mapping to a 3-D
+    `torch.Tensor` of shape `(batch, timesteps, features)`.  When
+    `drivers_keys` is non-empty, every declared key `k` must additionally
+    supply *all four* companion entries (`warmup_k` / `train_k` /
+    `f_warmup_k` / `forecast_k`); a partially- or fully-absent driver is
     rejected rather than silently dropped — a dropped driver would train and
     forecast feedback-only and yield a misleading score.
 
     Parameters
     ----------
     data : Any
-        Value returned by ``data_loader(trial)``.  Must be a dict-like object.
+        Value returned by `data_loader(trial)`.  Must be a dict-like object.
     drivers_keys : list of str, optional
-        Driver feature keys.  If provided, the corresponding ``warmup_*``,
-        ``train_*``, ``f_warmup_*`` and ``forecast_*`` entries must all be
+        Driver feature keys.  If provided, the corresponding `warmup_*`,
+        `train_*`, `f_warmup_*` and `forecast_*` entries must all be
         present and are validated as 3-D tensors.
 
     Raises
     ------
     TypeError
-        If ``data`` is not a dictionary.
+        If `data` is not a dictionary.
     KeyError
         If one or more required keys are missing, or if a declared driver key
         lacks any of its four companion entries.  Missing names are listed
         alongside the keys the loader did return for easy typo spotting.
     ValueError
-        If any required entry is not a ``torch.Tensor`` or is not 3-D.
+        If any required entry is not a `torch.Tensor` or is not 3-D.
     """
     if not isinstance(data, dict):
         raise TypeError(

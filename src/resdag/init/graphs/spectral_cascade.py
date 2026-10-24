@@ -16,36 +16,36 @@ def spectral_cascade_adjacency(
     """Build the dense weighted adjacency of a spectral-cascade graph.
 
     Constructs the block-diagonal clique adjacency directly in NumPy — the same
-    matrix :func:`spectral_cascade_graph` describes — without materialising a
-    NetworkX object or the ``O(n^2)`` Python double loop that previously
+    matrix `spectral_cascade_graph` describes — without materialising a
+    NetworkX object or the `O(n^2)` Python double loop that previously
     converted the dense matrix into edges only for
-    :class:`~resdag.init.topology.GraphTopology` to collapse it straight back.
+    `resdag.init.topology.GraphTopology` to collapse it straight back.
 
-    Each clique ``k = 1..N`` (sizes ``1..N`` with ``n = N(N+1)/2``) occupies a
-    contiguous diagonal block filled with deterministic ``{+1, -1}`` weights and
+    Each clique `k = 1..N` (sizes `1..N` with `n = N(N+1)/2`) occupies a
+    contiguous diagonal block filled with deterministic `{+1, -1}` weights and
     spectrally scaled to its graded target radius (see
-    :func:`spectral_cascade_graph` for the cascade definition).
+    `spectral_cascade_graph` for the cascade definition).
 
     Parameters
     ----------
     n : int
-        Total number of nodes (must be triangular, i.e. ``n = N(N+1)/2``).
+        Total number of nodes (must be triangular, i.e. `n = N(N+1)/2`).
     spectral_radius : float
         The "starting" radius for the 2-node clique, graded down across larger
         cliques.
     self_loops : bool, optional
-        If ``True``, each node carries a self-loop of weight ``(-1)^i``.
-        Default: ``False``.
+        If `True`, each node carries a self-loop of weight `(-1)^i`.
+        Default: `False`.
 
     Returns
     -------
     numpy.ndarray
-        An ``(n, n)`` ``float32`` symmetric block-diagonal weighted adjacency.
+        An `(n, n)` `float32` symmetric block-diagonal weighted adjacency.
 
     Raises
     ------
     ValueError
-        If ``n`` is not triangular.
+        If `n` is not triangular.
 
     See Also
     --------
@@ -146,13 +146,13 @@ def spectral_cascade_graph(
     itself. The layer-level spectral-radius rescale would flatten that cascade
     into a single global radius, so it is suppressed. The graded-radii property
     therefore holds only when the rescale is skipped — i.e. when the layer
-    ``spectral_radius`` is ``None`` (or, equivalently, when this topology is used
-    by name, in which case a layer ``spectral_radius`` is ignored with a
+    `spectral_radius` is `None` (or, equivalently, when this topology is used
+    by name, in which case a layer `spectral_radius` is ignored with a
     warning). Set the cascade's top radius through this builder's own
-    ``spectral_radius`` parameter instead.
+    `spectral_radius` parameter instead.
 
     The adjacency is built with vectorized NumPy (see
-    :func:`spectral_cascade_adjacency`); the NetworkX object is materialised only
+    `spectral_cascade_adjacency`); the NetworkX object is materialised only
     for direct callers. When this generator is used as a topology, the dense fast
     path skips NetworkX entirely.
 
@@ -164,7 +164,7 @@ def spectral_cascade_graph(
         The "starting" radius for the 2-node clique, which is then decreased
         across bigger cliques down to sr/N for the largest clique. This is the
         builder's own parameter and is independent of any layer-level
-        ``spectral_radius`` (which is ignored for this pre-scaled topology).
+        `spectral_radius` (which is ignored for this pre-scaled topology).
     self_loops : bool, optional
         If True, each node has a self-loop of weight = (-1)^i. Default: False.
 

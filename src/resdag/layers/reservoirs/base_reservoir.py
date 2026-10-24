@@ -4,7 +4,7 @@ Base Reservoir Class
 
 This module provides abstract base class for the layer ESN reservoir:
 
-- :class:`BaseReservoirLayer` — abstract sequence loop with full state-management API.
+- `BaseReservoirLayer` — abstract sequence loop with full state-management API.
 
 See Also
 --------
@@ -82,33 +82,33 @@ _BAKED_CELL_ATTRS = frozenset({"spectral_radius", "reservoir_size", "feedback_si
 
 def _build_chunk_scan(cell: ReservoirCell, chunk: int) -> _ChunkScanFn:
     """
-    Build an eager function that runs ``chunk`` recurrent-only ``cell.step`` updates.
+    Build an eager function that runs `chunk` recurrent-only `cell.step` updates.
 
-    The returned function threads the reservoir state through ``chunk``
-    teacher-forced steps *internally* (a Python loop that :func:`torch.compile`
+    The returned function threads the reservoir state through `chunk`
+    teacher-forced steps *internally* (a Python loop that `torch.compile`
     unrolls into a single graph), slicing the precomputed input projection one
     timestep at a time and stacking the per-step outputs along the time axis.
     Driving the teacher-forced loop with this — instead of one compiled call per
-    step — is what lets ``mode="reduce-overhead"`` amortise a cudagraph replay
+    step — is what lets `mode="reduce-overhead"` amortise a cudagraph replay
     over many steps.
 
     Parameters
     ----------
     cell : ReservoirCell
-        The cell whose :meth:`~resdag.layers.cells.base_cell.ReservoirCell.step`
+        The cell whose `resdag.layers.cells.base_cell.ReservoirCell.step`
         recurrent-only update is unrolled.  Must expose the projected fast path
-        (its ``project_inputs`` must not return ``None``).
+        (its `project_inputs` must not return `None`).
     chunk : int
         Number of steps per call.
 
     Returns
     -------
     _ChunkScanFn
-        ``f(projected_chunk, state) -> (stacked_outputs, new_state)`` where
-        ``projected_chunk`` is a ``(batch, chunk, reservoir_size)`` slice of the
-        :meth:`~resdag.layers.cells.esn_cell.ESNCell.project_inputs` output and
-        ``stacked_outputs`` is ``(batch, chunk, output_size)``.  Numerically
-        identical to calling :meth:`cell.step` ``chunk`` times.
+        `f(projected_chunk, state) -> (stacked_outputs, new_state)` where
+        `projected_chunk` is a `(batch, chunk, reservoir_size)` slice of the
+        `resdag.layers.cells.esn_cell.ESNCell.project_inputs` output and
+        `stacked_outputs` is `(batch, chunk, output_size)`.  Numerically
+        identical to calling `cell.step` `chunk` times.
     """
     step = cell.step
 
@@ -133,25 +133,25 @@ def _resolve_chunk_scan(
     trial_state: torch.Tensor,
 ) -> _ChunkScanFn | None:
     """
-    Build and compile a chunked teacher-forced scan, or return ``None`` for eager.
+    Build and compile a chunked teacher-forced scan, or return `None` for eager.
 
-    Wraps :func:`_build_chunk_scan` in :func:`torch.compile`
-    (``fullgraph=True``, ``mode="reduce-overhead"``) and *trial-traces it once*
+    Wraps `_build_chunk_scan` in `torch.compile`
+    (`fullgraph=True`, `mode="reduce-overhead"`) and *trial-traces it once*
     on a cloned seed state so any compilation failure surfaces here.  Returns
-    ``None`` — with a :class:`RuntimeWarning` — when ``torch < 2.10`` or
+    `None` — with a `RuntimeWarning` — when `torch < 2.10` or
     compilation fails, signalling the caller to drive the teacher-forced loop
     with the eager time loop instead of aborting.  This mirrors
-    :func:`resdag.core._flat_inference.resolve_chunk_step`, the forecast
+    `resdag.core._flat_inference.resolve_chunk_step`, the forecast
     engine's counterpart.
 
     Parameters
     ----------
     cell : ReservoirCell
-        The cell whose ``step`` is unrolled and compiled.
+        The cell whose `step` is unrolled and compiled.
     chunk : int
         Steps per compiled call.
     trial_projected : torch.Tensor
-        Seed projection chunk (``(batch, chunk, reservoir_size)``) used to
+        Seed projection chunk (`(batch, chunk, reservoir_size)`) used to
         trial-trace the compiled function.
     trial_state : torch.Tensor
         Current reservoir state; cloned internally for the trial call so the
@@ -160,7 +160,7 @@ def _resolve_chunk_scan(
     Returns
     -------
     _ChunkScanFn or None
-        The warm compiled chunk scan, or ``None`` to fall back to eager.
+        The warm compiled chunk scan, or `None` to fall back to eager.
     """
     if torch.__version__ < _MIN_COMPILE_TORCH:
         warnings.warn(
@@ -197,7 +197,7 @@ class BaseReservoirLayer(nn.Module, ABC):
     """
     Abstract base that owns the sequence loop and all state-management methods.
 
-    Subclasses create a :class:`ReservoirCell` and pass it to this
+    Subclasses create a `ReservoirCell` and pass it to this
     constructor.  The sequence loop (iterating over timesteps and calling the
     cell) lives here; the cell handles the per-step computation.
 
@@ -211,21 +211,21 @@ class BaseReservoirLayer(nn.Module, ABC):
     cell : ReservoirCell
         The wrapped single-step cell.
     state : torch.Tensor or None
-        Current reservoir state, or ``None`` if not yet initialized.  The
-        layout is cell-defined: 2-D ``(batch, cell.state_size)`` for
-        :class:`~resdag.layers.cells.esn_cell.ESNCell`, 3-D
-        ``(batch, cell.state_size, input_dim)`` delay buffer for
-        :class:`~resdag.layers.cells.ngrc_cell.NGCell`.  See
-        :attr:`ReservoirCell.state_size <resdag.layers.cells.base_cell.ReservoirCell.state_size>`
+        Current reservoir state, or `None` if not yet initialized.  The
+        layout is cell-defined: 2-D `(batch, cell.state_size)` for
+        `resdag.layers.cells.esn_cell.ESNCell`, 3-D
+        `(batch, cell.state_size, input_dim)` delay buffer for
+        `resdag.layers.cells.ngrc_cell.NGCell`.  See
+        `ReservoirCell.state_size <resdag.layers.cells.base_cell.ReservoirCell.state_size>`
         for the leading state dimension.
     detach_state_between_calls : bool
-        If ``True`` (default), the stored state is detached from the autograd
+        If `True` (default), the stored state is detached from the autograd
         graph at the end of each forward call (truncated BPTT at call
         boundaries).  Gradients still flow through the *returned* states
         within a call — this only severs gradient flow *across* calls, which
         otherwise raises "backward through the graph a second time" when a
         model is trained with SGD over consecutive batches without resetting
-        the reservoir.  Set to ``False`` only if you intentionally backprop
+        the reservoir.  Set to `False` only if you intentionally backprop
         through state carried across multiple forward calls (and manage the
         retained graphs yourself).
 
@@ -270,27 +270,27 @@ class BaseReservoirLayer(nn.Module, ABC):
         Forward live hyperparameter writes to the inner cell; otherwise register normally.
 
         The layer delegates attribute *reads* to the inner cell (via
-        ``__getattr__``), but plain :class:`~torch.nn.Module` semantics send
-        *writes* to the layer's own ``__dict__``, creating a shadow attribute:
-        ``layer.leak_rate = 0.5`` would read back ``0.5`` while the cell keeps
-        computing with the constructor value.  Worse, ``layer.trainable = True``
+        `__getattr__`), but plain `torch.nn.Module` semantics send
+        *writes* to the layer's own `__dict__`, creating a shadow attribute:
+        `layer.leak_rate = 0.5` would read back `0.5` while the cell keeps
+        computing with the constructor value.  Worse, `layer.trainable = True`
         — the documented BPTT-enable recipe — would never flip
-        ``requires_grad`` on any parameter.
+        `requires_grad` on any parameter.
 
         This override closes that gap **without disturbing nn.Module's
         registration machinery**.  The write is forwarded to the cell only for a
         small, explicit allow-list of live config attributes
-        (:data:`_FORWARDABLE_CELL_ATTRS`: ``trainable``, ``leak_rate``, ``noise``,
-        and the edge-of-stability knobs ``beta`` / ``alpha``) — names the cell
+        (`_FORWARDABLE_CELL_ATTRS`: `trainable`, `leak_rate`, `noise`,
+        and the edge-of-stability knobs `beta` / `alpha`) — names the cell
         reads fresh every step or applies through a property setter, and only
         when the inner cell actually owns them.  Everything else falls through to
-        ``nn.Module.__setattr__`` unchanged, so Parameters, buffers, submodules,
-        and ``_``-prefixed internals register exactly as before.
+        `nn.Module.__setattr__` unchanged, so Parameters, buffers, submodules,
+        and `_`-prefixed internals register exactly as before.
 
-        Structurally-baked config (:data:`_BAKED_CELL_ATTRS`:
-        ``spectral_radius``, ``reservoir_size``, ``feedback_size``,
-        ``input_size``) is scaled/shaped into the weights at construction and
-        cannot be changed live; assigning to it raises :class:`AttributeError`
+        Structurally-baked config (`_BAKED_CELL_ATTRS`:
+        `spectral_radius`, `reservoir_size`, `feedback_size`,
+        `input_size`) is scaled/shaped into the weights at construction and
+        cannot be changed live; assigning to it raises `AttributeError`
         rather than silently shadowing or forwarding to no effect.
 
         Parameters
@@ -303,7 +303,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         Raises
         ------
         AttributeError
-            If ``name`` is a structurally-baked cell config attribute that
+            If `name` is a structurally-baked cell config attribute that
             cannot be changed after construction.
         """
         # Resolve the inner cell without triggering __getattr__ recursion; it is
@@ -349,13 +349,13 @@ class BaseReservoirLayer(nn.Module, ABC):
     def __getstate__(self) -> dict[str, Any]:
         """Drop the unpicklable compiled-scan cache before pickling / deepcopy.
 
-        The cache holds :func:`torch.compile` closures over the live cell that
+        The cache holds `torch.compile` closures over the live cell that
         cannot be pickled and — on a deep copy — would keep closing over the
-        *original* layer's weights.  Dropping it mirrors ``ESNModel``'s
-        ``_flat_step_cache`` hygiene: nothing is lost, the cache is rebuilt
-        lazily on the next ``forward(compile=True)``.  Both pickle and
-        :func:`copy.deepcopy` route through this hook (``nn.Module`` defines no
-        ``__deepcopy__``), so one override covers both.
+        *original* layer's weights.  Dropping it mirrors `ESNModel`'s
+        `_flat_step_cache` hygiene: nothing is lost, the cache is rebuilt
+        lazily on the next `forward(compile=True)`.  Both pickle and
+        `copy.deepcopy` route through this hook (`nn.Module` defines no
+        `__deepcopy__`), so one override covers both.
         """
         state: dict[str, Any] = super().__getstate__()
         state.pop("_compiled_scan_cache", None)
@@ -376,63 +376,63 @@ class BaseReservoirLayer(nn.Module, ABC):
         compile: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Run the time loop purely: thread ``state`` in and out, touch no ``self`` state.
+        Run the time loop purely: thread `state` in and out, touch no `self` state.
 
         This is the functional core of the reservoir.  It takes the initial
         state as an explicit argument, threads it through the per-timestep
         loop, and returns the per-step outputs together with the final state.
-        It never reads or writes :attr:`state`, performs no in-place tensor
-        writes (per-step outputs are collected with :func:`torch.stack`), and
+        It never reads or writes `state`, performs no in-place tensor
+        writes (per-step outputs are collected with `torch.stack`), and
         the loop body contains no data-dependent Python branch.  Those three
-        properties are what make it ``torch.compile``-scan, :func:`torch.func.vmap`,
+        properties are what make it `torch.compile`-scan, `torch.func.vmap`,
         and TorchScript/ONNX-export friendly, unlike the stateful
-        :meth:`forward` wrapper that drives it.
+        `forward` wrapper that drives it.
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
             Feedback tensor first, then at most one driving-input tensor, each
-            of shape ``(batch, timesteps, features)``.
+            of shape `(batch, timesteps, features)`.
         state : torch.Tensor
-            Initial reservoir state, shape ``(batch, ...)`` as produced by
-            ``self.cell.init_state``.
+            Initial reservoir state, shape `(batch, ...)` as produced by
+            `self.cell.init_state`.
         compile : bool, keyword-only, default=False
             Opt-in compiled/chunked engine for the teacher-forced sequence loop
-            (warmup, ``ESNTrainer.fit`` forward, ``windowed_forecast`` re-sync).
-            When ``True`` and the cell exposes the projected fast path (its
-            ``project_inputs`` is not ``None``), the recurrent-only ``cell.step``
-            update is unrolled ``DEFAULT_COMPILE_CHUNK`` steps at a time inside a
-            :func:`torch.compile` (``mode="reduce-overhead"``, ``fullgraph=True``)
-            chunk driven chunk-by-chunk with ``cudagraph_mark_step_begin`` and
+            (warmup, `ESNTrainer.fit` forward, `windowed_forecast` re-sync).
+            When `True` and the cell exposes the projected fast path (its
+            `project_inputs` is not `None`), the recurrent-only `cell.step`
+            update is unrolled `DEFAULT_COMPILE_CHUNK` steps at a time inside a
+            `torch.compile` (`mode="reduce-overhead"`, `fullgraph=True`)
+            chunk driven chunk-by-chunk with `cudagraph_mark_step_begin` and
             state clones at boundaries — the teacher-forced analogue of the
-            forecast engine (:mod:`resdag.core._flat_inference`).  On the GPU this
+            forecast engine (`resdag.core._flat_inference`).  On the GPU this
             sheds the per-step launch/dispatch overhead that dominates the eager
-            loop (~6-7x for a ``N=500``/``T=2000`` warmup).  The default (``False``)
+            loop (~6-7x for a `N=500`/`T=2000` warmup).  The default (`False`)
             keeps the eager time loop below byte-for-byte unchanged.
 
             The compiled path is **inference-only**: it transparently falls back
             to the eager loop when any parameter, input projection, or initial
             state requires grad (a differentiable BPTT rollout must stay eager),
             when there is no projected fast path
-            (e.g. NG-RC), on ``torch < 2.10``, or on any compilation failure
-            (with a :class:`RuntimeWarning`), so a correct result is always
-            produced.  Because chaotic reservoir dynamics under ``torch.compile``
+            (e.g. NG-RC), on `torch < 2.10`, or on any compilation failure
+            (with a `RuntimeWarning`), so a correct result is always
+            produced.  Because chaotic reservoir dynamics under `torch.compile`
             need not be bit-exact with eager, the compiled output matches the
-            eager output to a tight ``allclose`` (typically ``< 1e-5`` max abs
+            eager output to a tight `allclose` (typically `< 1e-5` max abs
             diff; closer for identity/linear activation) rather than bitwise.
 
         Returns
         -------
         outputs : torch.Tensor
-            Per-step outputs, shape ``(batch, timesteps, cell.output_size)``.
+            Per-step outputs, shape `(batch, timesteps, cell.output_size)`.
         new_state : torch.Tensor
             Final reservoir state after the last timestep.
 
         Notes
         -----
-        The cross-call detach applied by :meth:`forward` (truncated BPTT) lives
+        The cross-call detach applied by `forward` (truncated BPTT) lives
         in that wrapper, *outside* this method — gradients flow through the
-        returned ``new_state`` here, so callers that backpropagate through state
+        returned `new_state` here, so callers that backpropagate through state
         carried across calls are free to do so.
         """
         feedback = inputs[0]
@@ -488,7 +488,7 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         Two gates, both required:
 
-        * **CUDA only.**  The scan targets the ``reduce-overhead`` / cudagraph
+        * **CUDA only.**  The scan targets the `reduce-overhead` / cudagraph
           path, whose whole benefit is shedding per-step *GPU* launch overhead;
           on CPU there is nothing to amortise and the cudagraph machinery is
           unavailable, so a CPU projection falls straight back to the eager loop.
@@ -508,7 +508,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         Returns
         -------
         bool
-            ``True`` when the compiled scan is safe to run, ``False`` to force
+            `True` when the compiled scan is safe to run, `False` to force
             the eager fallback.
         """
         if projected.device.type != "cuda":
@@ -525,27 +525,27 @@ class BaseReservoirLayer(nn.Module, ABC):
         state: torch.Tensor,
     ) -> _ChunkScanFn | None:
         """
-        Return a cached (or freshly compiled) chunk scan, or ``None`` for eager.
+        Return a cached (or freshly compiled) chunk scan, or `None` for eager.
 
-        Looks the compiled scan up in :attr:`_compiled_scan_cache` by
-        ``(id(cell), chunk, dtype, device)`` so a compiled chunk is reused across
+        Looks the compiled scan up in `_compiled_scan_cache` by
+        `(id(cell), chunk, dtype, device)` so a compiled chunk is reused across
         calls with a matching configuration and never leaks across incompatible
         dtype/device/chunk configs.  A cache miss compiles once via
-        :func:`_resolve_chunk_scan` (trial-traced on a cloned state); a ``None``
-        result — ``torch < 2.10`` or a compilation failure — is *not* cached, so
+        `_resolve_chunk_scan` (trial-traced on a cloned state); a `None`
+        result — `torch < 2.10` or a compilation failure — is *not* cached, so
         every call retries the eager fallback cleanly.
 
         Parameters
         ----------
         projected : torch.Tensor
-            The precomputed input projection, ``(batch, timesteps, reservoir_size)``.
+            The precomputed input projection, `(batch, timesteps, reservoir_size)`.
         state : torch.Tensor
             Initial reservoir state (cloned internally for the trial trace).
 
         Returns
         -------
         _ChunkScanFn or None
-            The warm compiled chunk scan, or ``None`` to fall back to eager.
+            The warm compiled chunk scan, or `None` to fall back to eager.
         """
         chunk = min(DEFAULT_COMPILE_CHUNK, projected.shape[1])
         key = (id(self.cell), chunk, projected.dtype, projected.device)
@@ -571,9 +571,9 @@ class BaseReservoirLayer(nn.Module, ABC):
         """
         Drive the teacher-forced loop with the compiled chunk scan.
 
-        Runs ``DEFAULT_COMPILE_CHUNK``-step chunks through ``compiled`` (each a
-        single cudagraph replay), filling the ``< chunk`` remainder with the
-        eager ``cell.step`` loop.  ``cudagraph_mark_step_begin`` plus state /
+        Runs `DEFAULT_COMPILE_CHUNK`-step chunks through `compiled` (each a
+        single cudagraph replay), filling the `< chunk` remainder with the
+        eager `cell.step` loop.  `cudagraph_mark_step_begin` plus state /
         block clones at each chunk boundary keep the cudagraph-tree static
         buffers from being aliased across replays — the same discipline the
         forecast engine's chunked rollout uses.
@@ -581,16 +581,16 @@ class BaseReservoirLayer(nn.Module, ABC):
         Parameters
         ----------
         compiled : _ChunkScanFn
-            The warm compiled chunk scan from :meth:`_maybe_compiled_scan`.
+            The warm compiled chunk scan from `_maybe_compiled_scan`.
         projected : torch.Tensor
-            The precomputed input projection, ``(batch, timesteps, reservoir_size)``.
+            The precomputed input projection, `(batch, timesteps, reservoir_size)`.
         state : torch.Tensor
             Initial reservoir state.
 
         Returns
         -------
         outputs : torch.Tensor
-            Per-step outputs, ``(batch, timesteps, cell.output_size)``.
+            Per-step outputs, `(batch, timesteps, cell.output_size)`.
         new_state : torch.Tensor
             Final reservoir state after the last timestep.
         """
@@ -622,42 +622,42 @@ class BaseReservoirLayer(nn.Module, ABC):
         state: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Single-timestep analogue of :meth:`forward_stateless`: state in, state out.
+        Single-timestep analogue of `forward_stateless`: state in, state out.
 
-        Where :meth:`forward_stateless` consumes whole
-        ``(batch, timesteps, features)`` sequences and runs the time loop, this
-        consumes a single ``(batch, features)`` slice per stream and performs
+        Where `forward_stateless` consumes whole
+        `(batch, timesteps, features)` sequences and runs the time loop, this
+        consumes a single `(batch, features)` slice per stream and performs
         exactly one cell update.  It is the per-step primitive that the
         flattened autoregressive engine
-        (:meth:`resdag.core.ESNModel.forecast`) drives, sidestepping the
-        sequence-loop bookkeeping (``torch.stack``, ``shape[1]`` reads) that
-        :meth:`forward` / :meth:`forward_stateless` pay even for a length-1
+        (`resdag.core.ESNModel.forecast`) drives, sidestepping the
+        sequence-loop bookkeeping (`torch.stack`, `shape[1]` reads) that
+        `forward` / `forward_stateless` pay even for a length-1
         sequence.
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
             Feedback slice first, then at most one driving-input slice, each of
-            shape ``(batch, features)``.
+            shape `(batch, features)`.
         state : torch.Tensor
-            Current reservoir state, shape ``(batch, ...)`` as produced by
-            ``self.cell.init_state``.
+            Current reservoir state, shape `(batch, ...)` as produced by
+            `self.cell.init_state`.
 
         Returns
         -------
         output : torch.Tensor
-            Per-step output, shape ``(batch, cell.output_size)``.
+            Per-step output, shape `(batch, cell.output_size)`.
         new_state : torch.Tensor
             Updated reservoir state.
 
         Notes
         -----
         The project-vs-fallback choice is the same per-cell static decision made
-        in :meth:`forward_stateless` (no data-dependent branch in the hot path),
-        so this method stays ``torch.compile``-fullgraph friendly.  Like
-        :meth:`forward_stateless` it never reads or writes :attr:`state`, and it
+        in `forward_stateless` (no data-dependent branch in the hot path),
+        so this method stays `torch.compile`-fullgraph friendly.  Like
+        `forward_stateless` it never reads or writes `state`, and it
         applies no cross-call detach — the forecast engine runs under
-        :func:`torch.no_grad`, so the threaded state never carries a graph.
+        `torch.no_grad`, so the threaded state never carries a graph.
         """
         projected = self.cell.project_inputs(inputs)
         if projected is not None:
@@ -679,44 +679,44 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         Computes reservoir states for each timestep using the feedback
         signal and optional driving inputs.  This is a thin stateful wrapper
-        over the pure :meth:`forward_stateless`: it validates inputs, lazily
-        initialises :attr:`state`, runs the functional loop, stores the
+        over the pure `forward_stateless`: it validates inputs, lazily
+        initialises `state`, runs the functional loop, stores the
         returned state, and applies the cross-call detach.
 
         Parameters
         ----------
         feedback : torch.Tensor
-            Feedback signal of shape ``(batch, timesteps, feedback_size)``.
+            Feedback signal of shape `(batch, timesteps, feedback_size)`.
         *driving_inputs : torch.Tensor
-            Optional driving input of shape ``(batch, timesteps, input_size)``.
+            Optional driving input of shape `(batch, timesteps, input_size)`.
             At most one driving input tensor is supported.
         compile : bool, keyword-only, default=False
             Route the teacher-forced sequence loop through the opt-in
             compiled/chunked engine.  Forwarded verbatim to
-            :meth:`forward_stateless` — see its ``compile`` parameter for the
+            `forward_stateless` — see its `compile` parameter for the
             eligibility gating (projected fast path, inference-only) and the
-            transparent eager fallback.  The default (``False``) is byte-for-byte
+            transparent eager fallback.  The default (`False`) is byte-for-byte
             identical to the historical eager path.
 
         Returns
         -------
         torch.Tensor
             Reservoir states for all timesteps, shape
-            ``(batch, timesteps, cell.output_size)``.
+            `(batch, timesteps, cell.output_size)`.
 
         Raises
         ------
         ValueError
-            If ``feedback`` is not 3-D, if more than one driving input is
+            If `feedback` is not 3-D, if more than one driving input is
             supplied, or if the driving input batch/sequence dimensions do not
-            match ``feedback``.
+            match `feedback`.
 
         Notes
         -----
         The layer maintains internal state across forward calls.  Use
-        :meth:`reset_state` to clear the state between independent sequences.
-        For a pure, ``self``-free variant (used by the compile-scan, vmap, and
-        export paths) call :meth:`forward_stateless` directly.
+        `reset_state` to clear the state between independent sequences.
+        For a pure, `self`-free variant (used by the compile-scan, vmap, and
+        export paths) call `forward_stateless` directly.
         """
         if feedback.dim() != 3:
             raise ValueError(f"Feedback must be 3D (B, T, F), got shape {feedback.shape}")
@@ -772,18 +772,18 @@ class BaseReservoirLayer(nn.Module, ABC):
         """
         Lazily allocate a zero state only when it is genuinely missing.
 
-        A re-init happens **only** when the state is ``None`` or its batch size
+        A re-init happens **only** when the state is `None` or its batch size
         no longer matches the incoming batch.  Device and dtype are *not* a
-        trigger: the state is a registered buffer, so ``.to()`` / ``.cuda()`` /
-        ``.double()`` already move it together with the module's parameters, and
+        trigger: the state is a registered buffer, so `.to()` / `.cuda()` /
+        `.double()` already move it together with the module's parameters, and
         re-zeroing on a device/dtype mismatch would silently discard a warmed-up
         trajectory — the very bug this guard used to cause.
 
-        When the state was restored **on purpose** via :meth:`set_state`, a
+        When the state was restored **on purpose** via `set_state`, a
         batch-size mismatch is treated as a user error and raises rather than
         silently zero-reinitialising: discarding a deliberately restored state
         would otherwise produce plausible-looking but wrong forecasts (e.g. the
-        common train-with-``batch>1`` / forecast-with-``batch=1`` pattern).  A
+        common train-with-`batch>1` / forecast-with-`batch=1` pattern).  A
         state that merely accumulated through forward passes or lazy zero-init
         still auto-resizes without complaint.
 
@@ -799,9 +799,9 @@ class BaseReservoirLayer(nn.Module, ABC):
         Raises
         ------
         RuntimeError
-            If a state restored via :meth:`set_state` has a batch size that does
-            not match the incoming ``batch_size``.  Re-restore at the right batch
-            size or call :meth:`reset_state` to opt back into auto-resizing.
+            If a state restored via `set_state` has a batch size that does
+            not match the incoming `batch_size`.  Re-restore at the right batch
+            size or call `reset_state` to opt back into auto-resizing.
         """
         if self.state is None or self.state.shape[0] != batch_size:
             if self._state_user_set and self.state is not None:
@@ -825,18 +825,18 @@ class BaseReservoirLayer(nn.Module, ABC):
 
         The reference is the first floating-point parameter or buffer of the
         inner cell (the same scan used when lazily allocating a zero state),
-        falling back to ``cpu`` / ``float32`` for weightless cells such as the
+        falling back to `cpu` / `float32` for weightless cells such as the
         NG-RC reservoir.  This is the device/dtype an incoming forward pass is
         expected to use, so callers restoring a saved state should coerce it to
         this reference to avoid a silent re-initialisation in
-        :meth:`_maybe_init_state`.
+        `_maybe_init_state`.
 
         Returns
         -------
         device : torch.device
-            Device of the cell's first floating-point tensor, or ``cpu``.
+            Device of the cell's first floating-point tensor, or `cpu`.
         dtype : torch.dtype
-            Dtype of the cell's first floating-point tensor, or ``float32``.
+            Dtype of the cell's first floating-point tensor, or `float32`.
         """
         ref = next(
             (
@@ -858,7 +858,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         ----------
         batch_size : int, optional
             If provided, initialize state with this batch size using the
-            cell's device and dtype.  If ``None``, state is set to ``None``
+            cell's device and dtype.  If `None`, state is set to `None`
             and will be lazily initialized on the next forward pass.
 
         Examples
@@ -885,12 +885,12 @@ class BaseReservoirLayer(nn.Module, ABC):
         Returns
         -------
         torch.Tensor or None
-            Clone of the current state tensor, or ``None`` if not yet
+            Clone of the current state tensor, or `None` if not yet
             initialized.  The layout is cell-defined: 2-D
-            ``(batch, cell.state_size)`` for
-            :class:`~resdag.layers.cells.esn_cell.ESNCell`, 3-D
-            ``(batch, cell.state_size, input_dim)`` delay buffer for
-            :class:`~resdag.layers.cells.ngrc_cell.NGCell`.
+            `(batch, cell.state_size)` for
+            `resdag.layers.cells.esn_cell.ESNCell`, 3-D
+            `(batch, cell.state_size, input_dim)` delay buffer for
+            `resdag.layers.cells.ngrc_cell.NGCell`.
 
         Examples
         --------
@@ -904,47 +904,47 @@ class BaseReservoirLayer(nn.Module, ABC):
         """
         Set the internal state to a specific tensor.
 
-        Validation is delegated to ``self.cell.validate_state(state)`` so
+        Validation is delegated to `self.cell.validate_state(state)` so
         each cell type owns its own state-shape contract (2-D for ESNCell,
         3-D delay buffer for NGCell, etc.).
 
         Batch-size contract
         -------------------
-        The restored state's batch size (``state.shape[0]``) pins the batch size
+        The restored state's batch size (`state.shape[0]`) pins the batch size
         the **next forward pass must use**.  A restored state is treated as
-        deliberate: if a subsequent ``forward`` is called with a different batch
-        size, :meth:`_maybe_init_state` raises a :class:`RuntimeError` instead of
+        deliberate: if a subsequent `forward` is called with a different batch
+        size, `_maybe_init_state` raises a `RuntimeError` instead of
         silently zero-reinitialising and discarding the state you restored.  To
-        forecast at a different batch size, restore (or :meth:`reset_state` and
+        forecast at a different batch size, restore (or `reset_state` and
         re-warm) a state of the matching batch size; to opt back into automatic
-        batch-size re-initialisation, call :meth:`reset_state`.  Device and dtype
-        are not pinned — the state moves with the module under ``.to()`` and is
+        batch-size re-initialisation, call `reset_state`.  Device and dtype
+        are not pinned — the state moves with the module under `.to()` and is
         cast to match an incoming forward.
 
         Autograd contract
         -----------------
-        The stored state honours :attr:`detach_state_between_calls`, exactly as
-        the cross-call truncated-BPTT detach in :meth:`forward` does.  Under the
-        default (``True``) a restored state is treated as a fresh initial
-        condition: it is stored as ``state.detach().clone()`` so it carries no
-        ``grad_fn`` and a later forward + backward cannot try to backprop
-        through ``state``'s already-freed graph (the "backward through the graph
+        The stored state honours `detach_state_between_calls`, exactly as
+        the cross-call truncated-BPTT detach in `forward` does.  Under the
+        default (`True`) a restored state is treated as a fresh initial
+        condition: it is stored as `state.detach().clone()` so it carries no
+        `grad_fn` and a later forward + backward cannot try to backprop
+        through `state`'s already-freed graph (the "backward through the graph
         a second time" / retained-memory failure that
-        :attr:`detach_state_between_calls` exists to prevent).  Set
-        ``detach_state_between_calls=False`` to store ``state.clone()`` with its
+        `detach_state_between_calls` exists to prevent).  Set
+        `detach_state_between_calls=False` to store `state.clone()` with its
         graph intact, when you intentionally backprop through state carried in
         across calls (and manage the retained graph yourself).
 
         Parameters
         ----------
         state : torch.Tensor
-            New state tensor.  Its batch size (``shape[0]``) becomes the
+            New state tensor.  Its batch size (`shape[0]`) becomes the
             required batch size of the next forward pass.
 
         Raises
         ------
         ValueError
-            If the cell's :meth:`ReservoirCell.validate_state` rejects the
+            If the cell's `ReservoirCell.validate_state` rejects the
             tensor.  The error includes the cell class name and the
             offending shape.
 
@@ -996,7 +996,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         ----------
         batch_size : int, optional
             If provided, lazily initialise the state with this batch size
-            before filling it with random values.  Uses ``device`` / ``dtype``
+            before filling it with random values.  Uses `device` / `dtype`
             kwargs when given, otherwise the cell's first floating-point
             parameter/buffer (falling back to CPU/float32).
         device : torch.device, optional
@@ -1009,7 +1009,7 @@ class BaseReservoirLayer(nn.Module, ABC):
         Raises
         ------
         RuntimeError
-            If the state has not been initialised and ``batch_size`` is not
+            If the state has not been initialised and `batch_size` is not
             provided.
 
         Examples

@@ -1,11 +1,11 @@
 """
 Flattened single-step inference engine for autoregressive forecasting.
 
-:meth:`resdag.core.ESNModel.forecast` rolls the model forward one timestep at a
-time.  Driving that loop with the full symbolic ``__call__`` re-walks the entire
-``pytorch_symbolic`` graph on *every* step: it re-dispatches
-``nn.Module.__call__`` for the model and each layer and pays the reservoir
-sequence-loop bookkeeping (``torch.stack`` of a one-element list, ``shape[1]``
+`resdag.core.ESNModel.forecast` rolls the model forward one timestep at a
+time.  Driving that loop with the full symbolic `__call__` re-walks the entire
+`pytorch_symbolic` graph on *every* step: it re-dispatches
+`nn.Module.__call__` for the model and each layer and pays the reservoir
+sequence-loop bookkeeping (`torch.stack` of a one-element list, `shape[1]`
 reads, lazy-init/detach checks) just to process a single frame. Flattening the
 graph removes this repeated Python dispatch and sequence bookkeeping.
 
@@ -13,23 +13,23 @@ This module compiles the model's shared execution plan **once** into a flat,
 straight-line Python step function that captures layer references directly and
 threads reservoir states explicitly (rather than mutating module buffers
 mid-loop). The plan preserves the symbolic graph's operation order, so the result is
-numerically identical to the per-step ``self(*step_inputs)`` path while shedding
+numerically identical to the per-step `self(*step_inputs)` path while shedding
 the per-step dispatch and wrapper overhead.
 
-The same flat function is what the opt-in ``compile=True`` path wraps in
-:func:`torch.compile` — it is built to be fullgraph-clean (no Python-level
+The same flat function is what the opt-in `compile=True` path wraps in
+`torch.compile` — it is built to be fullgraph-clean (no Python-level
 data-dependent control flow; every branch is resolved at build time), with a
 transparent eager fallback when compilation is unavailable or fails.
 
 Notes
 -----
-The engine feeds every non-reservoir layer a 3-D ``(batch, 1, features)``
+The engine feeds every non-reservoir layer a 3-D `(batch, 1, features)`
 slice. Such layers must be framewise: splitting a sequence along time must
 preserve their behavior. Whole-sequence custom transforms require the common
 Model's explicit history replay mode instead. Only the reservoir update is
 special-cased: its parents are squeezed to
 2-D for the single-step
-:meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
+`resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
 and the output is unsqueezed back.  Reservoir *states* are threaded separately and
 keep their native shape (2-D for an ESN, 3-D delay buffer for NG-RC).
 """
@@ -80,18 +80,18 @@ class FlatStep:
     Attributes
     ----------
     step : StepFn
-        Eager straight-line step function.  Takes ``(inputs, states)`` and
-        returns ``(outputs, new_states)`` where ``inputs``/``outputs`` are
-        tuples of ``(batch, 1, features)`` slices (model-input / model-output
-        order) and ``states``/``new_states`` are lists of reservoir states in
-        :attr:`reservoir_layers` order.
+        Eager straight-line step function.  Takes `(inputs, states)` and
+        returns `(outputs, new_states)` where `inputs`/`outputs` are
+        tuples of `(batch, 1, features)` slices (model-input / model-output
+        order) and `states`/`new_states` are lists of reservoir states in
+        `reservoir_layers` order.
     reservoir_layers : list[BaseReservoirLayer]
         Reservoir layers in graph invocation order. Repeated use of one
         reservoir instance is rejected to keep state independent per node.
     source : str
-        The generated Python source of :attr:`step` (kept for debugging /
-        introspection, mirroring ``pytorch_symbolic``'s
-        ``_generated_forward_source``).
+        The generated Python source of `step` (kept for debugging /
+        introspection, mirroring `pytorch_symbolic`'s
+        `_generated_forward_source`).
     n_inputs : int
         Number of model inputs the step expects.
     n_outputs : int
@@ -141,10 +141,10 @@ def build_flat_step(model: ESNModel) -> FlatStep:
     inference and emits straight-line assignments into a generated function.
     Reservoir instances must be distinct at each graph position so sequence
     and stepwise execution have the same causal recurrent-state semantics.
-    Reservoir nodes call :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
+    Reservoir nodes call `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.step_stateless`
     with their state threaded in and out; every other node calls its layer's
-    ``forward`` directly on its parents' values, bypassing the
-    ``nn.Module.__call__`` dispatch.
+    `forward` directly on its parents' values, bypassing the
+    `nn.Module.__call__` dispatch.
 
     Parameters
     ----------
@@ -160,11 +160,11 @@ def build_flat_step(model: ESNModel) -> FlatStep:
     Notes
     -----
     The generated function captures the layers' bound methods in a closure, so
-    the executor stays valid after ``.to(device)`` / ``.to(dtype)`` (the layer
+    the executor stays valid after `.to(device)` / `.to(dtype)` (the layer
     objects are unchanged; only their tensors move).  It must be rebuilt if the
     graph topology changes — e.g. after
-    :meth:`pytorch_symbolic.SymbolicModel.add_output` — which the model's cache
-    detects via the identity of ``model.outputs``.
+    `pytorch_symbolic.SymbolicModel.add_output` — which the model's cache
+    detects via the identity of `model.outputs`.
     """
     plan = model._get_execution_plan()
     validate_fast_plan(plan)
@@ -207,13 +207,13 @@ def build_flat_step(model: ESNModel) -> FlatStep:
 
 def build_chunk_step(flat: FlatStep, chunk: int, n_outputs: int) -> ChunkStepFn:
     """
-    Wrap :attr:`FlatStep.step` into a function that runs ``chunk`` steps in one call.
+    Wrap `FlatStep.step` into a function that runs `chunk` steps in one call.
 
     The returned function threads the feedback and reservoir states through
-    ``chunk`` autoregressive steps *internally* (a Python loop that
-    :func:`torch.compile` unrolls into a single graph) and concatenates the
+    `chunk` autoregressive steps *internally* (a Python loop that
+    `torch.compile` unrolls into a single graph) and concatenates the
     per-step outputs along the time axis.  Driving the forecast with this —
-    instead of one compiled call per step — is what lets ``mode="reduce-overhead"``
+    instead of one compiled call per step — is what lets `mode="reduce-overhead"`
     amortise a cudagraph replay over many steps.
 
     Parameters
@@ -228,12 +228,12 @@ def build_chunk_step(flat: FlatStep, chunk: int, n_outputs: int) -> ChunkStepFn:
     Returns
     -------
     ChunkStepFn
-        ``f(feedback, drivers, states) -> (blocks, new_states, last_feedback)``
-        where ``feedback`` is a ``(batch, 1, feedback_dim)`` slice, ``drivers`` is
-        a tuple of ``(batch, chunk, driver_dim)`` tensors (empty for feedback-only
-        models), and ``blocks`` is a tuple of ``(batch, chunk, out_dim)`` tensors
+        `f(feedback, drivers, states) -> (blocks, new_states, last_feedback)`
+        where `feedback` is a `(batch, 1, feedback_dim)` slice, `drivers` is
+        a tuple of `(batch, chunk, driver_dim)` tensors (empty for feedback-only
+        models), and `blocks` is a tuple of `(batch, chunk, out_dim)` tensors
         in model-output order.  Numerically identical to calling
-        :attr:`FlatStep.step` ``chunk`` times.
+        `FlatStep.step` `chunk` times.
     """
     step = flat.step
 
@@ -267,12 +267,12 @@ def resolve_chunk_step(
     trial_states: list[torch.Tensor],
 ) -> ChunkStepFn | None:
     """
-    Build and compile a chunked step, or return ``None`` to fall back to eager.
+    Build and compile a chunked step, or return `None` to fall back to eager.
 
-    Wraps :func:`build_chunk_step` in :func:`torch.compile` (``fullgraph=True``)
+    Wraps `build_chunk_step` in `torch.compile` (`fullgraph=True`)
     and *trial-traces it once* on cloned seed inputs so any compilation failure
-    surfaces here.  Returns ``None`` — with a :class:`RuntimeWarning` — when
-    ``torch < 2.10`` or compilation fails, signalling the caller to drive the
+    surfaces here.  Returns `None` — with a `RuntimeWarning` — when
+    `torch < 2.10` or compilation fails, signalling the caller to drive the
     forecast with the eager single step instead of aborting.
 
     Parameters
@@ -284,11 +284,11 @@ def resolve_chunk_step(
     n_outputs : int
         Number of model outputs.
     mode : str
-        ``torch.compile`` ``mode`` (e.g. ``"reduce-overhead"``).
+        `torch.compile` `mode` (e.g. `"reduce-overhead"`).
     trial_feedback : torch.Tensor
         Seed feedback used to trial-trace the compiled function.
     trial_drivers : tuple[torch.Tensor, ...]
-        First driver chunk (``(batch, chunk, driver_dim)`` tensors), empty for
+        First driver chunk (`(batch, chunk, driver_dim)` tensors), empty for
         feedback-only models.
     trial_states : list[torch.Tensor]
         Current reservoir states; cloned internally for the trial call so the
@@ -297,7 +297,7 @@ def resolve_chunk_step(
     Returns
     -------
     ChunkStepFn or None
-        The warm compiled chunk step, or ``None`` to fall back to eager.
+        The warm compiled chunk step, or `None` to fall back to eager.
     """
     import warnings
 
@@ -373,16 +373,16 @@ def rollout(
     """
     Roll a flattened single-step engine forward autoregressively.
 
-    Drives ``horizon`` genuinely autoregressive steps: slot ``0`` is produced
-    from ``seed_feedback`` (already the model's own prediction — the last warmup
+    Drives `horizon` genuinely autoregressive steps: slot `0` is produced
+    from `seed_feedback` (already the model's own prediction — the last warmup
     output or a caller-supplied seed), and every later slot feeds back the
     previous step's first output.  No teacher-forced frame is emitted, so
-    ``horizon=1`` yields one real forecast step.  Driver alignment matches
-    training: step ``t`` consumes ``drivers[i][:, t : t + 1, :]`` alongside the
-    current feedback and writes its prediction to slot ``t``.
+    `horizon=1` yields one real forecast step.  Driver alignment matches
+    training: step `t` consumes `drivers[i][:, t : t + 1, :]` alongside the
+    current feedback and writes its prediction to slot `t`.
 
-    The rollout is the shared core of :meth:`resdag.core.ESNModel.forecast`
-    (and, through it, :meth:`~resdag.core.ESNModel.windowed_forecast` and the
+    The rollout is the shared core of `resdag.core.ESNModel.forecast`
+    (and, through it, `resdag.core.ESNModel.windowed_forecast` and the
     ensemble forecast paths): it owns the compile/eager engine choice, the two
     output-assembly strategies, and threading reservoir states explicitly rather
     than mutating module buffers.  Callers are responsible for warmup, seed and
@@ -391,41 +391,41 @@ def rollout(
     Parameters
     ----------
     flat : FlatStep
-        The single-step executor for the model graph (see :func:`build_flat_step`).
+        The single-step executor for the model graph (see `build_flat_step`).
     seed_feedback : torch.Tensor
-        Feedback of shape ``(batch, 1, feedback_dim)`` seeding the first step.
+        Feedback of shape `(batch, 1, feedback_dim)` seeding the first step.
     drivers : tuple of torch.Tensor
-        One ``(batch, >=horizon, driver_dim)`` tensor per driver input, empty for
-        feedback-only models.  Only the first ``horizon`` timesteps are consumed;
-        step ``t`` uses ``drivers[i][:, t : t + 1, :]``.
+        One `(batch, >=horizon, driver_dim)` tensor per driver input, empty for
+        feedback-only models.  Only the first `horizon` timesteps are consumed;
+        step `t` uses `drivers[i][:, t : t + 1, :]`.
     states : list of torch.Tensor
-        Initial reservoir states in :attr:`FlatStep.reservoir_layers` order.
+        Initial reservoir states in `FlatStep.reservoir_layers` order.
         Threaded through the loop and returned (advanced) — not mutated in place
         beyond the compiled path's internal cloning.
     horizon : int
-        Number of autoregressive steps to generate (``>= 1``).
+        Number of autoregressive steps to generate (`>= 1`).
     out_dims : list of int
         Feature dimension of each model output, in model-output order.  Its
         length is the number of outputs the step returns.
     no_grad : bool, keyword-only
-        Selects the output-assembly strategy.  When ``True`` (the historical,
+        Selects the output-assembly strategy.  When `True` (the historical,
         graph-free default) each step is written into a preallocated
-        ``torch.empty`` buffer.  When ``False`` (a differentiable BPTT rollout)
-        the per-step ``(batch, 1, dim)`` slices are collected and ``torch.cat``'d
-        at the end, so no in-place ``CopySlices`` grafts autograd-tracked values
+        `torch.empty` buffer.  When `False` (a differentiable BPTT rollout)
+        the per-step `(batch, 1, dim)` slices are collected and `torch.cat`'d
+        at the end, so no in-place `CopySlices` grafts autograd-tracked values
         onto an uninitialised buffer.  This function does **not** open a grad
         context — the caller wraps the call (and its own seed/warmup work) in the
-        matching ``torch.no_grad()`` / ``nullcontext`` so the whole two-phase
+        matching `torch.no_grad()` / `nullcontext` so the whole two-phase
         forecast is consistent.
     compile : bool, keyword-only, default=False
-        If ``True``, wrap the step in a compiled chunked executor
-        (``mode="reduce-overhead"``, ``fullgraph=True``) via
-        :func:`resolve_chunk_step`, driving ``DEFAULT_COMPILE_CHUNK``-step chunks
-        per cudagraph replay and filling the ``< chunk`` remainder eagerly.  On
-        ``torch < 2.10`` or a compilation failure it transparently falls back to
-        the eager single-step loop (with a :class:`RuntimeWarning`).  The compile
-        path is inference-only, so callers must gate it to ``no_grad=True`` (the
-        ``forecast`` public method raises otherwise); here it only ever writes
+        If `True`, wrap the step in a compiled chunked executor
+        (`mode="reduce-overhead"`, `fullgraph=True`) via
+        `resolve_chunk_step`, driving `DEFAULT_COMPILE_CHUNK`-step chunks
+        per cudagraph replay and filling the `< chunk` remainder eagerly.  On
+        `torch < 2.10` or a compilation failure it transparently falls back to
+        the eager single-step loop (with a `RuntimeWarning`).  The compile
+        path is inference-only, so callers must gate it to `no_grad=True` (the
+        `forecast` public method raises otherwise); here it only ever writes
         into the preallocated buffers.
     output_templates : tuple of torch.Tensor, optional
         One warmup output per head, used to preserve each head's dtype and
@@ -435,19 +435,19 @@ def rollout(
     Returns
     -------
     forecast_buffers : list of torch.Tensor
-        One ``(batch, horizon, out_dim)`` tensor per model output, in
-        model-output order.  With ``no_grad=False`` these carry the BPTT
-        ``grad_fn``.
+        One `(batch, horizon, out_dim)` tensor per model output, in
+        model-output order.  With `no_grad=False` these carry the BPTT
+        `grad_fn`.
     final_states : list of torch.Tensor
         The reservoir states after the last step, in
-        :attr:`FlatStep.reservoir_layers` order.  The caller persists them
-        (honouring ``detach_state_between_calls``) so a follow-up
-        ``forecast(reset=False)`` continues from here.
+        `FlatStep.reservoir_layers` order.  The caller persists them
+        (honouring `detach_state_between_calls`) so a follow-up
+        `forecast(reset=False)` continues from here.
 
     Notes
     -----
     The compiled and eager paths are numerically identical to calling
-    :attr:`FlatStep.step` ``horizon`` times, and both are bit-for-bit identical
+    `FlatStep.step` `horizon` times, and both are bit-for-bit identical
     to the per-step symbolic re-execution the engine replaces.
     """
     batch_size = seed_feedback.shape[0]

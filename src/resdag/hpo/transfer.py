@@ -36,7 +36,7 @@ def _require_distinct_studies(study: optuna.Study, source: optuna.Study) -> None
 
     Optuna exposes no public Study storage identity. Write a fresh challenge to
     the destination and see whether the source observes it. A new challenge on
-    every check distinguishes independent studies even when ``copy_study`` has
+    every check distinguishes independent studies even when `copy_study` has
     cloned their metadata. No private storage IDs or credential-bearing URLs
     are inspected. The final read fails closed if another check interferes.
     """
@@ -58,7 +58,7 @@ def apply_warm_start(
     """Enqueue known-good configurations ahead of sampler-proposed trials.
 
     Each mapping in *warm_start* is enqueued via
-    :meth:`optuna.study.Study.enqueue_trial`, which guarantees the configuration
+    `optuna.study.Study.enqueue_trial`, which guarantees the configuration
     is the next one handed to the objective — i.e. it runs **before** any trial
     the sampler would otherwise propose.  The parent enqueues settings before preparing finite numerical job windows.
     Queued fixed values remain available even when the current search-space
@@ -69,7 +69,7 @@ def apply_warm_start(
     study : optuna.Study
         The study to enqueue trials into.
     warm_start : list of dict
-        Each dict maps parameter name to a fixed value.  Empty or ``None``
+        Each dict maps parameter name to a fixed value.  Empty or `None`
         entries are ignored.
 
     Returns
@@ -104,13 +104,13 @@ def apply_warm_start(
 def _source_study(
     transfer_from: "optuna.Study | str",
 ) -> Iterator[optuna.Study]:
-    """Resolve *transfer_from* to a loaded :class:`optuna.Study`.
+    """Resolve *transfer_from* to a loaded `optuna.Study`.
 
     Accepts an already-loaded study (returned as-is) or a storage path / URL
-    (``"study.log"``, ``"study.db"``, ``"sqlite:///study.db"``) from which a
+    (`"study.log"`, `"study.db"`, `"sqlite:///study.db"`) from which a
     single study is loaded.  Loading by path only succeeds when the storage
     holds exactly one study; otherwise the ambiguity is surfaced as a
-    :class:`ValueError` so the caller passes an explicit study instead.
+    `ValueError` so the caller passes an explicit study instead.
 
     Parameters
     ----------
@@ -160,14 +160,14 @@ def transfer_trials(
 ) -> int:
     """Reuse complete configurations, re-evaluating them by default.
 
-    ``mode="reevaluate"`` enqueues full recorded resolved settings, including
+    `mode="reevaluate"` enqueues full recorded resolved settings, including
     fixed values that were not Optuna suggestions. Old scores are not copied.
     Source study/trial/protocol provenance is retained on every queued trial.
     A changed objective direction is allowed because the new task evaluates
     the settings again. No parameter is silently removed to fit a new space.
 
-    ``mode="scores"`` imports finite completed values only when both studies
-    are bound to exactly ``protocol_hash`` and their directions match. The
+    `mode="scores"` imports finite completed values only when both studies
+    are bound to exactly `protocol_hash` and their directions match. The
     caller's protocol must identify actual data, validation, objective and
     construction settings. An unbound or changed task must re-evaluate instead.
     All source parameters/distributions and complete resolved settings remain
@@ -258,17 +258,17 @@ def transfer_trials(
 
 
 def export_best_config(study: optuna.Study) -> dict[str, Any]:
-    """Export a study's best parameters as a reusable ``warm_start`` entry.
+    """Export a study's best parameters as a reusable `warm_start` entry.
 
-    Returns the best completed trial's parameters as a plain ``dict`` that can
-    be dropped straight into the ``warm_start`` list of a later
-    :func:`resdag.hpo.run_hpo` call, letting the winner of one run seed the
+    Returns the best completed trial's parameters as a plain `dict` that can
+    be dropped straight into the `warm_start` list of a later
+    `resdag.hpo.run_hpo` call, letting the winner of one run seed the
     next.
 
     Parameters
     ----------
     study : optuna.Study
-        A study with at least one ``COMPLETE`` trial.
+        A study with at least one `COMPLETE` trial.
 
     Returns
     -------

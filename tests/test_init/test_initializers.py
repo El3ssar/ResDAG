@@ -165,7 +165,7 @@ class TestFunctionInitializer:
         assert not torch.all(weight == 0)
         assert weight.abs().max() < 1.0  # xavier bound for this shape
 
-    def test_registered_function(self) -> None:
+    def test_registered_function(self, isolated_initializer_registries) -> None:
         """A function registered via register_input_feedback resolves by name."""
 
         @register_input_feedback("_test_constant", value=2.0)

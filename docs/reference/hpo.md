@@ -89,6 +89,7 @@ number of trials, seeds and starting points.
 | <code style="white-space: nowrap">input_scaling</code> | `1e-3`–2.0 | Logarithmic, when supported by the input initializer |
 | <code style="white-space: nowrap">bias_scaling</code> | `1e-3`–1.0 | Logarithmic, when bias uses its default initializer |
 | <code style="white-space: nowrap">mean_degree</code> | Three to twelve, capped by available recurrent inputs | Integer, for the default or configured Erdős–Rényi topology |
+| <code style="white-space: nowrap">input_to_readout</code> | `True`, `False` | Categorical, vanilla recipes only; input plus states or states alone |
 
 `mean_degree` is a tuning control for the automatic recipe. It controls the
 expected number of recurrent matrix entries per
@@ -406,6 +407,14 @@ vectors. `get_study_summary` orders valid results according to study direction.
 
 ## Resource policies and helpers
 
+`MemoryContext` is the immutable public input to a custom `memory_estimator`.
+Tuning supplies shapes, placement, retained storage and recognized execution
+layout; the callback returns a `MemoryEstimate` or a byte count. For separate
+planning, construct a context from known facts and call `estimate_memory`.
+The preparation-specific context builders are implementation details.
+Estimates guide admission and concurrency; they are not process or allocator
+limits and do not change model precision or device policy.
+
 ::: resdag.hpo.resources
     options:
       members:
@@ -413,8 +422,6 @@ vectors. `get_study_summary` orders valid results according to study direction.
         - MemoryBudget
         - MemoryEstimate
         - MemoryContext
-        - memory_context
-        - raw_memory_context
         - estimate_memory
 
 ## Raw losses

@@ -111,10 +111,11 @@ def test_default_search_distributions_match_approved_controls_and_uniform_width(
             "input_scaling": 1e-3,
             "bias_scaling": 1e-3,
             "mean_degree": 3,
+            **({"input_to_readout": False} if kind != "ott" else {}),
         }
     )
     values = _default_space(model)(trial)
-    assert set(values) == {
+    expected = {
         "reservoir_size",
         "spectral_radius",
         "leak_rate",
@@ -123,6 +124,11 @@ def test_default_search_distributions_match_approved_controls_and_uniform_width(
         "bias_scaling",
         "mean_degree",
     }
+    if kind != "ott":
+        expected.add("input_to_readout")
+        assert values["input_to_readout"] is False
+        assert trial.distributions["input_to_readout"].choices == (True, False)
+    assert set(values) == expected
     distributions = trial.distributions
     assert isinstance(distributions["reservoir_size"], optuna.distributions.IntDistribution)
     assert (distributions["reservoir_size"].low, distributions["reservoir_size"].high) == (8, 32)
@@ -271,7 +277,13 @@ def test_custom_initializers_activation_and_readout_options_survive_builtin_rebu
         washout=3,
     )
     trial = optuna.trial.FixedTrial(
-        {"reservoir_size": 16, "spectral_radius": 0.4, "leak_rate": 0.7, "alpha": 1e-4}
+        {
+            "reservoir_size": 16,
+            "spectral_radius": 0.4,
+            "leak_rate": 0.7,
+            "alpha": 1e-4,
+            **({"input_to_readout": False} if family is rd.classic_esn else {}),
+        }
     )
     sampled = _default_space(model)(trial)
     assert "mean_degree" not in sampled and "bias_scaling" not in sampled

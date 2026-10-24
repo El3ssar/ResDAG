@@ -5,6 +5,16 @@ import random
 import numpy as np
 import torch
 
+__all__ = [
+    "DeviceLike",
+    "SeedLike",
+    "coerce_seed_to_int",
+    "create_rng",
+    "create_torch_generator",
+    "seed_everything",
+    "resolve_device",
+]
+
 # Anything accepted as a reproducibility seed throughout resdag.  A plain
 # ``int`` pins a value; a ``torch.Generator`` lets callers (e.g. an HPO loop)
 # carry a per-trial generator; ``None`` defers to the global RNG.
@@ -18,13 +28,13 @@ DeviceLike = str | torch.device | None
 
 
 def coerce_seed_to_int(seed: SeedLike) -> int | None:
-    """Reduce a torch/int/None seed to a plain ``int`` seed (or ``None``).
+    """Reduce a torch/int/None seed to a plain `int` seed (or `None`).
 
     The NumPy-backed graph builders and named initializers thread an integer
-    (or ``None``) seed down to :func:`create_rng`.  A :class:`torch.Generator`
+    (or `None`) seed down to `create_rng`.  A `torch.Generator`
     cannot be passed there directly, so this helper extracts a deterministic
     integer from its initial seed — two generators created with the same
-    ``manual_seed`` therefore yield the same int, keeping the topology a pure
+    `manual_seed` therefore yield the same int, keeping the topology a pure
     function of the generator.
 
     Parameters
@@ -35,9 +45,9 @@ def coerce_seed_to_int(seed: SeedLike) -> int | None:
     Returns
     -------
     int or None
-        ``seed`` itself if it was an ``int``; the generator's
-        ``initial_seed()`` if it was a :class:`torch.Generator`; ``None`` if it
-        was ``None``.
+        `seed` itself if it was an `int`; the generator's
+        `initial_seed()` if it was a `torch.Generator`; `None` if it
+        was `None`.
     """
     if seed is None or isinstance(seed, int):
         return seed
@@ -54,35 +64,35 @@ def create_torch_generator(
     seed: SeedLike = None,
     device: torch.device | str | None = None,
 ) -> torch.Generator:
-    """Create a torch :class:`~torch.Generator` for reproducible weight draws.
+    """Create a torch `torch.Generator` for reproducible weight draws.
 
-    Used for the default ``nn.init`` weight/bias draws inside reservoir cells so
-    that a single ``seed`` deterministically fixes every parameter without
+    Used for the default `nn.init` weight/bias draws inside reservoir cells so
+    that a single `seed` deterministically fixes every parameter without
     touching (and without depending on the prior state of) torch's global RNG.
 
     Parameters
     ----------
     seed : int, torch.Generator, or None
-        If ``int``, seeds a fresh generator on ``device``.
-        If ``torch.Generator``, it is returned as-is (the caller's generator is
+        If `int`, seeds a fresh generator on `device`.
+        If `torch.Generator`, it is returned as-is (the caller's generator is
         threaded straight through, so successive draws advance one stream).
-        If ``None``, the generator is seeded from torch's global RNG so that
-        ``torch.manual_seed`` still propagates — matching :func:`create_rng`.
+        If `None`, the generator is seeded from torch's global RNG so that
+        `torch.manual_seed` still propagates — matching `create_rng`.
 
     device : torch.device, str, or None
-        Device for the new generator.  Ignored when ``seed`` is already a
-        :class:`torch.Generator`.
+        Device for the new generator.  Ignored when `seed` is already a
+        `torch.Generator`.
 
     Returns
     -------
     torch.Generator
-        A generator suitable for passing to ``nn.init.*`` via ``generator=``.
+        A generator suitable for passing to `nn.init.*` via `generator=`.
 
     Notes
     -----
-    When ``seed is None`` the integer seed is sampled from torch's global RNG
-    via ``torch.randint``, advancing the global state but tying the draws to
-    ``torch.manual_seed`` for end-to-end reproducibility.
+    When `seed is None` the integer seed is sampled from torch's global RNG
+    via `torch.randint`, advancing the global state but tying the draws to
+    `torch.manual_seed` for end-to-end reproducibility.
     """
     if isinstance(seed, torch.Generator):
         return seed
@@ -98,9 +108,9 @@ def create_rng(seed: int | np.random.Generator | None = None) -> np.random.Gener
 
     This is the NumPy-RNG-for-graph-topology helper: it is threaded into the
     graph builders and named initializers, which draw exclusively from NumPy.
-    For whole-program reproducibility (torch + NumPy + ``random`` at once) use
-    :func:`seed_everything` instead; for a torch :class:`~torch.Generator` for
-    weight/bias draws use :func:`create_torch_generator`.
+    For whole-program reproducibility (torch + NumPy + `random` at once) use
+    `seed_everything` instead; for a torch `torch.Generator` for
+    weight/bias draws use `create_torch_generator`.
 
     Parameters
     ----------
@@ -108,7 +118,7 @@ def create_rng(seed: int | np.random.Generator | None = None) -> np.random.Gener
         If int, used as seed for a new Generator.
         If Generator, returned as-is.
         If None, the seed is derived from torch's global RNG so that
-        ``torch.manual_seed`` propagates to the generator. This keeps
+        `torch.manual_seed` propagates to the generator. This keeps
         graph-based topologies (which draw from NumPy) reproducible under
         the same torch global seed, matching the behaviour of matrix
         topologies that draw from torch directly.
@@ -120,14 +130,14 @@ def create_rng(seed: int | np.random.Generator | None = None) -> np.random.Gener
 
     Notes
     -----
-    When ``seed is None`` the numpy seed is sampled from torch's global RNG
-    via ``torch.randint``. This advances the torch global RNG state, but ties
-    every NumPy draw to ``torch.manual_seed`` for end-to-end reproducibility.
+    When `seed is None` the numpy seed is sampled from torch's global RNG
+    via `torch.randint`. This advances the torch global RNG state, but ties
+    every NumPy draw to `torch.manual_seed` for end-to-end reproducibility.
 
     See Also
     --------
-    seed_everything : Seed torch, NumPy, and ``random`` in one call.
-    create_torch_generator : Build a torch ``Generator`` for weight draws.
+    seed_everything : Seed torch, NumPy, and `random` in one call.
+    create_torch_generator : Build a torch `Generator` for weight draws.
     """
     if isinstance(seed, np.random.Generator):
         return seed
@@ -142,7 +152,7 @@ def seed_everything(seed: int = 42, *, deterministic: bool = False) -> int:
     """Seed Python, NumPy, and torch (CPU + CUDA) for reproducible runs.
 
     Seeds every global RNG resdag and its dependencies draw from in one call:
-    the :mod:`random` module, NumPy's legacy global RNG, torch's CPU RNG, and
+    the `random` module, NumPy's legacy global RNG, torch's CPU RNG, and
     (when available) every visible CUDA device. The seed is returned so callers
     can log or thread it (e.g. an HPO loop deriving a per-trial seed).
 
@@ -151,8 +161,8 @@ def seed_everything(seed: int = 42, *, deterministic: bool = False) -> int:
     seed : int, default 42
         Seed applied to every RNG.
     deterministic : bool, keyword-only, default False
-        If ``True``, also request deterministic algorithms from torch by
-        enabling :func:`torch.use_deterministic_algorithms` and disabling the
+        If `True`, also request deterministic algorithms from torch by
+        enabling `torch.use_deterministic_algorithms` and disabling the
         cuDNN benchmark autotuner. This favours reproducibility over speed and
         may raise at runtime if a non-deterministic op has no deterministic
         implementation, so it is opt-in.
@@ -160,13 +170,13 @@ def seed_everything(seed: int = 42, *, deterministic: bool = False) -> int:
     Returns
     -------
     int
-        The ``seed`` that was applied, for logging or downstream threading.
+        The `seed` that was applied, for logging or downstream threading.
 
     Notes
     -----
     This seeds the *global* RNGs. For local, side-effect-free reproducibility,
-    prefer the generator factories: :func:`create_rng` (NumPy, for graph
-    topologies) and :func:`create_torch_generator` (torch, for weight draws).
+    prefer the generator factories: `create_rng` (NumPy, for graph
+    topologies) and `create_torch_generator` (torch, for weight draws).
 
     Examples
     --------
@@ -185,7 +195,7 @@ def seed_everything(seed: int = 42, *, deterministic: bool = False) -> int:
     --------
     create_rng : NumPy generator for graph topologies (local RNG).
     create_torch_generator : torch generator for weight draws (local RNG).
-    resolve_device : Resolve a device spec to a ``torch.device``.
+    resolve_device : Resolve a device spec to a `torch.device`.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -200,21 +210,21 @@ def seed_everything(seed: int = 42, *, deterministic: bool = False) -> int:
 
 
 def resolve_device(spec: DeviceLike = "auto") -> torch.device:
-    """Resolve a device spec to a concrete :class:`torch.device`.
+    """Resolve a device spec to a concrete `torch.device`.
 
-    Provides the ``'auto'`` convenience used by HPO, examples, and reproducible
+    Provides the `'auto'` convenience used by HPO, examples, and reproducible
     experiments: it picks the best available backend (CUDA, then MPS, then CPU).
     Explicit specs pass through, with a CPU fallback if the requested
     accelerator is unavailable.
 
     Parameters
     ----------
-    spec : str, torch.device, or None, default ``'auto'``
-        ``'auto'`` (or ``None``) selects ``cuda`` → ``mps`` → ``cpu`` by
-        availability. A :class:`torch.device` is returned unchanged. An explicit
-        string (``'cpu'``, ``'cuda'``, ``'cuda:1'``, ``'mps'``, …) is parsed into
-        a :class:`torch.device`; if it names an unavailable accelerator the
-        result falls back to ``cpu``.
+    spec : str, torch.device, or None, default `'auto'`
+        `'auto'` (or `None`) selects `cuda` → `mps` → `cpu` by
+        availability. A `torch.device` is returned unchanged. An explicit
+        string (`'cpu'`, `'cuda'`, `'cuda:1'`, `'mps'`, …) is parsed into
+        a `torch.device`; if it names an unavailable accelerator the
+        result falls back to `cpu`.
 
     Returns
     -------
@@ -224,7 +234,7 @@ def resolve_device(spec: DeviceLike = "auto") -> torch.device:
     Raises
     ------
     TypeError
-        If ``spec`` is not a ``str``, :class:`torch.device`, or ``None``.
+        If `spec` is not a `str`, `torch.device`, or `None`.
 
     Examples
     --------
@@ -236,7 +246,7 @@ def resolve_device(spec: DeviceLike = "auto") -> torch.device:
 
     See Also
     --------
-    seed_everything : Seed torch, NumPy, and ``random`` in one call.
+    seed_everything : Seed torch, NumPy, and `random` in one call.
     """
     if isinstance(spec, torch.device):
         return spec

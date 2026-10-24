@@ -5,26 +5,26 @@ Hybrid (physics-prior / knowledge-based) ESN Architecture
 This module provides the hybrid reservoir-computing architecture of Pathak et
 al. (2018): a reservoir *combined with an imperfect knowledge-based model* (a
 physics prior).  A user-supplied "expert" — for example one integration step of
-an approximate ODE — produces a one-step-ahead prediction ``K(u)`` that is fed
+an approximate ODE — produces a one-step-ahead prediction `K(u)` that is fed
 into the reservoir **twice**:
 
-1. concatenated with the raw input *before* the reservoir (``[u, K(u)]`` drives
+1. concatenated with the raw input *before* the reservoir (`[u, K(u)]` drives
    the reservoir), and
 2. concatenated with the reservoir state *before* the readout (the readout sees
-   ``[h, K(u)]``).
+   `[h, K(u)]`).
 
 The reservoir therefore only has to learn the *residual* the expert gets wrong,
 which is a much easier target than the full dynamics.  Pathak's headline result
 is robustness: even a crude expert lets the hybrid forecast a chaotic system far
 longer than either the pure reservoir or the pure expert alone.
 
-The reservoir's input weights use the :class:`~resdag.init.input_feedback.InformedInputInitializer`
-(``informed_init``), which splits the reservoir units into a "state" fraction
-``gamma`` wired to the raw-input block and a "model" fraction ``1 - gamma`` wired
+The reservoir's input weights use the `resdag.init.input_feedback.InformedInputInitializer`
+(`informed_init`), which splits the reservoir units into a "state" fraction
+`gamma` wired to the raw-input block and a "model" fraction `1 - gamma` wired
 to the knowledge-model block — exactly the wiring the hybrid needs.
 
-:class:`KnowledgeModel` is the thin :class:`~torch.nn.Module` adapter that slots
-an arbitrary callable ``f(u) -> u_next`` into the ``pytorch_symbolic`` DAG so it
+`KnowledgeModel` is the thin `torch.nn.Module` adapter that slots
+an arbitrary callable `f(u) -> u_next` into the `pytorch_symbolic` DAG so it
 is re-evaluated on the model's own output at every autoregressive forecast step.
 
 References
@@ -58,46 +58,46 @@ KnowledgeFn = Callable[[torch.Tensor], torch.Tensor]
 
 
 class KnowledgeModel(nn.Module):
-    """Wrap a knowledge-based expert ``f(u) -> u_next`` as a DAG layer.
+    """Wrap a knowledge-based expert `f(u) -> u_next` as a DAG layer.
 
     Adapts an arbitrary one-step-ahead predictor — a plain callable or another
-    :class:`~torch.nn.Module` (e.g. one Euler/RK step of an approximate ODE) — so
-    it slots into a ``pytorch_symbolic`` model and is re-evaluated on the current
+    `torch.nn.Module` (e.g. one Euler/RK step of an approximate ODE) — so
+    it slots into a `pytorch_symbolic` model and is re-evaluated on the current
     feedback at every timestep, including the autoregressive forecast loop where
     the reservoir feeds the model its own previous prediction.
 
-    The wrapped callable is applied directly to the ``(batch, time, features)``
-    (or single-step ``(batch, 1, features)``) tensor and must **broadcast over the
+    The wrapped callable is applied directly to the `(batch, time, features)`
+    (or single-step `(batch, 1, features)`) tensor and must **broadcast over the
     leading batch/time axes**, operating feature-wise on the last dimension — the
-    standard PyTorch idiom.  Its output feature dimension, ``model_out_size``,
+    standard PyTorch idiom.  Its output feature dimension, `model_out_size`,
     may differ from the input dimension (though it is typically equal, since the
     expert predicts the next state).
 
     Parameters
     ----------
     fn : callable or torch.nn.Module
-        The knowledge model.  Called as ``fn(u)`` with ``u`` of shape
-        ``(batch, time, features)`` and must return a tensor of shape
-        ``(batch, time, model_out_size)`` — i.e. it may change only the last
+        The knowledge model.  Called as `fn(u)` with `u` of shape
+        `(batch, time, features)` and must return a tensor of shape
+        `(batch, time, model_out_size)` — i.e. it may change only the last
         (feature) dimension.  A crude approximate integrator is enough; it does
         not need to be accurate, only informative.
     model_out_size : int
-        Feature dimension of ``fn``'s output.  Used by :func:`hybrid_esn` to size
+        Feature dimension of `fn`'s output.  Used by `hybrid_esn` to size
         the concatenations and the informed input split; validated at call time.
 
     Attributes
     ----------
     fn : callable or torch.nn.Module
         The wrapped knowledge model.  Registered as a submodule when it is an
-        :class:`~torch.nn.Module`, so its parameters/buffers move with ``.to()``.
+        `torch.nn.Module`, so its parameters/buffers move with `.to()`.
     model_out_size : int
         The declared output feature dimension.
 
     Raises
     ------
     ValueError
-        At :meth:`forward` time, if ``fn``'s output rank does not match its input
-        or its last dimension is not ``model_out_size``.
+        At `forward` time, if `fn`'s output rank does not match its input
+        or its last dimension is not `model_out_size`.
 
     Examples
     --------
@@ -131,9 +131,9 @@ class KnowledgeModel(nn.Module):
         Raises
         ------
         TypeError
-            If ``fn`` is not callable.
+            If `fn` is not callable.
         ValueError
-            If ``model_out_size`` is not a positive integer.
+            If `model_out_size` is not a positive integer.
         """
         super().__init__()
         if not callable(fn):
@@ -150,25 +150,25 @@ class KnowledgeModel(nn.Module):
         self.model_out_size = model_out_size
 
     def forward(self, u: torch.Tensor) -> torch.Tensor:
-        """Apply the knowledge model to the current state ``u``.
+        """Apply the knowledge model to the current state `u`.
 
         Parameters
         ----------
         u : torch.Tensor
-            Current state of shape ``(batch, time, features)`` (or the single-step
-            ``(batch, 1, features)`` slice used during autoregressive forecasting).
+            Current state of shape `(batch, time, features)` (or the single-step
+            `(batch, 1, features)` slice used during autoregressive forecasting).
 
         Returns
         -------
         torch.Tensor
             The one-step-ahead prediction of shape
-            ``(batch, time, model_out_size)``.
+            `(batch, time, model_out_size)`.
 
         Raises
         ------
         ValueError
-            If the wrapped model's output rank differs from ``u`` or its last
-            dimension is not ``model_out_size``.
+            If the wrapped model's output rank differs from `u` or its last
+            dimension is not `model_out_size`.
         """
         out = self.fn(u)
         if out.shape[:-1] != u.shape[:-1] or out.shape[-1] != self.model_out_size:
@@ -212,73 +212,75 @@ def hybrid_esn(
 ) -> ESNModel:
     """Build a hybrid physics-prior ESN (Pathak et al. 2018).
 
-    Combines a reservoir with an imperfect knowledge-based expert ``K``.  The
-    expert's one-step-ahead prediction ``K(u)`` is concatenated with the raw
+    Combines a reservoir with an imperfect knowledge-based expert `K`.  The
+    expert's one-step-ahead prediction `K(u)` is concatenated with the raw
     input to drive the reservoir, **and** concatenated with the reservoir state
     before the readout, so the reservoir only has to learn the residual the
     expert gets wrong.
 
-    Architecture::
+    Architecture:
 
-                     +---------------- K(u) --------------------+
-                     |                                          |
-        Input -- u --+--> Concatenate([u, K(u)]) --> Reservoir  |
-                                                         |       v
-                                                         +--> Concatenate([h, K(u)]) --> Readout
+    ```text
+                 +---------------- K(u) --------------------+
+                 |                                          |
+    Input -- u --+--> Concatenate([u, K(u)]) --> Reservoir  |
+                                                     |       v
+                                                     +--> Concatenate([h, K(u)]) --> Readout
+    ```
 
     The reservoir's input weights use the informed split
-    (:class:`~resdag.init.input_feedback.InformedInputInitializer`): a fraction
-    ``gamma`` of the units are wired to the raw-state block ``u`` and ``1 - gamma``
-    to the knowledge-model block ``K(u)``.
+    (`resdag.init.input_feedback.InformedInputInitializer`): a fraction
+    `gamma` of the units are wired to the raw-state block `u` and `1 - gamma`
+    to the knowledge-model block `K(u)`.
 
     Parameters
     ----------
     knowledge_model : KnowledgeModel, callable, or torch.nn.Module
-        The knowledge-based expert.  A bare callable / :class:`~torch.nn.Module`
-        ``f(u) -> u_next`` is wrapped in a :class:`KnowledgeModel` automatically
-        (using ``model_out_size``, defaulting to ``feedback_size``); pass a
-        pre-built :class:`KnowledgeModel` to control its declared output size.
+        The knowledge-based expert.  A bare callable / `torch.nn.Module`
+        `f(u) -> u_next` is wrapped in a `KnowledgeModel` automatically
+        (using `model_out_size`, defaulting to `feedback_size`); pass a
+        pre-built `KnowledgeModel` to control its declared output size.
     reservoir_size : int
         Number of units in the reservoir.
     feedback_size : int
-        Number of feedback features (the input dimension of the model, ``u``).
+        Number of feedback features (the input dimension of the model, `u`).
     output_size : int
-        Number of output features.  For autoregressive :meth:`forecast` this must
-        equal ``feedback_size`` (the first model output is fed back as ``u``).
+        Number of output features.  For autoregressive `forecast` this must
+        equal `feedback_size` (the first model output is fed back as `u`).
     model_out_size : int or None, optional
         Feature dimension of the knowledge model's output.  Only used when
-        ``knowledge_model`` is a bare callable (to build the wrapper); ignored when
-        a :class:`KnowledgeModel` is passed (its own ``model_out_size`` is used).
-        Defaults to ``feedback_size`` (the usual case: the expert predicts the
+        `knowledge_model` is a bare callable (to build the wrapper); ignored when
+        a `KnowledgeModel` is passed (its own `model_out_size` is used).
+        Defaults to `feedback_size` (the usual case: the expert predicts the
         next full state).
     gamma : float, default=0.5
-        Fraction of reservoir units wired to the raw-state block ``u`` by the
-        informed input split; ``1 - gamma`` are wired to the ``K(u)`` block.  Must
-        lie in ``[0, 1]``.  ``gamma`` near ``1`` weights the reservoir toward the
-        raw state, near ``0`` toward the knowledge model.
+        Fraction of reservoir units wired to the raw-state block `u` by the
+        informed input split; `1 - gamma` are wired to the `K(u)` block.  Must
+        lie in `[0, 1]`.  `gamma` near `1` weights the reservoir toward the
+        raw state, near `0` toward the knowledge model.
     input_scaling : float, default=0.1
         Half-width of the informed input weights: each nonzero entry is drawn
-        uniformly from ``[-input_scaling, input_scaling]``.
+        uniformly from `[-input_scaling, input_scaling]`.
     topology : TopologySpec, optional
         Topology for the recurrent weights.  Accepts a registry name, a
-        ``(name, params)`` tuple, a callable, or a configured
-        :class:`~resdag.init.topology.TopologyInitializer`.
+        `(name, params)` tuple, a callable, or a configured
+        `resdag.init.topology.TopologyInitializer`.
     spectral_radius : float, default=0.9
         Target spectral radius for the recurrent weights.
     leak_rate : float, default=1.0
         Leaky-integration rate (1.0 = no leak).
     activation : str, default="tanh"
-        Activation function (``"tanh"``, ``"relu"``, ``"sigmoid"``,
-        ``"identity"``).
+        Activation function (`"tanh"`, `"relu"`, `"sigmoid"`,
+        `"identity"`).
     bias : bool, default=True
         Whether the reservoir uses a bias term.
     trainable : bool, default=False
         Whether the reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for the readout.
     readout_bias : bool, default=True
@@ -286,30 +288,30 @@ def hybrid_esn(
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
     readout_kwargs : dict, optional
-        Extra readout options, such as ``trainable=True``, ``solver``,
-        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
+        Extra readout options, such as `trainable=True`, `solver`,
+        `state_noise` or `gram_dtype`. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
-        Additional keyword arguments forwarded to :class:`~resdag.layers.ESNLayer`.
+        Additional keyword arguments forwarded to `resdag.layers.ESNLayer`.
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
+    `resdag.core.ESNModel`
         The assembled hybrid ESN, ready for training and forecasting.
 
     Raises
     ------
     ValueError
-        If ``output_size`` is not a positive integer, or (via the informed
+        If `output_size` is not a positive integer, or (via the informed
         initializer) if the wiring dimensions are inconsistent.
 
     Notes
     -----
-    The reservoir's ``feedback_size`` is ``feedback_size + model_out_size``
-    because it consumes the concatenation ``[u, K(u)]``; the *model's* input
-    dimension stays ``feedback_size`` (``K(u)`` is computed inside the graph).
-    The readout ``in_features`` is ``reservoir_size + model_out_size`` (it sees
-    ``[h, K(u)]``).  During autoregressive :meth:`forecast`, only the readout
-    output is fed back as the next ``u``; ``K`` is re-evaluated on it every step,
+    The reservoir's `feedback_size` is `feedback_size + model_out_size`
+    because it consumes the concatenation `[u, K(u)]`; the *model's* input
+    dimension stays `feedback_size` (`K(u)` is computed inside the graph).
+    The readout `in_features` is `reservoir_size + model_out_size` (it sees
+    `[h, K(u)]`).  During autoregressive `forecast`, only the readout
+    output is fed back as the next `u`; `K` is re-evaluated on it every step,
     so the physics prior stays live throughout the rollout.
 
     Examples

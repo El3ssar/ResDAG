@@ -19,25 +19,30 @@ Run with ``--plot`` to also display the forecast (requires matplotlib, which is
 optional and not needed for the core flow).
 """
 
-import sys
-
 import torch
 
 import resdag as rd
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__, plots=True)
     # ------------------------------------------------------------------
     # The whole workflow, ~10 lines: build -> fit -> forecast.
     # ------------------------------------------------------------------
     # Remove the optional batch axis; Torch input keeps its dtype and layout.
-    series = rd.lorenz(2300, seed=42).squeeze(0)  # (2300, 3) (time, features)
-    train, truth = series[:1900], series[1900:2100]  # hold out the last 200 steps
+    series = rd.lorenz(options.choose(141, 2300), seed=42).squeeze(0)  # (2300, 3) (time, features)
+    train_end = options.choose(112, 1900)
+    train, truth = (
+        series[:train_end],
+        series[train_end : train_end + options.choose(24, 200)],
+    )  # hold out the last 200 steps
 
     esn = rd.ESN(
-        reservoir_size=600,
+        reservoir_size=options.choose(24, 600),
         spectral_radius=0.8,
-        washout=200,  # steps used to synchronize the reservoir before training
+        washout=options.choose(12, 200),  # steps used to synchronize the reservoir before training
         alpha=1e-6,  # ridge regularization of the readout
         seed=42,
     )
@@ -66,7 +71,7 @@ def main() -> None:
     print(f"  type            : {type(esn.graph).__name__}")
     print(f"  reservoir states: {list(esn.graph.get_state())}")
 
-    if "--plot" in sys.argv:
+    if options.plot:
         try:
             import matplotlib.pyplot as plt
         except ImportError:

@@ -1,12 +1,13 @@
 """Data preparation utilities (compatibility shim).
 
-.. deprecated:: 0.7.0
-    This module moved to :mod:`resdag.data.prepare`. It is re-exported here
-    unchanged so ``from resdag.utils.data.prepare import prepare_esn_data`` (etc.)
-    keeps working. New code should import from :mod:`resdag.data` (or
-    :mod:`resdag.data.prepare`).
+**Deprecated since 0.7.0.**
 
-Every name below is the *same* object as its :mod:`resdag.data.prepare`
+This module moved to `resdag.data.prepare`. It is re-exported here
+unchanged so `from resdag.utils.data.prepare import prepare_esn_data` (etc.)
+keeps working. New code should import from `resdag.data` (or
+`resdag.data.prepare`).
+
+Every name below is the *same* object as its `resdag.data.prepare`
 counterpart.
 """
 

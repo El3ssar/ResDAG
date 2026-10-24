@@ -53,6 +53,13 @@ The single registered `esn.workflow` child is a `Model`; `.graph` gives the raw
 symbolic graph. Refitting preserves the existing parameter objects. Use
 `Model(inputs=..., outputs=...)` for custom branches, drivers and multiple heads.
 
+`input_to_readout=True` includes the current input alongside reservoir states
+in the readout features. Set it to `False` for a head using reservoir memory
+alone. The setting is a strict boolean and can be supplied before lazy building
+or with `input_size` for eager construction. Automatic vanilla tuning tries
+both values. A custom `search_space` replaces that search; an omitted setting
+keeps the current recipe's value. Saving preserves the selected wiring.
+
 `input_transforms={"input": module}` and `output_transforms={"output": module}`
 override the preset's preprocessing per port. Supplied modules remain
 registered while the preset is lazy, and successful building/fitting keeps
@@ -84,8 +91,9 @@ A matching preset can restore a `state_dict` before its input width is built.
 Checkpoint metadata validates preset architecture settings before weight copies;
 scaling, observed history and trajectory sampling are restored by `Model`.
 Custom Python callables and initializer implementations must remain available
-with matching configuration. This is standard checkpoint loading; complete
-self-describing model artifacts remain a separate roadmap item.
+with matching configuration. To save the full architecture and fitted state,
+use `esn.save("model.pt")` and `rd.load("model.pt")`; see
+[save, load and diagrams](../workflows/save-load.md).
 The current `ESN` and `Model` metadata version is 2. Older metadata is rejected;
 reconstruct and refit those models before saving a current checkpoint.
 
@@ -98,6 +106,15 @@ keeps trajectory-trained predictions on the model device.
 
 See the [ESN migration guide](../project/esn-migration.md) for the breaking API
 changes.
+
+## Method reference
+
+`fit` returns this same module. `forecast` produces autonomous predictions;
+`forward` follows observed inputs with carried state. For differentiable
+chunking, `forward_stateless` returns a prediction and named states without
+changing the stored state. `get_state`, `set_state` and `reset_state` manage
+streaming explicitly. Standard inherited Torch methods and checkpoint protocol
+hooks remain available and are omitted from this reference.
 
 ::: resdag.facade
     options:

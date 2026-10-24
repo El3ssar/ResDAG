@@ -24,20 +24,20 @@ def singular_spectrum(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Build ``U @ diag(singular_values) @ V.T`` from independent Haar factors.
+    """Build `U @ diag(singular_values) @ V.T` from independent Haar factors.
 
-    Supply exactly ``n`` finite nonnegative singular values, in any order.
-    If omitted, they decrease linearly from 1 to 0.1 (``n=1`` uses 1).
+    Supply exactly `n` finite nonnegative singular values, in any order.
+    If omitted, they decrease linearly from 1 to 0.1 (`n=1` uses 1).
     Zero singular values allow rank-deficient reservoirs. This controls the
     one-step linear gains, not the eigenvalues or spectral radius. Nonlinear
     or leaky reservoir updates need their own stability analysis.
 
-    ``seed`` uses a local RNG on ``device``; ``None`` uses torch's global RNG.
-    ``dtype``/``device`` control allocation and arithmetic; half-precision
+    `seed` uses a local RNG on `device`; `None` uses torch's global RNG.
+    `dtype`/`device` control allocation and arithmetic; half-precision
     decompositions are computed in float32 then cast to the requested dtype.
     MPS QR uses a CPU fallback; CUDA QR stays on CUDA.
     An outer radius rescale would change all supplied singular values, so this
-    builder is registered as prescaled. Explicit ``rescale=True`` opts in.
+    builder is registered as prescaled. Explicit `rescale=True` opts in.
 
     Parameters
     ----------
@@ -59,7 +59,7 @@ def singular_spectrum(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` real matrix with the specified singular values, up
+        Dense `(n, n)` real matrix with the specified singular values, up
         to numerical precision. Setup is O(n³); storage is O(n²).
 
     Raises
@@ -153,19 +153,19 @@ def eigen_spectrum(
 ) -> torch.Tensor:
     """Build a real normal matrix with prescribed real/complex-pair eigenvalues.
 
-    Supply exactly ``n`` finite eigenvalues, with nonreal values in conjugate
-    pairs (order is arbitrary). A pair ``a ± bi`` becomes a real block
-    ``[[a, -b], [b, a]]``. A Haar orthogonal similarity transforms the block
+    Supply exactly `n` finite eigenvalues, with nonreal values in conjugate
+    pairs (order is arbitrary). A pair `a ± bi` becomes a real block
+    `[[a, -b], [b, a]]`. A Haar orthogonal similarity transforms the block
     diagonal matrix without changing its eigenvalues. If omitted, eigenvalues
-    are real and spaced from -0.9 to 0.9 (``n=1`` uses -0.9).
+    are real and spaced from -0.9 to 0.9 (`n=1` uses -0.9).
 
     The result is normal: its singular values are the eigenvalue magnitudes.
     This construction does not control nonnormal transient amplification.
-    ``dtype`` is real floating-point; float64 retains double precision.
-    ``seed`` is local and device-correct; half-precision QR uses float32.
+    `dtype` is real floating-point; float64 retains double precision.
+    `seed` is local and device-correct; half-precision QR uses float32.
     MPS QR runs on CPU; the returned matrix remains on the requested device.
     The complete spectrum is preserved unless outer rescaling is explicitly
-    enabled with ``get_recurrent_initializer(..., rescale=True)``.
+    enabled with `get_recurrent_initializer(..., rescale=True)`.
 
     Parameters
     ----------
@@ -189,7 +189,7 @@ def eigen_spectrum(
     Returns
     -------
     torch.Tensor
-        Dense real normal ``(n, n)`` matrix whose eigenvalues equal the
+        Dense real normal `(n, n)` matrix whose eigenvalues equal the
         supplied values up to numerical precision. Setup is O(n³), storage O(n²).
 
     Raises

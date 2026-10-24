@@ -17,12 +17,12 @@ def watts_strogatz_adjacency(
 ) -> np.ndarray:
     """Build the dense weighted adjacency of a Watts-Strogatz small-world graph.
 
-    NumPy construction of the same adjacency that :func:`watts_strogatz_graph`
+    NumPy construction of the same adjacency that `watts_strogatz_graph`
     describes, without a NetworkX object: the ring lattice is filled directly
     into a dense matrix, and the rewiring step operates on that matrix using
-    adjacency look-ups in place of ``has_edge``. The rewiring loop remains
+    adjacency look-ups in place of `has_edge`. The rewiring loop remains
     edge-sequential (it is intrinsic to the model — each rewire depends on the
-    current connectivity), but it iterates over the ``O(n*k)`` ring edges rather
+    current connectivity), but it iterates over the `O(n*k)` ring edges rather
     than building and mutating a graph object.
 
     Parameters
@@ -30,26 +30,26 @@ def watts_strogatz_adjacency(
     n : int
         Number of nodes.
     k : int
-        Each node initially connects to ``k // 2`` neighbours on each side.
+        Each node initially connects to `k // 2` neighbours on each side.
         Incremented by one internally if odd.
     p : float
-        Rewiring probability in ``[0, 1]``.
+        Rewiring probability in `[0, 1]`.
     directed : bool, optional
-        If ``True``, the ring lattice adds both forward and backward edges.
+        If `True`, the ring lattice adds both forward and backward edges.
     self_loops : bool, optional
-        If ``True``, rewiring may create self-loops.
+        If `True`, rewiring may create self-loops.
     seed : int or numpy.random.Generator or None, optional
         Seed for the random number generator.
 
     Returns
     -------
     numpy.ndarray
-        An ``(n, n)`` ``float32`` weighted adjacency matrix.
+        An `(n, n)` `float32` weighted adjacency matrix.
 
     Raises
     ------
     ValueError
-        If ``k >= n`` (not a valid ring lattice).
+        If `k >= n` (not a valid ring lattice).
 
     See Also
     --------
@@ -65,7 +65,7 @@ def watts_strogatz_adjacency(
     adjacency = np.zeros((n, n), dtype=np.float32)
 
     def _connected(u: int, v: int) -> bool:
-        """Adjacency look-up replacing ``G.has_edge`` (symmetric if undirected)."""
+        """Adjacency look-up replacing `G.has_edge` (symmetric if undirected)."""
         if adjacency[u, v] != 0.0:
             return True
         return not directed and adjacency[v, u] != 0.0
@@ -110,7 +110,7 @@ def watts_strogatz_adjacency(
 
 
 def _rand_sign(rng: np.random.Generator) -> float:
-    """Draw a random weight uniformly from ``{-1.0, +1.0}``."""
+    """Draw a random weight uniformly from `{-1.0, +1.0}`."""
     return -1.0 if rng.random() < 0.5 else 1.0
 
 
@@ -134,11 +134,11 @@ def watts_strogatz_graph(
     """
     Generates a Watts-Strogatz small-world graph.
 
-    The function starts by creating a ring lattice where each node is connected to ``k/2`` neighbors
-    on each side. Then, with probability ``p``, each edge is rewired to a new node (allowing
-    for possible self-loops if specified). Weights on edges are chosen randomly from the set ``{-1, 1}``.
+    The function starts by creating a ring lattice where each node is connected to `k/2` neighbors
+    on each side. Then, with probability `p`, each edge is rewired to a new node (allowing
+    for possible self-loops if specified). Weights on edges are chosen randomly from the set `{-1, 1}`.
 
-    The adjacency is built with NumPy (see :func:`watts_strogatz_adjacency`);
+    The adjacency is built with NumPy (see `watts_strogatz_adjacency`);
     the NetworkX object is materialised only for direct callers, and the dense
     topology fast path skips it entirely.
 
@@ -147,9 +147,9 @@ def watts_strogatz_graph(
     n : int
         Number of nodes.
     k : int
-        Each node is initially connected to ``k/2`` predecessors and ``k/2`` successors.
-        If ``k`` is odd, it will be incremented by 1 internally.
-        Must be smaller than ``n``.
+        Each node is initially connected to `k/2` predecessors and `k/2` successors.
+        If `k` is odd, it will be incremented by 1 internally.
+        Must be smaller than `n`.
     p : float
         Rewiring probability in the interval [0, 1].
     directed : bool, optional
@@ -167,7 +167,7 @@ def watts_strogatz_graph(
     Raises
     ------
     ValueError
-        If ``k >= n`` (not a valid ring lattice).
+        If `k >= n` (not a valid ring lattice).
     """
     adjacency = watts_strogatz_adjacency(n, k, p, directed, self_loops, seed)
     return adjacency_to_graph(adjacency, directed=directed)

@@ -4,9 +4,9 @@ Topology Initializer Base Classes
 
 This module provides base classes for topology-based weight initialization
 in reservoir computing networks. Topologies define the structure of the
-recurrent weight matrix — via graph connectivity (:class:`GraphTopology`)
+recurrent weight matrix — via graph connectivity (`GraphTopology`)
 or via any function that builds a matrix directly
-(:class:`MatrixTopology`).
+(`MatrixTopology`).
 
 Classes
 -------
@@ -54,10 +54,10 @@ _EIGS_NCV = 48
 
 
 def estimate_spectral_radius(matrix: torch.Tensor) -> float:
-    """Estimate the spectral radius (largest ``|eigenvalue|``) of a matrix.
+    """Estimate the spectral radius (largest `|eigenvalue|`) of a matrix.
 
-    Dense inputs use :func:`torch.linalg.eigvals`, or SciPy's sparse Arnoldi
-    solver (``which="LM"``) for large matrices with density at most 0.1, with
+    Dense inputs use `torch.linalg.eigvals`, or SciPy's sparse Arnoldi
+    solver (`which="LM"`) for large matrices with density at most 0.1, with
     a dense fallback if Arnoldi is unavailable or unsuccessful. CSR inputs use
     analytic zero, triangular and weighted-cycle cases when applicable, then
     Arnoldi; failure raises without allocating a dense fallback. Only CSR sizes
@@ -68,7 +68,7 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     A stationary power-iteration estimate does not establish that the dominant
     eigenspace was found, so it is never used for automatic spectral scaling.
     Dense eigendecomposition can be expensive at large sizes. Use a builder with
-    known spectral structure and ``prescaled=True`` to avoid this measurement.
+    known spectral structure and `prescaled=True` to avoid this measurement.
     MPS inputs are measured on CPU because MPS lacks complex eigensolves.
 
     Parameters
@@ -79,7 +79,7 @@ def estimate_spectral_radius(matrix: torch.Tensor) -> float:
     Returns
     -------
     float
-        The estimated largest absolute eigenvalue ``max|lambda|``.
+        The estimated largest absolute eigenvalue `max|lambda|`.
 
     See Also
     --------
@@ -143,7 +143,7 @@ def _functional_csr_radius(matrix: torch.Tensor) -> float | None:
 
     With at most one stored entry per row, each nonzero strongly connected
     component is either a directed weighted cycle or a singleton without a
-    self-loop. A length-k cycle satisfies ``lambda**k = product(weights)``;
+    self-loop. A length-k cycle satisfies `lambda**k = product(weights)`;
     incoming trees and terminal rows contribute only zero eigenvalues. Work
     and temporary storage are linear, with no eigensolve or dense square.
     """
@@ -217,7 +217,7 @@ def _dense_eigvals_radius(matrix: torch.Tensor) -> float:
 
 
 def _is_sparse(matrix: torch.Tensor) -> bool:
-    """Return ``True`` when the matrix is sparse enough for the CSR ``eigs`` path.
+    """Return `True` when the matrix is sparse enough for the CSR `eigs` path.
 
     The density threshold selects an iterative CPU CSR solve for large matrices;
     denser matrices use a dense eigendecomposition.
@@ -228,15 +228,15 @@ def _is_sparse(matrix: torch.Tensor) -> bool:
 
 
 def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
-    """Spectral radius of a sparse matrix via ``scipy.sparse.linalg.eigs``.
+    """Spectral radius of a sparse matrix via `scipy.sparse.linalg.eigs`.
 
     Builds a CSR copy on the CPU and runs an Arnoldi iteration for the largest-
-    magnitude eigenvalues (``which='LM'``), returning ``max|lambda|`` over the
+    magnitude eigenvalues (`which='LM'`), returning `max|lambda|` over the
     converged cluster. Complex eigenvalues are retained, including conjugate
     pairs. This is an iterative estimate, subject to the solver tolerance. A small
-    cluster (``k > 1``) is requested rather than ``k=1`` because ARPACK can lock
+    cluster (`k > 1`) is requested rather than `k=1` because ARPACK can lock
     onto a sub-dominant Ritz value and miss the true largest when the top
-    eigenvalues are near-degenerate. Returns ``None`` when SciPy is unavailable
+    eigenvalues are near-degenerate. Returns `None` when SciPy is unavailable
     or the iteration fails. Dense callers can fall back to dense eigvals; CSR
     callers raise without a dense allocation.
 
@@ -248,7 +248,7 @@ def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
     Returns
     -------
     float or None
-        ``max|lambda|`` if scipy succeeds, otherwise ``None``.
+        `max|lambda|` if scipy succeeds, otherwise `None`.
     """
     try:
         import scipy.sparse as sp
@@ -296,18 +296,18 @@ def _sparse_eigs_radius(matrix: torch.Tensor) -> float | None:
 
 
 def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torch.Tensor:
-    """Rescale a square matrix so its spectral radius equals ``target_radius``.
+    """Rescale a square matrix so its spectral radius equals `target_radius`.
 
     The current spectral radius is obtained from
-    :func:`estimate_spectral_radius`, which uses analytic structured-CSR cases,
-    dense ``eigvals`` or sparse Arnoldi. General CSR failure raises without a
+    `estimate_spectral_radius`, which uses analytic structured-CSR cases,
+    dense `eigvals` or sparse Arnoldi. General CSR failure raises without a
     dense fallback; dense inputs retain their dense fallback. Returns the
     matrix unchanged when its current measured spectral radius is zero — e.g.
-    the ``zero`` topology or a nilpotent matrix.
+    the `zero` topology or a nilpotent matrix.
 
     This is the single shared rescale implementation used by both
-    :class:`GraphTopology`/:class:`MatrixTopology` and
-    :class:`resdag.layers.cells.esn_cell.ESNCell`.
+    `GraphTopology`/`MatrixTopology` and
+    `resdag.layers.cells.esn_cell.ESNCell`.
 
     Parameters
     ----------
@@ -354,14 +354,14 @@ def scale_to_spectral_radius(matrix: torch.Tensor, target_radius: float) -> torc
 
 
 def _warn_prescaled_override(topology_name: str, spectral_radius: float) -> None:
-    """Warn that a layer ``spectral_radius`` is ignored by a pre-scaled topology.
+    """Warn that a layer `spectral_radius` is ignored by a pre-scaled topology.
 
-    Pre-scaled topologies (``prescaled=True``) bake their own spectral structure
+    Pre-scaled topologies (`prescaled=True`) bake their own spectral structure
     into the recurrent matrix — graded per-clique radii, unit singular values, or
     an analytically fixed radius. The outer
-    :func:`scale_to_spectral_radius` rescale would silently overwrite that
+    `scale_to_spectral_radius` rescale would silently overwrite that
     structure, so it is skipped and this warning makes the (otherwise silent)
-    collision of the two meanings of ``spectral_radius`` explicit and
+    collision of the two meanings of `spectral_radius` explicit and
     deterministic.
 
     Parameters
@@ -390,20 +390,20 @@ class TopologyInitializer(ABC):
     matrix builders. They take the required size, dtype and device from a
     destination tensor and optionally apply spectral radius scaling.
 
-    Subclasses must implement the :meth:`initialize` method.
+    Subclasses must implement the `initialize` method.
 
     Attributes
     ----------
     prescaled : bool
         Whether the topology bakes its own spectral structure into the
         recurrent matrix (graded radii, unit singular values, an analytically
-        fixed spectral radius, ...). When ``True``, :meth:`initialize` skips the
-        outer :func:`scale_to_spectral_radius` rescale so that structure is
-        preserved, and warns if a layer-level ``spectral_radius`` is also passed
-        (the two collide). Defaults to ``False``.
+        fixed spectral radius, ...). When `True`, `initialize` skips the
+        outer `scale_to_spectral_radius` rescale so that structure is
+        preserved, and warns if a layer-level `spectral_radius` is also passed
+        (the two collide). Defaults to `False`.
     rescale : bool or None
         Explicit outer scaling policy. None keeps the registration's
-        ``prescaled`` policy; False skips spectral estimation/scaling without
+        `prescaled` policy; False skips spectral estimation/scaling without
         a warning; True applies a requested layer radius even when prescaled.
 
     See Also
@@ -450,7 +450,7 @@ class TopologyInitializer(ABC):
         Parameters
         ----------
         weight : torch.Tensor
-            The weight tensor to initialize, shape ``(n, n)`` for recurrent
+            The weight tensor to initialize, shape `(n, n)` for recurrent
             weights. This tensor is modified in-place.
         spectral_radius : float, optional
             Target spectral radius for scaling. If None, no scaling is applied.
@@ -468,23 +468,23 @@ class GraphTopology(TopologyInitializer):
     Topology initializer based on NetworkX graph functions.
 
     This class wraps a graph generation function and converts it into a weight
-    initializer. The graph function must accept ``n`` (number of nodes) as its
+    initializer. The graph function must accept `n` (number of nodes) as its
     first argument.
 
     Parameters
     ----------
     graph_func : callable
-        A function with signature ``(n: int, **kwargs) -> nx.Graph | nx.DiGraph``.
+        A function with signature `(n: int, **kwargs) -> nx.Graph | nx.DiGraph`.
         Must return a NetworkX graph with weighted edges.
     graph_kwargs : dict, optional
         Keyword arguments to pass to the graph function.
     prescaled : bool, default=False
-        If ``True``, the graph builder already bakes its own spectral structure
-        into the adjacency matrix (e.g. ``spectral_cascade``'s graded per-clique
-        radii). The outer :func:`scale_to_spectral_radius` rescale is then
-        skipped in :meth:`initialize`, and a warning is emitted if a
-        ``spectral_radius`` is nonetheless requested, since the two meanings of
-        ``spectral_radius`` collide.
+        If `True`, the graph builder already bakes its own spectral structure
+        into the adjacency matrix (e.g. `spectral_cascade`'s graded per-clique
+        radii). The outer `scale_to_spectral_radius` rescale is then
+        skipped in `initialize`, and a warning is emitted if a
+        `spectral_radius` is nonetheless requested, since the two meanings of
+        `spectral_radius` collide.
     rescale : bool or None, default=None
         Explicit outer scaling policy. False skips scaling silently; True
         applies a requested radius even for prescaled graphs. None retains
@@ -547,18 +547,18 @@ class GraphTopology(TopologyInitializer):
         Generates a graph using the stored function, converts it to an
         adjacency matrix, and optionally scales to the target spectral radius.
 
-        When this topology is :attr:`prescaled`, the outer spectral-radius
+        When this topology is `prescaled`, the outer spectral-radius
         rescale is skipped (the builder's own spectral structure is kept) and a
-        warning is emitted if ``spectral_radius`` is not ``None``. An explicit
-        :attr:`rescale` policy overrides this: False skips silently, True scales.
+        warning is emitted if `spectral_radius` is not `None`. An explicit
+        `rescale` policy overrides this: False skips silently, True scales.
 
         Parameters
         ----------
         weight : torch.Tensor
-            Square tensor to initialize, shape ``(n, n)``.
+            Square tensor to initialize, shape `(n, n)`.
         spectral_radius : float, optional
             Target spectral radius for the weight matrix. Ignored (with a
-            warning) when the topology is :attr:`prescaled`.
+            warning) when the topology is `prescaled`.
 
         Returns
         -------
@@ -634,14 +634,14 @@ class GraphTopology(TopologyInitializer):
         return result
 
     def _build_adjacency(self, n: int) -> np.ndarray:
-        """Build the ``(n, n)`` adjacency matrix for the wrapped graph function.
+        """Build the `(n, n)` adjacency matrix for the wrapped graph function.
 
         Prefers the vectorized dense fast path when the graph function was
         decorated with
-        :func:`~resdag.init.graphs._dense.register_dense_adjacency`: the dense
+        `resdag.init.graphs._dense.register_dense_adjacency`: the dense
         weighted adjacency is built directly in NumPy and the NetworkX object is
         never materialised. Falls back to building the graph and converting it
-        with :func:`networkx.to_numpy_array` for genuinely graph-shaped
+        with `networkx.to_numpy_array` for genuinely graph-shaped
         generators.
 
         Parameters
@@ -652,12 +652,12 @@ class GraphTopology(TopologyInitializer):
         Returns
         -------
         numpy.ndarray
-            An ``(n, n)`` weighted adjacency matrix. Custom builder precision is preserved.
+            An `(n, n)` weighted adjacency matrix. Custom builder precision is preserved.
 
         Raises
         ------
         ValueError
-            If the produced adjacency does not have shape ``(n, n)``.
+            If the produced adjacency does not have shape `(n, n)`.
         """
         from resdag.init.graphs._dense import dense_adjacency_builder
 
@@ -718,15 +718,15 @@ class MatrixTopology(TopologyInitializer):
     This is the general-purpose escape hatch of the topology system: any
     function with logic for constructing a recurrent weight matrix becomes a
     topology, with full access to spectral-radius scaling, the registry, and
-    the ``ESNLayer(topology=...)`` shorthand. No graph required.
+    the `ESNLayer(topology=...)` shorthand. No graph required.
 
     Two calling conventions are supported, tried in order:
 
-    1. **Build style** — ``fn(n, **kwargs)`` returning an ``(n, n)``
-       array-like: a ``torch.Tensor``, a ``numpy.ndarray``, or even a
-       ``networkx`` graph (converted to its adjacency matrix).
-    2. **In-place style** — ``fn(tensor, **kwargs)`` mutating a tensor
-       in place, e.g. any ``torch.nn.init.*_`` function.
+    1. **Build style** — `fn(n, **kwargs)` returning an `(n, n)`
+       array-like: a `torch.Tensor`, a `numpy.ndarray`, or even a
+       `networkx` graph (converted to its adjacency matrix).
+    2. **In-place style** — `fn(tensor, **kwargs)` mutating a tensor
+       in place, e.g. any `torch.nn.init.*_` function.
 
     Parameters
     ----------
@@ -735,20 +735,20 @@ class MatrixTopology(TopologyInitializer):
     matrix_kwargs : dict, optional
         Keyword arguments bound to the function.
     prescaled : bool, default=False
-        If ``True``, the builder already fixes the matrix's spectral structure
-        (e.g. ``orthogonal``'s unit singular values or an explicitly prescribed
+        If `True`, the builder already fixes the matrix's spectral structure
+        (e.g. `orthogonal`'s unit singular values or an explicitly prescribed
         eigenvalue spectrum). The
-        outer :func:`scale_to_spectral_radius` rescale is then skipped in
-        :meth:`initialize`, and a warning is emitted if a ``spectral_radius`` is
+        outer `scale_to_spectral_radius` rescale is then skipped in
+        `initialize`, and a warning is emitted if a `spectral_radius` is
         nonetheless requested.
     seed : int, optional
-        Reproducibility seed for in-place builders that take a ``generator=``
-        keyword (e.g. :func:`torch.nn.init.orthogonal_`). At :meth:`initialize`
-        time a :class:`torch.Generator` seeded from ``seed`` on the weight's
+        Reproducibility seed for in-place builders that take a `generator=`
+        keyword (e.g. `torch.nn.init.orthogonal_`). At `initialize`
+        time a `torch.Generator` seeded from `seed` on the weight's
         device is passed to the builder, so two topologies built with the same
         seed produce bit-identical recurrent matrices. Builders that take a
-        ``seed`` argument directly receive it through ``matrix_kwargs`` instead
-        and ignore this. Defaults to ``None`` (draws from torch's global RNG).
+        `seed` argument directly receive it through `matrix_kwargs` instead
+        and ignore this. Defaults to `None` (draws from torch's global RNG).
     rescale : bool or None, default=None
         Explicit outer scaling policy. False skips spectral estimation and
         scaling silently; True applies a requested layer radius even for a
@@ -756,10 +756,10 @@ class MatrixTopology(TopologyInitializer):
 
     Notes
     -----
-    Build-style callbacks with explicit ``dtype`` or ``device`` parameters
-    receive the destination's values unless ``matrix_kwargs`` already binds
+    Build-style callbacks with explicit `dtype` or `device` parameters
+    receive the destination's values unless `matrix_kwargs` already binds
     them. This lets built-in builders compute directly in float64 or on CUDA
-    instead of casting a prebuilt float32 CPU matrix. Generic ``**kwargs``
+    instead of casting a prebuilt float32 CPU matrix. Generic `**kwargs`
     callbacks receive no additional placement keywords. MPS spectral-radius
     measurements use CPU because MPS does not implement complex eigvals.
 
@@ -779,13 +779,13 @@ class MatrixTopology(TopologyInitializer):
     >>> weight = torch.empty(100, 100)
     >>> topology.initialize(weight, spectral_radius=0.9)
 
-    Bare callables passed to ``ESNLayer`` are wrapped automatically:
+    Bare callables passed to `ESNLayer` are wrapped automatically:
 
     >>> from resdag.layers import ESNLayer
     >>> layer = ESNLayer(100, feedback_size=3, topology=block_diagonal)
     >>> layer = ESNLayer(100, feedback_size=3, topology=(block_diagonal, {"blocks": 2}))
 
-    ``torch.nn.init`` functions work directly (in-place style):
+    `torch.nn.init` functions work directly (in-place style):
 
     >>> layer = ESNLayer(100, feedback_size=3, topology=torch.nn.init.orthogonal_)
 
@@ -857,18 +857,18 @@ class MatrixTopology(TopologyInitializer):
         """
         Initialize a square weight tensor from the wrapped callable.
 
-        When this topology is :attr:`prescaled`, the outer spectral-radius
+        When this topology is `prescaled`, the outer spectral-radius
         rescale is skipped (the builder's own spectral structure is kept) and a
-        warning is emitted if ``spectral_radius`` is not ``None``. An explicit
-        :attr:`rescale` policy overrides this: False skips silently, True scales.
+        warning is emitted if `spectral_radius` is not `None`. An explicit
+        `rescale` policy overrides this: False skips silently, True scales.
 
         Parameters
         ----------
         weight : torch.Tensor
-            Square tensor to initialize, shape ``(n, n)``. Modified in-place.
+            Square tensor to initialize, shape `(n, n)`. Modified in-place.
         spectral_radius : float, optional
             Target spectral radius. If None, no scaling is applied. Ignored
-            (with a warning) when the topology is :attr:`prescaled`.
+            (with a warning) when the topology is `prescaled`.
 
         Returns
         -------
@@ -878,7 +878,7 @@ class MatrixTopology(TopologyInitializer):
         Raises
         ------
         ValueError
-            If ``weight`` is not 2-D square, if the callable matches neither
+            If `weight` is not 2-D square, if the callable matches neither
             calling convention, or if the built matrix has the wrong shape.
         """
         if weight.ndim != 2:
@@ -922,13 +922,13 @@ class MatrixTopology(TopologyInitializer):
 
 
 def _accepts_generator(fn: Callable) -> bool:
-    """Return ``True`` when ``fn``'s signature names a ``generator`` parameter.
+    """Return `True` when `fn`'s signature names a `generator` parameter.
 
-    In-place initializers like :func:`torch.nn.init.orthogonal_` take a
-    ``generator=`` keyword rather than a ``seed=`` one, so seeding them
-    reproducibly means passing a :class:`torch.Generator`, not an int. When
+    In-place initializers like `torch.nn.init.orthogonal_` take a
+    `generator=` keyword rather than a `seed=` one, so seeding them
+    reproducibly means passing a `torch.Generator`, not an int. When
     introspection fails (e.g. a C builtin without a signature) this returns
-    ``False`` and the callable draws from torch's global RNG as before.
+    `False` and the callable draws from torch's global RNG as before.
     """
     try:
         params = dict(inspect.signature(fn).parameters)
@@ -940,9 +940,9 @@ def _accepts_generator(fn: Callable) -> bool:
 def _pop_generator_seed(
     fn: Callable, kwargs: dict[str, Any], seed: int | None = None
 ) -> int | None:
-    """Adapt a bound seed only when the callback explicitly takes ``generator``.
+    """Adapt a bound seed only when the callback explicitly takes `generator`.
 
-    Callbacks that accept ``seed`` or arbitrary keywords keep their original
+    Callbacks that accept `seed` or arbitrary keywords keep their original
     calling convention. An explicitly bound generator always controls its own
     state and takes precedence when the callback is invoked.
     """
@@ -968,12 +968,12 @@ def _call_matrix_builder(
     seed: int | None = None,
     scratch_shape: tuple[int, int] | None = None,
 ) -> Any:
-    """Call ``fn`` in build style, falling back to in-place style.
+    """Call `fn` in build style, falling back to in-place style.
 
-    Build style passes the dimensions (``build_args``) and expects a matrix
+    Build style passes the dimensions (`build_args`) and expects a matrix
     back. In-place style passes a scratch tensor of the right shape and uses
-    whatever the function leaves in it (``torch.nn.init.*_`` convention).
-    Functions that take dimensions raise ``TypeError``/``AttributeError``
+    whatever the function leaves in it (`torch.nn.init.*_` convention).
+    Functions that take dimensions raise `TypeError`/`AttributeError`
     when handed a tensor and vice versa, which is what the fallback keys on.
 
     Parameters
@@ -987,13 +987,13 @@ def _call_matrix_builder(
     kwargs : dict
         Keyword arguments bound to the call.
     seed : int, optional
-        Reproducibility seed. When ``fn`` takes a ``generator=`` keyword (e.g.
-        :func:`torch.nn.init.orthogonal_`), ``kwargs`` does not already bind one,
-        and a ``seed`` is given, a :class:`torch.Generator` seeded from ``seed``
+        Reproducibility seed. When `fn` takes a `generator=` keyword (e.g.
+        `torch.nn.init.orthogonal_`), `kwargs` does not already bind one,
+        and a `seed` is given, a `torch.Generator` seeded from `seed`
         on the scratch tensor's device is injected so two calls with the same
         seed produce bit-identical weights instead of drawing from torch's
-        global RNG. Ignored for builders that take ``seed`` directly (which
-        already thread it through ``kwargs``) or accept neither.
+        global RNG. Ignored for builders that take `seed` directly (which
+        already thread it through `kwargs`) or accept neither.
     """
     # Only named placement parameters opt in. Do not pass them to arbitrary
     # **kwargs callbacks, which may forward unknown keywords elsewhere.
@@ -1048,8 +1048,8 @@ def _coerce_to_matrix(
 ) -> torch.Tensor:
     """Convert a builder's return value into a validated torch matrix.
 
-    Accepts ``torch.Tensor``, ``numpy.ndarray`` (or anything ``np.asarray``
-    understands, e.g. nested lists), and ``networkx`` graphs.
+    Accepts `torch.Tensor`, `numpy.ndarray` (or anything `np.asarray`
+    understands, e.g. nested lists), and `networkx` graphs.
     """
     import scipy.sparse as sp
 

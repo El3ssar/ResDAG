@@ -1162,7 +1162,9 @@ class TestStateAndPersistence:
             path = Path(tmp) / "ensemble_full.pt"
             ens.save_full(str(path), epoch=3)
 
-            restored, meta = CoupledEnsembleESNModel.load_full(str(path), return_metadata=True)
+            restored, meta = CoupledEnsembleESNModel.load_full(
+                str(path), return_metadata=True, trusted=True
+            )
             assert isinstance(restored, CoupledEnsembleESNModel)
             assert len(restored.models) == len(ens.models)
             assert meta == {"epoch": 3}
@@ -1177,7 +1179,7 @@ class TestStateAndPersistence:
             path = Path(tmp) / "ens.pt"
             ens.save(str(path))  # state-dict format, not full
             with pytest.raises(ValueError, match="does not contain a full ensemble"):
-                CoupledEnsembleESNModel.load_full(str(path))
+                CoupledEnsembleESNModel.load_full(str(path), trusted=True)
 
     def test_load_rejects_full_checkpoint(self):
         ens = rd.coupled_ensemble_esn(n_models=2, reservoir_size=15, feedback_size=2, output_size=2)

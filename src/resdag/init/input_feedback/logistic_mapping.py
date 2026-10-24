@@ -1,4 +1,4 @@
-"""Logistic-mapping input initializer (Wang et al. 2022; RC.jl ``logistic_mapping``)."""
+"""Logistic-mapping input initializer (Wang et al. 2022; RC.jl `logistic_mapping`)."""
 
 from typing import Any
 
@@ -17,45 +17,43 @@ from .registry import register_input_feedback
     input_scaling=None,
 )
 class LogisticMappingInitializer(InputFeedbackInitializer):
-    """Logistic-map input initializer (RC.jl ``logistic_mapping`` [Wang2022]).
+    """Logistic-map input initializer (RC.jl `logistic_mapping` [Wang2022]).
 
     A deterministic-chaos initializer, structurally the logistic-map sibling of
-    :class:`~resdag.init.input_feedback.ChebyshevInitializer` but generated
+    `resdag.init.input_feedback.ChebyshevInitializer` but generated
     **row-wise** (down the reservoir axis) rather than column-wise. The first row
     is a sine seed and each subsequent row is one logistic-map iteration of the
     row above.
 
-    Construction (mirrors RC.jl ``logistic_mapping``):
+    Construction (mirrors RC.jl `logistic_mapping`):
 
-    - First row: ``W[0, j] = amplitude * sin((j + 1) * pi / (sine_divisor *
-      in_size))`` for column ``j`` (RC.jl is 1-indexed, so column ``j`` uses
-      ``j + 1``).
-    - Subsequent rows: ``W[i, j] = logistic_parameter * W[i-1, j] * (1 -
-      W[i-1, j])``.
+    - First row: `W[0, j] = amplitude * sin((j + 1) * pi / (sine_divisor * in_size))` for column `j` (RC.jl is 1-indexed, so column `j` uses
+      `j + 1`).
+    - Subsequent rows: `W[i, j] = logistic_parameter * W[i-1, j] * (1 - W[i-1, j])`.
 
-    Unlike Chebyshev, entries are **not** in ``[-1, 1]`` — the logistic orbit
-    lives in ``[0, 1]`` for the default parameters — and columns are *not*
+    Unlike Chebyshev, entries are **not** in `[-1, 1]` — the logistic orbit
+    lives in `[0, 1]` for the default parameters — and columns are *not*
     peak-normalized, faithfully reproducing RC.jl.
 
     Parameters
     ----------
     amplitude : float, default=0.3
-        Sine amplitude for the first-row seed (RC.jl ``amplitude``).
+        Sine amplitude for the first-row seed (RC.jl `amplitude`).
     sine_divisor : float, default=5.9
-        Divisor in the sine phase (RC.jl ``sine_divisor``).
+        Divisor in the sine phase (RC.jl `sine_divisor`).
     logistic_parameter : float, default=3.7
-        Growth rate ``r`` of the logistic recurrence (RC.jl
-        ``logistic_parameter``).
+        Growth rate `r` of the logistic recurrence (RC.jl
+        `logistic_parameter`).
     input_scaling : float, optional
-        Uniform magnitude knob from the shared scaling contract. ``None`` (the
-        default) leaves the raw logistic orbit; a float ``s`` multiplies every
-        entry by ``s`` as the documented final transform.
+        Uniform magnitude knob from the shared scaling contract. `None` (the
+        default) leaves the raw logistic orbit; a float `s` multiplies every
+        entry by `s` as the documented final transform.
 
     References
     ----------
     X. Wang et al. (logistic-map ESN input initialization), 2022.
 
-    ReservoirComputing.jl ``logistic_mapping`` (``src/inits/inits_input.jl``).
+    ReservoirComputing.jl `logistic_mapping` (`src/inits/inits_input.jl`).
 
     Examples
     --------
@@ -85,10 +83,10 @@ class LogisticMappingInitializer(InputFeedbackInitializer):
         Parameters
         ----------
         weight : torch.Tensor
-            Weight tensor of shape ``(out_features, in_features)``.
+            Weight tensor of shape `(out_features, in_features)`.
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract); other keys are ignored.
 
         Returns

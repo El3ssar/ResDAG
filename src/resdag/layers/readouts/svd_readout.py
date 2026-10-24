@@ -2,10 +2,10 @@
 SVD Readout Layer
 =================
 
-This module provides :class:`SVDReadoutLayer`, which solves the ridge /
+This module provides `SVDReadoutLayer`, which solves the ridge /
 least-squares readout via the singular value decomposition of the (centered)
 design matrix using Tikhonov filter factors. Unlike a Cholesky solve, it is
-robust to rank-deficient Gram matrices and supports ``alpha == 0``.
+robust to rank-deficient Gram matrices and supports `alpha == 0`.
 
 See Also
 --------
@@ -68,42 +68,42 @@ def _ridge_filter(singular_values: torch.Tensor, alpha: float) -> torch.Tensor:
 class SVDReadoutLayer(ReadoutLayer):
     """Readout layer solved via SVD with Tikhonov filter factors.
 
-    The (optionally centered) design matrix ``X`` is decomposed as
-    ``X = U diag(s) Vᵀ`` and the ridge solution is reconstructed with
+    The (optionally centered) design matrix `X` is decomposed as
+    `X = U diag(s) Vᵀ` and the ridge solution is reconstructed with
     *filter factors*
 
-    .. math::
+    $$
+    W = V \\, \\operatorname{diag}\\!\\left(\\frac{s}{s^2 + \\alpha}\\right)
+        U^\\top Y .
+    $$
 
-        W = V \\, \\operatorname{diag}\\!\\left(\\frac{s}{s^2 + \\alpha}\\right)
-            U^\\top Y .
-
-    For ``alpha > 0`` this is exactly the ridge solution; for ``alpha == 0`` it
+    For `alpha > 0` this is exactly the ridge solution; for `alpha == 0` it
     collapses to the minimum-norm least-squares solution, with singular values
-    at or below an ``rcond`` cutoff dropped so a **rank-deficient** Gram (more
+    at or below an `rcond` cutoff dropped so a **rank-deficient** Gram (more
     features than independent samples, or the near-collinear columns produced
     by high-degree NG-RC feature maps) is handled gracefully instead of
     blowing up the way a Cholesky / normal-equations solve would.
 
     Positive-ridge filter factors are evaluated in scaled form, avoiding
     overflow from squaring large finite singular values. The requested
-    ``alpha`` is preserved; numerical recovery does not add extra regularization.
+    `alpha` is preserved; numerical recovery does not add extra regularization.
 
-    Decomposing ``X`` directly avoids squaring its condition number by forming
-    ``XᵀX``. This is useful for rank-deficient or ill-conditioned features;
+    Decomposing `X` directly avoids squaring its condition number by forming
+    `XᵀX`. This is useful for rank-deficient or ill-conditioned features;
     attainable accuracy still depends on working precision, data scale and
     regularization.
 
     Solver-selection guide
     ----------------------
-    - **Reach for** :class:`SVDReadoutLayer` when the Gram is **rank deficient
-      or severely ill-conditioned**: ``alpha == 0`` least squares, high-degree
+    - **Reach for** `SVDReadoutLayer` when the Gram is **rank deficient
+      or severely ill-conditioned**: `alpha == 0` least squares, high-degree
       NG-RC feature maps, or wide concatenated-input readouts where CG
       under-converges.
-    - Cholesky-based :class:`RidgeReadoutLayer` can reduce fitting cost when
+    - Cholesky-based `RidgeReadoutLayer` can reduce fitting cost when
       the regularized Gram is well conditioned. Measure accuracy and runtime
       for the actual matrix shape, dtype and device when choosing a solver.
-    - :class:`PinvReadoutLayer` is the closely-related lstsq / pinv route; SVD
-      here gives explicit control over the Tikhonov filter and ``rcond``.
+    - `PinvReadoutLayer` is the closely-related lstsq / pinv route; SVD
+      here gives explicit control over the Tikhonov filter and `rcond`.
 
     Parameters
     ----------
@@ -112,38 +112,38 @@ class SVDReadoutLayer(ReadoutLayer):
     out_features : int
         Size of output features (prediction dimension).
     bias : bool, default=True
-        Whether to include a bias term. When ``True`` the data is centered and
-        an unpenalised intercept is recovered; when ``False`` the raw design
+        Whether to include a bias term. When `True` the data is centered and
+        an unpenalised intercept is recovered; when `False` the raw design
         matrix is decomposed with no intercept.
     name : str, optional
         Name for this readout layer. Used for identification in multi-readout
-        architectures and as the key into ``targets`` by :class:`ESNTrainer`.
+        architectures and as the key into `targets` by `ESNTrainer`.
     trainable : bool, default=False
-        If ``True``, weights are trainable via backpropagation.
+        If `True`, weights are trainable via backpropagation.
     alpha : float, default=0.0
-        Tikhonov (L2) regularization strength. Must be finite and non-negative. ``0`` is
+        Tikhonov (L2) regularization strength. Must be finite and non-negative. `0` is
         fully supported and yields the minimum-norm least-squares solution.
     rcond : float, default=1e-15
         Finite, non-negative relative cutoff for small singular values. Values at or below
-        ``rcond * s_max`` are treated as zero (their filter factor is set to
+        `rcond * s_max` are treated as zero (their filter factor is set to
         zero), which is what makes rank-deficient problems well posed. Only
-        active for ``alpha == 0``; for ``alpha > 0`` the Tikhonov filter
+        active for `alpha == 0`; for `alpha > 0` the Tikhonov filter
         already damps small singular values.
     use_float64 : bool, default=True
-        If ``True`` the SVD runs in ``float64`` and the result is cast back to
+        If `True` the SVD runs in `float64` and the result is cast back to
         the parameter dtype.
     gram_dtype : torch.dtype, optional
-        Dtype for forming / casting the design matrix. Default ``None`` is
-        the solve dtype (``float64`` with ``use_float64=True``) on every
+        Dtype for forming / casting the design matrix. Default `None` is
+        the solve dtype (`float64` with `use_float64=True`) on every
         device. No Gram matrix is formed; the decomposition operates directly
         on the design matrix.
 
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or ``None`` if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or `None` if `bias=False`.
     alpha : float
         Tikhonov regularization strength.
     rcond : float
@@ -196,17 +196,17 @@ class SVDReadoutLayer(ReadoutLayer):
         Parameters
         ----------
         states : torch.Tensor
-            Flattened state matrix of shape ``(N, in_features)``.
+            Flattened state matrix of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened target matrix of shape ``(N, out_features)``.
+            Flattened target matrix of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
+            Coefficient matrix of shape `(in_features, out_features)`.
         intercept : torch.Tensor or None
-            Intercept vector of shape ``(out_features,)``, or ``None`` when the
-            layer was built with ``bias=False``.
+            Intercept vector of shape `(out_features,)`, or `None` when the
+            layer was built with `bias=False`.
         """
         _validate_regularization(self.alpha, self.rcond)
         problem = build_least_squares_problem(

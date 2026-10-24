@@ -31,18 +31,18 @@ parallel_esn
     advanced batched over overlapping spatial patches, for forecasting large
     spatiotemporally chaotic systems (PDEs / weather / lattices).
 coupled_ensemble_esn
-    Build a :class:`~resdag.ensemble.CoupledEnsembleESNModel` of N coupled
+    Build a `resdag.ensemble.CoupledEnsembleESNModel` of N coupled
     ESN sub-models sharing an averaged feedback signal.
 
 Classes
 -------
 KnowledgeModel
-    :class:`~torch.nn.Module` adapter wrapping a knowledge-based expert
-    ``f(u) -> u_next`` for use inside :func:`hybrid_esn`.
+    `torch.nn.Module` adapter wrapping a knowledge-based expert
+    `f(u) -> u_next` for use inside `hybrid_esn`.
 ParallelESNModel
-    The model class :func:`parallel_esn` builds — a shared reservoir plus a
+    The model class `parallel_esn` builds — a shared reservoir plus a
     weight-tied readout with patch windowing / stitching and a spatial-
-    autoregressive :meth:`~resdag.models.ParallelESNModel.forecast`.
+    autoregressive `resdag.models.ParallelESNModel.forecast`.
 
 Each architecture accepts individual parameters for full customization
 while providing sensible defaults for quick experimentation.
@@ -111,5 +111,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

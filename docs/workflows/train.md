@@ -134,7 +134,6 @@ sweep $10^{-8}$ to $10^{-2}$ in decade steps, not linearly.
 ```text
 [ discard ][ warmup ][———————————— train ————————————][seam][ val ]
                       [—— target = train shifted +1 ——]
-                                      [—— f_warmup ——]
 ```
 
 Each training input is paired with the next sample in the original series:
@@ -144,9 +143,11 @@ With ``train_end = warmup_steps + train_steps`` measured after discarding,
 validation starts at ``data[:, train_end + 1]``. The seam is therefore used for
 training and excluded from held-out scoring.
 
-`f_warmup` contains the last `warmup_steps` samples before `train_end`; when
-training is shorter than warmup, it includes part of the earlier warmup history.
-Its last output predicts the seam, which seeds the next autoregressive step.
+With the default `alignment="next"`, `f_warmup` contains the last `warmup_steps`
+observed samples, including the seam at `data[:, train_end]`. When training is
+shorter than warmup, it includes part of the earlier warmup history. Its last
+output predicts the first held-out sample, `data[:, train_end + 1]`, so the
+forecast aligns directly with `val`.
 The required source length is `discard_steps + warmup_steps + train_steps + 1 + val_steps`.
 With `normalize=True`, statistics are fitted on training inputs only and applied
 to every split; `return_stats=True` also returns those statistics for inverting
@@ -274,10 +275,10 @@ for epoch in range(30):
 
 Clip gradients (backpropagation through hundreds of recurrent steps is
 prone to exploding gradients) and keep the windows short. Use this path
-only when a frozen random reservoir is demonstrably insufficient: it is
-orders of magnitude slower than path 1 on the same task, and training
-can move the recurrent matrix away from the spectral radius you
-configured.
+when validation shows a frozen reservoir is insufficient. Backpropagation
+retains intermediate states and repeats the sequence across optimizer steps;
+measure its memory and training cost on your workload. Updates can move the
+recurrent matrix away from the spectral radius you configured.
 
 !!! note "Combining paths"
     The paths compose. Build the readout with `trainable=True`, run

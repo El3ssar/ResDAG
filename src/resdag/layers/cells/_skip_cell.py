@@ -2,23 +2,23 @@
 Orthogonal-Skip Reservoir Cells (shared base)
 ==============================================
 
-This private module provides :class:`_SkipReservoirCell`, the shared base for
+This private module provides `_SkipReservoirCell`, the shared base for
 the two edge-of-stability reservoir cells that augment the leaky-ESN update
 with a **fixed random orthogonal skip connection**:
 
-- :class:`~resdag.layers.cells.es2n_cell.ES2NCell` — Edge-of-Stability State
+- `resdag.layers.cells.es2n_cell.ES2NCell` — Edge-of-Stability State
   Network (Ceni & Gallicchio, 2023): the skip and the nonlinear branch form a
-  convex combination weighted by a single proximity parameter ``beta``.
-- :class:`~resdag.layers.cells.resesn_cell.ResESNCell` — Residual ESN (Ceni &
-  Gallicchio, 2024): the skip weight ``alpha`` and the nonlinear weight
-  ``beta`` are decoupled.
+  convex combination weighted by a single proximity parameter `beta`.
+- `resdag.layers.cells.resesn_cell.ResESNCell` — Residual ESN (Ceni &
+  Gallicchio, 2024): the skip weight `alpha` and the nonlinear weight
+  `beta` are decoupled.
 
 Both share the ESN weight-ownership machinery — a spectral-radius-scaled frozen
-recurrent matrix ``W_r``, feedback/input weights from the input-feedback
-registry, a random bias, and per-parameter freezing driven by ``trainable`` —
-so this base reuses :class:`~resdag.layers.cells.esn_cell.ESNCell`'s
+recurrent matrix `W_r`, feedback/input weights from the input-feedback
+registry, a random bias, and per-parameter freezing driven by `trainable` —
+so this base reuses `resdag.layers.cells.esn_cell.ESNCell`'s
 initialization helpers by subclassing it.  What it adds is the frozen
-orthogonal skip matrix ``O`` and the two-branch state update; concrete
+orthogonal skip matrix `O` and the two-branch state update; concrete
 subclasses supply only how the skip and nonlinear branches are combined.
 
 See Also
@@ -49,46 +49,65 @@ class _SkipReservoirCell(ESNCell):
     """
     Shared base for reservoir cells with a fixed orthogonal skip connection.
 
-    Extends :class:`~resdag.layers.cells.esn_cell.ESNCell` with a frozen random
-    orthogonal matrix ``O`` (the residual / skip branch) and a two-branch state
+    Extends `resdag.layers.cells.esn_cell.ESNCell` with a frozen random
+    orthogonal matrix `O` (the residual / skip branch) and a two-branch state
     update
 
-    .. math::
+    $$
+    x_t = a\\,O\\,x_{t-1} + b\\,\\phi(W_r x_{t-1} + W_{fb} x_{fb,t}
+          + W_{in} u_t + \\beta_{bias})
+    $$
 
-        x_t = a\\,O\\,x_{t-1} + b\\,\\phi(W_r x_{t-1} + W_{fb} x_{fb,t}
-              + W_{in} u_t + \\beta_{bias})
-
-    where the scalar branch weights :math:`a` (skip) and :math:`b` (nonlinear)
-    are supplied by the concrete subclass via :meth:`_branch_weights`.  All of
-    ``W_r`` (spectral-radius-scaled, frozen), ``W_fb`` / ``W_in`` (input-feedback
+    where the scalar branch weights $a$ (skip) and $b$ (nonlinear)
+    are supplied by the concrete subclass via `_branch_weights`.  All of
+    `W_r` (spectral-radius-scaled, frozen), `W_fb` / `W_in` (input-feedback
     registry) and the bias are owned and initialized exactly as in
-    :class:`ESNCell`; the leaky-integrator mix of ``ESNCell`` is **not** used —
+    `ESNCell`; the leaky-integrator mix of `ESNCell` is **not** used —
     the two-branch combination replaces it.
 
     Parameters
     ----------
-    reservoir_size, feedback_size, input_size, spectral_radius, bias, \
-bias_scaling, activation, trainable, feedback_initializer, input_initializer, \
-topology, seed
-        Identical in meaning to :class:`ESNCell` (see its docstring).  Note
-        ``leak_rate`` and ``noise`` are intentionally absent: the orthogonal
-        skip plays the role of the leaky-integrator memory term, so a separate
-        leak rate would be redundant, and train-mode state noise is not part of
-        the ES2N / ResESN formulation.
+    reservoir_size : int
+        Number of recurrent units.
+    feedback_size : int
+        Number of feedback features per sample.
+    input_size : int or None, optional
+        Number of external driving features; `None` disables driving inputs.
+    spectral_radius : float or None, optional
+        Target recurrent spectral radius; `None` keeps the initializer's scale.
+    bias : bool, optional
+        Include a bias in the nonlinear recurrent branch.
+    bias_scaling : float, optional
+        Scale of the default bias initialization.
+    activation : str, optional
+        Nonlinearity used by the recurrent branch.
+    trainable : bool, optional
+        Allow recurrent parameters to receive gradients.
+    feedback_initializer : spec, optional
+        Feedback weight initializer, following the `ESNCell` grammar.
+    input_initializer : spec, optional
+        External input weight initializer, following the `ESNCell` grammar.
+    topology : spec, optional
+        Recurrent weight initializer, following the `ESNCell` grammar.
+    seed : int or torch.Generator or None, optional
+        Master seed for independent initialization streams.
+
+        `leak_rate` and `noise` are intentionally absent: the orthogonal skip
+        supplies memory, and state noise is not part of this formulation.
     orthogonal_scaling : float, default=1.0
-        Gain applied to the orthogonal skip matrix ``O``.  With ``1.0`` the
+        Gain applied to the orthogonal skip matrix `O`.  With `1.0` the
         skip is exactly norm-preserving (all singular values equal 1), the
         regime in which the edge-of-stability property holds.  Other values
         scale the linear memory branch.
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -99,9 +118,9 @@ topology, seed
     Attributes
     ----------
     skip_matrix : torch.Tensor
-        The frozen ``(reservoir_size, reservoir_size)`` orthogonal skip matrix
-        ``O``, registered as a non-trainable buffer so it moves with ``.to()``
-        / ``.double()`` and round-trips through save/load.
+        The frozen `(reservoir_size, reservoir_size)` orthogonal skip matrix
+        `O`, registered as a non-trainable buffer so it moves with `.to()`
+        / `.double()` and round-trips through save/load.
 
     See Also
     --------
@@ -183,12 +202,12 @@ topology, seed
     # ------------------------------------------------------------------
 
     def _branch_weights(self) -> tuple[float | torch.Tensor, float | torch.Tensor]:
-        """Return the ``(skip_weight, nonlinear_weight)`` scalar pair.
+        """Return the `(skip_weight, nonlinear_weight)` scalar pair.
 
-        Read fresh on every step so live writes to ``beta`` / ``alpha`` take
+        Read fresh on every step so live writes to `beta` / `alpha` take
         effect on the next forward.  Concrete subclasses override this to encode
-        their combination rule (ES2N: ``(1 - beta, beta)``; ResESN:
-        ``(alpha, beta)``).
+        their combination rule (ES2N: `(1 - beta, beta)`; ResESN:
+        `(alpha, beta)`).
 
         Returns
         -------
@@ -208,27 +227,26 @@ topology, seed
 
         Realises
 
-        .. math::
+        $$
+        x_t = a\\,O\\,x_{t-1} + b\\,\\phi(W_r x_{t-1} + \\text{projected})
+        $$
 
-            x_t = a\\,O\\,x_{t-1} + b\\,\\phi(W_r x_{t-1} + \\text{projected})
-
-        where ``projected`` = :meth:`~ESNCell.project_inputs` (``W_fb x_fb +
-        W_in u + bias``) and ``(a, b)`` = :meth:`_branch_weights`.
+        where `projected` = `ESNCell.project_inputs` (`W_fb x_fb + W_in u + bias`) and `(a, b)` = `_branch_weights`.
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            ``inputs[0]`` is the feedback slice; ``inputs[1]`` (optional) the
-            driving-input slice.  Each ``(batch, feature_dim)``.
+            `inputs[0]` is the feedback slice; `inputs[1]` (optional) the
+            driving-input slice.  Each `(batch, feature_dim)`.
         state : torch.Tensor
-            Current state, shape ``(batch, reservoir_size)``.
+            Current state, shape `(batch, reservoir_size)`.
 
         Returns
         -------
         output : torch.Tensor
-            Next state of shape ``(batch, reservoir_size)``.
+            Next state of shape `(batch, reservoir_size)`.
         new_state : torch.Tensor
-            Same tensor as ``output`` (state and output are identical).
+            Same tensor as `output` (state and output are identical).
         """
         projected = self.project_inputs(inputs)
         return self.step(projected, state)
@@ -241,26 +259,25 @@ topology, seed
         """
         Recurrent-only single-step update for the projected fast path.
 
-        Consumes a precomputed input projection ``projected_t`` (``W_fb x_fb +
-        W_in u + bias`` for this timestep) and applies the two-branch update.
+        Consumes a precomputed input projection `projected_t` (`W_fb x_fb + W_in u + bias` for this timestep) and applies the two-branch update.
         Branch-free and shape-static so it traces cleanly under
-        :func:`torch.compile` (``fullgraph=True``), enabling the compiled
+        `torch.compile` (`fullgraph=True`), enabling the compiled
         forecast/teacher-forced engines.
 
         Parameters
         ----------
         projected_t : torch.Tensor
-            Slice of :meth:`~ESNCell.project_inputs`, shape
-            ``(batch, reservoir_size)``.
+            Slice of `ESNCell.project_inputs`, shape
+            `(batch, reservoir_size)`.
         state : torch.Tensor
-            Current state, shape ``(batch, reservoir_size)``.
+            Current state, shape `(batch, reservoir_size)`.
 
         Returns
         -------
         output : torch.Tensor
             Next state.
         new_state : torch.Tensor
-            Same tensor as ``output``.
+            Same tensor as `output`.
         """
         skip_weight, nonlinear_weight = self._branch_weights()
         # Nonlinear branch: phi(W_r x + projected).  ``addmm`` fuses the

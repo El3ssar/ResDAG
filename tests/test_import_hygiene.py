@@ -49,13 +49,13 @@ def test_import_resdag_does_not_pull_scipy_or_optuna() -> None:
 
 
 def test_lazy_names_resolve_on_demand() -> None:
-    """``hpo`` and the HPO helpers resolve through ``__getattr__``."""
+    """The optional HPO namespace resolves without duplicate top-level aliases."""
     code = (
         "import resdag\n"
         "assert resdag.hpo.__name__ == 'resdag.hpo'\n"
-        "assert callable(resdag.run_hpo)\n"
-        "assert isinstance(resdag.LOSSES, dict)\n"
-        "assert callable(resdag.get_study_summary)\n"
+        "assert callable(resdag.hpo.run_hpo)\n"
+        "assert isinstance(resdag.hpo.LOSSES, dict)\n"
+        "assert callable(resdag.hpo.get_study_summary)\n"
     )
     result = _run(code)
     assert result.returncode == 0, result.stderr
@@ -65,3 +65,10 @@ def test_unknown_top_level_attribute_raises_attribute_error() -> None:
     """A bogus top-level attribute still raises ``AttributeError``."""
     with pytest.raises(AttributeError):
         resdag.does_not_exist  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("name", ["run_hpo", "LOSSES", "get_study_summary", "Any", "importlib"])
+def test_implementation_imports_and_duplicate_hpo_names_are_not_public(name):
+    assert name not in dir(resdag)
+    with pytest.raises(AttributeError):
+        getattr(resdag, name)

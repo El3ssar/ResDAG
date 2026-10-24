@@ -93,6 +93,43 @@ def test_cpu_workflow_harness_change_runs_its_protocol_and_real_cli_checks() -> 
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        "benchmarks/vanilla_robustness.py",
+        "benchmarks/rc_bench/_threads.py",
+        "benchmarks/requirements.txt",
+        "docs/assets/data/phase-five-independent-trajectories-2026-10-23.json",
+    ],
+)
+def test_vanilla_robustness_runtime_dependencies_select_real_cli(path: str) -> None:
+    selected = AT.select_tests([path])
+    assert "tests/test_regression/test_vanilla_robustness_cli.py" in selected.tests
+
+
+def test_pre_option_checkpoint_changes_select_actual_load_and_recipe_checks() -> None:
+    selected = AT.select_tests(["tests/fixtures/input_to_readout_ca40fe4b/facade.pt"])
+    assert "tests/test_models/test_input_to_readout.py" in selected.tests
+    assert "tests/test_hpo/test_input_to_readout.py" in selected.tests
+
+
+@pytest.mark.parametrize(
+    "path,target",
+    [
+        ("tools/check_docs_site.py", "tests/test_tooling/test_check_docs_site.py"),
+        ("scripts/build_docs_assets.py", "tests/test_docs/test_forecast_visuals.py"),
+        (
+            "docs/assets/data/phase-five-vanilla-robustness-2026-10-24.json",
+            "tests/test_regression/test_vanilla_robustness_evidence.py",
+        ),
+        ("examples/00_getting_started.py", "tests/test_examples_execution.py"),
+        ("examples/17_forecast_experiment.py", "tests/test_examples_execution.py"),
+    ],
+)
+def test_full_sweep_tooling_and_scientific_data_dependencies_select_checks(path, target):
+    assert target in AT.select_tests([path]).tests
+
+
+@pytest.mark.parametrize(
     "record", ["accuracy", "auto", "compile", "interleaved", "recurrence", "storage", "workflows"]
 )
 def test_cpu_measurement_data_changes_run_scientific_evidence_checks(record: str) -> None:
@@ -201,6 +238,9 @@ def test_fixture_closure_captures_constructed_modules() -> None:
     assert "resdag.layers.reservoirs.esn" in tiny
     # And the precise closure does not balloon to an entire subtree.
     assert "resdag.layers.transforms.power" not in tiny
+    initializer_registry = closures["isolated_initializer_registries"]
+    assert "resdag.init.topology.registry" in initializer_registry
+    assert not any(name.startswith("resdag.hpo") for name in initializer_registry)
 
 
 def test_reservoir_change_selects_model_and_training_tests() -> None:

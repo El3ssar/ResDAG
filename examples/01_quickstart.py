@@ -3,7 +3,7 @@
 What it shows
 -------------
 1. Generate a chaotic time series (Lorenz-63)
-2. Split it with ``rd.utils.prepare_esn_data``
+2. Split it with ``rd.data.prepare_esn_data``
 3. Build a premade model (``classic_esn``)
 4. Fit the readout algebraically with ``ESNTrainer``
 5. Autoregressive forecast + MSE against ground truth
@@ -14,7 +14,6 @@ Run with ``--plot`` to also display the forecast (requires matplotlib,
 which is optional and not needed for the core flow).
 """
 
-import sys
 import time
 
 import torch
@@ -24,6 +23,9 @@ from resdag.training import ESNTrainer
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__, plots=True)
     torch.manual_seed(42)
 
     # ------------------------------------------------------------------
@@ -34,18 +36,20 @@ def main() -> None:
     print("=" * 70)
 
     # rd.lorenz ships a correct RK4 Lorenz-63 integrator in the public API:
-    # a (1, 2300, 3) = (batch, time, features) standardized tensor.
-    data = rd.lorenz(2300, seed=42)
+    # a raw (1, 2300, 3) = (batch, time, features) tensor.
+    data = rd.lorenz(options.choose(141, 2300), seed=42, normalize=None)
 
     # prepare_esn_data slices one long series into the five segments every
     # ESN workflow needs (val follows the final training target, which f_warmup includes):
     #   [warmup][----------train----------][----val----]
     #                          [f_warmup-]^
-    warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
+    warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
         data,
-        warmup_steps=200,
-        train_steps=1600,
-        val_steps=400,
+        warmup_steps=options.choose(12, 200),
+        train_steps=options.choose(100, 1600),
+        val_steps=options.choose(24, 400),
+        normalize=True,
+        norm_method="standard",  # fit only the training rows, then reuse for every split
     )
     print(f"warmup   {tuple(warmup.shape)}   - synchronizes reservoir state")
     print(f"train    {tuple(train.shape)}  - readout fitting input")
@@ -61,14 +65,16 @@ def main() -> None:
     print("=" * 70)
 
     model = rd.classic_esn(
-        reservoir_size=600,
+        reservoir_size=options.choose(24, 600),
         feedback_size=3,  # dimension of the signal fed back into the reservoir
         output_size=3,  # must equal feedback_size for autoregressive forecasting
         spectral_radius=0.8,
         readout_alpha=1e-6,  # ridge regularization of the readout
     )
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"classic_esn: 600 neurons, {n_params} parameters (reservoir frozen)")
+    print(
+        f"classic_esn: {options.choose(24, 600)} neurons, {n_params} parameters (reservoir frozen)"
+    )
 
     # ------------------------------------------------------------------
     # 3. Train (algebraic ridge regression, no gradient descent)
@@ -84,7 +90,7 @@ def main() -> None:
         train_inputs=(train,),
         targets={"output": target},  # key must match the readout's name
     )
-    print(f"Readout fitted in {time.perf_counter() - t0:.2f} s (single CG ridge solve)")
+    print(f"Readout fitted in {time.perf_counter() - t0:.2f} s (single ridge solve)")
 
     # ------------------------------------------------------------------
     # 4. Forecast
@@ -95,6 +101,7 @@ def main() -> None:
 
     horizon = val.shape[1]
     predictions = model.forecast(f_warmup, horizon=horizon)  # (1, horizon, 3)
+    assert predictions.shape == val.shape and torch.isfinite(predictions).all()
     print(f"Forecast shape: {tuple(predictions.shape)} (batch, horizon, features)")
 
     # ------------------------------------------------------------------
@@ -103,6 +110,7 @@ def main() -> None:
     print("\n" + "=" * 70)
     print("5. Evaluate against ground truth")
     print("=" * 70)
+    print("Errors use training-standardized units, shared by forecasts and truth.")
 
     mse_short = torch.mean((predictions[:, :50] - val[:, :50]) ** 2).item()
     mse_full = torch.mean((predictions - val) ** 2).item()
@@ -111,7 +119,7 @@ def main() -> None:
     print("(Lorenz is chaotic: trajectories diverge eventually; short-horizon")
     print(" error is the meaningful metric, long-horizon should stay bounded.)")
 
-    if "--plot" in sys.argv:
+    if options.plot:
         try:
             import matplotlib.pyplot as plt
         except ImportError:

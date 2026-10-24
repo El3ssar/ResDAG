@@ -1204,7 +1204,7 @@ class TestStandardize:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "full.pt"
             model.save_full(path)
-            restored = ESNModel.load_full(path)
+            restored = ESNModel.load_full(path, trusted=True)
 
             model.reset_reservoirs()
             restored.reset_reservoirs()

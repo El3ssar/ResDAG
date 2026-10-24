@@ -8,7 +8,7 @@ What it shows
 3. Rendering to a file (svg/png/pdf) instead of opening a viewer
 
 Expected runtime: ~5 s on CPU. Requires the ``graphviz`` Python package
-(a core dependency); if the system ``dot`` binary is missing, plot_model
+(install the viz extra); if the system ``dot`` binary is missing, plot_model
 prints the DOT source as a fallback instead of failing.
 """
 
@@ -23,6 +23,9 @@ from resdag.models import classic_esn, ott_esn
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
     torch.manual_seed(42)
     tmpdir = Path(tempfile.mkdtemp(prefix="resdag_plots_"))
 
@@ -33,11 +36,11 @@ def main() -> None:
     print("1. model.summary()")
     print("=" * 70)
 
-    model = classic_esn(reservoir_size=100, feedback_size=1, output_size=1)
+    model = classic_esn(reservoir_size=options.choose(24, 100), feedback_size=1, output_size=1)
     print("\nclassic_esn:")
     model.summary()
 
-    model_ott = ott_esn(reservoir_size=200, feedback_size=3, output_size=3)
+    model_ott = ott_esn(reservoir_size=options.choose(24, 200), feedback_size=3, output_size=3)
     print("\nott_esn (note the SelectiveExponentiation + Concatenate nodes):")
     model_ott.summary()
 
@@ -70,12 +73,12 @@ def main() -> None:
     print("=" * 70)
 
     inp = Input((100, 3))
-    fast = ESNLayer(120, feedback_size=3, leak_rate=1.0)(inp)
-    slow = ESNLayer(120, feedback_size=3, leak_rate=0.2)(inp)
+    fast = ESNLayer(options.choose(12, 120), feedback_size=3, leak_rate=1.0)(inp)
+    slow = ESNLayer(options.choose(12, 120), feedback_size=3, leak_rate=0.2)(inp)
     squared = SelectiveExponentiation(index=0, exponent=2.0)(fast)
     merged = Concatenate()(squared, slow)
-    coords = CGReadoutLayer(240, 3, name="coords")(merged)
-    energy = CGReadoutLayer(240, 1, name="energy")(merged)
+    coords = CGReadoutLayer(options.choose(24, 240), 3, name="coords")(merged)
+    energy = CGReadoutLayer(options.choose(24, 240), 1, name="energy")(merged)
     dag = ESNModel(inp, outputs=[coords, energy])
 
     dag.summary()

@@ -1,8 +1,8 @@
-"""02 — Premade models: every factory in ``resdag.models``.
+"""02 — Premade models: representative factories in ``resdag.models``.
 
 What it shows
 -------------
-1. The six factories: classic_esn, ott_esn, power_augmented, linear_esn,
+1. Six factories: classic_esn, ott_esn, power_augmented, linear_esn,
    headless_esn, coupled_ensemble_esn
 2. What each architecture computes (readout models vs state extractors)
 3. Driving/exogenous-input support: build a two-input model with
@@ -25,11 +25,20 @@ SIZE = 400  # reservoir size shared by all models in the comparison
 
 
 def main() -> None:
-    torch.manual_seed(42)
+    from _example_options import parse_options
 
-    data = rd.lorenz(2300, seed=42)  # (1, 2300, 3) = (batch, time, features)
-    warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
-        data, warmup_steps=200, train_steps=1600, val_steps=400
+    options = parse_options(__doc__)
+    torch.manual_seed(42)
+    size = options.choose(24, SIZE)
+
+    data = rd.lorenz(options.choose(141, 2300), seed=42, normalize=None)  # raw (1, 2300, 3)
+    warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
+        data,
+        warmup_steps=options.choose(12, 200),
+        train_steps=options.choose(100, 1600),
+        val_steps=options.choose(24, 400),
+        normalize=True,
+        norm_method="standard",  # statistics come from training rows only
     )
 
     # ------------------------------------------------------------------
@@ -38,23 +47,21 @@ def main() -> None:
     print("=" * 70)
     print("1. Forecasting factories")
     print("=" * 70)
-    print(
-        """
-classic_esn     Input -> Reservoir -> Concat(Input, States) -> CGReadout
+    print("""
+classic_esn     Input -> Reservoir -> Concat(Input, States) -> RidgeReadout
 ott_esn         ... -> SelectiveExponentiation (square even units) -> ...
                 recommended starting point for chaotic systems
 power_augmented generalization of ott_esn: states**exponent branch
-"""
-    )
+""")
 
     # Identical data + readout settings; only the architecture differs.
     forecasters = {
         "classic_esn": lambda: rd.classic_esn(
-            SIZE, feedback_size=3, output_size=3, spectral_radius=0.8
+            size, feedback_size=3, output_size=3, spectral_radius=0.8
         ),
-        "ott_esn": lambda: rd.ott_esn(SIZE, feedback_size=3, output_size=3, spectral_radius=0.8),
+        "ott_esn": lambda: rd.ott_esn(size, feedback_size=3, output_size=3, spectral_radius=0.8),
         "power_augmented": lambda: rd.power_augmented(
-            SIZE, feedback_size=3, output_size=3, exponent=3.0, spectral_radius=0.8
+            size, feedback_size=3, output_size=3, exponent=3.0, spectral_radius=0.8
         ),
     }
 
@@ -70,6 +77,7 @@ power_augmented generalization of ott_esn: states**exponent branch
         fit_s = time.perf_counter() - t0
 
         preds = model.forecast(f_warmup, horizon=val.shape[1])  # (1, 400, 3)
+        assert preds.shape == val.shape and torch.isfinite(preds).all()
         mse50 = torch.mean((preds[:, :50] - val[:, :50]) ** 2).item()
         results.append((name, n_params, fit_s, mse50))
         print(f"{name:<16} trained, forecast shape {tuple(preds.shape)}")
@@ -80,28 +88,26 @@ power_augmented generalization of ott_esn: states**exponent branch
     print("\n" + "=" * 70)
     print("2. Driving inputs: classic_esn, ott_esn, power_augmented")
     print("=" * 70)
-    print(
-        """
+    print("""
 classic_esn(..., input_size=K) builds a TWO-input model:
 
-    (feedback, driver) -> Reservoir -> Concat(feedback, States) -> CGReadout
+    (feedback, driver) -> Reservoir -> Concat(feedback, States) -> RidgeReadout
 
 The driver feeds the reservoir alongside the autoregressive feedback but is
 kept OUT of the concatenation, so the readout in_features stays
 feedback_size + reservoir_size. Fit with driver tuples, forecast with
 forecast_drivers via the forecast_inputs argument.
-"""
-    )
+""")
 
     # We forecast the first Lorenz variable (feedback) while treating the other
     # two variables as a known exogenous driver supplied at every step.
     fb_slice, dr_slice = slice(0, 1), slice(1, 3)  # feedback dim 1, driver dim 2
 
-    driven = rd.classic_esn(SIZE, feedback_size=1, output_size=1, input_size=2, spectral_radius=0.8)
+    driven = rd.classic_esn(size, feedback_size=1, output_size=1, input_size=2, spectral_radius=0.8)
 
     # readout in_features == feedback_size + reservoir_size (driver excluded)
-    readout = next(m for m in driven.modules() if isinstance(m, rd.CGReadoutLayer))
-    print(f"readout.in_features = {readout.in_features}  (= feedback_size 1 + reservoir {SIZE})")
+    readout = next(m for m in driven.modules() if isinstance(m, rd.ReadoutLayer))
+    print(f"readout.in_features = {readout.in_features}  (= feedback_size 1 + reservoir {size})")
 
     ESNTrainer(driven).fit(
         warmup_inputs=(warmup[:, :, fb_slice], warmup[:, :, dr_slice]),
@@ -113,7 +119,7 @@ forecast_drivers via the forecast_inputs argument.
     # the forecast window is supplied through forecast_inputs.
     driven_preds = driven.forecast(
         (f_warmup[:, :, fb_slice], f_warmup[:, :, dr_slice]),
-        forecast_inputs=(val[:, :, dr_slice],),
+        forecast_inputs=(val[:, :-1, dr_slice],),
         horizon=val.shape[1],
     )
     driven_mse = torch.mean((driven_preds - val[:, :, fb_slice]) ** 2).item()
@@ -134,7 +140,7 @@ forecast_drivers via the forecast_inputs argument.
         n_models=4,
         model_factory=rd.classic_esn,
         seed=42,  # deterministic sub-model initialization
-        reservoir_size=SIZE,
+        reservoir_size=size,
         feedback_size=3,
         output_size=3,
         spectral_radius=0.8,
@@ -157,11 +163,11 @@ forecast_drivers via the forecast_inputs argument.
 
     x = torch.randn(4, 100, 3)  # (batch, time, features)
 
-    headless = rd.headless_esn(SIZE, feedback_size=3)
+    headless = rd.headless_esn(size, feedback_size=3)
     states = headless(x)  # (4, 100, SIZE) — raw tanh reservoir states
     print(f"headless_esn : input {tuple(x.shape)} -> states {tuple(states.shape)}")
 
-    linear = rd.linear_esn(SIZE, feedback_size=3)
+    linear = rd.linear_esn(size, feedback_size=3)
     lin_states = linear(x)  # identity activation — linear dynamics baseline
     print(f"linear_esn   : input {tuple(x.shape)} -> states {tuple(lin_states.shape)}")
     print("Use cases: reservoir dynamics analysis, custom heads (see 05), ESP checks.")
@@ -178,10 +184,12 @@ forecast_drivers via the forecast_inputs argument.
     print("5. ESP check via rd.esp_index (signature stability diagnostic)")
     print("=" * 70)
 
-    esp_model = rd.classic_esn(SIZE, feedback_size=3, output_size=3, spectral_radius=0.8)
+    esp_model = rd.classic_esn(size, feedback_size=3, output_size=3, spectral_radius=0.8)
     # Score only the trailing window (the asymptotic regime), scale-free.
-    indices = rd.esp_index(esp_model, val, window=50, relative=True, verbose=False)
-    (esp_layer, (esp_value,)) = next(iter(indices.items()))
+    indices = rd.esp_index(
+        esp_model, val, window=min(50, val.shape[1]), relative=True, verbose=False
+    )
+    esp_layer, (esp_value,) = next(iter(indices.items()))
     print(f"ESP index for '{esp_layer}': {esp_value.item():.4e} (near 0 = stable)")
 
     # ------------------------------------------------------------------
@@ -197,6 +205,7 @@ forecast_drivers via the forecast_inputs argument.
         print(f"{name:<22} {n_params:>10,} {fit_s:>8.2f} {mse50:>14.6f}")
     print("-" * len(header))
     print("MSE@50 = mean squared error over the first 50 forecast steps.")
+    print("All errors use the same training-standardized units.")
     print("Rankings shift with hyperparameters — use 10_hpo.py to tune properly.")
 
 

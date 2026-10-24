@@ -3,6 +3,35 @@
 from _style import FIG
 
 
+def forecast_dag():
+    """Build the exact named, two-timescale network in workflows/visualize.md."""
+    import torch
+
+    import resdag as rd
+
+    x = rd.reservoir_input(3, dtype=torch.float64)
+    seeds = rd.SeedStreams(7)
+    fast = rd.ESNLayer(
+        48,
+        feedback_size=3,
+        spectral_radius=0.9,
+        leak_rate=1.0,
+        seed=seeds["fast"],
+        dtype=torch.float64,
+    )(x)
+    slow = rd.ESNLayer(
+        48,
+        feedback_size=3,
+        spectral_radius=0.9,
+        leak_rate=0.25,
+        seed=seeds["slow"],
+        dtype=torch.float64,
+    )(x)
+    features = rd.Concatenate()(fast, slow)
+    y = rd.SVDReadoutLayer(96, 3, alpha=1e-6).double()(features)
+    return rd.Model(inputs={"state": x}, outputs={"prediction": y}, washout=200)
+
+
 def main() -> None:
     import resdag as rd
 
@@ -16,9 +45,14 @@ def main() -> None:
         "headless_esn": lambda: rd.models.headless_esn(64, 3),
     }
     for name, make in factories.items():
-        make().plot_model(show_shapes=False, rankdir="LR",
-                          save_path=str(out / f"{name}.svg"), format="svg")
+        make().plot_model(
+            show_shapes=False, rankdir="LR", save_path=str(out / f"{name}.svg"), format="svg"
+        )
         print(f"  wrote architectures/{name}.svg")
+    model = forecast_dag()
+    for suffix in ("svg", "dot"):
+        model.save(out / f"forecast_dag.{suffix}", rankdir="TB", show_trainable=True)
+        print(f"  wrote architectures/forecast_dag.{suffix}")
 
 
 if __name__ == "__main__":

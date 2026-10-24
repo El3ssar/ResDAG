@@ -69,6 +69,13 @@ its growing input history and concatenation copies. A custom factory that change
 which execution mode the architecture needs must include those requirements in
 its own estimate.
 
+For the built-in parallel model, the planner includes the patch count. A batch
+of `B` fields split into `P` patches produces `B * P` reservoir sequences;
+the shared readout fits their pooled supervised rows. Its estimate includes
+patch windows, projected inputs, feature traces, local targets and recurrent
+state. Warmup takes trace memory but contributes no fitted rows. This also
+accounts for candidates that sample a shorter washout.
+
 ## Optionally shortlist candidates
 
 ```python
@@ -119,6 +126,14 @@ shared dataset/model storage counts and readout widths. It contains no live
 model or data tensors. Return a `MemoryEstimate`, or an integer for a complete
 host-only estimate. The result replaces the automatic estimate; it is not an
 extra surcharge. Worker overhead is added separately by `MemoryBudget`.
+
+`context.train_samples` and `context.refit_samples` count observations as before.
+For supported parallel models, `readout_train_samples` and
+`readout_refit_samples` give each head's actual pooled supervised row counts;
+`sequence_layout` records the immutable fit, refit and forecast-history shapes.
+These optional facts default to empty tuples/mappings for other contexts.
+Custom parallel implementations with different patching or hooks need their
+own estimate rather than assuming the built-in layout.
 
 For a custom recipe that still builds a classic dense ESN, reuse the standard
 estimator instead of writing another memory formula:

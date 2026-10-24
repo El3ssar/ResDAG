@@ -6,12 +6,50 @@ description: Two-phase autoregressive forecasting — warmup, feedback, driver a
 
 # Forecast
 
-`forecast(observed, horizon=H)` predicts the `H` samples immediately after
-an observed history. Training learns `x[t] → x[t+1]`, so the last warmup readout
-already estimates the first unseen sample. Forecast slot zero uses it; each
-later prediction feeds the previous prediction back into the reservoir.
+## Presets and named DAGs
 
-## Anatomy
+`rd.ESN` and `rd.Model` forecast in the original signal units. Supply observed
+history explicitly, or use the history retained by `fit`:
+
+```python
+import torch
+import resdag as rd
+
+observed = torch.sin(torch.linspace(0, 20, 400))[:, None]
+model = rd.ESN(reservoir_size=32, washout=30, seed=7).fit(observed)
+prediction = model.forecast(horizon=100)
+resynchronized = model.forecast(history=observed, horizon=100)
+assert prediction.shape == resynchronized.shape == (100, 1)
+```
+
+The first prediction estimates the sample immediately after the last
+observation. Forecasts synchronize on their history and then feed predictions
+back into the model; no future truth is needed. One output returns a tensor;
+several named outputs return a dictionary. Trajectory-trained models return
+TSDynamics trajectories unless `return_type="tensor"` is requested.
+
+For custom networks, [named feedback connections](../start/feedback.md) route
+outputs to chosen inputs with explicit delays. Prediction lead and connection
+delay have separate controls. Inputs without feedback routes need known future
+values through `future_inputs={"port": values}`. Temporal modules can use
+[history execution](../advanced/forecast-capabilities.md) when they cannot
+advance one frame at a time.
+
+## Raw symbolic graphs
+
+The lower-level examples below use `ESNModel` and raw factory results. Their
+tensors use the graph's own units; they do not apply a surrounding `Model`'s
+fitted scaling. `f_warmup`, `train`, `target` and `val` denote the aligned
+splits from [`prepare_esn_data`](../reference/data.md). Use the
+[common workflow](../start/model-workflow.md) unless you need to own this
+preparation and state management yourself.
+
+`forecast(observed, horizon=H)` predicts the `H` samples immediately after
+an observed history. With next-sample targets, the last warmup readout already
+estimates the first unseen sample. Slot zero uses it; each later prediction
+feeds the previous prediction back into the reservoir.
+
+### Anatomy
 
 ```python
 preds = model.forecast(f_warmup, horizon=2000)  # (batch, 2000, features)
@@ -43,7 +81,7 @@ The final returned prediction has not been consumed yet. Passing it as the next
 seed consumes it exactly once. With an explicit seed, including historical
 predictions gives `warmup_steps + horizon` outputs.
 
-## Driver alignment
+### Driver alignment
 
 Training pairs `(feedback_t, driver_t) → feedback_{t+1}`. Warmup supplies the
 driver needed for forecast slot zero. The remaining `H-1` outputs need drivers
@@ -64,22 +102,19 @@ drivers, beginning at the seed's own time index. Extra trailing driver samples
 are accepted and ignored. [Theory · Timing](../theory/timing.md) derives these
 indices and explains continuation for driven models.
 
-To reproduce earlier low-level runs, use `alignment="legacy"` in both
-`prepare_esn_data` and `forecast`. That mode retains the old skipped boundary
-sample, `H` driver requirement, and `warmup_steps + horizon` combined length.
-See [Migration](../migrating.md).
-
 ---
 
-## Windowed reconstruction
+### Windowed reconstruction
 
 `windowed_forecast()` fills the gaps in a sparsely-observed trajectory.
 You hold the *full* ground-truth series but only trust it in periodic
 windows; between them the model free-runs. Each cycle re-synchronizes the
 reservoir on a short teacher-forced window, then forecasts across the
-unobserved gap — and because the Echo State Property re-anchors the state
-on every observed window, per-window error does not compound across
-windows, so gaps can be filled indefinitely. It is a loop over `forecast()` (inference uses `no_grad=True` by default): the reservoir is reset once (on
+unobserved gap. Each new observed window can synchronize the state again,
+limiting accumulated drift when the reservoir and observations support it.
+This does not guarantee accurate reconstruction or an indefinite forecast.
+The method loops over `forecast()` (inference uses `no_grad=True` by default):
+the reservoir is reset once (on
 the first window, and only when `reset=True`) and its state is carried
 across the whole pass.
 
@@ -134,9 +169,10 @@ does. For multi-output models the first output is fed back, as in
 A coupled ensemble runs N independently initialized models, trained
 separately, in a single forecast loop: at every autoregressive step each
 member receives the *same* aggregated output (mean, median, or a custom
-module) as its next feedback. The shared signal couples the members and
-suppresses any single member's error growth, and the spread between
-members provides an uncertainty estimate.
+module) as its next feedback. The shared signal couples the members. Their spread measures
+member disagreement; it is not a calibrated uncertainty interval and need not
+contain the true trajectory. Wrap the ensemble with `rd.Model(graph=ensemble)`
+for the common original-unit workflow. The example below uses its raw API.
 
 ```python
 import torch
@@ -174,23 +210,25 @@ ensemble = rd.coupled_ensemble_esn(
 
 ## How far you can forecast
 
-For chaotic systems the ceiling is the system's, not the model's: any
-initial error grows like $e^{\lambda t}$, so even a near-perfect one-step
-predictor diverges after a few Lyapunov times. A well-tuned ESN tracks
-the true trajectory for several Lyapunov times; after that the pointwise
-forecast decorrelates, but the trajectory remains on the attractor, so
-the forecast stays statistically consistent with the system after it
-stops being pointwise accurate.
+For a chaotic system, small initial and modeling errors can grow rapidly.
+A forecast that tracks the observed continuation for several Lyapunov times
+may later lose pointwise alignment. Remaining bounded or tracing a similar
+phase portrait does not establish accurate statistics or the correct invariant
+measure; those require separate checks.
 
 <figure markdown>
-![True Lorenz attractor beside the attractor traced by the autonomous ESN forecast](../assets/figures/lorenz_phase.png)
-<figcaption>The true Lorenz attractor and the attractor traced by 4,000
-autonomous forecast steps. Past the valid horizon the forecast
-decorrelates from the true trajectory but continues to reconstruct the
-attractor's geometry.</figcaption>
+![The complete fixed Lorenz observation and autonomous forecast windows, shown side by side in original state coordinates](../assets/figures/lorenz_phase.png)
+<figcaption>A fixed Lorenz display case from the independent-trajectory study.
+Both panels include the entire recorded test window. The trajectory, reservoir
+seed and forecast start were fixed before final evaluation. The
+[complete results](../project/phase-five-robustness.md) report error thresholds
+and accuracy across all cases; the picture alone does not measure accuracy.</figcaption>
 </figure>
 
-If forecasts diverge well before this point, tune the hyperparameters
+Use [TSDynamics plots and animations](visualize.md) to inspect component traces
+and attractor geometry together.
+
+If forecasts diverge early, compare hyperparameters on validation data
 before increasing reservoir size. To quantify how far a forecast tracks —
 and to report it in the hardware- and system-independent unit of Lyapunov
 times — see [Work · Lyapunov time](lyapunov.md).

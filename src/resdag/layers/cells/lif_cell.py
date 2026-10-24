@@ -6,29 +6,31 @@ This module provides the concrete leaky integrate-and-fire reservoir cell — th
 spiking neuron of a Liquid State Machine (LSM; Maass, Natschläger & Markram,
 *Neural Computation* 14(11), 2002):
 
-- :class:`LIFCell` — a :class:`~resdag.layers.cells.spiking_cell.SpikingReservoirCell`
+- `LIFCell` — a `resdag.layers.cells.spiking_cell.SpikingReservoirCell`
   whose sub-threshold dynamics are a discretised leaky integrator; owns the
-  frozen recurrent weight ``W_rec``, the feedback / input weights and bias.
+  frozen recurrent weight `W_rec`, the feedback / input weights and bias.
 
-Two variants share one class, selected by ``synaptic_current``:
+Two variants share one class, selected by `synaptic_current`:
 
-* **First-order LIF** (default): a single membrane state ``V``,
+* **First-order LIF** (default): a single membrane state `V`,
 
-  .. math::
+  $$
+  V_{t+1} = \beta\, V_t + (1 - \beta)\,\big(W_\text{rec} s_t + W_\text{fb} x_{fb}
+            + W_\text{in} u + b\big), \qquad \beta = e^{-\Delta t / \tau_\text{mem}},
+  $$
 
-      V_{t+1} = \beta\, V_t + (1 - \beta)\,\big(W_\text{rec} s_t + W_\text{fb} x_{fb}
-                + W_\text{in} u + b\big), \qquad \beta = e^{-\Delta t / \tau_\text{mem}},
+  with recurrent spike feedback $s_t$ (the previous step's spikes).
 
-  with recurrent spike feedback :math:`s_t` (the previous step's spikes).
+* **Current-based LIF (CuBa-LIF)** (`synaptic_current=True`): a second-order
+  model with an extra synaptic-current state `I`,
 
-* **Current-based LIF (CuBa-LIF)** (``synaptic_current=True``): a second-order
-  model with an extra synaptic-current state ``I``,
-
-  .. math::
-
-      I_{t+1} &= \alpha\, I_t + \big(W_\text{rec} s_t + W_\text{fb} x_{fb}
-                 + W_\text{in} u + b\big), \qquad \alpha = e^{-\Delta t / \tau_\text{syn}}, \\
-      V_{t+1} &= \beta\, V_t + (1 - \beta)\, I_{t+1}.
+  $$
+  \begin{aligned}
+  I_{t+1} &= \alpha\, I_t + \big(W_\text{rec} s_t + W_\text{fb} x_{fb}
+             + W_\text{in} u + b\big), \qquad \alpha = e^{-\Delta t / \tau_\text{syn}}, \\
+  V_{t+1} &= \beta\, V_t + (1 - \beta)\, I_{t+1}.
+  \end{aligned}
+  $$
 
 Continuous inputs enter as **injected current** (the drive term above) — the
 standard analog-input convention for an LSM driven by a real-valued signal
@@ -38,16 +40,16 @@ front-end can always be prepended by the user.
 
 State packing
 -------------
-The packed state carries the previous spikes ``s`` as an extra neuron tensor so
-:meth:`neuron_update` can add the recurrent term :math:`W_\text{rec} s` without
+The packed state carries the previous spikes `s` as an extra neuron tensor so
+`neuron_update` can add the recurrent term $W_\text{rec} s$ without
 the base having to thread spikes separately.  The layouts are
 
-* first-order LIF: ``[V | s | r]`` (:attr:`n_state_tensors` = 3),
-* CuBa-LIF:        ``[I | V | s | r]`` (:attr:`n_state_tensors` = 4),
+* first-order LIF: `[V | s | r]` (`n_state_tensors` = 3),
+* CuBa-LIF:        `[I | V | s | r]` (`n_state_tensors` = 4),
 
-where ``r`` is the base-owned readout trace.  The membrane potential ``V`` is
-always the tensor immediately before ``s`` so the ``output="voltage"`` mode and
-the base's ``V``-extraction stay correct.
+where `r` is the base-owned readout trace.  The membrane potential `V` is
+always the tensor immediately before `s` so the `output="voltage"` mode and
+the base's `V`-extraction stay correct.
 
 See Also
 --------
@@ -82,11 +84,11 @@ class LIFCell(SpikingReservoirCell):
     r"""
     Single-timestep leaky integrate-and-fire (LIF) reservoir cell.
 
-    Owns the frozen recurrent weight ``W_rec`` (topology-initialised and
+    Owns the frozen recurrent weight `W_rec` (topology-initialised and
     spectral-radius scaled like an ESN), the feedback / driving-input weights and
     the bias.  The sub-threshold dynamics are a discretised leaky integrator; the
     surrogate spike, reset, and readout trace are inherited from
-    :class:`~resdag.layers.cells.spiking_cell.SpikingReservoirCell`.
+    `resdag.layers.cells.spiking_cell.SpikingReservoirCell`.
 
     Parameters
     ----------
@@ -95,60 +97,60 @@ class LIFCell(SpikingReservoirCell):
     feedback_size : int
         Dimension of the feedback signal.  Required.
     input_size : int, optional
-        Dimension of an optional driving input.  ``None`` (or ``0``) builds a
+        Dimension of an optional driving input.  `None` (or `0`) builds a
         feedback-only cell.
     tau_mem : float, default=20.0
-        Membrane time constant :math:`\tau_\text{mem} > 0` (same time units as
-        ``dt``).  Sets the membrane decay :math:`\beta = e^{-\Delta t/\tau_\text{mem}}`.
+        Membrane time constant $\tau_\text{mem} > 0$ (same time units as
+        `dt`).  Sets the membrane decay $\beta = e^{-\Delta t/\tau_\text{mem}}$.
     tau_syn : float, default=10.0
-        Synaptic time constant :math:`\tau_\text{syn} > 0`.  Only used when
-        ``synaptic_current=True`` (CuBa-LIF); sets :math:`\alpha = e^{-\Delta t/\tau_\text{syn}}`.
+        Synaptic time constant $\tau_\text{syn} > 0$.  Only used when
+        `synaptic_current=True` (CuBa-LIF); sets $\alpha = e^{-\Delta t/\tau_\text{syn}}$.
     dt : float, default=1.0
-        Integration timestep :math:`\Delta t > 0`.
+        Integration timestep $\Delta t > 0$.
     synaptic_current : bool, default=False
-        If ``True``, use the second-order CuBa-LIF model with an explicit
-        synaptic-current state ``I``; otherwise the first-order LIF.
+        If `True`, use the second-order CuBa-LIF model with an explicit
+        synaptic-current state `I`; otherwise the first-order LIF.
     v_threshold : float, default=1.0
-        Firing threshold (see :class:`SpikingReservoirCell`).
+        Firing threshold (see `SpikingReservoirCell`).
     reset : {'subtract', 'zero'}, default='subtract'
-        Membrane reset on a spike (see :class:`SpikingReservoirCell`).
+        Membrane reset on a spike (see `SpikingReservoirCell`).
     surrogate_beta : float, default=10.0
         Fast-sigmoid surrogate slope for the straight-through spike gradient.
     trace_decay : float, default=0.9
         Decay of the low-pass readout trace (the cell's real-valued output).
     output : {'trace', 'voltage', 'spikes'}, default='trace'
-        Readable-output mode.  ``'trace'`` (default) is the ridge-regressable
+        Readable-output mode.  `'trace'` (default) is the ridge-regressable
         filtered spike response — the LSM-correct choice.
     spectral_radius : float, optional
-        Target spectral radius for ``W_rec``.  Scales the recurrent spike-coupling
-        strength (how strongly one neuron's spikes drive its neighbours).  ``None``
-        leaves ``W_rec`` unscaled.
+        Target spectral radius for `W_rec`.  Scales the recurrent spike-coupling
+        strength (how strongly one neuron's spikes drive its neighbours).  `None`
+        leaves `W_rec` unscaled.
     bias : bool, default=True
-        Whether to include a bias current ``b``.
+        Whether to include a bias current `b`.
     bias_scaling : float, default=1.0
-        Scale of the random bias (``uniform(-bias_scaling, bias_scaling)``).
+        Scale of the random bias (`uniform(-bias_scaling, bias_scaling)`).
     trainable : bool, default=False
-        If ``True``, all weights participate in backpropagation (through the
-        surrogate spike gradient).  Frozen LSMs use ``False``.
+        If `True`, all weights participate in backpropagation (through the
+        surrogate spike gradient).  Frozen LSMs use `False`.
     feedback_initializer, input_initializer : spec, optional
         Initializers for the feedback / driving-input weights.  Same accepted
-        forms as :class:`~resdag.layers.cells.esn_cell.ESNCell`.
+        forms as `resdag.layers.cells.esn_cell.ESNCell`.
     topology : spec, optional
-        Structure of the recurrent weight ``W_rec``.  Same forms as ``ESNCell``.
+        Structure of the recurrent weight `W_rec`.  Same forms as `ESNCell`.
     seed : int or torch.Generator, optional
         Reproducibility seed for independent weight, bias and reset-state roles.
-        Integers and a generator's ``initial_seed()`` do not advance the caller's
-        RNG. ``None`` draws one master seed from Torch's CPU global RNG. Explicit
+        Integers and a generator's `initial_seed()` do not advance the caller's
+        RNG. `None` draws one master seed from Torch's CPU global RNG. Explicit
         initializer seeds and callback-owned generators retain their own policy.
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -159,20 +161,20 @@ class LIFCell(SpikingReservoirCell):
     Attributes
     ----------
     beta : float
-        Membrane decay :math:`\beta = e^{-\Delta t/\tau_\text{mem}}` (derived).
+        Membrane decay $\beta = e^{-\Delta t/\tau_\text{mem}}$ (derived).
     alpha : float
-        Synaptic-current decay :math:`\alpha = e^{-\Delta t/\tau_\text{syn}}`
-        (derived; only meaningful when ``synaptic_current=True``).
+        Synaptic-current decay $\alpha = e^{-\Delta t/\tau_\text{syn}}$
+        (derived; only meaningful when `synaptic_current=True`).
     weight_rec : torch.nn.Parameter
-        Recurrent spike-coupling weight ``W_rec``, shape
-        ``(reservoir_size, reservoir_size)``.
+        Recurrent spike-coupling weight `W_rec`, shape
+        `(reservoir_size, reservoir_size)`.
     weight_feedback : torch.nn.Parameter
-        Feedback weight ``W_fb``, shape ``(reservoir_size, feedback_size)``.
+        Feedback weight `W_fb`, shape `(reservoir_size, feedback_size)`.
     weight_input : torch.nn.Parameter or None
-        Driving-input weight ``W_in``, shape ``(reservoir_size, input_size)``, or
-        ``None``.
+        Driving-input weight `W_in`, shape `(reservoir_size, input_size)`, or
+        `None`.
     bias_h : torch.nn.Parameter or None
-        Bias current ``b``, shape ``(reservoir_size,)``, or ``None``.
+        Bias current `b`, shape `(reservoir_size,)`, or `None`.
 
     Examples
     --------
@@ -341,9 +343,9 @@ class LIFCell(SpikingReservoirCell):
         """
         bool : Whether the reservoir weights participate in backpropagation.
 
-        A *live* switch: assigning to it flips ``requires_grad_`` on **every**
-        cell parameter (``weight_rec``, ``weight_feedback``, ``weight_input``,
-        ``bias_h``).  With the surrogate-gradient spike this genuinely unfreezes
+        A *live* switch: assigning to it flips `requires_grad_` on **every**
+        cell parameter (`weight_rec`, `weight_feedback`, `weight_input`,
+        `bias_h`).  With the surrogate-gradient spike this genuinely unfreezes
         the LIF reservoir for a BPTT rollout.
         """
         return self._trainable
@@ -365,30 +367,30 @@ class LIFCell(SpikingReservoirCell):
         )
 
     def project_inputs(self, inputs: list[torch.Tensor]) -> torch.Tensor:
-        """Precompute the analog input drive ``W_fb x_fb + W_in u + b``.
+        """Precompute the analog input drive `W_fb x_fb + W_in u + b`.
 
         This is the *input-dependent* part of the neuron drive — the recurrent
-        spike term ``W_rec s`` is added inside :meth:`neuron_update` from the
+        spike term `W_rec s` is added inside `neuron_update` from the
         previous spikes carried in state.  Works on full
-        ``(batch, timesteps, features)`` sequences (the layer fast path) and on
-        single-step ``(batch, features)`` slices.
+        `(batch, timesteps, features)` sequences (the layer fast path) and on
+        single-step `(batch, features)` slices.
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            ``inputs[0]`` feedback; ``inputs[1]`` (optional) driving input.
+            `inputs[0]` feedback; `inputs[1]` (optional) driving input.
 
         Returns
         -------
         torch.Tensor
             Input drive with the inputs' leading dims and trailing dimension
-            ``reservoir_size``.
+            `reservoir_size`.
 
         Raises
         ------
         ValueError
             On a feedback / driving-input feature-dimension mismatch, or if a
-            driving input is supplied to a cell built without ``input_size``.
+            driving input is supplied to a cell built without `input_size`.
         """
         fb = inputs[0]
         if fb.shape[-1] != self.feedback_size:
@@ -422,27 +424,27 @@ class LIFCell(SpikingReservoirCell):
     ) -> tuple[tuple[torch.Tensor, ...], torch.Tensor]:
         r"""Advance the LIF (or CuBa-LIF) membrane one step and emit spikes.
 
-        The recurrent spike term :math:`W_\text{rec} s_t` is added here (from the
-        previous spikes ``s`` carried in ``neuron_state``), completing the drive
-        ``projected_input + W_rec s``.  Branch-free apart from the static
-        ``synaptic_current`` / reset selection, so it traces ``fullgraph=True``.
+        The recurrent spike term $W_\text{rec} s_t$ is added here (from the
+        previous spikes `s` carried in `neuron_state`), completing the drive
+        `projected_input + W_rec s`.  Branch-free apart from the static
+        `synaptic_current` / reset selection, so it traces `fullgraph=True`.
 
         Parameters
         ----------
         neuron_state : tuple of torch.Tensor
-            ``(V, s)`` for first-order LIF or ``(I, V, s)`` for CuBa-LIF, each of
-            shape ``(batch, reservoir_size)``.  ``s`` is the previous step's
-            spikes (recurrent input); ``I`` / ``V`` the current / membrane states.
+            `(V, s)` for first-order LIF or `(I, V, s)` for CuBa-LIF, each of
+            shape `(batch, reservoir_size)`.  `s` is the previous step's
+            spikes (recurrent input); `I` / `V` the current / membrane states.
         projected_input : torch.Tensor
-            Precomputed analog drive ``W_fb x_fb + W_in u + b``, shape
-            ``(batch, reservoir_size)``.
+            Precomputed analog drive `W_fb x_fb + W_in u + b`, shape
+            `(batch, reservoir_size)`.
 
         Returns
         -------
         new_neuron_state : tuple of torch.Tensor
-            ``(V_new, s_new)`` or ``(I_new, V_new, s_new)`` in packing order.
+            `(V_new, s_new)` or `(I_new, V_new, s_new)` in packing order.
         spikes : torch.Tensor
-            The spikes emitted this step (``== s_new``), carrying the surrogate
+            The spikes emitted this step (`== s_new`), carrying the surrogate
             gradient.
         """
         # Complete the drive with the recurrent spike-coupling term.
@@ -538,7 +540,7 @@ class LIFCell(SpikingReservoirCell):
             self.register_parameter("bias_h", None)
 
     def _scale_spectral_radius(self) -> None:
-        """Scale the recurrent weight ``W_rec`` to the target spectral radius."""
+        """Scale the recurrent weight `W_rec` to the target spectral radius."""
         assert self.spectral_radius is not None
         with torch.no_grad():
             scaled = scale_to_spectral_radius(self.weight_rec.data, self.spectral_radius)
@@ -546,7 +548,7 @@ class LIFCell(SpikingReservoirCell):
 
     @property
     def spectral_radius_achieved(self) -> float:
-        """float : Realized largest absolute eigenvalue of ``weight_rec``."""
+        """float : Realized largest absolute eigenvalue of `weight_rec`."""
         with torch.no_grad():
             return estimate_spectral_radius(self.weight_rec.data)
 

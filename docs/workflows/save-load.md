@@ -149,6 +149,18 @@ notebook_model = rd.load("notebook.pt", trusted=True)
 Both operations require the explicit flag. Only load a trusted bundle when
 you trust its producer: restoring bundled Python executes code. Normal portable
 checkpoints use restricted Torch loading and require no bundled Python.
+
+### Low-level graph checkpoints
+
+The raw graph, parallel and ensemble classes also provide weight checkpoints
+through `save`/`load`. Their metadata and custom extra state must contain tensors
+and primitive containers; unsupported Python objects are rejected before saving.
+Loading uses Torch's restricted `weights_only=True` mode. For complete portable
+models, prefer the common `Model.save`/`rd.load` workflow above.
+
+Raw `save_full` files pickle Python. Their corresponding `load_full` methods
+require `trusted=True` explicitly, before reading the file. Use this only for a
+known producer; the portable artifact format is the default recommendation.
 Bundles use the standard cloudpickle package and need a compatible Python and
 dependency environment; keep experiment environments pinned when archiving.
 

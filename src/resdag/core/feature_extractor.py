@@ -2,16 +2,16 @@
 Reservoir Feature Extractor
 ===========================
 
-This module provides :class:`ReservoirFeatureExtractor`, an ``nn.Module``
+This module provides `ReservoirFeatureExtractor`, an `nn.Module`
 adapter that packages one or more reservoir layers as a drop-in feature
-extractor for ordinary ``torch.nn`` pipelines.
+extractor for ordinary `torch.nn` pipelines.
 
 The "reservoir as a frozen feature extractor feeding a trainable head"
 pattern is the cleanest expression of the torch-pipeline philosophy: a fixed
 random recurrent map turns a sequence into a rich, high-dimensional feature
-stream, and any ``torch.nn`` head learns to read it out with a single
-optimizer.  :class:`ReservoirFeatureExtractor` makes that pattern a one-liner
-that composes directly inside :class:`torch.nn.Sequential`.
+stream, and any `torch.nn` head learns to read it out with a single
+optimizer.  `ReservoirFeatureExtractor` makes that pattern a one-liner
+that composes directly inside `torch.nn.Sequential`.
 
 See Also
 --------
@@ -33,24 +33,26 @@ from resdag.layers.reservoirs import BaseReservoirLayer, ESNLayer
 
 class ReservoirFeatureExtractor(nn.Module):
     """
-    ``nn.Sequential``-friendly reservoir feature extractor.
+    `nn.Sequential`-friendly reservoir feature extractor.
 
     Wraps one reservoir layer (or a stack of them) as a plain
-    :class:`torch.nn.Module` that maps a feedback sequence
-    ``(batch, timesteps, feedback_size)`` (plus an optional driving input) to
-    reservoir features ``(batch, timesteps, reservoir_size)``.  Because the
+    `torch.nn.Module` that maps a feedback sequence
+    `(batch, timesteps, feedback_size)` (plus an optional driving input) to
+    reservoir features `(batch, timesteps, reservoir_size)`.  Because the
     feedback-only case takes a single positional input, the extractor drops
-    straight into a :class:`torch.nn.Sequential` ahead of any trainable head::
+    straight into a `torch.nn.Sequential` ahead of any trainable head:
 
-        model = nn.Sequential(
-            ReservoirFeatureExtractor(reservoir_size=300, feedback_size=3),
-            nn.Linear(300, 3),
-        )
+    ```python
+    model = nn.Sequential(
+        ReservoirFeatureExtractor(reservoir_size=300, feedback_size=3),
+        nn.Linear(300, 3),
+    )
+    ```
 
     The reservoir is **frozen by default** (its parameters do not require
-    gradients), so a single optimizer over ``model.parameters()`` trains only
-    the head — the canonical reservoir-computing setup.  Pass ``trainable=True``
-    (or call :meth:`unfreeze`) to backpropagate through the recurrence as well.
+    gradients), so a single optimizer over `model.parameters()` trains only
+    the head — the canonical reservoir-computing setup.  Pass `trainable=True`
+    (or call `unfreeze`) to backpropagate through the recurrence as well.
 
     Stacking is supported: passing several feedback dimensions, or constructing
     the extractor from pre-built layers, chains the reservoirs so each consumes
@@ -60,40 +62,40 @@ class ReservoirFeatureExtractor(nn.Module):
     Parameters
     ----------
     reservoir_size : int or sequence of int, optional
-        Reservoir width.  An ``int`` builds a single reservoir; a sequence of
-        ``int`` builds a stack (one reservoir per entry, in order).  Required
-        unless ``layers`` is given.
+        Reservoir width.  An `int` builds a single reservoir; a sequence of
+        `int` builds a stack (one reservoir per entry, in order).  Required
+        unless `layers` is given.
     feedback_size : int, optional
         Dimension of the feedback signal entering the **first** reservoir.
-        Required unless ``layers`` is given.  For stacked reservoirs only the
+        Required unless `layers` is given.  For stacked reservoirs only the
         first layer's feedback size is taken from this argument; the feedback
         size of each subsequent layer is the previous layer's reservoir size.
     input_size : int, optional
         Dimension of an optional driving input fed to the first reservoir.  If
-        ``None`` (default), the extractor operates in the feedback-only,
-        single-positional-input mode required by :class:`torch.nn.Sequential`.
+        `None` (default), the extractor operates in the feedback-only,
+        single-positional-input mode required by `torch.nn.Sequential`.
     trainable : bool, default=False
-        If ``True``, the reservoir parameters require gradients (full BPTT
-        through the recurrence).  The default ``False`` freezes them, the
+        If `True`, the reservoir parameters require gradients (full BPTT
+        through the recurrence).  The default `False` freezes them, the
         standard reservoir-computing configuration.
     layers : BaseReservoirLayer or sequence of BaseReservoirLayer, optional
         Pre-built reservoir layer(s) to wrap directly instead of constructing
-        new ones.  Any :class:`~resdag.layers.reservoirs.BaseReservoirLayer`
-        subclass is accepted (``ESNLayer``, ``NGReservoirLayer``, future reservoir
-        types), not just :class:`ESNLayer`.  When given, ``reservoir_size`` /
-        ``feedback_size`` / ``input_size`` must be omitted (the layers already
-        define them), but ``trainable`` still applies as a freeze/unfreeze
+        new ones.  Any `resdag.layers.reservoirs.BaseReservoirLayer`
+        subclass is accepted (`ESNLayer`, `NGReservoirLayer`, future reservoir
+        types), not just `ESNLayer`.  When given, `reservoir_size` /
+        `feedback_size` / `input_size` must be omitted (the layers already
+        define them), but `trainable` still applies as a freeze/unfreeze
         toggle over the provided layers.  The layers are wrapped **by
         reference** — their parameters are shared, not copied.
     stateful : bool, default=True
-        Carry reservoir states between forward calls. Use ``False`` for
+        Carry reservoir states between forward calls. Use `False` for
         independent or shuffled minibatches: every call starts from zeros and
         leaves the wrapped layers' stored states untouched. Use
-        :meth:`forward_stateless` when state must be passed explicitly.
+        `forward_stateless` when state must be passed explicitly.
     **layer_kwargs
-        Extra keyword arguments forwarded to every :class:`ESNLayer` that this
-        constructor builds (for example ``spectral_radius``, ``leak_rate``,
-        ``activation``, ``topology``, ``seed``).  Ignored when ``layers`` is
+        Extra keyword arguments forwarded to every `ESNLayer` that this
+        constructor builds (for example `spectral_radius`, `leak_rate`,
+        `activation`, `topology`, `seed`).  Ignored when `layers` is
         provided.
 
     Attributes
@@ -102,17 +104,17 @@ class ReservoirFeatureExtractor(nn.Module):
         The wrapped reservoir layer(s), in feed order.
     output_size : int
         Feature dimension of the extractor's output (the last reservoir's
-        ``reservoir_size``).
+        `reservoir_size`).
 
     Raises
     ------
     ValueError
-        If neither ``layers`` nor ``(reservoir_size, feedback_size)`` is given,
-        if both forms are mixed, or if ``layers`` is empty.
+        If neither `layers` nor `(reservoir_size, feedback_size)` is given,
+        if both forms are mixed, or if `layers` is empty.
 
     Examples
     --------
-    Drop straight into a :class:`torch.nn.Sequential` and train the head with a
+    Drop straight into a `torch.nn.Sequential` and train the head with a
     single optimizer:
 
     >>> import torch
@@ -139,7 +141,7 @@ class ReservoirFeatureExtractor(nn.Module):
     ...     extractor.on_epoch_start()  # alias of reset_state()
     ...     # ... train one epoch ...
 
-    Reuse the reservoir of an existing :class:`~resdag.core.ESNModel` (shared,
+    Reuse the reservoir of an existing `resdag.core.ESNModel` (shared,
     not copied):
 
     >>> from resdag import ESNModel, ESNLayer, reservoir_input
@@ -193,7 +195,7 @@ class ReservoirFeatureExtractor(nn.Module):
 
     @property
     def _layers(self) -> list[BaseReservoirLayer]:
-        """Typed view of :attr:`reservoirs` (``nn.ModuleList`` erases the type)."""
+        """Typed view of `reservoirs` (`nn.ModuleList` erases the type)."""
         return [cast(BaseReservoirLayer, layer) for layer in self.reservoirs]
 
     # ------------------------------------------------------------------
@@ -225,7 +227,7 @@ class ReservoirFeatureExtractor(nn.Module):
         input_size: int | None,
         **layer_kwargs: object,
     ) -> list[BaseReservoirLayer]:
-        """Construct a stack of :class:`ESNLayer` from sizes."""
+        """Construct a stack of `ESNLayer` from sizes."""
         if reservoir_size is None or feedback_size is None:
             raise ValueError(
                 "Provide `reservoir_size` and `feedback_size` (or pass pre-built "
@@ -261,7 +263,7 @@ class ReservoirFeatureExtractor(nn.Module):
         """
         Build an extractor that reuses the reservoir layers of an existing model.
 
-        The reservoir layers of ``esn_model`` are wrapped **by reference** — the
+        The reservoir layers of `esn_model` are wrapped **by reference** — the
         returned extractor shares their parameters (and stateful buffers) with
         the source model, it does not copy them.  Training (or freezing) one
         therefore affects the other.
@@ -270,15 +272,15 @@ class ReservoirFeatureExtractor(nn.Module):
         ----------
         esn_model : torch.nn.Module
             A model containing one or more
-            :class:`~resdag.layers.reservoirs.BaseReservoirLayer` submodules
-            (typically an :class:`~resdag.core.ESNModel`).  Reservoirs are
-            collected in :func:`~torch.nn.Module.named_modules` order.
+            `resdag.layers.reservoirs.BaseReservoirLayer` submodules
+            (typically an `resdag.core.ESNModel`).  Reservoirs are
+            collected in `torch.nn.Module.named_modules` order.
         trainable : bool, default=False
             Freeze/unfreeze toggle applied to the shared reservoir layers after
             wrapping.  Because the layers are shared, this also changes
-            ``requires_grad`` on the source model's reservoir parameters.
+            `requires_grad` on the source model's reservoir parameters.
         stateful : bool, default=True
-            Carry state between calls. ``False`` leaves the source model's
+            Carry state between calls. `False` leaves the source model's
             stored states untouched and processes independent sequences.
 
         Returns
@@ -289,7 +291,7 @@ class ReservoirFeatureExtractor(nn.Module):
         Raises
         ------
         ValueError
-            If ``esn_model`` contains no reservoir layers.
+            If `esn_model` contains no reservoir layers.
 
         Notes
         -----
@@ -336,15 +338,15 @@ class ReservoirFeatureExtractor(nn.Module):
         Parameters
         ----------
         feedback : torch.Tensor
-            Feedback signal of shape ``(batch, timesteps, feedback_size)``.
+            Feedback signal of shape `(batch, timesteps, feedback_size)`.
         *driving_inputs : torch.Tensor
-            Optional driving input of shape ``(batch, timesteps, input_size)``,
+            Optional driving input of shape `(batch, timesteps, input_size)`,
             passed to the **first** reservoir only.  At most one is supported.
 
         Returns
         -------
         torch.Tensor
-            Reservoir features of shape ``(batch, timesteps, output_size)``.
+            Reservoir features of shape `(batch, timesteps, output_size)`.
 
         Raises
         ------
@@ -353,10 +355,10 @@ class ReservoirFeatureExtractor(nn.Module):
 
         Notes
         -----
-        With ``stateful=True`` (the default), state carries across calls until
-        :meth:`reset_state` is invoked. With ``stateful=False``, every call
+        With `stateful=True` (the default), state carries across calls until
+        `reset_state` is invoked. With `stateful=False`, every call
         starts from zeros. When the extractor sits inside a
-        :class:`torch.nn.Sequential` only ``feedback`` is passed, satisfying
+        `torch.nn.Sequential` only `feedback` is passed, satisfying
         the single-positional-input contract.
         """
         if len(driving_inputs) > 1:
@@ -382,14 +384,13 @@ class ReservoirFeatureExtractor(nn.Module):
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
         """Extract features with explicit state, without changing stored states.
 
-        ``feedback`` and the optional driver have shape ``(batch, time,
-        features)``. ``states`` contains one initial state per wrapped
+        `feedback` and the optional driver have shape `(batch, time, features)`. `states` contains one initial state per wrapped
         reservoir; omit it to start every reservoir from zeros. The result is
-        ``(features, final_states)``. Pass ``final_states`` into a later call
+        `(features, final_states)`. Pass `final_states` into a later call
         to continue the same stream. States retain their autograd graphs;
         detach them explicitly to truncate gradients between chunks.
 
-        ``compile=True`` opts into the layers' inference-only CUDA scan;
+        `compile=True` opts into the layers' inference-only CUDA scan;
         differentiable inputs or states keep the eager path.
         """
         if feedback.dim() != 3:
@@ -435,8 +436,8 @@ class ReservoirFeatureExtractor(nn.Module):
         ----------
         batch_size : int, optional
             If given, materialise a zero state with this batch size on each
-            reservoir's device/dtype.  If ``None`` (default), states are set to
-            ``None`` and lazily re-initialised on the next forward pass.
+            reservoir's device/dtype.  If `None` (default), states are set to
+            `None` and lazily re-initialised on the next forward pass.
 
         See Also
         --------
@@ -449,14 +450,14 @@ class ReservoirFeatureExtractor(nn.Module):
         """
         Epoch-reset hook: re-zero the stateful reservoir between epochs.
 
-        A thin, intent-revealing alias of :meth:`reset_state` meant to be
+        A thin, intent-revealing alias of `reset_state` meant to be
         called at the top of each training epoch so a trajectory left over from
         the previous epoch never bleeds into the next one.
 
         Parameters
         ----------
         batch_size : int, optional
-            Forwarded to :meth:`reset_state`.
+            Forwarded to `reset_state`.
 
         Examples
         --------
@@ -469,12 +470,12 @@ class ReservoirFeatureExtractor(nn.Module):
 
     def freeze(self) -> ReservoirFeatureExtractor:
         """
-        Freeze the reservoir: set ``requires_grad=False`` on all its parameters.
+        Freeze the reservoir: set `requires_grad=False` on all its parameters.
 
         Returns
         -------
         ReservoirFeatureExtractor
-            ``self``, to allow chaining.
+            `self`, to allow chaining.
         """
         for reservoir in self._layers:
             if hasattr(reservoir.cell, "trainable"):
@@ -485,12 +486,12 @@ class ReservoirFeatureExtractor(nn.Module):
 
     def unfreeze(self) -> ReservoirFeatureExtractor:
         """
-        Unfreeze the reservoir: set ``requires_grad=True`` on all its parameters.
+        Unfreeze the reservoir: set `requires_grad=True` on all its parameters.
 
         Returns
         -------
         ReservoirFeatureExtractor
-            ``self``, to allow chaining.
+            `self`, to allow chaining.
         """
         for reservoir in self._layers:
             if hasattr(reservoir.cell, "trainable"):
@@ -501,7 +502,7 @@ class ReservoirFeatureExtractor(nn.Module):
 
     @property
     def is_frozen(self) -> bool:
-        """bool: ``True`` when no wrapped reservoir parameter requires gradients."""
+        """bool: `True` when no wrapped reservoir parameter requires gradients."""
         return all(not p.requires_grad for p in self.reservoirs.parameters())
 
     @property

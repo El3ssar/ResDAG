@@ -119,12 +119,12 @@ class TrialProgress:
     """Own a pruning channel for one complete tuning call.
 
     Register a new callback for each job/stage, release it after that job has
-    finished, and call ``check`` after consuming a joblib window. A callback
+    finished, and call `check` after consuming a joblib window. A callback
     must be called serially by its one job. Reports and custom pruners execute
     in the parent; parallel mode uses one listener thread and a standard spawn
     manager, without launching model workers itself. Pruners must terminate:
     Python cannot forcibly interrupt an arbitrary blocked user callback.
-    ``response_timeout`` bounds waiting for a parent decision after submitting
+    `response_timeout` bounds waiting for a parent decision after submitting
     a report. It is not a hard operating-system deadline for manager RPCs or
     paused processes; standard manager IPC must remain responsive. Cleanup
     bounds its listener join and the manager's standard shutdown procedure.

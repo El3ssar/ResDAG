@@ -14,26 +14,26 @@ def erdos_renyi_adjacency(
     self_loops: bool = True,
     seed: int | np.random.Generator | None = None,
 ) -> np.ndarray:
-    """Build the dense weighted adjacency of an Erdős–Rényi ``G(n, p)`` graph.
+    """Build the dense weighted adjacency of an Erdős–Rényi `G(n, p)` graph.
 
     Vectorized NumPy construction of the same adjacency that
-    :func:`erdos_renyi_graph` describes, without materialising a NetworkX
-    object or the ``O(n^2)`` Python edge comprehension. Every candidate edge is
-    kept with probability ``p`` (a single ``rng.random((n, n)) < p`` draw) and
-    assigned a weight drawn uniformly from ``{-1, +1}``.
+    `erdos_renyi_graph` describes, without materialising a NetworkX
+    object or the `O(n^2)` Python edge comprehension. Every candidate edge is
+    kept with probability `p` (a single `rng.random((n, n)) < p` draw) and
+    assigned a weight drawn uniformly from `{-1, +1}`.
 
     Parameters
     ----------
     n : int
         Number of nodes.
     p : float
-        Probability of including each edge (in ``[0, 1]``).
+        Probability of including each edge (in `[0, 1]`).
     directed : bool, optional
-        If ``True``, every ordered pair is an independent candidate edge. If
-        ``False``, the upper triangle is drawn once and mirrored, yielding a
+        If `True`, every ordered pair is an independent candidate edge. If
+        `False`, the upper triangle is drawn once and mirrored, yielding a
         symmetric adjacency.
     self_loops : bool, optional
-        If ``True``, the diagonal is a candidate too; otherwise it is forced to
+        If `True`, the diagonal is a candidate too; otherwise it is forced to
         zero.
     seed : int or numpy.random.Generator or None, optional
         Seed for the random number generator.
@@ -41,8 +41,8 @@ def erdos_renyi_adjacency(
     Returns
     -------
     numpy.ndarray
-        An ``(n, n)`` ``float32`` weighted adjacency matrix with entries in
-        ``{-1, 0, +1}``.
+        An `(n, n)` `float32` weighted adjacency matrix with entries in
+        `{-1, 0, +1}`.
 
     See Also
     --------
@@ -86,11 +86,11 @@ def erdos_renyi_graph(
     """
     Generates an Erdos-Renyi (G(n, p)) graph.
 
-    Every possible edge is included with probability ``p``, independently of every other edge.
-    Weights on edges are chosen randomly from the set ``{-1, 1}``.
+    Every possible edge is included with probability `p`, independently of every other edge.
+    Weights on edges are chosen randomly from the set `{-1, 1}`.
 
     The adjacency is built with vectorized NumPy (see
-    :func:`erdos_renyi_adjacency`); the NetworkX object is materialised only for
+    `erdos_renyi_adjacency`); the NetworkX object is materialised only for
     direct callers. When this generator is used as a topology, the dense fast
     path skips NetworkX entirely.
 

@@ -37,12 +37,12 @@ def connected_watts_strogatz_graph(
     """
     Generates a **connected** Watts-Strogatz graph.
 
-    This function wraps :func:`watts_strogatz` with a decorator that attempts multiple
+    This function wraps `watts_strogatz` with a decorator that attempts multiple
     generations until a connected graph is obtained (up to a certain number of tries).
 
-    The direct-call path returns a NetworkX graph (via the ``@connected_graph``
+    The direct-call path returns a NetworkX graph (via the `@connected_graph`
     retry wrapper). When used as a topology, the adjacency-level fast path
-    (:func:`~resdag.init.utils.graph_tools.connected_adjacency`) retries the
+    (`resdag.init.utils.graph_tools.connected_adjacency`) retries the
     vectorized dense builder and checks weak connectivity with scipy, skipping
     the NetworkX round-trip entirely.
 
@@ -51,7 +51,7 @@ def connected_watts_strogatz_graph(
     n : int
         Number of nodes.
     k : int
-        Each node initially connects to ``k/2`` predecessors and ``k/2`` successors.
+        Each node initially connects to `k/2` predecessors and `k/2` successors.
     p : float
         Rewiring probability in the interval [0, 1].
     directed : bool, optional
@@ -64,7 +64,7 @@ def connected_watts_strogatz_graph(
 
     Notes
     -----
-    The ``tries`` argument is accepted by the ``@connected_graph`` wrapper, not
+    The `tries` argument is accepted by the `@connected_graph` wrapper, not
     this function's signature.
 
     Returns

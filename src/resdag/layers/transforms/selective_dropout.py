@@ -25,7 +25,7 @@ class SelectiveDropout(nn.Module):
     Input Shape:
         (batch, features) or (batch, timesteps, features) — the mask is applied
         on the feature (last) dimension, so both ranks are accepted. The
-        autoregressive :meth:`resdag.core.ESNModel.forecast` engine drives the
+        autoregressive `resdag.core.ESNModel.forecast` engine drives the
         graph one timestep at a time, which is why per-step layers must accept
         the singleton-time slice as well as the full sequence.
 
@@ -68,9 +68,9 @@ class SelectiveDropout(nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Apply selective dropout using the stored mask.
 
-        Handles both 2-D ``(batch, features)`` and 3-D
-        ``(batch, timesteps, features)`` inputs — the mask broadcasts over the
-        feature (last) dimension, mirroring :class:`~resdag.layers.readouts.ReadoutLayer`.
+        Handles both 2-D `(batch, features)` and 3-D
+        `(batch, timesteps, features)` inputs — the mask broadcasts over the
+        feature (last) dimension, mirroring `resdag.layers.readouts.ReadoutLayer`.
         Accepting the 2-D rank lets the layer sit in the autoregressive forecast
         path, where the flattened engine feeds single-step slices.
 

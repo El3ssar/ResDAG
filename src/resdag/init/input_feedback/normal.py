@@ -21,52 +21,51 @@ from .registry import register_input_feedback
 class NormalInputInitializer(InputFeedbackInitializer):
     """Gaussian (normal) initializer for input/feedback weight matrices.
 
-    Draws every entry independently from ``Normal(loc, scale)`` — the
+    Draws every entry independently from `Normal(loc, scale)` — the
     bread-and-butter dense Gaussian input matrix of the reservoir-computing
-    literature. Optionally sparsified per input channel via ``connectivity`` and
-    scaled uniformly via the shared ``input_scaling`` contract.
+    literature. Optionally sparsified per input channel via `connectivity` and
+    scaled uniformly via the shared `input_scaling` contract.
 
     This is the migration target for reservoirpy's
-    :func:`reservoirpy.mat_gen.normal` (and the ``"normal"`` distribution of
-    :func:`reservoirpy.mat_gen.random_sparse`).
+    `reservoirpy.mat_gen.normal` (and the `"normal"` distribution of
+    `reservoirpy.mat_gen.random_sparse`).
 
     Parameters
     ----------
     loc : float, optional
-        Mean of the Gaussian draw. Defaults to ``0.0``.
+        Mean of the Gaussian draw. Defaults to `0.0`.
     scale : float, optional
         Standard deviation of the Gaussian draw (must be non-negative). Defaults
-        to ``1.0``.
+        to `1.0`.
     connectivity : float, optional
         Density knob from the shared scaling contract (see
-        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`): the
+        `resdag.init.input_feedback.InputFeedbackInitializer`): the
         fraction of nonzero entries kept per column (input channel), in
-        ``(0, 1]``. ``None`` (the default) leaves the dense matrix untouched;
-        ``connectivity=0.1`` keeps ~10% of each column's entries (at least one),
+        `(0, 1]`. `None` (the default) leaves the dense matrix untouched;
+        `connectivity=0.1` keeps ~10% of each column's entries (at least one),
         zeroing the rest. The kept fraction is statistically exact:
-        ``round(connectivity * reservoir_size)`` entries per column.
+        `round(connectivity * reservoir_size)` entries per column.
     input_scaling : float, optional
-        Uniform magnitude knob from the shared scaling contract. ``None`` (the
-        default) applies no scaling; a float ``s`` multiplies every entry by
-        ``s``, so ``max|W|`` scales linearly with ``s`` (``input_scaling=0.5``
+        Uniform magnitude knob from the shared scaling contract. `None` (the
+        default) applies no scaling; a float `s` multiplies every entry by
+        `s`, so `max|W|` scales linearly with `s` (`input_scaling=0.5`
         halves it).
     seed : int, torch.Generator, or None, optional
         Reproducibility seed for the Gaussian draw *and* the connectivity mask.
-        Accepts a plain ``int``, a :class:`torch.Generator` (whose
-        ``initial_seed()`` is used, so a generator and the equivalent int
-        agree), or ``None`` (defer to torch's global RNG). The value draw is
+        Accepts a plain `int`, a `torch.Generator` (whose
+        `initial_seed()` is used, so a generator and the equivalent int
+        agree), or `None` (defer to torch's global RNG). The value draw is
         **device-native**: it happens directly on the target weight's device via
-        a torch generator, so the same ``seed`` is reproducible per device (CPU
+        a torch generator, so the same `seed` is reproducible per device (CPU
         and CUDA each reproduce, though their RNG streams differ from each
         other).
 
     Notes
     -----
-    The produced matrix is a pure function of ``(loc, scale, connectivity,
-    input_scaling, seed, shape, device)``: repeated calls on the same instance
+    The produced matrix is a pure function of `(loc, scale, connectivity, input_scaling, seed, shape, device)`: repeated calls on the same instance
     with equal shapes on the same device yield identical matrices. Pass
-    ``seed=None`` for a draw tied to torch's global RNG (reproducible under
-    ``torch.manual_seed``).
+    `seed=None` for a draw tied to torch's global RNG (reproducible under
+    `torch.manual_seed`).
 
     Examples
     --------
@@ -107,18 +106,18 @@ class NormalInputInitializer(InputFeedbackInitializer):
         self.scale = scale
 
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
-        """Initialize ``weight`` with ``Normal(loc, scale)`` entries.
+        """Initialize `weight` with `Normal(loc, scale)` entries.
 
         Parameters
         ----------
         weight : torch.Tensor
-            Weight tensor of shape ``(out_features, in_features)``. Modified
+            Weight tensor of shape `(out_features, in_features)`. Modified
             in-place.
         **kwargs
-            Per-call keyword overrides. Recognized ``input_scaling`` and
-            ``connectivity`` keys override the bound attributes for this call
+            Per-call keyword overrides. Recognized `input_scaling` and
+            `connectivity` keys override the bound attributes for this call
             only (the shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored.
 
         Returns

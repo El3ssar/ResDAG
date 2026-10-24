@@ -2,16 +2,16 @@
 Power Augmented ESN Architecture
 ================================
 
-This module provides :func:`power_augmented`, which builds an ESN model that
+This module provides `power_augmented`, which builds an ESN model that
 augments the reservoir state by raising **every** unit to a configurable
-``exponent`` before concatenating with the input and feeding the readout.
+`exponent` before concatenating with the input and feeding the readout.
 
-It generalises the state augmentation of :func:`ott_esn`: where ``ott_esn``
+It generalises the state augmentation of `ott_esn`: where `ott_esn`
 squares only the even-indexed units, this factory exponentiates all units by a
 free exponent, so the exponent becomes a hyperparameter you can sweep. The
-default ``exponent=3.0`` is an odd integer, which preserves the sign of the
-(signed, ``[-1, 1]``) ``tanh`` reservoir states — see the ``exponent`` notes in
-:func:`power_augmented` for the trade-offs of other exponents.
+default `exponent=3.0` is an odd integer, which preserves the sign of the
+(signed, `[-1, 1]`) `tanh` reservoir states — see the `exponent` notes in
+`power_augmented` for the trade-offs of other exponents.
 
 References
 ----------
@@ -65,9 +65,11 @@ def power_augmented(
     This model augments reservoir states by exponentiating to a power and concatenating with input.
     This augmentation helps capture higher-order dynamics in chaotic systems.
 
-    Architecture::
+    Architecture:
 
-        Input -> Reservoir -> Power -> Concatenate(Input, Augmented) -> Readout
+    ```text
+    Input -> Reservoir -> Power -> Concatenate(Input, Augmented) -> Readout
+    ```
 
     Parameters
     ----------
@@ -79,26 +81,26 @@ def power_augmented(
         Dimension of output signal.
     exponent : float, default=3.0
         Exponent applied to **every** reservoir state. Tanh reservoir states
-        live in ``[-1, 1]`` and routinely include negative and zero values, so
+        live in `[-1, 1]` and routinely include negative and zero values, so
         the exponent must be chosen with that signed range in mind (see Notes).
-        The default ``3.0`` is an odd integer and therefore *sign-preserving*;
-        an even exponent such as ``2.0`` maps every state to a non-negative
+        The default `3.0` is an odd integer and therefore *sign-preserving*;
+        an even exponent such as `2.0` maps every state to a non-negative
         value and so discards the sign of the reservoir activations.
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
-        model takes two inputs ``(feedback, driver)`` and the driver feeds the
+        model takes two inputs `(feedback, driver)` and the driver feeds the
         reservoir alongside the autoregressive feedback.  The driver is kept out
-        of the input concatenation, so the readout ``in_features`` stays
-        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        of the input concatenation, so the readout `in_features` stays
+        `feedback_size + reservoir_size`.  `None` (default) builds a
         feedback-only model, unchanged from previous behavior.
     input_initializer : str, tuple, or InputFeedbackInitializer, optional
         Initializer for the driving-input weights.  Same format as
-        ``feedback_initializer``.  Only used when ``input_size`` is given.
+        `feedback_initializer`.  Only used when `input_size` is given.
     topology : str, tuple, or TopologyInitializer, optional
         Topology for recurrent weights. Accepts:
 
-        - str: Registry name (e.g., ``"erdos_renyi"``)
-        - tuple: ``(name, params)`` like ``("watts_strogatz", {"k": 6, "p": 0.1})``
+        - str: Registry name (e.g., `"erdos_renyi"`)
+        - tuple: `(name, params)` like `("watts_strogatz", {"k": 6, "p": 0.1})`
         - TopologyInitializer: Pre-configured object
 
     spectral_radius : float, default=0.9
@@ -106,7 +108,7 @@ def power_augmented(
     leak_rate : float, default=1.0
         Leaky integration rate. 1.0 = no leaking (standard ESN).
     feedback_initializer : str, tuple, or InputFeedbackInitializer, optional
-        Initializer for feedback weights. Same format as ``topology``.
+        Initializer for feedback weights. Same format as `topology`.
     activation : {'tanh', 'relu', 'sigmoid', 'identity'}, default='tanh'
         Activation function for reservoir neurons.
     bias : bool, default=True
@@ -114,10 +116,10 @@ def power_augmented(
     trainable : bool, default=False
         If True, reservoir weights are trainable via backpropagation.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         L2 regularization strength for ridge regression in readout.
     readout_bias : bool, default=True
@@ -125,10 +127,10 @@ def power_augmented(
     readout_name : str, default='output'
         Name for the readout layer. Used as target key in training.
     readout_kwargs : dict, optional
-        Extra readout constructor options, including ``trainable``, ``rcond``,
-        ``state_noise`` or ``gram_dtype``. Architecture widths are fixed.
+        Extra readout constructor options, including `trainable`, `rcond`,
+        `state_noise` or `gram_dtype`. Architecture widths are fixed.
     **reservoir_kwargs
-        Additional keyword arguments passed to :class:`ESNLayer`.
+        Additional keyword arguments passed to `ESNLayer`.
 
     Returns
     -------
@@ -137,23 +139,23 @@ def power_augmented(
 
     Notes
     -----
-    The augmentation applies :class:`~resdag.layers.Power` to the raw reservoir
-    states, which for a ``tanh`` activation lie in ``[-1, 1]`` — negatives and
-    zeros included. Choose ``exponent`` accordingly:
+    The augmentation applies `resdag.layers.Power` to the raw reservoir
+    states, which for a `tanh` activation lie in `[-1, 1]` — negatives and
+    zeros included. Choose `exponent` accordingly:
 
-    - **Even integers** (``2.0``, ``4.0``, …) are always safe: every state maps
-      to a non-negative value with no ``nan``/``inf``.
-    - **Odd integers** (``3.0``, ``5.0``, …) are safe and *sign-preserving*:
+    - **Even integers** (`2.0`, `4.0`, …) are always safe: every state maps
+      to a non-negative value with no `nan`/`inf`.
+    - **Odd integers** (`3.0`, `5.0`, …) are safe and *sign-preserving*:
       negative states stay negative.
-    - **Non-integer exponents** (e.g. ``0.5``, ``1.5``) applied to a *negative*
-      state produce ``nan`` under the default :func:`torch.pow`, silently
-      corrupting the readout inputs. **Negative exponents** (e.g. ``-1.0``)
-      produce ``inf`` on the zeros that ``tanh`` states pass through.
+    - **Non-integer exponents** (e.g. `0.5`, `1.5`) applied to a *negative*
+      state produce `nan` under the default `torch.pow`, silently
+      corrupting the readout inputs. **Negative exponents** (e.g. `-1.0`)
+      produce `inf` on the zeros that `tanh` states pass through.
 
     If you need a non-integer exponent on signed states, wire the model by hand
-    with ``Power(exponent, sign_preserving=True)``, which applies
-    ``sign(x) * abs(x) ** exponent`` and stays finite for negative bases. This
-    factory always uses the default (non-sign-preserving) ``Power`` to keep the
+    with `Power(exponent, sign_preserving=True)`, which applies
+    `sign(x) * abs(x) ** exponent` and stays finite for negative bases. This
+    factory always uses the default (non-sign-preserving) `Power` to keep the
     well-established integer-exponent behaviour unchanged.
 
     Examples

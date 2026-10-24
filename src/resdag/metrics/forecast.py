@@ -3,15 +3,15 @@
 The headline metric is the **valid prediction time** (VPT): how many steps a
 closed-loop forecast tracks the true trajectory before its normalised error
 first crosses a threshold.  It is the standard way to compare predictive skill
-on chaotic systems and — via :func:`resdag.metrics.steps_to_lyapunov` — is best
+on chaotic systems and — via `resdag.metrics.steps_to_lyapunov` — is best
 reported in Lyapunov times so it is comparable across systems and integration
 steps.
 
-:func:`valid_prediction_time` defines truth-window normalization and reduction
+`valid_prediction_time` defines truth-window normalization and reduction
 of per-step errors across the batch. The golden-forecast helper delegates to
-this implementation. The NumPy :func:`resdag.hpo.losses.forecast_horizon`
+this implementation. The NumPy `resdag.hpo.losses.forecast_horizon`
 retains the corresponding truth-window convention for raw HPO workflows.
-The common ``model.tune`` workflow instead fixes scales from training labels
+The common `model.tune` workflow instead fixes scales from training labels
 and aggregates individual forecast horizons. State the normalization and batch
 reduction when comparing reported horizons; these are distinct protocols.
 """
@@ -45,10 +45,10 @@ def _infer_dt_lambda(
     lambda_max: float | None,
     **kw: float,
 ) -> tuple[float, float]:
-    """Resolve ``(dt, lambda_max)`` from explicit args or a known dataset name.
+    """Resolve `(dt, lambda_max)` from explicit args or a known dataset name.
 
-    Explicit ``dt`` / ``lambda_max`` always win; any left ``None`` are filled in
-    from the canonical tables keyed by ``dataset``.
+    Explicit `dt` / `lambda_max` always win; any left `None` are filled in
+    from the canonical tables keyed by `dataset`.
 
     Raises
     ------
@@ -95,18 +95,18 @@ def valid_prediction_time(
     """Valid Prediction Time: contiguous steps a forecast stays accurate.
 
     Per-step error is the **NRMSE** — the RMSE across feature channels, each
-    channel normalised by the per-dimension standard deviation of ``truth`` over
-    the ``(batch, time)`` axes — reduced across the batch with the **median**.
+    channel normalised by the per-dimension standard deviation of `truth` over
+    the `(batch, time)` axes — reduced across the batch with the **median**.
     The VPT is the number of steps, counting from the start, whose error stays
-    strictly below ``threshold`` (``0`` if the very first step is already over).
+    strictly below `threshold` (`0` if the very first step is already over).
 
-    This matches :func:`resdag.hpo.losses.forecast_horizon` exactly (that copy
+    This matches `resdag.hpo.losses.forecast_horizon` exactly (that copy
     is kept out of the optional-HPO import path); see the module docstring.
 
     Parameters
     ----------
     pred, truth : torch.Tensor
-        Forecast and ground truth of shape ``(batch, time, dim)``.
+        Forecast and ground truth of shape `(batch, time, dim)`.
     threshold : float, default=0.3
         NRMSE threshold below which a step counts as "valid".
     metric : {"nrmse"}, default="nrmse"
@@ -114,33 +114,33 @@ def valid_prediction_time(
         standard); the argument exists for forward compatibility.
     units : {"steps", "lyapunov"}, default="steps"
         Return the horizon in raw steps, or converted to Lyapunov times
-        (``steps * dt * lambda_max``).  ``"lyapunov"`` needs ``dt`` and
-        ``lambda_max``, or a known ``dataset`` name to infer them.
+        (`steps * dt * lambda_max`).  `"lyapunov"` needs `dt` and
+        `lambda_max`, or a known `dataset` name to infer them.
     dt : float, optional
-        Integration step, required for ``units="lyapunov"`` unless inferable
-        from ``dataset``.
+        Integration step, required for `units="lyapunov"` unless inferable
+        from `dataset`.
     lambda_max : float, optional
-        Largest Lyapunov exponent, required for ``units="lyapunov"`` unless
-        inferable from a chaotic ``dataset``.
+        Largest Lyapunov exponent, required for `units="lyapunov"` unless
+        inferable from a chaotic `dataset`.
     dataset : str, optional
-        A built-in generator name (``"lorenz"``, ``"rossler"``,
-        ``"mackey_glass"``, ...) used to look up ``dt`` / ``lambda_max`` when
+        A built-in generator name (`"lorenz"`, `"rossler"`,
+        `"mackey_glass"`, ...) used to look up `dt` / `lambda_max` when
         they are not given explicitly.
     **kw
-        Extra keys forwarded to inference; ``tau=`` selects the Mackey-Glass
+        Extra keys forwarded to inference; `tau=` selects the Mackey-Glass
         exponent.
 
     Returns
     -------
     float
-        The VPT: an integer step count as a ``float`` when ``units="steps"``, or
-        the horizon in Lyapunov times when ``units="lyapunov"``.
+        The VPT: an integer step count as a `float` when `units="steps"`, or
+        the horizon in Lyapunov times when `units="lyapunov"`.
 
     Raises
     ------
     ValueError
-        If ``metric`` is not ``"nrmse"``, ``units`` is unknown, or
-        ``units="lyapunov"`` cannot resolve ``dt`` / ``lambda_max``.
+        If `metric` is not `"nrmse"`, `units` is unknown, or
+        `units="lyapunov"` cannot resolve `dt` / `lambda_max`.
 
     Examples
     --------

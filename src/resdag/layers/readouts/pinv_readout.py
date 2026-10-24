@@ -2,9 +2,9 @@
 Pseudo-Inverse Readout Layer
 ============================
 
-This module provides :class:`PinvReadoutLayer`, which solves the
-least-squares readout via ``torch.linalg.lstsq`` (default) or an explicit
-Moore–Penrose pseudo-inverse (``torch.linalg.pinv``), both with an ``rcond``
+This module provides `PinvReadoutLayer`, which solves the
+least-squares readout via `torch.linalg.lstsq` (default) or an explicit
+Moore–Penrose pseudo-inverse (`torch.linalg.pinv`), both with an `rcond`
 cutoff for rank-deficient design matrices.
 
 See Also
@@ -24,33 +24,33 @@ class PinvReadoutLayer(ReadoutLayer):
     """Readout layer solved via least squares / pseudo-inverse.
 
     Solves the (optionally centered) least-squares problem
-    ``min_W ||X W - Y||`` directly, without forming the Gram matrix, using one
+    `min_W ||X W - Y||` directly, without forming the Gram matrix, using one
     of:
 
-    - ``solver='lstsq'`` (default) — ``torch.linalg.lstsq`` with the ``gelsd``
+    - `solver='lstsq'` (default) — `torch.linalg.lstsq` with the `gelsd`
       driver, a divide-and-conquer SVD-based least-squares solver that returns
-      the minimum-norm solution for rank-deficient ``X`` and honours the
-      ``rcond`` cutoff.
-    - ``solver='pinv'`` — form the Moore–Penrose pseudo-inverse
-      ``torch.linalg.pinv(X, rcond=...)`` and apply it to ``Y``. Equivalent in
-      result but materialises the ``(F, N)`` pseudo-inverse explicitly.
+      the minimum-norm solution for rank-deficient `X` and honours the
+      `rcond` cutoff.
+    - `solver='pinv'` — form the Moore–Penrose pseudo-inverse
+      `torch.linalg.pinv(X, rcond=...)` and apply it to `Y`. Equivalent in
+      result but materialises the `(F, N)` pseudo-inverse explicitly.
 
     This is a pure least-squares readout: there is **no Tikhonov penalty**
-    (``alpha``). Regularisation comes only from the ``rcond`` truncation of
+    (`alpha`). Regularisation comes only from the `rcond` truncation of
     small singular values. If you need an explicit ridge penalty use
-    :class:`RidgeReadoutLayer` or :class:`SVDReadoutLayer` (which exposes both
-    ``alpha`` and ``rcond``).
+    `RidgeReadoutLayer` or `SVDReadoutLayer` (which exposes both
+    `alpha` and `rcond`).
 
     Solver-selection guide
     ----------------------
-    - **Reach for** :class:`PinvReadoutLayer` for unregularised least squares
+    - **Reach for** `PinvReadoutLayer` for unregularised least squares
       on a possibly rank-deficient design matrix when you want the
-      minimum-norm solution and don't need a Tikhonov ``alpha``.
-    - ``solver='lstsq'`` (default) is the right choice almost always — it never
-      materialises the pseudo-inverse. Use ``solver='pinv'`` only if you
+      minimum-norm solution and don't need a Tikhonov `alpha`.
+    - `solver='lstsq'` (default) is the right choice almost always — it never
+      materialises the pseudo-inverse. Use `solver='pinv'` only if you
       specifically want the pseudo-inverse matrix itself.
-    - For an explicit ridge penalty, prefer :class:`SVDReadoutLayer`
-      (filter factors, ``alpha`` + ``rcond``) or :class:`RidgeReadoutLayer`
+    - For an explicit ridge penalty, prefer `SVDReadoutLayer`
+      (filter factors, `alpha` + `rcond`) or `RidgeReadoutLayer`
       (Cholesky, fast, full rank).
 
     Parameters
@@ -60,36 +60,36 @@ class PinvReadoutLayer(ReadoutLayer):
     out_features : int
         Size of output features (prediction dimension).
     bias : bool, default=True
-        Whether to include a bias term. When ``True`` the data is centered and
-        an unpenalised intercept is recovered; when ``False`` the raw design
+        Whether to include a bias term. When `True` the data is centered and
+        an unpenalised intercept is recovered; when `False` the raw design
         matrix is used with no intercept.
     name : str, optional
         Name for this readout layer. Used for identification in multi-readout
-        architectures and as the key into ``targets`` by :class:`ESNTrainer`.
+        architectures and as the key into `targets` by `ESNTrainer`.
     trainable : bool, default=False
-        If ``True``, weights are trainable via backpropagation.
+        If `True`, weights are trainable via backpropagation.
     rcond : float, default=1e-15
         Relative cutoff for small singular values. Singular values at or below
-        ``rcond * s_max`` are dropped, making rank-deficient problems well
+        `rcond * s_max` are dropped, making rank-deficient problems well
         posed.
     solver : {'lstsq', 'pinv'}, default='lstsq'
-        Whether to solve with ``torch.linalg.lstsq`` or an explicit
-        ``torch.linalg.pinv``.
+        Whether to solve with `torch.linalg.lstsq` or an explicit
+        `torch.linalg.pinv`.
     use_float64 : bool, default=True
-        If ``True`` the least-squares solve runs in ``float64`` and the result
+        If `True` the least-squares solve runs in `float64` and the result
         is cast back to the parameter dtype.
     gram_dtype : torch.dtype, optional
-        Dtype for forming / casting the design matrix. Default ``None`` is
-        the solve dtype (``float64`` with ``use_float64=True``) on every
+        Dtype for forming / casting the design matrix. Default `None` is
+        the solve dtype (`float64` with `use_float64=True`) on every
         device. No Gram matrix is formed; the decomposition operates directly
         on the design matrix.
 
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or ``None`` if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or `None` if `bias=False`.
     rcond : float
         Relative singular-value cutoff.
     solver : str
@@ -107,7 +107,7 @@ class PinvReadoutLayer(ReadoutLayer):
 
     See Also
     --------
-    SVDReadoutLayer : SVD filter-factor readout with explicit ``alpha``.
+    SVDReadoutLayer : SVD filter-factor readout with explicit `alpha`.
     RidgeReadoutLayer : Cholesky / solve direct ridge readout.
     CGReadoutLayer : Iterative Conjugate Gradient ridge readout.
     resdag.training.ESNTrainer : Trainer that uses this for fitting.
@@ -147,17 +147,17 @@ class PinvReadoutLayer(ReadoutLayer):
         Parameters
         ----------
         states : torch.Tensor
-            Flattened state matrix of shape ``(N, in_features)``.
+            Flattened state matrix of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened target matrix of shape ``(N, out_features)``.
+            Flattened target matrix of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
+            Coefficient matrix of shape `(in_features, out_features)`.
         intercept : torch.Tensor or None
-            Intercept vector of shape ``(out_features,)``, or ``None`` when the
-            layer was built with ``bias=False``.
+            Intercept vector of shape `(out_features,)`, or `None` when the
+            layer was built with `bias=False`.
         """
         # No Tikhonov penalty here: the normal-equations Gram is unused, so
         # build the problem only to share the centering / precision machinery.

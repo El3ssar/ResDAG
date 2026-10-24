@@ -76,6 +76,22 @@ belong inside the DAG as ordinary layers.
 
 ## Use a preset graph
 
+For the ready-made vanilla model, choose its readout features explicitly:
+
+```python
+state_only = rd.ESN(
+    reservoir_size=64, input_size=2, input_to_readout=False,
+    washout=30, readout="svd", seed=7, dtype=torch.float64,
+).fit(train)
+state_only_prediction = state_only.forecast(horizon=40)
+assert state_only_prediction.shape == truth.shape
+```
+
+The default `input_to_readout=True` gives the head both reservoir memory and
+the current input. `False` gives it reservoir memory alone. `model.tune()`
+tries both for an unmodified vanilla recipe. A custom DAG can connect either
+set of features directly; OTT's augmented features keep their own wiring.
+
 Wrap a factory-built graph with the same model interface:
 
 ```python

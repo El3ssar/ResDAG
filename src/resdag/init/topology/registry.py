@@ -3,7 +3,7 @@ Topology Registry
 =================
 
 This module provides a registry of pre-configured graph topologies that can
-be referenced by name when creating :class:`~resdag.layers.ESNLayer`.
+be referenced by name when creating `resdag.layers.ESNLayer`.
 
 The registry allows convenient access to common topologies without needing
 to import graph functions directly.
@@ -36,6 +36,13 @@ from typing import Any, Callable
 
 from .base import GraphTopology, MatrixTopology, TopologyInitializer
 
+__all__ = [
+    "register_graph_topology",
+    "register_matrix_topology",
+    "get_topology",
+    "show_topologies",
+]
+
 # Registry of topology names to (builder_func, default_kwargs, wrapper_class,
 # prescaled).  wrapper_class is GraphTopology for NetworkX-based builders and
 # MatrixTopology for direct matrix builders.  ``prescaled`` flags builders that
@@ -59,7 +66,7 @@ def register_graph_topology(
 
     Registers a graph generation function in the topology registry at
     definition time, making it available for use with
-    :class:`~resdag.layers.ESNLayer`.
+    `resdag.layers.ESNLayer`.
 
     Parameters
     ----------
@@ -67,10 +74,10 @@ def register_graph_topology(
         Unique name for the topology.
     prescaled : bool, default=False
         Mark the topology as already carrying its own spectral structure (e.g.
-        ``spectral_cascade``'s graded per-clique radii). When ``True`` the
-        wrapper :class:`~resdag.init.topology.GraphTopology` skips the outer
-        :func:`~resdag.init.topology.scale_to_spectral_radius` rescale and warns
-        if a layer-level ``spectral_radius`` is also requested.
+        `spectral_cascade`'s graded per-clique radii). When `True` the
+        wrapper `resdag.init.topology.GraphTopology` skips the outer
+        `resdag.init.topology.scale_to_spectral_radius` rescale and warns
+        if a layer-level `spectral_radius` is also requested.
     **default_kwargs
         Default keyword arguments for the graph function.
 
@@ -94,9 +101,9 @@ def register_graph_topology(
 
     Notes
     -----
-    - Graph functions must accept ``n`` (number of nodes) as first parameter.
-    - Graph functions must return ``nx.Graph`` or ``nx.DiGraph`` with weighted edges.
-    - Registered topologies can be accessed via :func:`get_topology`.
+    - Graph functions must accept `n` (number of nodes) as first parameter.
+    - Graph functions must return `nx.Graph` or `nx.DiGraph` with weighted edges.
+    - Registered topologies can be accessed via `get_topology`.
     """
 
     def decorator(graph_func: Callable) -> Callable:
@@ -116,7 +123,7 @@ def register_matrix_topology(
     """
     Decorator to register a matrix-building function as a topology.
 
-    The complement of :func:`register_graph_topology` for builders that
+    The complement of `register_graph_topology` for builders that
     construct the recurrent weight matrix directly — no graph involved.
     Any logic that produces a square matrix qualifies.
 
@@ -126,11 +133,11 @@ def register_matrix_topology(
         Unique name for the topology.
     prescaled : bool, default=False
         Mark the topology as already fixing its own spectral structure (e.g.
-        ``orthogonal``'s unit singular values, or a prescribed full eigenvalue
+        `orthogonal`'s unit singular values, or a prescribed full eigenvalue
         spectrum). When
-        ``True`` the wrapper :class:`~resdag.init.topology.MatrixTopology` skips
-        the outer :func:`~resdag.init.topology.scale_to_spectral_radius` rescale
-        and warns if a layer-level ``spectral_radius`` is also requested.
+        `True` the wrapper `resdag.init.topology.MatrixTopology` skips
+        the outer `resdag.init.topology.scale_to_spectral_radius` rescale
+        and warns if a layer-level `spectral_radius` is also requested.
     **default_kwargs
         Default keyword arguments for the matrix function.
 
@@ -159,10 +166,10 @@ def register_matrix_topology(
 
     Notes
     -----
-    - Matrix functions must accept ``n`` (matrix size) as first parameter and
-      return an ``(n, n)`` ``torch.Tensor`` or ``numpy.ndarray``.
-    - Registered topologies are accessed via :func:`get_topology` or by name
-      in ``ESNLayer(topology="...")``, identically to graph topologies.
+    - Matrix functions must accept `n` (matrix size) as first parameter and
+      return an `(n, n)` `torch.Tensor` or `numpy.ndarray`.
+    - Registered topologies are accessed via `get_topology` or by name
+      in `ESNLayer(topology="...")`, identically to graph topologies.
     """
 
     def decorator(matrix_func: Callable) -> Callable:
@@ -184,15 +191,15 @@ def get_topology(
     Parameters
     ----------
     name : str
-        Name of the topology (e.g., ``"erdos_renyi"``, ``"watts_strogatz"``).
+        Name of the topology (e.g., `"erdos_renyi"`, `"watts_strogatz"`).
     **override_kwargs
         Keyword arguments to override default graph parameters.
 
     Returns
     -------
     TopologyInitializer
-        Configured topology initializer (:class:`GraphTopology` or
-        :class:`MatrixTopology`, depending on how the name was registered).
+        Configured topology initializer (`GraphTopology` or
+        `MatrixTopology`, depending on how the name was registered).
 
     Raises
     ------
@@ -247,9 +254,9 @@ def show_topologies(name: str | None = None) -> list[str] | None:
     Returns
     -------
     list of str or None
-        When ``name is None``, returns the sorted list of registered
-        topology names (in addition to printing them).  When ``name`` is
-        provided, returns ``None`` after printing the parameter table.
+        When `name is None`, returns the sorted list of registered
+        topology names (in addition to printing them).  When `name` is
+        provided, returns `None` after printing the parameter table.
 
     Raises
     ------

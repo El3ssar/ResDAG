@@ -32,7 +32,7 @@ def validate_sequence_inputs(
     label: str = "inputs",
     allow_empty: bool = True,
 ) -> None:
-    """Check aligned ``(batch, time, features)`` input streams once per call."""
+    """Check aligned `(batch, time, features)` input streams once per call."""
     if len(inputs) != len(feature_sizes):
         raise ValueError(
             f"{label} has {len(inputs)} tensors but the model expects "

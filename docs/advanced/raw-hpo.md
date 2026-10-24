@@ -282,7 +282,14 @@ without `memory_budget` imposes no memory admission policy.
 `run_hpo` returns a plain optuna study, so optuna's visualization module
 works on it directly: `optuna.visualization` for interactive plotly
 figures, `optuna.visualization.matplotlib` for static ones like the four
-below, drawn from a 70-trial study maximizing valid horizon on Lorenz.
+below. These plots replay the recorded Lorenz validation search from the
+[independent-trajectory robustness study](../project/phase-five-robustness.md):
+24 configurations, each scored across three validation trajectories, three
+reservoir seeds and three forecast starts. The objective is the median of
+trajectory medians at the 0.3 normalized-error threshold, in Lyapunov times.
+Final test forecasts are absent from this study and these plots. Scores at
+the ten-Lyapunov-time evaluation limit are lower bounds, not measured later
+forecast failures.
 
 ```python
 from optuna.visualization import plot_optimization_history   # plotly, interactive
@@ -292,14 +299,16 @@ plot_optimization_history(study)
 ```
 
 <figure markdown>
-![Optimization history of a 70-trial study](../assets/figures/hpo_history.png)
-<figcaption>Per-trial objective with the running best.</figcaption>
+![Optimization history of the recorded 24-configuration Lorenz validation study](../assets/figures/hpo_history.png)
+<figcaption>Recorded validation objectives and their running best. Failed
+trials retain their failed state and supply no completed score.</figcaption>
 </figure>
 
 <figure markdown>
 ![Hyperparameter importances](../assets/figures/hpo_importances.png)
-<figcaption>Relative importance of each hyperparameter for the
-objective.</figcaption>
+<figcaption>Optuna PED-ANOVA estimates of parameter importance within this
+small validation search. They describe this sampled region and objective; they
+are not causal effects or conclusions about final-test accuracy.</figcaption>
 </figure>
 
 <figure markdown>
@@ -310,8 +319,9 @@ individually.</figcaption>
 
 <figure markdown>
 ![Contour of the objective over spectral radius and leak rate](../assets/figures/hpo_contour.png)
-<figcaption>The spectral-radius × leak-rate landscape around the
-optimum.</figcaption>
+<figcaption>Optuna interpolation of sampled validation scores over spectral
+radius and leak rate. Other settings also vary, so this is not an isolated
+two-parameter experiment or evidence of an optimum between observations.</figcaption>
 </figure>
 
 ## Next

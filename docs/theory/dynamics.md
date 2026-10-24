@@ -55,9 +55,11 @@ W_{rec} \leftarrow \frac{\rho_{\text{target}}}{\rho(W_{rec})}\, W_{rec},
 \qquad \rho(W) = \max_i |\lambda_i(W)|
 $$
 
-(`scale_to_spectral_radius` in `init/topology/base.py`; a matrix with
-$\rho \le 10^{-8}$ — the `zero` topology, nilpotent ring structures — is
-left unscaled rather than divided by zero.) A bare `ESNLayer` defaults to
+(`scale_to_spectral_radius` in `init/topology/base.py`.) Every positive measured
+radius can be rescaled, including values smaller than $10^{-8}$. An exactly
+zero radius cannot be multiplied into a positive one: zero and nilpotent
+matrices retain their weights and emit a warning for a positive target.
+A bare `ESNLayer` defaults to
 `spectral_radius=None`, meaning *no scaling at all*; the premade factories
 pass `0.9`.
 
@@ -65,8 +67,9 @@ pass `0.9`.
 forgets initial conditions: two copies started from different states and
 driven by the same input must converge. $\rho < 1$ is the standard
 heuristic for this, and a good default — but it is neither necessary nor
-sufficient. It guarantees only local stability of the zero-input
-linearization; a strongly driven `tanh` reservoir can keep the ESP well
+sufficient for a general driven nonlinear reservoir. In the special case of
+zero bias and a `tanh` reservoir at its zero fixed point, it gives local
+stability of the unforced linearization. A strongly driven reservoir can keep the ESP well
 above $\rho = 1$, because the input pushes units into their saturating
 region where the effective gain drops. The property can be measured
 directly: `esp_index` (importable as `from resdag import esp_index`) runs one
@@ -75,18 +78,21 @@ states
 $\mathcal N(0,1)$ (the same convention as `set_random_reservoir_states`)
 under the same input, and reports $\overline{\lVert h^{\text{base}}_t -
 h^{\text{rand}}_t \rVert}$ averaged over time, batch, and restarts. An
-index near zero means the trajectories merged and the ESP holds for that
-input signal; a plateau means the reservoir still remembers where it
+index near zero means the tested trajectories merged for that finite input
+window; it is empirical evidence, not a proof for all inputs or initial states.
+A plateau means the reservoir still remembers where it
 started. Because a healthy reservoir converges fast, the full-window mean
 is dominated by the early transient — pass `window=k` to average only the
 last `k` steps (the asymptotic regime), and `relative=True` to normalise by
 the base-state norm for a scale-free index comparable across reservoirs.
 
-**Leak rate as timescale.** The leak makes forgetting explicit: the
-$h_{t-1}$ contribution decays by $(1-\alpha)$ per step, a relaxation time
-of $\tau = -1/\ln(1-\alpha) \approx 1/\alpha$ steps. `leak_rate=0.1` gives
-the reservoir an intrinsic memory of roughly ten steps, appropriate when
-the input evolves much more slowly than the sampling rate.
+**Leak rate as timescale.** For $0 < \alpha < 1$, the direct retained-state
+term has decay factor $(1-\alpha)$ and relaxation time
+$\tau = -1/\ln(1-\alpha) \approx 1/\alpha$ steps for small $\alpha$.
+This describes that term, not the full reservoir's memory. The recurrent
+candidate also depends on the old state; its local Jacobian is
+$(1-\alpha)I + \alpha\,\mathrm{diag}(f')W_{rec}$. Recurrent weights, the
+driving signal and saturation therefore also determine memory and stability.
 
 ---
 
@@ -98,21 +104,17 @@ $$
 h_t(-u, -d \mid -h_{t-1}) = -\,h_t(u, d \mid h_{t-1})
 $$
 
-so the entire input-to-state operator satisfies $H(-x) = -H(x)$ — negate
-the input sequence and every state trajectory negates exactly. The
-reservoir is then structurally blind to the sign of the data: any system
-with a mirror symmetry (Lorenz under $(x,y,z) \mapsto (-x,-y,z)$ is the
-classic case) gets two attractors mapped onto perfectly antisymmetric
-state sets, and forecasts can slip onto the mirror copy. A fixed random
-bias $b \sim \mathcal U(-\beta, \beta)$ breaks the identity at every
-unit.
+so the zero-initialized input-to-state operator satisfies $H(-x) = -H(x)$.
+It distinguishes opposite inputs, but its features obey an odd-symmetry
+constraint. A linear readout of those features has the same odd part plus
+its intercept, which can restrict fitting a target with different symmetry.
+This global sign reversal differs from Lorenz's partial reflection
+$(x,y,z) \mapsto (-x,-y,z)$; one does not imply the other.
 
-!!! warning "Changed in 0.5"
-    Before 0.5, `bias=True` allocated a bias that was zero-initialized and
-    frozen — effectively no bias at all. Since 0.5 the bias is drawn from
-    $\mathcal U(-\beta, \beta)$ with $\beta$ = `bias_scaling` (default
-    1.0, matching the feedback/input weight scale). Set
-    `bias_scaling=0.0` to reproduce the legacy zero-bias dynamics.
+A fixed random bias $b \sim \mathcal U(-\beta,\beta)$ removes the enforced
+odd symmetry. `bias_scaling` controls $\beta$ (default 1.0); choose
+`bias=False` or `bias_scaling=0.0` for a zero-bias baseline. Whether bias helps
+prediction is a validation question, not a guarantee from symmetry alone.
 
 ---
 

@@ -1,6 +1,6 @@
 """Discover, register, and configure recurrent weight initializers.
 
-The registry is shared with :mod:`resdag.init.topology`: existing graph and
+The registry is shared with `resdag.init.topology`: existing graph and
 matrix registrations work with both APIs. A recurrent initializer specifies
 the recurrent weights; the reservoir cell specifies the state update equation.
 """
@@ -26,10 +26,10 @@ def register_recurrent_initializer(
 ) -> Callable[[Callable], Callable]:
     """Register a direct matrix builder in the shared recurrent registry.
 
-    Builders accept ``n`` followed by their parameters and return an ``(n, n)``
-    matrix. ``prescaled=True`` preserves a builder's spectral profile by
-    default; an explicit ``rescale=True`` configuration can override it.
-    Graph builders continue to use :func:`register_graph_topology`.
+    Builders accept `n` followed by their parameters and return an `(n, n)`
+    matrix. `prescaled=True` preserves a builder's spectral profile by
+    default; an explicit `rescale=True` configuration can override it.
+    Graph builders continue to use `register_graph_topology`.
     """
     return register_matrix_topology(name, prescaled=prescaled, **default_kwargs)
 
@@ -42,17 +42,16 @@ def get_recurrent_initializer(
 ) -> TopologyInitializer:
     """Configure a registered graph or matrix recurrent initializer.
 
-    ``rescale=None`` retains the registration's policy: ordinary builders are
+    `rescale=None` retains the registration's policy: ordinary builders are
     scaled to a requested layer radius, while prescaled builders preserve
     their own spectrum and warn on a conflicting layer radius.
-    ``rescale=False`` explicitly skips outer spectral estimation/scaling.
-    ``rescale=True`` explicitly applies a requested layer radius, even for a
+    `rescale=False` explicitly skips outer spectral estimation/scaling.
+    `rescale=True` explicitly applies a requested layer radius, even for a
     prescaled builder. With no layer radius, neither choice changes weights.
 
     For example, use
-    ``get_recurrent_initializer("fast_spectral_initialization",
-    spectral_radius=0.9, rescale=False)`` for FSI's approximate analytic scale
-    without an outer eigendecomposition. The old ``get_topology`` API and
+    `get_recurrent_initializer("fast_spectral_initialization", spectral_radius=0.9, rescale=False)` for FSI's approximate analytic scale
+    without an outer eigendecomposition. The old `get_topology` API and
     tuple specs continue forwarding arbitrary keywords to custom builders.
     """
     if rescale is not None and not isinstance(rescale, bool):
@@ -65,7 +64,7 @@ def get_recurrent_initializer(
 def show_recurrent_initializers(name: str | None = None) -> list[str] | None:
     """List all graph and matrix initializers, or inspect a named builder.
 
-    This is the same registry exposed by :func:`show_topologies`, so existing
+    This is the same registry exposed by `show_topologies`, so existing
     custom registrations are included automatically.
     """
     if name is not None:

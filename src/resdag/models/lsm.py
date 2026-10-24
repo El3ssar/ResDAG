@@ -2,47 +2,50 @@ r"""
 Liquid State Machine (LSM) Architecture
 =======================================
 
-This module provides the :func:`lsm` factory, which builds a spiking Liquid
+This module provides the `lsm` factory, which builds a spiking Liquid
 State Machine (Maass, Natschläger & Markram 2002) — a recurrent reservoir of
 leaky integrate-and-fire neurons whose real-valued **synaptic-trace** output is
 read out by a ridge regression.  The architecture mirrors
-:func:`~resdag.models.classic_esn` — the raw input is concatenated with the
-reservoir trace before the readout::
+`resdag.models.classic_esn` — the raw input is concatenated with the
+reservoir trace before the readout:
 
-    Input -> LIFReservoirLayer -> Concatenate(Input, trace) -> Readout
+```text
+Input -> LIFReservoirLayer -> Concatenate(Input, trace) -> Readout
+```
 
 The reservoir is the flagship *non-ESN* reservoir in resdag: spiking neurons with
 a surrogate-gradient spike (so the liquid is SGD-trainable) instead of the
-tanh-ESN recurrence.  See :mod:`resdag.layers.cells.lif_cell` and
-:mod:`resdag.layers.cells.spiking_cell` for the neuron model and attribution.
+tanh-ESN recurrence.  See `resdag.layers.cells.lif_cell` and
+`resdag.layers.cells.spiking_cell` for the neuron model and attribution.
 
-.. important::
-   **An LSM is for input-driven regression / classification, not closed-loop
-   chaos forecasting.** A Liquid State Machine (Maass 2002) maps a *driving*
-   signal to a high-dimensional filtered liquid state, and a readout regresses
-   that state onto a target — its use is driven tasks (a nonlinear function of
-   the input, temporal pattern discrimination, sequence classification). The
-   reservoir's output is a low-pass-filtered **spike trace**, *not* the feedback
-   variable, so it cannot be fed back to itself: a free-running autoregressive
-   forecast of a chaotic attractor is **not** what an LSM does, and its
-   valid-prediction-time on such a task will be poor — the unbounded linear
-   readout is fed back with no bounding nonlinearity, so the rollout may even
-   **diverge to infinity**. For autoregressive chaotic forecasting reach for
-   :func:`~resdag.models.ott_esn` / :func:`~resdag.models.classic_esn` or
-   :func:`~resdag.models.es2n` instead. Continuous inputs enter the liquid as
-   *injected current* (the standard analog-input convention for a
-   real-valued-driven LSM).
+**Important.**
 
-.. note::
-   **Drive the liquid hard enough to spike.** With the default unit-scale
-   feedback weights a spiking reservoir is easy to leave *silent* — if most
-   neurons never cross ``v_threshold`` the trace is all-zero and the readout has
-   nothing to fit (and a frozen ``W_rec`` then receives a zero, uninformative
-   gradient). Scale the input up and/or lower the threshold until a healthy
-   fraction of neurons fire — e.g. ``feedback_initializer=("normal",
-   {"input_scaling": 3.0})``, a smaller ``v_threshold`` (say ``0.5``), or a
-   nonzero ``bias_scaling``. A quick ``(reservoir(feedback) > 0).float().mean()``
-   on the trace (or watching ``output="spikes"``) tells you the firing rate.
+**An LSM is for input-driven regression / classification, not closed-loop
+chaos forecasting.** A Liquid State Machine (Maass 2002) maps a *driving*
+signal to a high-dimensional filtered liquid state, and a readout regresses
+that state onto a target — its use is driven tasks (a nonlinear function of
+the input, temporal pattern discrimination, sequence classification). The
+reservoir's output is a low-pass-filtered **spike trace**, *not* the feedback
+variable, so it cannot be fed back to itself: a free-running autoregressive
+forecast of a chaotic attractor is **not** what an LSM does, and its
+valid-prediction-time on such a task will be poor — the unbounded linear
+readout is fed back with no bounding nonlinearity, so the rollout may even
+**diverge to infinity**. For autoregressive chaotic forecasting reach for
+`resdag.models.ott_esn` / `resdag.models.classic_esn` or
+`resdag.models.es2n` instead. Continuous inputs enter the liquid as
+*injected current* (the standard analog-input convention for a
+real-valued-driven LSM).
+
+**Note.**
+
+**Drive the liquid hard enough to spike.** With the default unit-scale
+feedback weights a spiking reservoir is easy to leave *silent* — if most
+neurons never cross `v_threshold` the trace is all-zero and the readout has
+nothing to fit (and a frozen `W_rec` then receives a zero, uninformative
+gradient). Scale the input up and/or lower the threshold until a healthy
+fraction of neurons fire — e.g. `feedback_initializer=("normal", {"input_scaling": 3.0})`, a smaller `v_threshold` (say `0.5`), or a
+nonzero `bias_scaling`. A quick `(reservoir(feedback) > 0).float().mean()`
+on the trace (or watching `output="spikes"`) tells you the firing rate.
 
 References
 ----------
@@ -102,20 +105,23 @@ def lsm(
     r"""Build a spiking Liquid State Machine (LSM) model.
 
     The reservoir is a recurrent network of leaky integrate-and-fire neurons
-    (:class:`~resdag.layers.reservoirs.lif.LIFReservoirLayer`); its real-valued
+    (`resdag.layers.reservoirs.lif.LIFReservoirLayer`); its real-valued
     synaptic-trace output is concatenated with the raw input and read out by a
-    ridge regression, following the classic-ESN wiring::
+    ridge regression, following the classic-ESN wiring:
 
-        Input -> LIFReservoirLayer -> Concatenate(Input, trace) -> Readout
+    ```text
+    Input -> LIFReservoirLayer -> Concatenate(Input, trace) -> Readout
+    ```
 
-    .. important::
-       This is an **input-driven** reservoir (Maass 2002), *not* a closed-loop
-       chaos forecaster — the reservoir output is a filtered spike trace, not the
-       feedback variable, so it cannot autoregress on itself. Its use is driven
-       regression / classification, where a readout maps the filtered liquid
-       state to a target. For autoregressive chaotic forecasting use
-       :func:`~resdag.models.ott_esn`, :func:`~resdag.models.classic_esn`, or
-       :func:`~resdag.models.es2n`. Continuous inputs enter as injected current.
+    **Important.**
+
+    This is an **input-driven** reservoir (Maass 2002), *not* a closed-loop
+    chaos forecaster — the reservoir output is a filtered spike trace, not the
+    feedback variable, so it cannot autoregress on itself. Its use is driven
+    regression / classification, where a readout maps the filtered liquid
+    state to a target. For autoregressive chaotic forecasting use
+    `resdag.models.ott_esn`, `resdag.models.classic_esn`, or
+    `resdag.models.es2n`. Continuous inputs enter as injected current.
 
     Parameters
     ----------
@@ -127,23 +133,23 @@ def lsm(
         Number of output (target) features.
     input_size : int or None, optional
         Dimension of an optional second driving input.  When given, the model
-        takes two inputs ``(feedback, driver)``; the driver feeds the reservoir
+        takes two inputs `(feedback, driver)`; the driver feeds the reservoir
         but is kept out of the input concatenation, so the readout
-        ``in_features`` stays ``feedback_size + reservoir_size``.
+        `in_features` stays `feedback_size + reservoir_size`.
     input_initializer : InitializerSpec, optional
-        Initializer for the driving-input weights.  Only used when ``input_size``
+        Initializer for the driving-input weights.  Only used when `input_size`
         is given.
     tau_mem : float, default=20.0
-        Membrane time constant :math:`\tau_\text{mem}` (in units of ``dt``).
-        Sets the membrane decay :math:`\beta = e^{-\Delta t/\tau_\text{mem}}` —
+        Membrane time constant $\tau_\text{mem}$ (in units of `dt`).
+        Sets the membrane decay $\beta = e^{-\Delta t/\tau_\text{mem}}$ —
         longer values give longer fading memory.
     tau_syn : float, default=10.0
-        Synaptic time constant :math:`\tau_\text{syn}`.  Only used when
-        ``synaptic_current=True`` (CuBa-LIF).
+        Synaptic time constant $\tau_\text{syn}$.  Only used when
+        `synaptic_current=True` (CuBa-LIF).
     dt : float, default=1.0
-        Integration timestep :math:`\Delta t`.
+        Integration timestep $\Delta t$.
     synaptic_current : bool, default=False
-        If ``True``, use the second-order current-based LIF (CuBa-LIF), which
+        If `True`, use the second-order current-based LIF (CuBa-LIF), which
         adds an explicit synaptic-current state and smoother temporal filtering.
     v_threshold : float, default=1.0
         Firing threshold.
@@ -151,17 +157,17 @@ def lsm(
         Membrane reset on a spike (soft subtract vs hard zero).
     surrogate_beta : float, default=10.0
         Fast-sigmoid surrogate slope for the straight-through spike gradient
-        (only matters when ``trainable=True``).
+        (only matters when `trainable=True`).
     trace_decay : float, default=0.9
-        Decay :math:`\kappa` of the low-pass readout trace
-        :math:`r_t = \kappa r_{t-1} + s_t` — the real-valued signal the readout
+        Decay $\kappa$ of the low-pass readout trace
+        $r_t = \kappa r_{t-1} + s_t$ — the real-valued signal the readout
         regresses on.
     topology : TopologySpec, optional
-        Topology for the recurrent spike-coupling weight ``W_rec``.  Accepts a
-        registry name, a ``(name, params)`` tuple, a callable, or a configured
-        :class:`~resdag.init.topology.TopologyInitializer`.
+        Topology for the recurrent spike-coupling weight `W_rec`.  Accepts a
+        registry name, a `(name, params)` tuple, a callable, or a configured
+        `resdag.init.topology.TopologyInitializer`.
     spectral_radius : float, default=0.9
-        Target spectral radius for ``W_rec`` (recurrent spike-coupling strength).
+        Target spectral radius for `W_rec` (recurrent spike-coupling strength).
     feedback_initializer : InitializerSpec, optional
         Initializer for the feedback weights.
     bias : bool, default=True
@@ -169,15 +175,15 @@ def lsm(
     trainable : bool, default=False
         Whether the reservoir weights are trainable (via the surrogate spike
         gradient).  A frozen liquid + fitted readout is the classic LSM; set
-        ``True`` to fine-tune the liquid with SGD.
+        `True` to fine-tune the liquid with SGD.
     concat_input : bool, default=True
         Whether to concatenate the raw input with the reservoir trace before the
         readout.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         Ridge regularization for the readout.
     readout_bias : bool, default=True
@@ -185,26 +191,26 @@ def lsm(
     readout_name : str, default="output"
         Name for the readout layer (the target key in training).
     readout_kwargs : dict, optional
-        Extra readout options, such as ``trainable=True``, ``solver``,
-        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
+        Extra readout options, such as `trainable=True`, `solver`,
+        `state_noise` or `gram_dtype`. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
-        :class:`~resdag.layers.reservoirs.lif.LIFReservoirLayer` (e.g. ``bias_scaling``,
-        ``seed``, ``input_initializer``).
+        `resdag.layers.reservoirs.lif.LIFReservoirLayer` (e.g. `bias_scaling`,
+        `seed`, `input_initializer`).
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
+    `resdag.core.ESNModel`
         Configured LSM model ready for driven training and inference.
 
     Raises
     ------
     ValueError
-        If ``output_size`` is not a positive integer, or ``readout`` is an
+        If `output_size` is not a positive integer, or `readout` is an
         unknown string key.
     TypeError
-        If ``readout`` is neither a known string key nor a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass.
+        If `readout` is neither a known string key nor a
+        `resdag.layers.readouts.ReadoutLayer` subclass.
 
     Examples
     --------

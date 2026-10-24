@@ -86,8 +86,7 @@ def test_cpu_factory_does_not_initialize_or_broadcast_to_unused_accelerators(mon
 @pytest.mark.skipif(not torch.backends.mps.is_available(), reason="Native MPS unavailable")
 @pytest.mark.parametrize("raises", [False, True])
 def test_fresh_process_direct_mps_draw_is_isolated_before_python_rng_api_use(raises):
-    script = textwrap.dedent(
-        """
+    script = textwrap.dedent("""
         import json
         import sys
         import torch
@@ -131,8 +130,7 @@ def test_fresh_process_direct_mps_draw_is_isolated_before_python_rng_api_use(rai
         assert all(torch.equal(a, b) for a, b in zip(first, seen))
         assert torch.equal(torch.rand(8, device="mps").cpu(), expected_next)
         print(json.dumps({"restored": True, "repeatable": True, "raises": raises}))
-        """
-    )
+        """)
     result = subprocess.run(
         [sys.executable, "-c", script, str(raises)],
         capture_output=True,

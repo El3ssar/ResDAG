@@ -169,7 +169,9 @@ def test_transposed_parameter_views_keep_shared_storage(tmp_path, trusted):
 
 
 @pytest.mark.parametrize("trusted", [False, True])
-def test_persistent_buffer_identity_and_requires_grad(tmp_path, trusted):
+def test_persistent_buffer_identity_and_requires_grad(
+    tmp_path, trusted, isolated_component_registries
+):
     from resdag.artifacts import register_component
 
     class Buffers(nn.Module):

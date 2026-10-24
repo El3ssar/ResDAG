@@ -13,9 +13,9 @@ __all__ = ["ScoreResult", "score_forecast", "StreamingForecastScore"]
 class ScoreResult:
     """Accurate forecast steps and dimension-weighted normalized error.
 
-    Larger ``score`` is better; smaller ``nrmse`` is better. ``head_horizons``
+    Larger `score` is better; smaller `nrmse` is better. `head_horizons`
     contains each output's median contiguous accurate prefix across the batch.
-    ``head_errors`` contains each output's RMS normalized error over its entire
+    `head_errors` contains each output's RMS normalized error over its entire
     supplied forecast. The dictionaries use the model's output names.
     """
 
@@ -49,8 +49,8 @@ def score_forecast(
 ) -> ScoreResult:
     """Score original-unit forecasts using fixed scales from admitted training.
 
-    Each output must provide matching ``(time, features)`` or
-    ``(batch, time, features)`` tensors. Outputs share the same batch/time
+    Each output must provide matching `(time, features)` or
+    `(batch, time, features)` tensors. Outputs share the same batch/time
     layout and device, but may have different feature counts and dtypes.
     Scales are positive finite tensors on that device: a scalar, a feature
     vector, or a feature vector with singleton leading dimensions. They must
@@ -59,13 +59,13 @@ def score_forecast(
 
     At each sample, the error is the RMS over normalized feature errors. A
     batch item's horizon counts consecutive samples strictly below
-    ``threshold`` from the start, stopping at the first failure. Each head's
+    `threshold` from the start, stopping at the first failure. Each head's
     horizon is the conventional batch median, averaging both middle values for
-    an even batch. ``aggregation='weakest'`` takes the minimum head horizon;
-    ``'mean'`` takes their arithmetic mean. Scores are positive sample counts.
+    an even batch. `aggregation='weakest'` takes the minimum head horizon;
+    `'mean'` takes their arithmetic mean. Scores are positive sample counts.
 
     Per-head NRMSE is the RMS over all supplied batch/time/feature values. The
-    reported ``nrmse`` is the arithmetic mean of those per-head errors weighted
+    reported `nrmse` is the arithmetic mean of those per-head errors weighted
     by each head's feature count. It is a diagnostic alongside the horizon,
     rather than a second optimization objective.
 
@@ -206,8 +206,8 @@ class _HeadScore:
 class StreamingForecastScore:
     """Bounded device-local score state for successive aligned forecast chunks.
 
-    ``update`` performs tensor operations only: finite-value checks accumulate
-    on-device flags. ``summary`` checks those flags and converts final scalars.
+    `update` performs tensor operations only: finite-value checks accumulate
+    on-device flags. `summary` checks those flags and converts final scalars.
     Its NRMSE always describes exactly the prefix admitted so far, using the
     original fixed training scales. No predictions or truth rows are retained.
     """

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import io
 import math
-import os
 import pickle
 import platform
-import tempfile
 import threading
 import warnings
 from collections.abc import Mapping
@@ -18,6 +16,8 @@ from typing import Any, cast
 import numpy as np
 import torch
 from torch import nn
+
+from resdag.core._persistence import _atomic_save, _validate_checkpoint_value
 
 from ._codecs import _SYMBOLS, initialize_codecs
 from ._models import initialize_model_codecs
@@ -40,22 +40,33 @@ def _initialize() -> None:
 
 def _plain(value: Any) -> None:
     """Reject object-bearing extra state before writing a portable artifact."""
+    try:
+        _validate_checkpoint_value(value, "Artifact state/metadata", set())
+    except (TypeError, ValueError) as error:
+        raise ArtifactError(f"Artifact state/metadata validation failed: {error}") from error
+    _portable_plain(value)
+
+
+def _portable_plain(value: Any) -> None:
+    """Retain the portable format's stricter finite primitive/container policy."""
     if value is None or type(value) in (bool, int, str, bytes) or isinstance(value, torch.Tensor):
-        return
-    if type(value) is float and math.isfinite(value):
-        return
-    if isinstance(value, (tuple, list)):
+        pass
+    elif type(value) is float and math.isfinite(value):
+        pass
+    elif isinstance(value, (tuple, list)):
         for child in value:
-            _plain(child)
-        return
-    if isinstance(value, dict):
+            _portable_plain(child)
+    elif isinstance(value, dict):
         for key, child in value.items():
-            _plain(key)
-            _plain(child)
-        return
-    raise ArtifactError(
-        f"Artifact state/metadata contains unsupported value {type(value).__name__}"
-    )
+            _portable_plain(key)
+            _portable_plain(child)
+    else:
+        raise ArtifactError(
+            f"Artifact state/metadata contains unsupported value {type(value).__name__}"
+        )
+    attributes = getattr(value, "__dict__", None)
+    if attributes:
+        _portable_plain(attributes)
 
 
 def _generator_config(value: torch.Generator) -> dict[str, Any]:
@@ -513,12 +524,12 @@ def save_model(
     """Save a complete model, preserving recurrent memory by default.
 
     Portable files contain declarative registered configuration and tensor state.
-    ``trusted=True`` uses the optional cloudpickle package to include Python
+    `trusted=True` uses the optional cloudpickle package to include Python
     components such as notebook-local classes and lambdas. Loading those files
     requires explicit trust and compatible Python/package versions.
 
-    ``include_state=False`` resets ordinary recurrent memory on reload. Fitted
-    preprocessing and the observed history used by ``forecast`` are retained.
+    `include_state=False` resets ordinary recurrent memory on reload. Fitted
+    preprocessing and the observed history used by `forecast` are retained.
     Neither option saves an autonomous forecast cursor, optimizer or autograd graph.
     """
     if not isinstance(model, nn.Module):
@@ -567,21 +578,7 @@ def save_model(
         else:
             encoder = _Encoder(include_state)
             payload.update(root=encoder.encode(model), components=encoder.records)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary: str | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
-            ) as stream:
-                temporary = stream.name
-                torch.save(payload, stream)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-            temporary = None
-        finally:
-            if temporary is not None:
-                Path(temporary).unlink(missing_ok=True)
+        _atomic_save(payload, path)
     return path
 
 
@@ -596,10 +593,10 @@ def load(
     """Reconstruct a saved model without knowing its original DAG.
 
     The default uses Torch's restricted tensor/primitive loader and never imports
-    artifact-selected Python paths. ``trusted=True`` permits Python unpickling;
+    artifact-selected Python paths. `trusted=True` permits Python unpickling;
     use it only for a file whose producer and contents you trust. Restricted
     loading reduces code execution exposure but does not prevent malformed-file
-    memory/resource exhaustion. Device remapping follows standard ``torch.load``.
+    memory/resource exhaustion. Device remapping follows standard `torch.load`.
     """
     if type(trusted) is not bool:
         raise TypeError("trusted must be a bool")

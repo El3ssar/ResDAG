@@ -33,10 +33,10 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
     Scaling
     -------
     For this structured initializer the magnitude statistic governed by the shared
-    contract is the **per-channel L2 norm**, which equals ``input_scaling``: each
+    contract is the **per-channel L2 norm**, which equals `input_scaling`: each
     channel's window vector is renormalized so its L2 norm is exactly
-    ``input_scaling``. Hence ``input_scaling=0.5`` makes every channel's column have
-    L2 norm ``0.5``; the per-channel L2 norm scales linearly with ``input_scaling``.
+    `input_scaling`. Hence `input_scaling=0.5` makes every channel's column have
+    L2 norm `0.5`; the per-channel L2 norm scales linearly with `input_scaling`.
 
     Parameters
     ----------
@@ -50,11 +50,11 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
     signed : {"allpos", "alt_ring", "alt_inputs"}, default="allpos"
         Sign policy for weights.
     input_scaling : float, optional
-        Per-channel L2-norm after taper/sign are applied. Defaults to ``1.0`` when
-        neither ``input_scaling`` nor the deprecated ``gain`` is given.
+        Per-channel L2-norm after taper/sign are applied. Defaults to `1.0` when
+        neither `input_scaling` nor the deprecated `gain` is given.
     gain : float, optional
-        Deprecated alias for ``input_scaling`` (same meaning). Emits a
-        ``DeprecationWarning``; passing both ``input_scaling`` and ``gain`` raises.
+        Deprecated alias for `input_scaling` (same meaning). Emits a
+        `DeprecationWarning`; passing both `input_scaling` and `gain` raises.
 
     Examples
     --------
@@ -112,7 +112,7 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
 
     @property
     def gain(self) -> float | None:
-        """Deprecated alias for :attr:`input_scaling`."""
+        """Deprecated alias for `input_scaling`."""
         return self.input_scaling
 
     def _window_size(self, C: int) -> int:
@@ -153,12 +153,12 @@ class RingWindowInputInitializer(InputFeedbackInitializer):
             out_features = reservoir_size (n)
             in_features = num_inputs (m)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` (the per-channel L2-norm
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` (the per-channel L2-norm
             target) for this call only (the shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored. The override must be a positive finite float
-            (``None`` is not accepted for this structured initializer).
+            (`None` is not accepted for this structured initializer).
 
         Returns
         -------

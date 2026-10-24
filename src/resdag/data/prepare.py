@@ -115,12 +115,12 @@ def denormalize_data(
     method: NormMethod,
     stats: dict[str, torch.Tensor],
 ) -> torch.Tensor:
-    """Invert :func:`normalize_data`, mapping data back to its original scale.
+    """Invert `normalize_data`, mapping data back to its original scale.
 
-    Applies the exact inverse of the transform that :func:`normalize_data` (and
-    ``prepare_esn_data(normalize=True, ...)``) applied, using the fitted
+    Applies the exact inverse of the transform that `normalize_data` (and
+    `prepare_esn_data(normalize=True, ...)`) applied, using the fitted
     statistics. This closes the normalize -> forecast -> report loop: feed model
-    predictions through ``denormalize_data`` to recover physical units, compute
+    predictions through `denormalize_data` to recover physical units, compute
     errors in the original scale, or plot against the raw series.
 
     Parameters
@@ -128,34 +128,34 @@ def denormalize_data(
     data : torch.Tensor
         Normalized data of shape (B, T, D) to map back to the original scale.
     method : {"minmax", "standard", "noncentered", "meanpreserving"}
-        Normalization method that produced ``data``. Must match the method used
+        Normalization method that produced `data`. Must match the method used
         for the forward transform. The inverse of each method is:
 
-        - "minmax": ``(data + 1) / 2 * range + min``
-        - "standard": ``data * std + mean``
-        - "noncentered": ``data * scale``
-        - "meanpreserving": ``(data - mean) * maxdev + mean``
+        - "minmax": `(data + 1) / 2 * range + min`
+        - "standard": `data * std + mean`
+        - "noncentered": `data * scale`
+        - "meanpreserving": `(data - mean) * maxdev + mean`
     stats : dict
-        Fitted statistics returned by :func:`normalize_data` (or by
-        :func:`prepare_esn_data` with ``return_stats=True``). The required keys
-        depend on ``method``: ``{"min", "range"}`` for "minmax",
-        ``{"mean", "std"}`` for "standard", ``{"scale"}`` for "noncentered",
-        and ``{"mean", "maxdev"}`` for "meanpreserving".
+        Fitted statistics returned by `normalize_data` (or by
+        `prepare_esn_data` with `return_stats=True`). The required keys
+        depend on `method`: `{"min", "range"}` for "minmax",
+        `{"mean", "std"}` for "standard", `{"scale"}` for "noncentered",
+        and `{"mean", "maxdev"}` for "meanpreserving".
 
     Returns
     -------
     torch.Tensor
-        Data restored to the original scale, with the same shape as ``data``.
+        Data restored to the original scale, with the same shape as `data`.
 
     Raises
     ------
     ValueError
-        If ``method`` is not a recognized normalization method.
+        If `method` is not a recognized normalization method.
 
     See Also
     --------
     normalize_data : The forward transform this function inverts.
-    prepare_esn_data : Returns the fitted ``stats`` when ``return_stats=True``.
+    prepare_esn_data : Returns the fitted `stats` when `return_stats=True`.
 
     Examples
     --------
@@ -230,7 +230,7 @@ def _apply_norm(
 def _apply_denorm(
     data: torch.Tensor, method: NormMethod, stats: dict[str, torch.Tensor]
 ) -> torch.Tensor:
-    """Apply the inverse of :func:`_apply_norm` to data (exact round-trip)."""
+    """Apply the inverse of `_apply_norm` to data (exact round-trip)."""
     stats = {
         key: value.to(
             device=data.device, dtype=data.dtype if data.is_floating_point() else value.dtype
@@ -270,15 +270,17 @@ def prepare_esn_data(
        final training target, for forecast initialization
     5. Validation: Held-out data starting after that final training target.
 
-    Data layout (``train_end = warmup_steps + train_steps``)::
+    Data layout (`train_end = warmup_steps + train_steps`):
 
-        [discard][warmup][------- train -------][s][------ val ------]
+    ```text
+    [discard][warmup][------- train -------][s][------ val ------]
+    ```
 
-    ``s`` is ``data[train_end]``: the final training target, which is already
+    `s` is `data[train_end]`: the final training target, which is already
     observed during fitting. The forecast warmup includes it. Its readout
-    predicts the first held-out value, ``data[train_end + 1]``, so
-    ``forecast(forecast_warmup, horizon=val_steps)`` lines up element-for-element
-    with ``val`` (no manual shift).
+    predicts the first held-out value, `data[train_end + 1]`, so
+    `forecast(forecast_warmup, horizon=val_steps)` lines up element-for-element
+    with `val` (no manual shift).
 
 
     Parameters
@@ -301,14 +303,14 @@ def prepare_esn_data(
     return_stats : bool, default=False
         If True, append the fitted normalization statistics as a 6th return
         element so the normalize -> forecast -> report loop can be closed via
-        :func:`denormalize_data`. The element is the ``stats`` dict when
-        ``normalize=True`` and ``None`` when ``normalize=False`` (nothing was
+        `denormalize_data`. The element is the `stats` dict when
+        `normalize=True` and `None` when `normalize=False` (nothing was
         fitted). When False (the default), the legacy 5-tuple is returned
         unchanged.
     alignment : {"next", "legacy"}, default="next"
-        ``"next"`` includes the final training target in the forecast history.
-        ``"legacy"`` ends that history one sample earlier; pair this with
-        ``model.forecast(..., alignment="legacy")`` to reproduce old runs.
+        `"next"` includes the final training target in the forecast history.
+        `"legacy"` ends that history one sample earlier; pair this with
+        `model.forecast(..., alignment="legacy")` to reproduce old runs.
         Training and validation windows are identical in both modes.
 
     Returns
@@ -324,32 +326,32 @@ def prepare_esn_data(
         (B, warmup_steps, D). Includes earlier warmup history if train_steps
         is shorter than warmup_steps.
     val : torch.Tensor
-        Validation data, shape (B, val_steps, D). Starts at ``data[train_end + 1]``
-        so it aligns directly with an autoregressive ``forecast`` of the same
+        Validation data, shape (B, val_steps, D). Starts at `data[train_end + 1]`
+        so it aligns directly with an autoregressive `forecast` of the same
         horizon. The final training target belongs to the observed history.
     stats : dict or None
-        Only returned when ``return_stats=True``. The fitted normalization
-        statistics (as returned by :func:`normalize_data`) when ``normalize=True``,
-        otherwise ``None``. Pass to :func:`denormalize_data` to map forecasts
+        Only returned when `return_stats=True`. The fitted normalization
+        statistics (as returned by `normalize_data`) when `normalize=True`,
+        otherwise `None`. Pass to `denormalize_data` to map forecasts
         back to the original scale.
 
     Raises
     ------
     ValueError
-        If ``warmup_steps`` or ``train_steps`` is not strictly positive, if
-        ``discard_steps`` is negative, if ``val_steps`` is negative, or if the
+        If `warmup_steps` or `train_steps` is not strictly positive, if
+        `discard_steps` is negative, if `val_steps` is negative, or if the
         data is too short for the requested splits.
 
     Warns
     -----
     UserWarning
-        If the resulting validation window is empty (``val_steps=0`` or the data
+        If the resulting validation window is empty (`val_steps=0` or the data
         is exhausted by warmup, training inputs, and their final target), so no held-out validation data
         remains.
 
     See Also
     --------
-    denormalize_data : Inverts the normalization using the returned ``stats``.
+    denormalize_data : Inverts the normalization using the returned `stats`.
 
     Examples
     --------
@@ -493,12 +495,12 @@ def load_and_prepare(
         Normalization method.
     return_stats : bool, default=False
         If True, append the fitted normalization statistics as a 6th return
-        element (``None`` when ``normalize=False``). Forwarded to
-        :func:`prepare_esn_data`; see its docstring for details.
+        element (`None` when `normalize=False`). Forwarded to
+        `prepare_esn_data`; see its docstring for details.
     dtype : torch.dtype, optional
-        Desired tensor dtype. If None, uses ``torch.get_default_dtype()``.
+        Desired tensor dtype. If None, uses `torch.get_default_dtype()`.
     alignment : {"next", "legacy"}, default="next"
-        Forecast timing convention forwarded to :func:`prepare_esn_data`.
+        Forecast timing convention forwarded to `prepare_esn_data`.
     **load_kwargs
         Additional arguments passed to load_file (e.g., key for .npz).
 
@@ -506,11 +508,11 @@ def load_and_prepare(
     -------
     ESNDataSplits or ESNDataSplitsWithStats
         Tuple of (warmup, train, target, forecast_warmup, val) tensors, with a
-        trailing ``stats`` element when ``return_stats=True``.
+        trailing `stats` element when `return_stats=True`.
 
     See Also
     --------
-    denormalize_data : Inverts the normalization using the returned ``stats``.
+    denormalize_data : Inverts the normalization using the returned `stats`.
 
     Examples
     --------

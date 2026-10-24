@@ -238,6 +238,9 @@ def test_fixture_closure_captures_constructed_modules() -> None:
     assert "resdag.layers.reservoirs.esn" in tiny
     # And the precise closure does not balloon to an entire subtree.
     assert "resdag.layers.transforms.power" not in tiny
+    initializer_registry = closures["isolated_initializer_registries"]
+    assert "resdag.init.topology.registry" in initializer_registry
+    assert not any(name.startswith("resdag.hpo") for name in initializer_registry)
 
 
 def test_reservoir_change_selects_model_and_training_tests() -> None:

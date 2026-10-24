@@ -4,7 +4,7 @@ Base Reservoir Classes
 
 This module provides abstract base class for the reservoir cell:
 
-- :class:`ReservoirCell` — abstract single-timestep reservoir update (owns parameters).
+- `ReservoirCell` — abstract single-timestep reservoir update (owns parameters).
 
 See Also
 --------
@@ -22,21 +22,21 @@ class ReservoirCell(nn.Module, ABC):
     Abstract base for a single-timestep reservoir state update.
 
     Owns all trainable (or frozen) parameters.  Sequence iteration is
-    handled by the enclosing :class:`BaseReservoirLayer`, not by the cell
+    handled by the enclosing `BaseReservoirLayer`, not by the cell
     itself.
 
     Notes
     -----
-    Subclasses must implement :attr:`state_size`, :attr:`output_size`,
-    :meth:`init_state`, and :meth:`forward`.
+    Subclasses must implement `state_size`, `output_size`,
+    `init_state`, and `forward`.
 
-    ``inputs[0]`` passed to :meth:`forward` is always the feedback slice.
+    `inputs[0]` passed to `forward` is always the feedback slice.
     Additional elements are driving inputs in the order they were passed to
-    the layer's ``forward``.
+    the layer's `forward`.
 
     For cells where the output and the state are the same tensor (e.g.
-    :class:`ESNCell`), ``output_size == state_size``.  For cells where they
-    differ (e.g. :class:`NGCell` whose output is a feature vector but whose
+    `ESNCell`), `output_size == state_size`.  For cells where they
+    differ (e.g. `NGCell` whose output is a feature vector but whose
     state is a delay buffer), the two properties return different values.
 
     See Also
@@ -97,7 +97,7 @@ class ReservoirCell(nn.Module, ABC):
         ----------
         inputs : list[torch.Tensor]
             Per-timestep input slices, one per input stream, each of shape
-            ``(batch, feature_dim)``.  ``inputs[0]`` is always the feedback
+            `(batch, feature_dim)`.  `inputs[0]` is always the feedback
             slice; additional elements are driving inputs.
         state : torch.Tensor
             Current state tensor.
@@ -105,7 +105,7 @@ class ReservoirCell(nn.Module, ABC):
         Returns
         -------
         output : torch.Tensor
-            Per-step output of shape ``(batch, output_size)``.
+            Per-step output of shape `(batch, output_size)`.
         new_state : torch.Tensor
             Updated state tensor.
         """
@@ -126,16 +126,16 @@ class ReservoirCell(nn.Module, ABC):
         ----------
         inputs : list[torch.Tensor]
             Full input sequences, one per stream, each of shape
-            ``(batch, timesteps, feature_dim)``.  ``inputs[0]`` is the
+            `(batch, timesteps, feature_dim)`.  `inputs[0]` is the
             feedback sequence.
 
         Returns
         -------
         torch.Tensor or None
-            Precomputed projection of shape ``(batch, timesteps, state_size)``
-            to be consumed step-by-step via :meth:`step`, or ``None`` if the
+            Precomputed projection of shape `(batch, timesteps, state_size)`
+            to be consumed step-by-step via `step`, or `None` if the
             cell does not support the fast path (the layer then falls back to
-            calling :meth:`forward` per timestep).
+            calling `forward` per timestep).
         """
         return None
 
@@ -145,9 +145,9 @@ class ReservoirCell(nn.Module, ABC):
         state: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Single-step update consuming a slice of :meth:`project_inputs`.
+        Single-step update consuming a slice of `project_inputs`.
 
-        Only called by the layer when :meth:`project_inputs` returned a
+        Only called by the layer when `project_inputs` returned a
         tensor.  Subclasses implementing the fast path must override both
         methods together.
 
@@ -155,7 +155,7 @@ class ReservoirCell(nn.Module, ABC):
         ----------
         projected_t : torch.Tensor
             Per-timestep slice of the precomputed projection, shape
-            ``(batch, state_size)``.
+            `(batch, state_size)`.
         state : torch.Tensor
             Current state tensor.
 
@@ -173,12 +173,12 @@ class ReservoirCell(nn.Module, ABC):
 
     def validate_state(self, state: torch.Tensor) -> None:
         """
-        Validate that ``state`` matches the layout this cell expects.
+        Validate that `state` matches the layout this cell expects.
 
-        The base implementation enforces the 2-D ``(batch, state_size)``
-        contract used by classical RNN-style cells (e.g. :class:`ESNCell`).
+        The base implementation enforces the 2-D `(batch, state_size)`
+        contract used by classical RNN-style cells (e.g. `ESNCell`).
         Cells with a different state layout — for example
-        :class:`~resdag.layers.cells.ngrc_cell.NGCell` whose state is a 3-D
+        `resdag.layers.cells.ngrc_cell.NGCell` whose state is a 3-D
         delay buffer — override this method to check their own shape.
 
         Parameters
@@ -189,7 +189,7 @@ class ReservoirCell(nn.Module, ABC):
         Raises
         ------
         ValueError
-            If ``state`` does not match the expected layout.  The error
+            If `state` does not match the expected layout.  The error
             message names the cell class and the offending shape so callers
             can act on it without digging into the layer/cell internals.
         """

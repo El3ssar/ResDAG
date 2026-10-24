@@ -27,20 +27,21 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
     All other entries are zero. This is specific to dendrocycle topologies where
     inputs should only connect to the core ring.
 
-    Each active connection draws a weight from ``U[-draw_width, draw_width]`` and
-    is then scaled by the shared ``input_scaling`` contract. ``draw_width`` is the
-    *draw half-width* (the spread of the raw distribution); ``input_scaling`` is the
+    Each active connection draws a weight from `U[-draw_width, draw_width]` and
+    is then scaled by the shared `input_scaling` contract. `draw_width` is the
+    *draw half-width* (the spread of the raw distribution); `input_scaling` is the
     *uniform final magnitude knob* shared by every initializer. With
-    ``input_scaling=0.5`` every drawn weight is halved, so ``max|W|`` scales
-    linearly with ``input_scaling`` (``max|W| <= draw_width * input_scaling``).
+    `input_scaling=0.5` every drawn weight is halved, so `max|W|` scales
+    linearly with `input_scaling` (`max|W| <= draw_width * input_scaling`).
 
-    .. note::
-       Prior to the unified scaling contract, ``input_scaling`` here meant the
-       draw half-width (defaulting to ``1.0``). That role is now ``draw_width``;
-       ``input_scaling`` is the uniform multiplicative transform shared with every
-       other initializer and defaults to ``None`` (no scaling). To reproduce the
-       old ``DendrocycleInputInitializer(input_scaling=s)`` draw, pass
-       ``draw_width=s``.
+    **Note.**
+
+    Prior to the unified scaling contract, `input_scaling` here meant the
+    draw half-width (defaulting to `1.0`). That role is now `draw_width`;
+    `input_scaling` is the uniform multiplicative transform shared with every
+    other initializer and defaults to `None` (no scaling). To reproduce the
+    old `DendrocycleInputInitializer(input_scaling=s)` draw, pass
+    `draw_width=s`.
 
     Parameters
     ----------
@@ -49,16 +50,16 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
     C : int, optional
         Number of cycle (core) nodes. If provided, c is ignored.
     draw_width : float, default=1.0
-        Half-width of the uniform draw ``U[-draw_width, draw_width]`` for each
+        Half-width of the uniform draw `U[-draw_width, draw_width]` for each
         active connection.
     input_scaling : float, optional
-        Uniform multiplicative scaling applied as the final transform. ``None``
-        (the default) applies no scaling. ``input_scaling=0.5`` halves every
-        weight, so ``max|W|`` is halved.
+        Uniform multiplicative scaling applied as the final transform. `None`
+        (the default) applies no scaling. `input_scaling=0.5` halves every
+        weight, so `max|W|` is halved.
     connectivity : float, optional
         Unused by this initializer: dendrocycle defines its own (core-only)
         connectivity pattern, so this knob is accepted for API uniformity but
-        ignored. Always ``None`` in practice.
+        ignored. Always `None` in practice.
     seed : int, optional
         Random seed for reproducibility.
 
@@ -96,10 +97,10 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor for dendrocycle topology.
 
-        The RNG is constructed from ``self.seed`` on every call, so the produced
-        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
+        The RNG is constructed from `self.seed` on every call, so the produced
+        matrix is a pure function of `(seed, shape)`. Repeated calls on the
         same instance with equal shapes therefore yield identical matrices.
-        Pass ``seed=None`` for a fresh draw on each call.
+        Pass `seed=None` for a fresh draw on each call.
 
         Parameters
         ----------
@@ -108,11 +109,11 @@ class DendrocycleInputInitializer(InputFeedbackInitializer):
             out_features = reservoir_size (N)
             in_features = num_inputs (M)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
-            other keys are ignored. ``connectivity`` is not honored here (this
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
+            other keys are ignored. `connectivity` is not honored here (this
             initializer defines its own core-only pattern).
 
         Returns

@@ -11,8 +11,8 @@ def random_adjacency(n: int, density: float, seed: int | None = None) -> np.ndar
     """Build the dense weighted adjacency of a random directed graph.
 
     Vectorized NumPy construction of the same adjacency that
-    :func:`random_graph` describes: ``Uniform(-1, 1)`` weights on a random subset
-    of exactly ``round(density * n * n)`` entries.
+    `random_graph` describes: `Uniform(-1, 1)` weights on a random subset
+    of exactly `round(density * n * n)` entries.
 
     Parameters
     ----------
@@ -26,7 +26,7 @@ def random_adjacency(n: int, density: float, seed: int | None = None) -> np.ndar
     Returns
     -------
     numpy.ndarray
-        An ``(n, n)`` ``float32`` weighted adjacency matrix.
+        An `(n, n)` `float32` weighted adjacency matrix.
 
     See Also
     --------
@@ -61,7 +61,7 @@ def random_graph(n: int, density: float, seed: int | None = None) -> nx.DiGraph:
     - Expected density of non-zero entries is `density`
 
     The adjacency is built with vectorized NumPy (see
-    :func:`random_adjacency`); the NetworkX object is materialised only for
+    `random_adjacency`); the NetworkX object is materialised only for
     direct callers, and the dense topology fast path skips it entirely.
 
     Parameters

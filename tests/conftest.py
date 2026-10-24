@@ -24,22 +24,30 @@ from resdag.layers import CGReadoutLayer, ESNLayer
 
 
 @pytest.fixture
-def isolated_component_registries():
-    """Keep executable tutorials from registering components in later tests."""
-    from resdag.artifacts import _api, _codecs, _registry
+def isolated_initializer_registries():
+    """Restore initializer registrations without importing model/artifact machinery."""
     from resdag.init.input_feedback import registry as input_registry
     from resdag.init.topology import registry as topology_registry
+
+    registries = (topology_registry._TOPOLOGY_REGISTRY, input_registry._INPUT_FEEDBACK_REGISTRY)
+    snapshots = tuple(dict(registry) for registry in registries)
+    try:
+        yield
+    finally:
+        for registry, snapshot in zip(registries, snapshots, strict=True):
+            registry.clear()
+            registry.update(snapshot)
+
+
+@pytest.fixture
+def isolated_component_registries(isolated_initializer_registries):
+    """Keep executable tutorials from registering components in later tests."""
+    from resdag.artifacts import _api, _codecs, _registry
 
     # Populate lazy built-ins before taking the snapshot. Restoring empty codec
     # dictionaries while their initialized flags remain true would break loads.
     _api._initialize()
-    registries = (
-        topology_registry._TOPOLOGY_REGISTRY,
-        input_registry._INPUT_FEEDBACK_REGISTRY,
-        _registry._CODECS,
-        _registry._TYPES,
-        _codecs._SYMBOLS,
-    )
+    registries = (_registry._CODECS, _registry._TYPES, _codecs._SYMBOLS)
     snapshots = tuple(dict(registry) for registry in registries)
     try:
         yield

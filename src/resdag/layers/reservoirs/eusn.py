@@ -5,8 +5,8 @@ EuSN Reservoir Layer
 This module provides the public-facing Euler State Network (EuSN) sequence
 layer:
 
-- :class:`EuSNLayer` — stateful RNN layer wrapping an
-  :class:`~resdag.layers.cells.eusn_cell.EuSNCell`.
+- `EuSNLayer` — stateful RNN layer wrapping an
+  `resdag.layers.cells.eusn_cell.EuSNCell`.
 
 References
 ----------
@@ -36,23 +36,23 @@ class EuSNLayer(BaseReservoirLayer):
     Stateful Euler State Network (EuSN) reservoir layer.
 
     Public-facing class.  Internally creates an
-    :class:`~resdag.layers.cells.eusn_cell.EuSNCell` that owns all parameters and
+    `resdag.layers.cells.eusn_cell.EuSNCell` that owns all parameters and
     performs the single-step integration; the sequence loop and state management
     live in the parent
-    :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
 
     EuSN (Gallicchio, arXiv:2203.09382) integrates an ODE with an antisymmetric
     recurrent matrix by one forward-Euler step:
 
-    .. math::
+    $$
+    h_t = h_{t-1} + \varepsilon\,
+          \tanh\!\big((W_r - W_r^\top - \gamma I)\, h_{t-1}
+          + W_{fb} x_{fb,t} + W_{in} u_t + b\big).
+    $$
 
-        h_t = h_{t-1} + \varepsilon\,
-              \tanh\!\big((W_r - W_r^\top - \gamma I)\, h_{t-1}
-              + W_{fb} x_{fb,t} + W_{in} u_t + b\big).
-
-    The antisymmetric part :math:`W_r - W_r^\top` conserves the state norm, so a
-    small step :math:`\varepsilon` gives stable, near-norm-preserving, long-memory
-    dynamics; the diffusion :math:`\gamma I` damps the Euler discretization
+    The antisymmetric part $W_r - W_r^\top$ conserves the state norm, so a
+    small step $\varepsilon$ gives stable, near-norm-preserving, long-memory
+    dynamics; the diffusion $\gamma I$ damps the Euler discretization
     error.
 
     Parameters
@@ -62,46 +62,46 @@ class EuSNLayer(BaseReservoirLayer):
     feedback_size : int
         Dimension of the feedback signal.  Required.
     epsilon : float, default=0.01
-        Forward-Euler step size :math:`\varepsilon`.  A *live* knob is not
+        Forward-Euler step size $\varepsilon$.  A *live* knob is not
         offered (the step size is baked into the integration); rebuild the layer
         to change it.
     gamma : float, default=0.01
-        Diffusion coefficient :math:`\gamma \ge 0`.  A *live* knob:
-        ``layer.gamma = ...`` takes effect on the next forward.
+        Diffusion coefficient $\gamma \ge 0$.  A *live* knob:
+        `layer.gamma = ...` takes effect on the next forward.
     input_size : int, optional
-        Dimension of a driving input.  ``None`` builds a feedback-only layer.
+        Dimension of a driving input.  `None` builds a feedback-only layer.
     spectral_radius : float, optional
-        Target rotation rate for ``W_r`` (largest imaginary-eigenvalue magnitude
+        Target rotation rate for `W_r` (largest imaginary-eigenvalue magnitude
         of the antisymmetric part).
     bias : bool, default=True
         Whether to include a bias term.
     bias_scaling : float, default=1.0
-        Scale of the random bias (``uniform(-bias_scaling, bias_scaling)``).
+        Scale of the random bias (`uniform(-bias_scaling, bias_scaling)`).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
-        Activation of the vector field (``tanh`` is the EuSN choice).
+        Activation of the vector field (`tanh` is the EuSN choice).
     substeps : int, default=1
-        Fixed integration sub-steps per interval.  ``1`` is the single
+        Fixed integration sub-steps per interval.  `1` is the single
         forward-Euler step of the paper.
     solver : {'euler', 'rk4', 'torchdiffeq'}, default='euler'
-        Integration scheme (see :class:`EuSNCell`).
+        Integration scheme (see `EuSNCell`).
     trainable : bool, default=False
-        If ``True``, reservoir weights are trainable via backpropagation.
+        If `True`, reservoir weights are trainable via backpropagation.
     feedback_initializer, input_initializer, topology : spec, optional
-        Same accepted forms as :class:`~resdag.layers.ESNLayer`.  ``topology``
-        defaults (``None``) to a dense random ``W_r``; the cell antisymmetrizes
+        Same accepted forms as `resdag.layers.ESNLayer`.  `topology`
+        defaults (`None`) to a dense random `W_r`; the cell antisymmetrizes
         it on the fly.
     seed : int or torch.Generator, optional
         Reproducibility seed fixing the recurrent, feedback, input and bias
         draws.
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -112,8 +112,8 @@ class EuSNLayer(BaseReservoirLayer):
     Attributes
     ----------
     state : torch.Tensor or None
-        Current reservoir state of shape ``(batch, reservoir_size)``, or
-        ``None`` before the first forward.
+        Current reservoir state of shape `(batch, reservoir_size)`, or
+        `None` before the first forward.
 
     Examples
     --------

@@ -31,10 +31,10 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
     ----------
     input_scaling : float, optional
         Uniform magnitude knob from the shared scaling contract (see
-        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
-        (the default) applies no scaling (nonzero entries stay in ``[-1, 1]``); a
-        float ``s`` multiplies every entry by ``s``, so ``max|W|`` scales linearly
-        with ``s`` (``input_scaling=0.5`` halves it).
+        `resdag.init.input_feedback.InputFeedbackInitializer`). `None`
+        (the default) applies no scaling (nonzero entries stay in `[-1, 1]`); a
+        float `s` multiplies every entry by `s`, so `max|W|` scales linearly
+        with `s` (`input_scaling=0.5` halves it).
     binarize : bool, default=False
         Whether to binarize weights to {-input_scaling, input_scaling} instead
         of uniform distribution.
@@ -65,20 +65,20 @@ class PseudoDiagonalInitializer(InputFeedbackInitializer):
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Initialize weight tensor with pseudo-diagonal structure.
 
-        The RNG is constructed from ``self.seed`` on every call, so the produced
-        matrix is a pure function of ``(seed, shape)``. Repeated calls on the
+        The RNG is constructed from `self.seed` on every call, so the produced
+        matrix is a pure function of `(seed, shape)`. Repeated calls on the
         same instance with equal shapes therefore yield identical matrices.
-        Pass ``seed=None`` for a fresh draw on each call.
+        Pass `seed=None` for a fresh draw on each call.
 
         Parameters
         ----------
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored.
 
         Returns

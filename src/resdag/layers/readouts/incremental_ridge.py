@@ -2,19 +2,19 @@
 Incremental Ridge Readout Layer
 ===============================
 
-This module provides :class:`IncrementalRidgeReadoutLayer`, a readout that fits
+This module provides `IncrementalRidgeReadoutLayer`, a readout that fits
 ridge regression *incrementally* over a stream of state/target chunks. Instead of
 materialising every state in memory and solving once (the single-shot path of
-:class:`CGReadoutLayer` / :class:`CholeskyReadoutLayer`), it accumulates the
+`CGReadoutLayer` / `CholeskyReadoutLayer`), it accumulates the
 ridge **sufficient statistics** — centered cross-products, running means,
 column sums and the sample count — into
-registered buffers via :meth:`~IncrementalRidgeReadoutLayer.partial_fit`, then
-solves once in :meth:`~IncrementalRidgeReadoutLayer.finalize`.
+registered buffers via `IncrementalRidgeReadoutLayer.partial_fit`, then
+solves once in `IncrementalRidgeReadoutLayer.finalize`.
 
-The old name :class:`IncrementalRidgeReadout` is retained as a deprecated alias.
+The old name `IncrementalRidgeReadout` is retained as a deprecated alias.
 
-This is the readout half of the ``DataLoader`` / streaming story: a sequence too
-long to fit in memory, or a :class:`torch.utils.data.DataLoader` of windowed
+This is the readout half of the `DataLoader` / streaming story: a sequence too
+long to fit in memory, or a `torch.utils.data.DataLoader` of windowed
 chunks, can be fed chunk-by-chunk with no loss of accuracy. Because the
 sufficient statistics are merged with stable centered covariance updates, the fit matches a
 single full-batch CG / Cholesky fit over the concatenated data to within
@@ -24,7 +24,7 @@ See Also
 --------
 resdag.layers.readouts.CholeskyReadoutLayer : Single-shot Cholesky counterpart.
 resdag.layers.readouts.CGReadoutLayer : Iterative CG ridge readout.
-resdag.training.ESNTrainer : Trainer with a streaming ``fit_stream`` path.
+resdag.training.ESNTrainer : Trainer with a streaming `fit_stream` path.
 """
 
 import sys
@@ -50,12 +50,12 @@ _PS_BUILD_FRAMES = frozenset({"apply_module", "_recalculate_value"})
 
 
 def _in_symbolic_build() -> bool:
-    """Return ``True`` if a ``pytorch_symbolic`` graph-build trace is in progress.
+    """Return `True` if a `pytorch_symbolic` graph-build trace is in progress.
 
     Walks a few caller frames (cheap, bounded) looking for the
-    ``pytorch_symbolic`` functions that call a layer's ``forward`` to record
+    `pytorch_symbolic` functions that call a layer's `forward` to record
     output shapes. Used only to let an *unfitted*
-    :class:`IncrementalRidgeReadoutLayer` survive graph construction; genuine
+    `IncrementalRidgeReadoutLayer` survive graph construction; genuine
     inference never matches these frames.
     """
     frame = sys._getframe(2) if hasattr(sys, "_getframe") else None
@@ -76,37 +76,37 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     The classic readout fit requires every state in memory at once. This layer
     instead accumulates the ridge **sufficient statistics** as chunks arrive:
 
-    - ``XtX`` / ``Xty`` — centered cross-products when ``bias=True`` and
-      raw products when ``bias=False``,
-    - ``_mean_x`` / ``_mean_y`` — stable running means for the intercept,
-    - ``sum_x`` / ``sum_y`` — retained column sums,
-    - ``n`` — the running sample count.
+    - `XtX` / `Xty` — centered cross-products when `bias=True` and
+      raw products when `bias=False`,
+    - `_mean_x` / `_mean_y` — stable running means for the intercept,
+    - `sum_x` / `sum_y` — retained column sums,
+    - `n` — the running sample count.
 
     Centered chunk statistics are merged using the Chan covariance formula, so
     accumulating them chunk-by-chunk and solving once is algebraically identical
     to forming the whole Gram in a
-    single pass. :meth:`finalize` assembles the centered, regularised normal
+    single pass. `finalize` assembles the centered, regularised normal
     equations from the running statistics and Cholesky-solves them, recovering
     the same coefficients (within floating point) that a full-batch
-    :class:`CholeskyReadoutLayer` / :class:`CGReadoutLayer` fit would produce.
+    `CholeskyReadoutLayer` / `CGReadoutLayer` fit would produce.
 
     The ridge objective is identical to the single-shot readouts,
 
-    .. math::
+    $$
+    \\lVert X W - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 ,
+    $$
 
-        \\lVert X W - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 ,
-
-    with the intercept (when ``bias=True``) recovered from the running means and
-    left un-penalised, exactly as in the shared ``_solve_utils`` centering.
+    with the intercept (when `bias=True`) recovered from the running means and
+    left un-penalised, exactly as in the shared `_solve_utils` centering.
 
     Lifecycle
     ---------
-    1. (Optionally) :meth:`reset_accumulators` to clear any prior statistics.
-    2. Call :meth:`partial_fit` once per chunk to accumulate statistics.
-    3. Call :meth:`finalize` once to solve and write the fitted weights.
+    1. (Optionally) `reset_accumulators` to clear any prior statistics.
+    2. Call `partial_fit` once per chunk to accumulate statistics.
+    3. Call `finalize` once to solve and write the fitted weights.
 
-    :attr:`is_fitted` becomes ``True`` **only** after :meth:`finalize`; calling
-    :meth:`forward` before that raises a clear :class:`RuntimeError`.
+    `is_fitted` becomes `True` **only** after `finalize`; calling
+    `forward` before that raises a clear `RuntimeError`.
 
     Parameters
     ----------
@@ -115,34 +115,34 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     out_features : int
         Size of output features (prediction dimension).
     bias : bool, default=True
-        Whether to include a bias term. When ``True`` the running means center
-        the data and an un-penalised intercept is recovered; when ``False`` the
+        Whether to include a bias term. When `True` the running means center
+        the data and an un-penalised intercept is recovered; when `False` the
         raw normal equations are solved with no intercept.
     name : str, optional
         Name for this readout layer. Used for identification in multi-readout
-        architectures and as the key into ``targets`` by :class:`ESNTrainer`.
+        architectures and as the key into `targets` by `ESNTrainer`.
     trainable : bool, default=False
-        If ``True``, weights are trainable via backpropagation.
+        If `True`, weights are trainable via backpropagation.
     alpha : float, default=1e-6
         L2 regularization strength. Must be non-negative.
     use_float64 : bool, default=True
-        If ``True`` the accumulator buffers and the small ``(F, F)`` solve run
-        in ``float64`` and the fitted weights are cast back to the parameter
-        dtype. Parameter casts such as ``.float()`` preserve float64 working
+        If `True` the accumulator buffers and the small `(F, F)` solve run
+        in `float64` and the fitted weights are cast back to the parameter
+        dtype. Parameter casts such as `.float()` preserve float64 working
         statistics. MPS cannot hold these statistics; use CPU or explicitly
-        opt out with ``use_float64=False`` for supported MPS operations.
+        opt out with `use_float64=False` for supported MPS operations.
     gram_dtype : torch.dtype, optional
-        Dtype the per-chunk Gram matmuls run in. Default ``None`` is automatic:
-        the solve dtype (``float64`` with ``use_float64=True``) on every device.
-        Pass ``torch.float32`` explicitly for faster, lower-precision Gram
+        Dtype the per-chunk Gram matmuls run in. Default `None` is automatic:
+        the solve dtype (`float64` with `use_float64=True`) on every device.
+        Pass `torch.float32` explicitly for faster, lower-precision Gram
         formation on CUDA when the feature matrix is well-conditioned.
 
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or ``None`` if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or `None` if `bias=False`.
     alpha : float
         L2 regularization strength.
     n_seen : int
@@ -294,7 +294,7 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
 
     @property
     def n_seen(self) -> int:
-        """int : Number of samples accumulated across all ``partial_fit`` calls."""
+        """int : Number of samples accumulated across all `partial_fit` calls."""
         return int(self._n.item())
 
     @torch.no_grad()
@@ -302,8 +302,8 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         """Clear all accumulated statistics and the fitted flag.
 
         Returns the layer to its freshly-constructed state: the sufficient
-        statistics are zeroed, the sample count is reset to ``0``, and
-        :attr:`is_fitted` becomes ``False``. Call this before re-fitting a layer
+        statistics are zeroed, the sample count is reset to `0`, and
+        `is_fitted` becomes `False`. Call this before re-fitting a layer
         that was previously finalized.
         """
         self.XtX.zero_()
@@ -322,37 +322,37 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     ) -> "IncrementalRidgeReadoutLayer":
         """Accumulate the ridge sufficient statistics for one chunk.
 
-        Flattens ``(B, T, F)`` chunks to ``(N, F)``, validates shapes against
+        Flattens `(B, T, F)` chunks to `(N, F)`, validates shapes against
         the layer's feature dimensions, and adds the chunk's contribution to the
-        running ``XtX`` / ``Xty`` / ``sum_x`` / ``sum_y`` / ``n`` accumulators.
-        Call once per ``DataLoader`` batch (or per window of a long sequence);
+        running `XtX` / `Xty` / `sum_x` / `sum_y` / `n` accumulators.
+        Call once per `DataLoader` batch (or per window of a long sequence);
         the centered statistics are merged so chunk boundaries do not affect the final
         fit.
 
-        Calling ``partial_fit`` after :meth:`finalize` keeps accumulating onto
+        Calling `partial_fit` after `finalize` keeps accumulating onto
         the existing statistics and clears the fitted flag — the layer must be
-        re-:meth:`finalize`\\ d before it can be used for inference again. Use
-        :meth:`reset_accumulators` to start a fresh fit.
+        re-`finalize`\\ d before it can be used for inference again. Use
+        `reset_accumulators` to start a fresh fit.
 
         Parameters
         ----------
         states : torch.Tensor
-            State chunk of shape ``(B, T, F_in)`` or ``(N, F_in)``.
+            State chunk of shape `(B, T, F_in)` or `(N, F_in)`.
         targets : torch.Tensor
-            Target chunk of shape ``(B, T, F_out)`` or ``(N, F_out)``.
+            Target chunk of shape `(B, T, F_out)` or `(N, F_out)`.
 
         Returns
         -------
         IncrementalRidgeReadoutLayer
-            ``self``, so calls can be chained.
+            `self`, so calls can be chained.
 
         Raises
         ------
         ValueError
-            If ``states`` and ``targets`` disagree on the sample dimension after
+            If `states` and `targets` disagree on the sample dimension after
             flattening, if the state feature dimension does not match
-            ``in_features``, if the target feature dimension does not match
-            ``out_features``, or if ``states`` or ``targets`` contain non-finite
+            `in_features`, if the target feature dimension does not match
+            `out_features`, or if `states` or `targets` contain non-finite
             (NaN or Inf) values.
         """
         states, targets = self._prepare_fit_inputs(states, targets, "partial_fit")
@@ -397,23 +397,23 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     def finalize(self) -> None:
         """Solve the accumulated ridge system and write the fitted weights.
 
-        Assembles the centered (when ``bias=True``), regularised normal
-        equations ``(XᵀX + αI) W = Xᵀy`` from the running sufficient statistics
+        Assembles the centered (when `bias=True`), regularised normal
+        equations `(XᵀX + αI) W = Xᵀy` from the running sufficient statistics
         and solves them with a Cholesky factorisation. Recovers the un-penalised
         intercept from the running means, copies the result into the layer's
-        ``weight`` / ``bias`` parameters, and sets :attr:`is_fitted` to ``True``.
+        `weight` / `bias` parameters, and sets `is_fitted` to `True`.
 
         Raises
         ------
         RuntimeError
-            If no samples have been accumulated (``partial_fit`` was never
-            called, or :meth:`reset_accumulators` was called since).
+            If no samples have been accumulated (`partial_fit` was never
+            called, or `reset_accumulators` was called since).
 
         Notes
         -----
-        ``finalize`` does **not** clear the accumulators, so it can be called
-        again after additional :meth:`partial_fit` calls to refine the fit on
-        more data. Call :meth:`reset_accumulators` to start over.
+        `finalize` does **not** clear the accumulators, so it can be called
+        again after additional `partial_fit` calls to refine the fit on
+        more data. Call `reset_accumulators` to start over.
         """
         n = self.n_seen
         if n == 0:
@@ -454,26 +454,26 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Single-shot fit: accumulate one chunk then finalize.
 
-        Provided so :class:`IncrementalRidgeReadoutLayer` is a drop-in
-        :class:`ReadoutLayer` — ``fit(states, targets)`` works exactly like the
+        Provided so `IncrementalRidgeReadoutLayer` is a drop-in
+        `ReadoutLayer` — `fit(states, targets)` works exactly like the
         other readouts (it resets the accumulators, accumulates the whole batch,
         and solves). The hook returns the fitted coefficients so the base
-        ``fit`` copy-back path is reused.
+        `fit` copy-back path is reused.
 
         Parameters
         ----------
         states : torch.Tensor
-            Flattened state matrix of shape ``(N, in_features)``.
+            Flattened state matrix of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened target matrix of shape ``(N, out_features)``.
+            Flattened target matrix of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
+            Coefficient matrix of shape `(in_features, out_features)`.
         intercept : torch.Tensor or None
-            Intercept vector of shape ``(out_features,)``, or ``None`` when the
-            layer was built with ``bias=False``.
+            Intercept vector of shape `(out_features,)`, or `None` when the
+            layer was built with `bias=False`.
         """
         self.reset_accumulators()
         self.partial_fit(states, targets)
@@ -485,47 +485,47 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
         return coefs, intercept
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Apply the fitted linear transformation to ``input``.
+        """Apply the fitted linear transformation to `input`.
 
         Parameters
         ----------
         input : torch.Tensor
-            Input tensor of shape ``(B, F)`` or ``(B, T, F)``.
+            Input tensor of shape `(B, F)` or `(B, T, F)`.
 
         Returns
         -------
         torch.Tensor
-            Output tensor of shape ``(B, F_out)`` or ``(B, T, F_out)``.
+            Output tensor of shape `(B, F_out)` or `(B, T, F_out)`.
 
         Raises
         ------
         RuntimeError
-            If :meth:`finalize` has not been called since the last
-            ``partial_fit`` / construction. The error names the layer and points
-            at ``finalize()`` so the streaming lifecycle is unambiguous.
+            If `finalize` has not been called since the last
+            `partial_fit` / construction. The error names the layer and points
+            at `finalize()` so the streaming lifecycle is unambiguous.
 
         Notes
         -----
-        Two internal call sites legitimately run ``forward`` while unfitted and
-        bypass the guard via the private ``_allow_unfitted_forward`` flag:
-        ``pytorch_symbolic`` graph construction (which traces output shapes by
-        calling ``forward`` once with placeholder data) and the trainer's
+        Two internal call sites legitimately run `forward` while unfitted and
+        bypass the guard via the private `_allow_unfitted_forward` flag:
+        `pytorch_symbolic` graph construction (which traces output shapes by
+        calling `forward` once with placeholder data) and the trainer's
         streaming accumulation pass (where the readout's forward only flows a
         value downstream while a pre-hook accumulates statistics). Genuine
         inference always goes through the guard.
 
-        Under ``torch.compile`` (the compiled forecast fast path captures this
-        ``forward`` directly and calls it per autoregressive step) the entire
+        Under `torch.compile` (the compiled forecast fast path captures this
+        `forward` directly and calls it per autoregressive step) the entire
         Python guard is skipped: it would otherwise force a dynamo graph break
         on every step and silently drop the model to the ~14x-slower eager
         rollout. Fittedness is still enforced **before** the compiled loop by the
-        eager teacher-forced warmup pass that ``forecast`` always runs first: it
-        executes the full graph — including this readout's eager ``forward`` —
+        eager teacher-forced warmup pass that `forecast` always runs first: it
+        executes the full graph — including this readout's eager `forward` —
         which trips the guard for a genuinely-unfitted readout. So skipping the
         per-step guard under compile removes a redundant check, not a safety net.
-        The fittedness check itself reads the sync-free ``_fitted_flag`` mirror
-        (see :attr:`~resdag.layers.readouts.ReadoutLayer.is_fitted`), never the
-        ``_is_fitted`` buffer's ``.item()``, so even the eager per-step path
+        The fittedness check itself reads the sync-free `_fitted_flag` mirror
+        (see `resdag.layers.readouts.ReadoutLayer.is_fitted`), never the
+        `_is_fitted` buffer's `.item()`, so even the eager per-step path
         pays no device->host sync.
         """
         # Compiled fast path: never let dynamo trace the guard (a graph break
@@ -561,18 +561,19 @@ class IncrementalRidgeReadoutLayer(ReadoutLayer):
 
 
 class IncrementalRidgeReadout(IncrementalRidgeReadoutLayer):
-    """Deprecated alias for :class:`IncrementalRidgeReadoutLayer`.
+    """Deprecated alias for `IncrementalRidgeReadoutLayer`.
 
     Retained for backward compatibility.  Instantiating this class emits a
-    :class:`DeprecationWarning` and constructs an
-    :class:`IncrementalRidgeReadoutLayer`; the two are otherwise identical
-    (``IncrementalRidgeReadout`` is a subclass, so
-    ``isinstance(IncrementalRidgeReadout(...), IncrementalRidgeReadoutLayer)``
+    `DeprecationWarning` and constructs an
+    `IncrementalRidgeReadoutLayer`; the two are otherwise identical
+    (`IncrementalRidgeReadout` is a subclass, so
+    `isinstance(IncrementalRidgeReadout(...), IncrementalRidgeReadoutLayer)`
     holds).
 
-    .. deprecated::
-        Use :class:`IncrementalRidgeReadoutLayer` instead.
-        ``IncrementalRidgeReadout`` will be removed in a future release.
+    **Deprecated.**
+
+    Use `IncrementalRidgeReadoutLayer` instead.
+    `IncrementalRidgeReadout` will be removed in a future release.
 
     See Also
     --------

@@ -10,16 +10,16 @@ Classes
 Concatenate
     Concatenates multiple inputs along the feature dimension.
 ExtendedSquare
-    Appends the elementwise square of every feature (``[x, x**2]``).
+    Appends the elementwise square of every feature (`[x, x**2]`).
 FeaturePartitioner
     Partitions input features into overlapping groups.
 NLAT2
-    T₂ nonlinear algebraic transform (``x[i-1] * x[i-2]`` at even features).
+    T₂ nonlinear algebraic transform (`x[i-1] * x[i-2]` at even features).
 NLAT3
-    T₃ nonlinear algebraic transform (``x[i-1] * x[i+1]`` at interior even
+    T₃ nonlinear algebraic transform (`x[i-1] * x[i+1]` at interior even
     features).
 Pad
-    Appends a constant column to the feature dimension (``[x, padding]``).
+    Appends a constant column to the feature dimension (`[x, padding]`).
 PartialSquare
     Squares a leading fraction (or count) of features in place.
 Power
@@ -28,10 +28,10 @@ SelectiveDropout
     Per-feature dropout with selectivity control.
 SelectiveExponentiation
     Per-feature exponentiation transformation (squares even-indexed units;
-    ``index=0, exponent=2`` is the T₁/NLAT1 transform).
+    `index=0, exponent=2` is the T₁/NLAT1 transform).
 Standardize
     Per-feature z-score standardization with buffer-stored mean/std,
-    ``fit``, and an exact ``inverse``.
+    `fit`, and an exact `inverse`.
 
 Examples
 --------
@@ -71,5 +71,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

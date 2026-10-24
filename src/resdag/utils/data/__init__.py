@@ -2,19 +2,22 @@
 Data Loading and Preparation (compatibility shim)
 =================================================
 
-.. deprecated:: 0.7.0
-    The canonical home for data preparation and file I/O is now
-    :mod:`resdag.data`. This module re-exports those symbols unchanged for
-    back-compat, so ``from resdag.utils.data import prepare_esn_data`` (etc.)
-    keeps working. New code should import from :mod:`resdag.data`.
+**Deprecated since 0.7.0.**
+
+The canonical home for data preparation and file I/O is now
+`resdag.data`. This module re-exports those symbols unchanged for
+back-compat, so `from resdag.utils.data import prepare_esn_data` (etc.)
+keeps working. New code should import from `resdag.data`.
 
 The re-exported callables are the *same* function objects as their
-:mod:`resdag.data` counterparts, so identity checks hold::
+`resdag.data` counterparts, so identity checks hold:
 
-    resdag.utils.data.prepare_esn_data is resdag.data.prepare_esn_data  # True
+```text
+resdag.utils.data.prepare_esn_data is resdag.data.prepare_esn_data  # True
+```
 
-The canonical dataset generators (:func:`lorenz`, :func:`rossler`, …) still
-live here and are re-exported by :mod:`resdag.datasets`.
+The canonical dataset generators (`lorenz`, `rossler`, …) still
+live here and are re-exported by `resdag.datasets`.
 
 File I/O Functions
 ------------------
@@ -51,12 +54,12 @@ narma
 sine
     Simple periodic signal for sanity checks.
 
-Each generator returns a ``(1, T, D)`` tensor, is seedable via ``create_rng``,
+Each generator returns a `(1, T, D)` tensor, is seedable via `create_rng`,
 supports a transient/discard period, and supports optional normalization.
 
 Examples
 --------
-Loading and preparing data (canonical home is :mod:`resdag.data`):
+Loading and preparing data (canonical home is `resdag.data`):
 
 >>> from resdag.data import load_file, prepare_esn_data
 >>> data = load_file("lorenz.csv")  # doctest: +SKIP
@@ -140,5 +143,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

@@ -42,6 +42,21 @@ def _reference_members(page):
     for line in (REFERENCE / page).read_text().splitlines():
         if line.startswith("::: "):
             module = line.removeprefix("::: ").strip()
+            try:
+                importlib.import_module(module)
+            except ModuleNotFoundError as error:
+                if error.name is None or not module.startswith(error.name):
+                    raise
+                parent, _, name = module.rpartition(".")
+                namespace = importlib.import_module(parent)
+                documented = getattr(namespace, name)
+                # Defining modules need not advertise their imports. Resolve a
+                # direct leaf reference through its supported public re-export.
+                while not hasattr(namespace, "__all__"):
+                    parent = parent.rpartition(".")[0]
+                    namespace = importlib.import_module(parent)
+                    assert getattr(namespace, name) is documented
+                yield parent, name
         elif line and not line[0].isspace():
             module = None
         elif module and (match := re.fullmatch(r"\s+- (\w+)\s*", line)):

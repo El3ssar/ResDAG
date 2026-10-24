@@ -21,17 +21,18 @@ def barabasi_albert_graph(
     Generates a Barabási-Albert scale-free network.
 
     The Barabási-Albert model grows a graph one node at a time, linking each new node to
-    ``m`` *distinct* existing nodes chosen with probability proportional to their current
+    `m` *distinct* existing nodes chosen with probability proportional to their current
     degree (preferential attachment). This yields a degree distribution that is
-    approximately power-law, ``P(k) ~ k^-3``, for large ``n``.
+    approximately power-law, `P(k) ~ k^-3`, for large `n`.
 
-    .. note::
-       The degree-frequency multiset is now held in a preallocated integer array
-       and sampled with ``rng.integers`` instead of ``rng.choice`` over a growing
-       Python list (an ``O(len)`` list-to-array conversion per draw). The result
-       is still deterministic under a seed and statistically identical
-       (preferential attachment with ``m`` distinct targets per node), but the
-       exact edge set for a given ``seed`` differs from earlier versions.
+    **Note.**
+
+    The degree-frequency multiset is now held in a preallocated integer array
+    and sampled with `rng.integers` instead of `rng.choice` over a growing
+    Python list (an `O(len)` list-to-array conversion per draw). The result
+    is still deterministic under a seed and statistically identical
+    (preferential attachment with `m` distinct targets per node), but the
+    exact edge set for a given `seed` differs from earlier versions.
 
     Parameters
     ----------
@@ -49,28 +50,28 @@ def barabasi_albert_graph(
     -------
     networkx.Graph or networkx.DiGraph
         A Barabási-Albert scale-free network. An undirected graph has exactly
-        ``m * (m - 1) // 2 + m * (n - m)`` edges.
+        `m * (m - 1) // 2 + m * (n - m)` edges.
 
     Raises
     ------
     ValueError
-        If ``m < 1 or m >= n``.
+        If `m < 1 or m >= n`.
 
     Notes
     -----
-    The ``m`` targets for each new node are drawn *without replacement at the node-id
+    The `m` targets for each new node are drawn *without replacement at the node-id
     level* (not merely at the multiset-position level), so every new node receives
-    exactly ``m`` distinct neighbours. This is the correct Barabási-Albert behaviour;
+    exactly `m` distinct neighbours. This is the correct Barabási-Albert behaviour;
     sampling distinct positions of a degree-frequency multiset can return the same node
-    id twice and leave nodes with fewer than ``m`` neighbours.
+    id twice and leave nodes with fewer than `m` neighbours.
 
     Two deliberate departures from the textbook model:
 
-    - When ``directed=True`` each attachment adds *both* ``i -> t`` and ``t -> i``,
+    - When `directed=True` each attachment adds *both* `i -> t` and `t -> i`,
       which doubles the edge count relative to the undirected graph and therefore
       changes the degree statistics (in-degree and out-degree are coupled).
-    - The initial ``m``-node seed is a complete graph wired *uniformly* rather than by
-      preferential attachment; the scale-free regime emerges only as ``n`` grows past
+    - The initial `m`-node seed is a complete graph wired *uniformly* rather than by
+      preferential attachment; the scale-free regime emerges only as `n` grows past
       this seed clique.
     """
     if m < 1 or m >= n:
@@ -138,5 +139,5 @@ def barabasi_albert_graph(
 
 
 def _rand_sign(rng: np.random.Generator) -> int:
-    """Draw a random edge weight uniformly from ``{-1, +1}``."""
+    """Draw a random edge weight uniformly from `{-1, +1}`."""
     return -1 if rng.random() < 0.5 else 1

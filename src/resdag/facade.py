@@ -1,4 +1,4 @@
-"""A standard PyTorch ESN preset using the common :class:`resdag.Model` workflow."""
+"""A standard PyTorch ESN preset using the common `resdag.Model` workflow."""
 
 from __future__ import annotations
 
@@ -88,30 +88,30 @@ def _configuration(value: Any, seen: set[int] | None = None) -> Any:
 
 
 class ESN(nn.Module):
-    """A classic ESN preset with the same original-unit workflow as :class:`Model`.
+    """A classic ESN preset with the same original-unit workflow as `Model`.
 
-    ``ESN(input_size=3)`` builds eagerly, making all parameters available before
-    attaching an optimizer. Without ``input_size``, :meth:`fit` infers the width
-    and attaches a successfully fitted workflow. Call :meth:`build` explicitly
+    `ESN(input_size=3)` builds eagerly, making all parameters available before
+    attaching an optimizer. Without `input_size`, `fit` infers the width
+    and attaches a successfully fitted workflow. Call `build` explicitly
     when constructing a larger PyTorch pipeline before its first fit.
 
-    ``fit`` accepts floating Torch tensors or a TSDynamics trajectory. Ordinary
-    ``forward`` returns Torch tensors, carries recurrent state, preserves layout
-    and gradients, and uses fitted training-only scaling. ``forecast`` has the
-    same keyword-only horizon and return conventions as :class:`Model`.
+    `fit` accepts floating Torch tensors or a TSDynamics trajectory. Ordinary
+    `forward` returns Torch tensors, carries recurrent state, preserves layout
+    and gradients, and uses fitted training-only scaling. `forecast` has the
+    same keyword-only horizon and return conventions as `Model`.
 
-    The single registered :attr:`workflow` child is a :class:`Model`; its raw
-    symbolic graph is exposed by :attr:`graph`. Custom DAGs, drivers and multiple
-    outputs use ``Model`` directly. ``readout``/``readout_kwargs`` expose solver
+    The single registered `workflow` child is a `Model`; its raw
+    symbolic graph is exposed by `graph`. Custom DAGs, drivers and multiple
+    outputs use `Model` directly. `readout`/`readout_kwargs` expose solver
     choices; additional reservoir settings and custom initializers pass through
-    to :func:`resdag.models.classic_esn`. ``input_to_readout=True`` includes the
-    raw input alongside reservoir states in the readout; ``False`` uses states
+    to `resdag.models.classic_esn`. `input_to_readout=True` includes the
+    raw input alongside reservoir states in the readout; `False` uses states
     alone. Automatic tuning of this preset compares both choices by default.
 
     An untouched lazy preset adopts the first floating tensor's device/dtype.
-    Explicit constructor placement or a pre-build ``to``/``double`` conversion
+    Explicit constructor placement or a pre-build `to`/`double` conversion
     fixes placement; later fitting follows ordinary Torch placement validation.
-    ``build`` uses the current placement unless explicitly overridden. Checkpoints
+    `build` uses the current placement unless explicitly overridden. Checkpoints
     record width and preset configuration, allowing a matching unbuilt preset to
     load; arbitrary custom Python configurations must still be reconstructed.
     """
@@ -275,7 +275,7 @@ class ESN(nn.Module):
 
     @property
     def preprocessing(self) -> str | None:
-        """Configured normalization method, or ``None`` when it is disabled."""
+        """Configured normalization method, or `None` when it is disabled."""
         if self.workflow is not None:
             return self.workflow.preprocessing
         value = self._workflow_options["preprocessing"]
@@ -283,14 +283,14 @@ class ESN(nn.Module):
 
     @property
     def prediction_leads(self) -> dict[str, int]:
-        """Prediction offsets by output name; the preset has one ``'output'`` head."""
+        """Prediction offsets by output name; the preset has one `'output'` head."""
         if self.workflow is not None:
             return self.workflow.prediction_leads
         return {"output": self._workflow_options["prediction_lead"]}
 
     @property
     def feedback(self) -> tuple[Feedback, ...] | None:
-        """Explicit feedback routes, or ``None`` for automatic output-to-input routing."""
+        """Explicit feedback routes, or `None` for automatic output-to-input routing."""
         if self.workflow is not None:
             return self.workflow.feedback
         return cast(tuple[Feedback, ...] | None, self._workflow_options["feedback"])
@@ -471,10 +471,10 @@ class ESN(nn.Module):
     ) -> ESN:
         """Tune preset settings, refit the winner and return this same ESN.
 
-        Requires ``resdag[hpo]``. Presets automatically rebuild reservoir
-        sizes, initializations and readouts together. ``search_space(trial)``
+        Requires `resdag[hpo]`. Presets automatically rebuild reservoir
+        sizes, initializations and readouts together. `search_space(trial)`
         overrides the default Optuna search. See the tuning guide for explicit
-        validation, seeds, objectives, study storage and :attr:`tuning_report`.
+        validation, seeds, objectives, study storage and `tuning_report`.
         Failed tuning preserves the current model. Create optimizers afterward.
         """
         from resdag.hpo import _require_optuna
@@ -507,15 +507,15 @@ class ESN(nn.Module):
     ) -> tuple[torch.Tensor, ReservoirStates]:
         """Predict original-unit signals with explicitly returned recurrent state.
 
-        Inputs preserve the ``(time, features)`` or ``(batch, time, features)``
-        layout used by :meth:`forward`. Omitting ``states`` starts from each
+        Inputs preserve the `(time, features)` or `(batch, time, features)`
+        layout used by `forward`. Omitting `states` starts from each
         reservoir's configured reset state; otherwise provide the complete
         mapping returned by an earlier call. The output and returned states
         retain gradients across chunks. Stored recurrent state is unchanged.
         Other modules retain their normal training-mode and hook behavior.
 
-        ``compile=True`` requests the existing supported compiled scan; its
-        device/capability checks and eager fallback follow :class:`Model`.
+        `compile=True` requests the existing supported compiled scan; its
+        device/capability checks and eager fallback follow `Model`.
         """
         from resdag.core._hooks import call_with_states, has_execution_hooks, state_paths
 
@@ -544,23 +544,23 @@ class ESN(nn.Module):
         execution: Literal["fast", "history"] = "fast",
         return_type: Literal["auto", "tensor", "trajectory"] = "auto",
     ) -> torch.Tensor | Trajectory:
-        """Forecast ``horizon`` future samples in the original signal units.
+        """Forecast `horizon` future samples in the original signal units.
 
-        ``history`` resynchronizes recurrence on an observed prefix; omit it
+        `history` resynchronizes recurrence on an observed prefix; omit it
         to use the fitted training tail. The first prediction follows its last
         observed sample. Every call resets recurrence and temporarily disables
-        training noise. ``future_inputs`` supplies any declared non-feedback
+        training noise. `future_inputs` supplies any declared non-feedback
         drivers; the ordinary one-input preset needs none.
 
-        ``return_warmup=True`` prepends the readout's predictions during history
-        replay. ``execution='fast'`` uses framewise execution; ``'history'``
+        `return_warmup=True` prepends the readout's predictions during history
+        replay. `execution='fast'` uses framewise execution; `'history'`
         supports causal temporal transforms by replaying growing prefixes.
-        ``compile=True`` requests supported compiled forecasting. See
-        :meth:`Model.forecast` for capability checks and fallback behavior.
+        `compile=True` requests supported compiled forecasting. See
+        `Model.forecast` for capability checks and fallback behavior.
 
         Tensor inputs retain their two- or three-dimensional layout.
-        ``return_type='auto'`` returns a TSDynamics trajectory after trajectory
-        fitting or with trajectory history; ``'tensor'`` keeps Torch output on
+        `return_type='auto'` returns a TSDynamics trajectory after trajectory
+        fitting or with trajectory history; `'tensor'` keeps Torch output on
         the model device. A selected trajectory result requires a known clock.
         """
         from resdag.core._hooks import forecast_as
@@ -584,13 +584,13 @@ class ESN(nn.Module):
         self._require_workflow().reset_state()
 
     def get_state(self) -> ReservoirStates:
-        """Return copies of initialized recurrent states, keyed as in ``forward_stateless``."""
+        """Return copies of initialized recurrent states, keyed as in `forward_stateless`."""
         return self._require_workflow().get_state()
 
     def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
-        """Restore named recurrent states using :meth:`Model.set_state` validation.
+        """Restore named recurrent states using `Model.set_state` validation.
 
-        ``strict=True`` requires the model's complete state-key set. Restored
+        `strict=True` requires the model's complete state-key set. Restored
         states are copied and matched to each reservoir's device and dtype.
         """
         self._require_workflow().set_state(states, strict=strict)

@@ -4,11 +4,11 @@ LIF Reservoir Layer (Liquid State Machine)
 
 This module provides the public-facing spiking-reservoir sequence layer:
 
-- :class:`LIFReservoirLayer` — stateful RNN layer wrapping a
-  :class:`~resdag.layers.cells.lif_cell.LIFCell`, the reservoir of a Liquid State
+- `LIFReservoirLayer` — stateful RNN layer wrapping a
+  `resdag.layers.cells.lif_cell.LIFCell`, the reservoir of a Liquid State
   Machine (LSM; Maass, Natschläger & Markram, *Neural Computation* 14(11), 2002).
 
-The old name :class:`LIFReservoir` is retained as a deprecated alias.
+The old name `LIFReservoir` is retained as a deprecated alias.
 
 References
 ----------
@@ -40,34 +40,36 @@ class LIFReservoirLayer(BaseReservoirLayer):
     Stateful leaky integrate-and-fire (LIF) reservoir layer — the LSM liquid.
 
     Public-facing class.  Internally creates a
-    :class:`~resdag.layers.cells.lif_cell.LIFCell` that owns all parameters and
+    `resdag.layers.cells.lif_cell.LIFCell` that owns all parameters and
     performs the single-step spiking update; the sequence loop and state
     management live in the parent
-    :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`, so this
-    layer shares the full state API (``reset_state`` / ``get_state`` /
-    ``set_state`` / ``set_random_state``) and the projected fast path with
-    :class:`~resdag.layers.reservoirs.esn.ESNLayer`.
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`, so this
+    layer shares the full state API (`reset_state` / `get_state` /
+    `set_state` / `set_random_state`) and the projected fast path with
+    `resdag.layers.reservoirs.esn.ESNLayer`.
 
     The reservoir is a recurrent network of spiking neurons.  Its per-step output
     is a real-valued **synaptic trace** (a low-pass-filtered spike train), not the
     binary spikes — so a ridge / CG readout can regress on it directly.  The state
-    is a single packed 2-D tensor ``(batch, cell.state_size)`` bundling the
+    is a single packed 2-D tensor `(batch, cell.state_size)` bundling the
     membrane potential, previous spikes, optional synaptic current, and the trace
-    (see :class:`~resdag.layers.cells.lif_cell.LIFCell`).
+    (see `resdag.layers.cells.lif_cell.LIFCell`).
 
-    .. important::
-       A Liquid State Machine is an **input-driven** reservoir: it maps a driving
-       signal to a filtered liquid state a readout regresses on.  It is *not* a
-       closed-loop autoregressive chaos forecaster — the output is a spike trace,
-       not the feedback variable.  Use :func:`~resdag.models.ott_esn` /
-       :func:`~resdag.models.es2n` for autoregressive chaotic forecasting.
+    **Important.**
 
-    .. note::
-       Drive the liquid hard enough to spike: with default unit-scale weights
-       most neurons may never cross ``v_threshold``, leaving the trace all-zero
-       and the readout with nothing to fit.  Raise the input scaling and/or lower
-       ``v_threshold`` (check the firing rate via ``output="spikes"``).  See
-       :func:`~resdag.models.lsm` for guidance.
+    A Liquid State Machine is an **input-driven** reservoir: it maps a driving
+    signal to a filtered liquid state a readout regresses on.  It is *not* a
+    closed-loop autoregressive chaos forecaster — the output is a spike trace,
+    not the feedback variable.  Use `resdag.models.ott_esn` /
+    `resdag.models.es2n` for autoregressive chaotic forecasting.
+
+    **Note.**
+
+    Drive the liquid hard enough to spike: with default unit-scale weights
+    most neurons may never cross `v_threshold`, leaving the trace all-zero
+    and the readout with nothing to fit.  Raise the input scaling and/or lower
+    `v_threshold` (check the firing rate via `output="spikes"`).  See
+    `resdag.models.lsm` for guidance.
 
     Parameters
     ----------
@@ -76,16 +78,16 @@ class LIFReservoirLayer(BaseReservoirLayer):
     feedback_size : int
         Dimension of the feedback / driving signal.  Required.
     input_size : int, optional
-        Dimension of an optional second driving input.  ``None`` (or ``0``)
+        Dimension of an optional second driving input.  `None` (or `0`)
         builds a single-input reservoir.
     tau_mem : float, default=20.0
-        Membrane time constant :math:`\tau_\text{mem}`.
+        Membrane time constant $\tau_\text{mem}$.
     tau_syn : float, default=10.0
-        Synaptic time constant :math:`\tau_\text{syn}` (CuBa-LIF only).
+        Synaptic time constant $\tau_\text{syn}$ (CuBa-LIF only).
     dt : float, default=1.0
         Integration timestep.
     synaptic_current : bool, default=False
-        If ``True``, use the second-order current-based LIF (CuBa-LIF).
+        If `True`, use the second-order current-based LIF (CuBa-LIF).
     v_threshold : float, default=1.0
         Firing threshold.
     reset : {'subtract', 'zero'}, default='subtract'
@@ -95,28 +97,28 @@ class LIFReservoirLayer(BaseReservoirLayer):
     trace_decay : float, default=0.9
         Decay of the low-pass readout trace.
     output : {'trace', 'voltage', 'spikes'}, default='trace'
-        Readable-output mode; ``'trace'`` is the ridge-regressable default.
+        Readable-output mode; `'trace'` is the ridge-regressable default.
     spectral_radius : float, optional
-        Target spectral radius for the recurrent spike-coupling weight ``W_rec``.
+        Target spectral radius for the recurrent spike-coupling weight `W_rec`.
     bias : bool, default=True
         Whether to include a bias current.
     bias_scaling : float, default=1.0
-        Scale of the random bias (``uniform(-bias_scaling, bias_scaling)``).
+        Scale of the random bias (`uniform(-bias_scaling, bias_scaling)`).
     trainable : bool, default=False
-        If ``True``, all weights are trainable via the surrogate spike gradient.
+        If `True`, all weights are trainable via the surrogate spike gradient.
     feedback_initializer, input_initializer, topology : spec, optional
-        Same accepted forms as :class:`~resdag.layers.ESNLayer`.
+        Same accepted forms as `resdag.layers.ESNLayer`.
     seed : int or torch.Generator, optional
         Reproducibility seed fixing the recurrent, feedback, input and bias draws.
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -127,8 +129,8 @@ class LIFReservoirLayer(BaseReservoirLayer):
     Attributes
     ----------
     state : torch.Tensor or None
-        Current packed reservoir state of shape ``(batch, cell.state_size)``, or
-        ``None`` before the first forward.
+        Current packed reservoir state of shape `(batch, cell.state_size)`, or
+        `None` before the first forward.
 
     Examples
     --------
@@ -224,16 +226,17 @@ class LIFReservoirLayer(BaseReservoirLayer):
 
 
 class LIFReservoir(LIFReservoirLayer):
-    """Deprecated alias for :class:`LIFReservoirLayer`.
+    """Deprecated alias for `LIFReservoirLayer`.
 
     Retained for backward compatibility.  Instantiating this class emits a
-    :class:`DeprecationWarning` and constructs a :class:`LIFReservoirLayer`;
-    the two are otherwise identical (``LIFReservoir`` is a subclass, so
-    ``isinstance(LIFReservoir(...), LIFReservoirLayer)`` holds).
+    `DeprecationWarning` and constructs a `LIFReservoirLayer`;
+    the two are otherwise identical (`LIFReservoir` is a subclass, so
+    `isinstance(LIFReservoir(...), LIFReservoirLayer)` holds).
 
-    .. deprecated::
-        Use :class:`LIFReservoirLayer` instead.  ``LIFReservoir`` will be
-        removed in a future release.
+    **Deprecated.**
+
+    Use `LIFReservoirLayer` instead.  `LIFReservoir` will be
+    removed in a future release.
 
     See Also
     --------

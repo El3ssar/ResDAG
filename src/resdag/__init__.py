@@ -3,12 +3,12 @@ resdag - PyTorch Reservoir Computing Library
 ===============================================
 
 A library for reservoir computing with functional DAG composition and ordinary
-PyTorch modules. ``ESN`` and custom ``Model`` graphs share fit, forecast, tune
+PyTorch modules. `ESN` and custom `Model` graphs share fit, forecast, tune
 and save workflows.
 
 Features
 --------
-- Pure PyTorch ``nn.Module`` components
+- Pure PyTorch `nn.Module` components
 - Registered graph, matrix and custom weight initializers
 - Stateful reservoir layers with explicit streaming state
 - Device-aware execution and configurable readout solver fallback
@@ -343,11 +343,11 @@ __all__ = [
 
 
 def __getattr__(name: str) -> _Any:
-    """Lazily resolve the optional :mod:`resdag.hpo` submodule (:pep:`562`).
+    """Lazily resolve the optional `resdag.hpo` submodule ([PEP 562](https://peps.python.org/pep-0562/)).
 
-    ``hpo`` is imported only on first access, so a plain ``import resdag`` does
+    `hpo` is imported only on first access, so a plain `import resdag` does
     not eagerly pull in scipy/optuna. Advanced tuning helpers live in that
-    namespace; model-level tuning uses ``model.tune(...)``.
+    namespace; model-level tuning uses `model.tune(...)`.
     """
     if name == "hpo":
         return _importlib.import_module(f".{name}", __name__)
@@ -355,5 +355,5 @@ def __getattr__(name: str) -> _Any:
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

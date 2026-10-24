@@ -33,12 +33,14 @@ def main() -> None:
     torch.manual_seed(42)
     n_models = options.choose(3, 5)
 
-    data = rd.lorenz(options.choose(141, 2300), seed=42)  # (1, 2300, 3) = (batch, time, features)
+    data = rd.lorenz(options.choose(141, 2300), seed=42, normalize=None)  # raw (1, 2300, 3)
     warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
         data,
         warmup_steps=options.choose(12, 200),
         train_steps=options.choose(100, 1600),
         val_steps=options.choose(24, 400),
+        normalize=True,
+        norm_method="standard",  # fit on training rows and reuse across members/splits
     )
     horizon = val.shape[1]
     model_kwargs = dict(
@@ -90,6 +92,7 @@ def main() -> None:
     single_preds = single.forecast(f_warmup, horizon=horizon)
 
     header = f"{'model':<22} {'MSE@50':>12} {'MSE@200':>12}"
+    print("MSE and ensemble spread use training-standardized units.")
     print(header)
     print("-" * len(header))
     print(

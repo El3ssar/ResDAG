@@ -2,8 +2,8 @@
 Coupled Ensemble ESN Factory
 =============================
 
-This module provides :func:`coupled_ensemble_esn`, which builds a
-:class:`~resdag.ensemble.CoupledEnsembleESNModel` from N independently
+This module provides `coupled_ensemble_esn`, which builds a
+`resdag.ensemble.CoupledEnsembleESNModel` from N independently
 initialized sub-models produced by any ESN factory function.
 
 See Also
@@ -35,7 +35,7 @@ def coupled_ensemble_esn(
 ) -> CoupledEnsembleESNModel:
     """Build a coupled ensemble of N independently-initialized ESN models.
 
-    Each sub-model is created by calling ``model_factory(**model_kwargs)``
+    Each sub-model is created by calling `model_factory(**model_kwargs)`
     with an independent random reservoir initialization, providing the
     diversity needed for ensemble averaging to be beneficial.
 
@@ -47,34 +47,34 @@ def coupled_ensemble_esn(
     ----------
     n_models : int
         Number of sub-models in the ensemble.
-    model_factory : callable, default :func:`ott_esn`
-        Factory that creates one :class:`~resdag.core.ESNModel`.
-        All keyword arguments not consumed by ``coupled_ensemble_esn`` itself
-        (i.e. ``model_kwargs``) are forwarded verbatim to every call of this
+    model_factory : callable, default `ott_esn`
+        Factory that creates one `resdag.core.ESNModel`.
+        All keyword arguments not consumed by `coupled_ensemble_esn` itself
+        (i.e. `model_kwargs`) are forwarded verbatim to every call of this
         factory.  The factory must return a **readout-bearing** model whose
         first output dimension equals the feedback input dimension, so the
         aggregated output can be fed back autoregressively.  The readout-bearing
-        premade factories — ``classic_esn``, ``ott_esn`` and ``power_augmented``
-        — satisfy this.  The headless factories (``headless_esn``,
-        ``linear_esn``) emit raw reservoir states rather than a
+        premade factories — `classic_esn`, `ott_esn` and `power_augmented`
+        — satisfy this.  The headless factories (`headless_esn`,
+        `linear_esn`) emit raw reservoir states rather than a
         feedback-dimensioned output and are rejected by
-        :class:`~resdag.ensemble.CoupledEnsembleESNModel` (see its ``__init__``
+        `resdag.ensemble.CoupledEnsembleESNModel` (see its `__init__`
         for the exact check).
-    aggregate : str or nn.Module, default ``"mean"``
+    aggregate : str or nn.Module, default `"mean"`
         Aggregation strategy applied to the N model outputs at each
         autoregressive step:
 
-        - ``"mean"`` — arithmetic mean.
-        - ``"median"`` — median.
-        - ``nn.Module`` — any module accepting a stacked tensor of shape
-          ``(N, batch, timesteps, features)`` and returning
-          ``(batch, timesteps, features)``.  E.g.
-          :class:`~resdag.ensemble.aggregators.OutliersFilteredMean`.
+        - `"mean"` — arithmetic mean.
+        - `"median"` — median.
+        - `nn.Module` — any module accepting a stacked tensor of shape
+          `(N, batch, timesteps, features)` and returning
+          `(batch, timesteps, features)`.  E.g.
+          `resdag.ensemble.aggregators.OutliersFilteredMean`.
     seed : int, optional
         Master seed for deterministic sub-model construction.  Sub-model
-        ``i`` is seeded with ``seed + i`` immediately before the factory call.
-        If ``model_factory`` itself accepts a ``seed`` keyword argument,
-        ``seed + i`` is also forwarded as that argument so initialisers that
+        `i` is seeded with `seed + i` immediately before the factory call.
+        If `model_factory` itself accepts a `seed` keyword argument,
+        `seed + i` is also forwarded as that argument so initialisers that
         take an explicit seed (e.g. graph topologies) become reproducible.
 
         CPU, available MPS and initialized/requested CUDA RNG states are restored
@@ -85,10 +85,10 @@ def coupled_ensemble_esn(
 
     **model_kwargs
         All remaining keyword arguments are forwarded verbatim to each
-        ``model_factory`` call.  This includes architecture parameters such as
-        ``reservoir_size``, ``feedback_size``, ``output_size``,
-        ``spectral_radius``, ``readout_alpha``, ``readout_name``, etc.
-        The exact set of valid keys depends on the chosen ``model_factory``.
+        `model_factory` call.  This includes architecture parameters such as
+        `reservoir_size`, `feedback_size`, `output_size`,
+        `spectral_radius`, `readout_alpha`, `readout_name`, etc.
+        The exact set of valid keys depends on the chosen `model_factory`.
 
     Returns
     -------
@@ -113,7 +113,7 @@ def coupled_ensemble_esn(
     >>> preds.shape
     torch.Size([1, 200, 3])
 
-    Using ``classic_esn`` as the base architecture:
+    Using `classic_esn` as the base architecture:
 
     >>> from resdag.models import classic_esn
     >>> ensemble = rd.coupled_ensemble_esn(

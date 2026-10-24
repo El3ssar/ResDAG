@@ -41,22 +41,22 @@ def delay_line(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Place ``weight`` on a subdiagonal ``shift`` places below the diagonal.
+    """Place `weight` on a subdiagonal `shift` places below the diagonal.
 
-    Requires ``1 <= shift < n``. The matrix is nilpotent: its eigenvalues are
-    all zero. Control its scale through ``weight``; an outer spectral-radius
+    Requires `1 <= shift < n`. The matrix is nilpotent: its eigenvalues are
+    all zero. Control its scale through `weight`; an outer spectral-radius
     rescale cannot assign it a nonzero radius.
 
     Parameters
     ----------
     n : int
-        Number of reservoir units; a positive integer greater than ``shift``.
+        Number of reservoir units; a positive integer greater than `shift`.
     weight : float, default=0.1
         Constant weight of every forward connection. It controls how much
         past activity remains after each shift along the delay line.
     shift : int, default=1
         Subdiagonal offset. One connects each unit to its next neighbour;
-        larger offsets skip units. Must satisfy ``1 <= shift < n``.
+        larger offsets skip units. Must satisfy `1 <= shift < n`.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype; float64 avoids a float32 conversion.
     device : torch.device or str, optional
@@ -65,12 +65,12 @@ def delay_line(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` tensor with the chosen subdiagonal and zeros elsewhere.
+        Dense `(n, n)` tensor with the chosen subdiagonal and zeros elsewhere.
 
     Raises
     ------
     ValueError
-        If ``n`` is invalid, ``shift`` is outside its range, or dtype is not
+        If `n` is invalid, `shift` is outside its range, or dtype is not
         real floating-point.
 
     Examples
@@ -111,7 +111,7 @@ def delay_line_backward(
 ) -> torch.Tensor:
     """Build a forward delay line plus a backward superdiagonal connection.
 
-    ``shift`` and ``backward_shift`` each satisfy ``1 <= offset < n``. The
+    `shift` and `backward_shift` each satisfy `1 <= offset < n`. The
     weights and offsets of the two directions are independent.
 
     Parameters
@@ -124,9 +124,9 @@ def delay_line_backward(
         Weight on the reverse superdiagonal. A negative weight changes the
         sign of backward feedback independently of the forward path.
     shift : int, default=1
-        Forward subdiagonal offset, satisfying ``1 <= shift < n``.
+        Forward subdiagonal offset, satisfying `1 <= shift < n`.
     backward_shift : int, default=1
-        Backward superdiagonal offset, satisfying ``1 <= backward_shift < n``.
+        Backward superdiagonal offset, satisfying `1 <= backward_shift < n`.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype.
     device : torch.device or str, optional
@@ -135,7 +135,7 @@ def delay_line_backward(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` tensor with one subdiagonal and one superdiagonal.
+        Dense `(n, n)` tensor with one subdiagonal and one superdiagonal.
 
     Raises
     ------
@@ -179,10 +179,10 @@ def simple_cycle(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Build one directed ring with constant ``weight`` on every edge.
+    """Build one directed ring with constant `weight` on every edge.
 
     The subdiagonal and top-right corner form a cyclic permutation scaled by
-    ``weight``. Every eigenvalue has magnitude ``abs(weight)``; a requested
+    `weight`. Every eigenvalue has magnitude `abs(weight)`; a requested
     outer radius rescales the cycle without changing its connections.
 
     Parameters
@@ -191,7 +191,7 @@ def simple_cycle(
         Number of reservoir units, a positive integer. One gives a self-loop.
     weight : float, default=0.1
         Constant weight on every cycle edge. The raw spectral radius is
-        ``abs(weight)``. A layer's requested radius changes this overall scale.
+        `abs(weight)`. A layer's requested radius changes this overall scale.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype.
     device : torch.device or str, optional
@@ -200,7 +200,7 @@ def simple_cycle(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` cyclic matrix; a subdiagonal plus wrap-around corner.
+        Dense `(n, n)` cyclic matrix; a subdiagonal plus wrap-around corner.
 
     Raises
     ------
@@ -237,10 +237,10 @@ def cycle_jumps(
 ) -> torch.Tensor:
     """Add bidirectional jumps between regularly spaced nodes of a cycle.
 
-    The jump chain visits ``0, jump_size, 2*jump_size, ...``. It closes back
-    to zero only if ``jump_size`` divides ``n``; otherwise the trailing partial
+    The jump chain visits `0, jump_size, 2*jump_size, ...`. It closes back
+    to zero only if `jump_size` divides `n`; otherwise the trailing partial
     jump is omitted. Jump edges overwrite any coincident cycle edges.
-    Requires ``1 <= jump_size < n``.
+    Requires `1 <= jump_size < n`.
 
     Parameters
     ----------
@@ -252,7 +252,7 @@ def cycle_jumps(
         Constant weight of both directions of each jump edge.
     jump_size : int, default=3
         Distance between successive jump-chain nodes. Must satisfy
-        ``1 <= jump_size < n``; divisibility determines the closing jump.
+        `1 <= jump_size < n`; divisibility determines the closing jump.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype.
     device : torch.device or str, optional
@@ -261,8 +261,8 @@ def cycle_jumps(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` cycle with symmetric jump connections. For example,
-        ``n=7, jump_size=3`` adds ``0 <-> 3`` and ``3 <-> 6`` only.
+        Dense `(n, n)` cycle with symmetric jump connections. For example,
+        `n=7, jump_size=3` adds `0 <-> 3` and `3 <-> 6` only.
 
     Raises
     ------
@@ -308,7 +308,7 @@ def self_loop_cycle(
 ) -> torch.Tensor:
     """Build a directed cycle with a constant self-connection on every unit.
 
-    The diagonal is assigned ``self_loop_weight``. For ``n=1``, this overwrites
+    The diagonal is assigned `self_loop_weight`. For `n=1`, this overwrites
     the cycle's single self-connection.
 
     Parameters
@@ -318,7 +318,7 @@ def self_loop_cycle(
     cycle_weight : float, default=0.1
         Constant weight of the cycle edges.
     self_loop_weight : float, default=0.1
-        Weight on every diagonal self-connection. For ``n > 1``, eigenvalues
+        Weight on every diagonal self-connection. For `n > 1`, eigenvalues
         are those of the cycle shifted by this value.
     dtype : torch.dtype, default=torch.float32
         Real floating-point output dtype.
@@ -328,7 +328,7 @@ def self_loop_cycle(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` cycle with diagonal self-loops.
+        Dense `(n, n)` cycle with diagonal self-loops.
 
     Raises
     ------

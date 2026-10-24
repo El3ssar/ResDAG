@@ -4,7 +4,7 @@ NG-RC Cell
 
 This module provides the Next Generation Reservoir Computer (NG-RC) cell:
 
-- :class:`NGCell` — single-timestep feature construction via time-delayed inputs
+- `NGCell` — single-timestep feature construction via time-delayed inputs
   and polynomial monomials; implements the LSTMCell-like API adapter so that
   NG-RC slots into the same DAG architecture as ESNCell/ESNLayer.
 
@@ -34,100 +34,103 @@ class NGCell(ReservoirCell):
 
     This is NOT a recurrent cell — it owns no weight matrices and has no
     recurrent dynamics.  The "state" is a FIFO delay buffer of the last
-    ``(k-1)*s`` input vectors.  The cell wraps feedforward feature
+    `(k-1)*s` input vectors.  The cell wraps feedforward feature
     construction (time-delayed inputs + polynomial monomials) behind a
-    ``forward(x, state) -> (features, new_state)`` interface so that it
-    composes with the same DAG infrastructure as :class:`ESNCell`.
+    `forward(x, state) -> (features, new_state)` interface so that it
+    composes with the same DAG infrastructure as `ESNCell`.
 
     Parameters
     ----------
     input_dim : int
         Dimensionality of a single input vector.
     k : int, default=2
-        Number of delay taps (including the current input).  ``k=1`` means
+        Number of delay taps (including the current input).  `k=1` means
         only the current input is used (no delay buffer).
     s : int, default=1
         Spacing between delay taps, in timesteps.
     p : int, default=2
-        Polynomial degree for nonlinear feature construction.  See ``cumulative``
+        Polynomial degree for nonlinear feature construction.  See `cumulative`
         for the two supported degree conventions.
 
-        **Exact-degree convention** (``cumulative=False``, the default): the
-        nonlinear block contains all unique monomials of *exactly* degree ``p``
-        from the ``D = input_dim * k`` linear features — there are
-        ``C(D + p - 1, p)`` of them.  Lower-order cross terms (degrees
-        ``2, ..., p-1``) are **not** included.  For example,
-        ``NGCell(p=3, include_linear=True)`` emits ``constant + linear + cubic``
+        **Exact-degree convention** (`cumulative=False`, the default): the
+        nonlinear block contains all unique monomials of *exactly* degree `p`
+        from the `D = input_dim * k` linear features — there are
+        `C(D + p - 1, p)` of them.  Lower-order cross terms (degrees
+        `2, ..., p-1`) are **not** included.  For example,
+        `NGCell(p=3, include_linear=True)` emits `constant + linear + cubic`
         with *no* quadratic terms.  This is the historical resdag behaviour and
         matches Gauthier et al. (arXiv:2106.07688v2), whose Lorenz63 (Eq. 9) and
         double-scroll (Eq. 10) bases each use a single polynomial degree.
 
-        **Cumulative-degree convention** (``cumulative=True``): the nonlinear
-        block contains every monomial of degree ``2, ..., p`` (or ``1, ..., p``
-        when ``include_linear=False``), i.e. the full polynomial basis up to
-        degree ``p``.  Many NVAR / NG-RC implementations (and configs ported
-        from them) expect this "degree up to ``p``" basis.
+        **Cumulative-degree convention** (`cumulative=True`): the nonlinear
+        block contains every monomial of degree `2, ..., p` (or `1, ..., p`
+        when `include_linear=False`), i.e. the full polynomial basis up to
+        degree `p`.  Many NVAR / NG-RC implementations (and configs ported
+        from them) expect this "degree up to `p`" basis.
 
-        .. note::
-            When ``p == 1`` the degree-1 monomials *are* the linear features
-            ``O_lin``.  To avoid emitting two identical blocks (which makes the
-            readout design matrix rank-deficient), the nonlinear block is
-            **omitted** whenever ``p == 1`` and ``include_linear`` is ``True``.
-            With ``p == 1`` and ``include_linear=False`` the degree-1 monomials
-            are kept, since they are then the only delay-embedded features.  More
-            generally, whenever ``include_linear`` is ``True`` the degree-1
-            monomials are dropped from the nonlinear block (in both conventions),
-            since they would duplicate ``O_lin``; the cumulative basis therefore
-            spans degrees ``2, ..., p`` in that case.
+        **Note.**
+
+        When `p == 1` the degree-1 monomials *are* the linear features
+        `O_lin`.  To avoid emitting two identical blocks (which makes the
+        readout design matrix rank-deficient), the nonlinear block is
+        **omitted** whenever `p == 1` and `include_linear` is `True`.
+        With `p == 1` and `include_linear=False` the degree-1 monomials
+        are kept, since they are then the only delay-embedded features.  More
+        generally, whenever `include_linear` is `True` the degree-1
+        monomials are dropped from the nonlinear block (in both conventions),
+        since they would duplicate `O_lin`; the cumulative basis therefore
+        spans degrees `2, ..., p` in that case.
     cumulative : bool, default=False
-        Degree convention for the nonlinear block (see ``p``).  ``False`` keeps
-        only exact-degree-``p`` monomials (default, unchanged behaviour);
-        ``True`` includes all monomials of every degree up to ``p`` (the
-        cumulative / "degree up to ``p``" basis).
+        Degree convention for the nonlinear block (see `p`).  `False` keeps
+        only exact-degree-`p` monomials (default, unchanged behaviour);
+        `True` includes all monomials of every degree up to `p` (the
+        cumulative / "degree up to `p`" basis).
     include_constant : bool, default=True
-        Whether to prepend a constant ``1.0`` feature to the output vector.
-        Set ``True`` for Lorenz63 forecasting (Eq. 9).
+        Whether to prepend a constant `1.0` feature to the output vector.
+        Set `True` for Lorenz63 forecasting (Eq. 9).
     include_linear : bool, default=True
-        Whether to include the linear delay-embedded features ``O_lin`` in
-        the output.  Set ``True`` for both Lorenz63 and double-scroll (Eq. 9,
+        Whether to include the linear delay-embedded features `O_lin` in
+        the output.  Set `True` for both Lorenz63 and double-scroll (Eq. 9,
         10).
 
     Attributes
     ----------
     feature_dim : int
-        Total dimension of the output feature vector ``O_total``::
+        Total dimension of the output feature vector `O_total`:
 
-            D = input_dim * k
-            # Degrees emitted in the nonlinear block.  Degree 1 is excluded
-            # whenever include_linear is True (those monomials == O_lin):
-            d_lo = 2 if include_linear else 1
-            degrees = range(d_lo, p + 1) if cumulative else [p]
-            degrees = [g for g in degrees if not (g == 1 and include_linear)]
-            n_nonlin = sum(C(D + g - 1, g) for g in degrees)
-            feature_dim = (
-                int(include_constant)
-                + int(include_linear) * D
-                + n_nonlin
-            )
+        ```python
+        D = input_dim * k
+        # Degrees emitted in the nonlinear block.  Degree 1 is excluded
+        # whenever include_linear is True (those monomials == O_lin):
+        d_lo = 2 if include_linear else 1
+        degrees = range(d_lo, p + 1) if cumulative else [p]
+        degrees = [g for g in degrees if not (g == 1 and include_linear)]
+        n_nonlin = sum(C(D + g - 1, g) for g in degrees)
+        feature_dim = (
+            int(include_constant)
+            + int(include_linear) * D
+            + n_nonlin
+        )
+        ```
 
-        In the default exact-degree mode (``cumulative=False``) this reduces to
-        ``int(include_constant) + int(include_linear) * D + C(D + p - 1, p)``,
-        with the ``C(...)`` term dropped only in the ``p == 1`` /
-        ``include_linear=True`` duplicate-column case.
+        In the default exact-degree mode (`cumulative=False`) this reduces to
+        `int(include_constant) + int(include_linear) * D + C(D + p - 1, p)`,
+        with the `C(...)` term dropped only in the `p == 1` /
+        `include_linear=True` duplicate-column case.
 
     state_size : int
-        Number of rows in the delay buffer: ``(k - 1) * s``.  When ``k=1``
+        Number of rows in the delay buffer: `(k - 1) * s`.  When `k=1`
         this is 0 and the buffer is empty.
     monomial_indices : torch.Tensor
-        Long tensor of shape ``(n_monomials, p)`` containing the column
-        indices into ``O_lin`` for each monomial.  Registered as a buffer.
-        Each row lists the ``O_lin`` columns multiplied together to form one
-        monomial.  In exact-degree mode every row has ``p`` distinct index
+        Long tensor of shape `(n_monomials, p)` containing the column
+        indices into `O_lin` for each monomial.  Registered as a buffer.
+        Each row lists the `O_lin` columns multiplied together to form one
+        monomial.  In exact-degree mode every row has `p` distinct index
         slots; in cumulative mode lower-degree monomials are **right-padded**
-        with ``-1`` sentinels (gathered from a prepended ``1.0`` column at
-        runtime) so all rows share the same width ``p``.
+        with `-1` sentinels (gathered from a prepended `1.0` column at
+        runtime) so all rows share the same width `p`.
     delay_indices : torch.Tensor
-        Long tensor of shape ``(k-1,)`` containing the row indices into the
+        Long tensor of shape `(k-1,)` containing the row indices into the
         delay buffer for extracting the delay taps.  Registered as a buffer.
 
     Examples
@@ -280,7 +283,7 @@ class NGCell(ReservoirCell):
 
     @property
     def state_size(self) -> int:
-        """Number of rows in the delay buffer: ``(k-1)*s``."""
+        """Number of rows in the delay buffer: `(k-1)*s`."""
         return (self.k - 1) * self.s
 
     # ------------------------------------------------------------------
@@ -308,32 +311,32 @@ class NGCell(ReservoirCell):
         Returns
         -------
         torch.Tensor
-            Zero tensor of shape ``(batch_size, state_size, input_dim)``.
-            When ``k=1`` the second dimension is 0 (empty buffer).
+            Zero tensor of shape `(batch_size, state_size, input_dim)`.
+            When `k=1` the second dimension is 0 (empty buffer).
         """
         return torch.zeros(batch_size, self.state_size, self.input_dim, device=device, dtype=dtype)
 
     def _check_input_dim(self, x: torch.Tensor) -> None:
         """
-        Validate that an input's feature dimension matches :attr:`input_dim`.
+        Validate that an input's feature dimension matches `input_dim`.
 
         The cell builds its delay-embedded and monomial features against a
-        fixed ``input_dim``; a wrong feature width would otherwise surface as a
-        cryptic ``torch.cat`` size-mismatch deep inside feature construction.
-        This raises a clear :class:`ValueError` naming the expected width
+        fixed `input_dim`; a wrong feature width would otherwise surface as a
+        cryptic `torch.cat` size-mismatch deep inside feature construction.
+        This raises a clear `ValueError` naming the expected width
         instead.
 
         Parameters
         ----------
         x : torch.Tensor
             Input slice whose trailing dimension is the feature width:
-            ``(batch, input_dim)`` for the single-step path or
-            ``(batch, timesteps, input_dim)`` for the sequence path.
+            `(batch, input_dim)` for the single-step path or
+            `(batch, timesteps, input_dim)` for the sequence path.
 
         Raises
         ------
         ValueError
-            If ``x.shape[-1]`` does not equal :attr:`input_dim`.
+            If `x.shape[-1]` does not equal `input_dim`.
         """
         if x.shape[-1] != self.input_dim:
             raise ValueError(
@@ -353,27 +356,27 @@ class NGCell(ReservoirCell):
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            Per-timestep input slices.  ``inputs[0]`` is the current input
-            of shape ``(batch, input_dim)``.  NG-RC has no driving inputs, so
-            only ``inputs[0]`` is consumed (the wrapping
-            :class:`~resdag.layers.reservoirs.ngrc.NGReservoirLayer` rejects driving
+            Per-timestep input slices.  `inputs[0]` is the current input
+            of shape `(batch, input_dim)`.  NG-RC has no driving inputs, so
+            only `inputs[0]` is consumed (the wrapping
+            `resdag.layers.reservoirs.ngrc.NGReservoirLayer` rejects driving
             inputs before they reach the cell).
         state : torch.Tensor
-            Delay buffer of shape ``(batch, state_size, input_dim)``.
+            Delay buffer of shape `(batch, state_size, input_dim)`.
 
         Returns
         -------
         features : torch.Tensor
-            Output feature vector ``O_total`` of shape
-            ``(batch, feature_dim)``.
+            Output feature vector `O_total` of shape
+            `(batch, feature_dim)`.
         new_state : torch.Tensor
-            Updated delay buffer of shape ``(batch, state_size, input_dim)``.
+            Updated delay buffer of shape `(batch, state_size, input_dim)`.
 
         Raises
         ------
         ValueError
-            If ``inputs[0]``'s trailing (feature) dimension does not equal
-            :attr:`input_dim`.
+            If `inputs[0]`'s trailing (feature) dimension does not equal
+            `input_dim`.
         """
         x = inputs[0]
         self._check_input_dim(x)
@@ -429,28 +432,28 @@ class NGCell(ReservoirCell):
 
     def _build_nonlinear(self, o_lin: torch.Tensor) -> torch.Tensor:
         """
-        Gather the polynomial monomials from the linear features ``O_lin``.
+        Gather the polynomial monomials from the linear features `O_lin`.
 
-        Each row of :attr:`monomial_indices` lists the ``O_lin`` columns to
+        Each row of `monomial_indices` lists the `O_lin` columns to
         multiply together for one monomial.  In exact-degree mode every row has
-        ``p`` valid column indices, so the monomial block is a single advanced
+        `p` valid column indices, so the monomial block is a single advanced
         index plus a product over the last axis.  In cumulative mode the rows
-        mix degrees and are right-padded with the ``-1`` sentinel; a ``1.0``
-        column is prepended to ``O_lin`` (index ``0``, the multiplicative
-        identity) and the indices shifted by ``+1`` so that ``-1`` selects the
+        mix degrees and are right-padded with the `-1` sentinel; a `1.0`
+        column is prepended to `O_lin` (index `0`, the multiplicative
+        identity) and the indices shifted by `+1` so that `-1` selects the
         ones column and contributes nothing to the product.
 
         Parameters
         ----------
         o_lin : torch.Tensor
-            Linear delay-embedded features of shape ``(..., D)`` (the leading
-            dimensions are ``(batch,)`` for :meth:`forward` and
-            ``(batch, timesteps)`` for :meth:`forward_sequence`).
+            Linear delay-embedded features of shape `(..., D)` (the leading
+            dimensions are `(batch,)` for `forward` and
+            `(batch, timesteps)` for `forward_sequence`).
 
         Returns
         -------
         torch.Tensor
-            Monomial block of shape ``(..., n_monomials)``.
+            Monomial block of shape `(..., n_monomials)`.
         """
         monomial_indices = cast(torch.Tensor, self.monomial_indices)
         if self._pad_with_ones:
@@ -471,40 +474,40 @@ class NGCell(ReservoirCell):
         Compute NG-RC features for a whole sequence in a single vectorized pass.
 
         This is the batch-forward fast path used by
-        :meth:`~resdag.layers.reservoirs.ngrc.NGReservoirLayer.forward`.  It is
-        numerically identical to scanning :meth:`forward` step-by-step
-        (``0.0`` max-abs-diff, including the warmup region), but contains no
+        `resdag.layers.reservoirs.ngrc.NGReservoirLayer.forward`.  It is
+        numerically identical to scanning `forward` step-by-step
+        (`0.0` max-abs-diff, including the warmup region), but contains no
         per-timestep Python loop: the delay-embedded linear features are built
         from shifted, front-zero-padded slices of the input, every monomial is
-        gathered over the full ``(batch, timesteps, *)`` tensor at once, and the
+        gathered over the full `(batch, timesteps, *)` tensor at once, and the
         constant-ones block is allocated a single time.
 
         Parameters
         ----------
         x : torch.Tensor
-            Input sequence of shape ``(batch, timesteps, input_dim)``.
+            Input sequence of shape `(batch, timesteps, input_dim)`.
         state : torch.Tensor
-            Incoming delay buffer of shape ``(batch, state_size, input_dim)``,
-            chronologically oldest-first.  This holds the ``(k-1)*s`` inputs
-            immediately preceding ``x[:, 0]`` and supplies the delay taps for
+            Incoming delay buffer of shape `(batch, state_size, input_dim)`,
+            chronologically oldest-first.  This holds the `(k-1)*s` inputs
+            immediately preceding `x[:, 0]` and supplies the delay taps for
             the first timesteps (zeros for a cold start).
 
         Returns
         -------
         features : torch.Tensor
-            Output features ``O_total`` of shape
-            ``(batch, timesteps, feature_dim)``.
+            Output features `O_total` of shape
+            `(batch, timesteps, feature_dim)`.
         new_state : torch.Tensor
-            Updated delay buffer of shape ``(batch, state_size, input_dim)``,
-            holding the last ``state_size`` inputs of ``x`` (or, when the
+            Updated delay buffer of shape `(batch, state_size, input_dim)`,
+            holding the last `state_size` inputs of `x` (or, when the
             sequence is shorter than the buffer, carried-over history), so a
-            subsequent streaming :meth:`forward` continues seamlessly.
+            subsequent streaming `forward` continues seamlessly.
 
         Raises
         ------
         ValueError
-            If ``x``'s trailing (feature) dimension does not equal
-            :attr:`input_dim`.
+            If `x`'s trailing (feature) dimension does not equal
+            `input_dim`.
 
         See Also
         --------
@@ -567,13 +570,13 @@ class NGCell(ReservoirCell):
         Parameters
         ----------
         state : torch.Tensor
-            Candidate state of shape ``(batch, state_size, input_dim)``.
+            Candidate state of shape `(batch, state_size, input_dim)`.
 
         Raises
         ------
         ValueError
-            If ``state`` is not 3-D or its non-batch dimensions do not match
-            ``(state_size, input_dim)``.
+            If `state` is not 3-D or its non-batch dimensions do not match
+            `(state_size, input_dim)`.
         """
         expected = (self.state_size, self.input_dim)
         if state.dim() != 3 or state.shape[1:] != torch.Size(expected):

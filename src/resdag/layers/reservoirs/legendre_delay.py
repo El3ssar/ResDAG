@@ -10,11 +10,11 @@ from ._cell_layer import CellReservoirLayer
 
 
 class LegendreDelayLayer(CellReservoirLayer):
-    """Stateful fixed LDN memory; see :class:`LegendreDelayCell` for configuration.
+    """Stateful fixed LDN memory; see `LegendreDelayCell` for configuration.
 
-    Returns ``order * memory_channels`` coefficients per timestep, flattened
+    Returns `order * memory_channels` coefficients per timestep, flattened
     channel first. Default channels preserve all feedback and driver dimensions.
-    ``theta`` and ``dt`` use the same time units and fix the discretization at
+    `theta` and `dt` use the same time units and fix the discretization at
     construction. This is linear delay memory, not a full nonlinear LMU.
     """
 

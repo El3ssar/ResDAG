@@ -23,13 +23,13 @@ one transformation to later observations, retain those statistics and pass
 them back through `stats=`; `denormalize_data` restores the original units.
 Keep final test observations out of any statistics fitted for model selection.
 
-::: resdag.data
-    options:
-      members:
-        - prepare_esn_data
-        - normalize_data
-        - denormalize_data
-        - load_and_prepare
+::: resdag.data.prepare_esn_data
+
+::: resdag.data.normalize_data
+
+::: resdag.data.denormalize_data
+
+::: resdag.data.load_and_prepare
 
 ## Streaming windows
 
@@ -39,11 +39,9 @@ targets, input and target windows share their origin; otherwise `horizon`
 sets the target offset. `make_dataloader` batches `(inputs, targets, washout)`.
 See [streaming and DataLoaders](../workflows/streaming.md) for training loops.
 
-::: resdag.data
-    options:
-      members:
-        - TimeSeriesWindowDataset
-        - make_dataloader
+::: resdag.data.TimeSeriesWindowDataset
+
+::: resdag.data.make_dataloader
 
 ## Files
 
@@ -54,47 +52,59 @@ ambiguity warning; store a `(time, features)` array to make the axes explicit.
 NPY and NPZ loading use NumPy's default restricted object-array policy.
 NetCDF requires the optional `xarray` dependency.
 
-::: resdag.data
-    options:
-      members:
-        - load_file
-        - load_csv
-        - load_npy
-        - load_npz
-        - load_nc
-        - save_csv
-        - save_npy
-        - save_npz
-        - save_nc
-        - list_files
+::: resdag.data.load_file
+
+::: resdag.data.load_csv
+
+::: resdag.data.load_npy
+
+::: resdag.data.load_npz
+
+::: resdag.data.load_nc
+
+::: resdag.data.save_csv
+
+::: resdag.data.save_npy
+
+::: resdag.data.save_npz
+
+::: resdag.data.save_nc
+
+::: resdag.data.list_files
 
 ## Dataset generators
 
 Each generator takes `n_timesteps` first and returns a `(1, time, features)`
 tensor. Continuous Lorenz and Rössler generators use RK4; these convenience
 generators are separate from optional TSDynamics trajectory integration.
-Generator normalization acts on the returned window. Use `normalize=None`
-when fitting normalization separately on a training prefix. Record the
+All generators return raw values by default (`normalize=None`). The common
+`rd.ESN.fit` / `rd.Model.fit` workflow learns scaling from training observations.
+For raw graph workflows, split first and fit normalization on the training
+prefix with `prepare_esn_data(..., normalize=True)` or `normalize_data`.
+Explicit `normalize="standard"` or `normalize="minmax"` scales the entire returned
+window; use that option only when the complete window belongs to one training
+split, or when global normalization is intentionally part of your experiment. Record the
 actual `dt`, system parameters, initial-condition/seed settings and discarded
 transient alongside any forecast result.
 
-::: resdag.datasets
-    options:
-      members:
-        - lorenz
-        - rossler
-        - henon
-        - mackey_glass
-        - narma
-        - sine
-        - kuramoto_sivashinsky
+::: resdag.datasets.lorenz
+
+::: resdag.datasets.rossler
+
+::: resdag.datasets.henon
+
+::: resdag.datasets.mackey_glass
+
+::: resdag.datasets.narma
+
+::: resdag.datasets.sine
+
+::: resdag.datasets.kuramoto_sivashinsky
 
 Default sampling intervals and reference exponent lookup remain available
 from the existing data utility namespace; explicitly supplied system or
 sampling parameters take precedence in an experiment.
 
-::: resdag.utils.data
-    options:
-      members:
-        - DATASET_DT
-        - dataset_lambda_max
+::: resdag.utils.data.DATASET_DT
+
+::: resdag.utils.data.dataset_lambda_max

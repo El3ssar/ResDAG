@@ -524,12 +524,12 @@ def save_model(
     """Save a complete model, preserving recurrent memory by default.
 
     Portable files contain declarative registered configuration and tensor state.
-    ``trusted=True`` uses the optional cloudpickle package to include Python
+    `trusted=True` uses the optional cloudpickle package to include Python
     components such as notebook-local classes and lambdas. Loading those files
     requires explicit trust and compatible Python/package versions.
 
-    ``include_state=False`` resets ordinary recurrent memory on reload. Fitted
-    preprocessing and the observed history used by ``forecast`` are retained.
+    `include_state=False` resets ordinary recurrent memory on reload. Fitted
+    preprocessing and the observed history used by `forecast` are retained.
     Neither option saves an autonomous forecast cursor, optimizer or autograd graph.
     """
     if not isinstance(model, nn.Module):
@@ -593,10 +593,10 @@ def load(
     """Reconstruct a saved model without knowing its original DAG.
 
     The default uses Torch's restricted tensor/primitive loader and never imports
-    artifact-selected Python paths. ``trusted=True`` permits Python unpickling;
+    artifact-selected Python paths. `trusted=True` permits Python unpickling;
     use it only for a file whose producer and contents you trust. Restricted
     loading reduces code execution exposure but does not prevent malformed-file
-    memory/resource exhaustion. Device remapping follows standard ``torch.load``.
+    memory/resource exhaustion. Device remapping follows standard `torch.load`.
     """
     if type(trusted) is not bool:
         raise TypeError("trusted must be a bool")

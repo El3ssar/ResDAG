@@ -30,51 +30,46 @@ batch errors are reduced with the median. The common tuning workflow instead
 uses fixed training scales; record that distinction when comparing results.
 `rmse`, `nrmse` and `r2` return aggregate scalar errors rather than a valid prefix.
 
-::: resdag.metrics
-    options:
-      members:
-        - valid_prediction_time
-        - rmse
-        - nrmse
-        - r2
+::: resdag.metrics.valid_prediction_time
+
+::: resdag.metrics.rmse
+
+::: resdag.metrics.nrmse
+
+::: resdag.metrics.r2
 
 ---
 
 ## Lyapunov-time conversions
 
-::: resdag.metrics
-    options:
-      members:
-        - lyapunov_time
-        - steps_per_lyapunov_time
-        - steps_to_lyapunov
-        - lyapunov_to_steps
+::: resdag.metrics.lyapunov_time
+
+::: resdag.metrics.steps_per_lyapunov_time
+
+::: resdag.metrics.steps_to_lyapunov
+
+::: resdag.metrics.lyapunov_to_steps
 
 ---
 
 ## Canonical exponents
 
-::: resdag.metrics
-    options:
-      members:
-        - CANONICAL_LAMBDA_MAX
-        - MACKEY_GLASS_LAMBDA
+::: resdag.metrics.CANONICAL_LAMBDA_MAX
+
+::: resdag.metrics.MACKEY_GLASS_LAMBDA
 
 ---
 
 ## Estimators
 
-::: resdag.metrics
-    options:
-      members:
-        - largest_lyapunov
-        - reservoir_lyapunov
+::: resdag.metrics.largest_lyapunov
+
+::: resdag.metrics.reservoir_lyapunov
 
 ## Reservoir and attractor observables
 
-::: resdag.metrics
-    options:
-      members:
-        - memory_capacity
-        - effective_spectral_radius
-        - correlation_dimension
+::: resdag.metrics.memory_capacity
+
+::: resdag.metrics.effective_spectral_radius
+
+::: resdag.metrics.correlation_dimension

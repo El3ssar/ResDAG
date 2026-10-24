@@ -15,28 +15,28 @@ class LegendreDelayCell(ProjectedInputCell):
     r"""Linear Legendre delay network (LDN), rather than a full nonlinear LMU.
 
     Implements equations (1), (2), and (4) of Voelker et al., NeurIPS 2019.
-    The analytic continuous matrices are fixed buffers, with ``theta`` already
-    divided into ``continuous_A`` and ``continuous_B``. An augmented matrix
-    exponential computes exact zero-order-hold ``A``/``B`` for interval ``dt``;
+    The analytic continuous matrices are fixed buffers, with `theta` already
+    divided into `continuous_A` and `continuous_B`. An augmented matrix
+    exponential computes exact zero-order-hold `A`/`B` for interval `dt`;
     no matrix inverse or Euler approximation is used.
 
-    ``order`` is the number of Legendre coefficients **per channel**.
-    ``memory_channels=None`` uses ``feedback_size + (input_size or 0)`` channels,
+    `order` is the number of Legendre coefficients **per channel**.
+    `memory_channels=None` uses `feedback_size + (input_size or 0)` channels,
     one for each input dimension; their default encoders concatenate the raw
     feedback and driver. When channels equal that sum, identity encoders are
     also used by default. Other channel counts use random linear encoders with
-    uniform bounds ``1/sqrt(total input width)``. Explicit feedback/input
+    uniform bounds `1/sqrt(total input width)`. Explicit feedback/input
     initializer specs override the respective encoder.
 
-    State and output both have width ``memory_channels * order``. They flatten
-    ``(batch, memory_channels, order)`` in channel-major order. ``theta`` is a
-    memory window in the same time units as ``dt`` (default dt=1 means samples).
-    ``trainable=True`` trains only input encoders; the memory dynamics stay fixed.
+    State and output both have width `memory_channels * order`. They flatten
+    `(batch, memory_channels, order)` in channel-major order. `theta` is a
+    memory window in the same time units as `dt` (default dt=1 means samples).
+    `trainable=True` trains only input encoders; the memory dynamics stay fixed.
     The linear memory should be followed by nonlinear features/model components
     when the task needs nonlinear predictions.
 
-    The scaled continuous matrix 1-norm must not exceed ``2**20``; extreme
-    ``dt/theta`` ratios or orders beyond this numerical bound are rejected
+    The scaled continuous matrix 1-norm must not exceed `2**20`; extreme
+    `dt/theta` ratios or orders beyond this numerical bound are rejected
     before exponentiation. MPS construction initializes on CPU then moves once.
 
     Reference: https://papers.nips.cc/paper/9689-legendre-memory-units-continuous-time-representation-in-recurrent-neural-networks
@@ -183,12 +183,12 @@ class LegendreDelayCell(ProjectedInputCell):
 
     @property
     def state_size(self) -> int:
-        """Packed memory width, ``memory_channels * order``."""
+        """Packed memory width, `memory_channels * order`."""
         return self.reservoir_size
 
     @property
     def output_size(self) -> int:
-        """Readable memory width, equal to ``state_size``."""
+        """Readable memory width, equal to `state_size`."""
         return self.reservoir_size
 
     def step(self, projected_t: Tensor, state: Tensor) -> tuple[Tensor, Tensor]:

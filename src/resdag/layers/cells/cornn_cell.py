@@ -22,22 +22,24 @@ from ._projected import ProjectedInputCell, finite_scalar, positive_size, role_s
 class CoRNNCell(ProjectedInputCell):
     r"""Coupled nonlinear oscillators, frozen by default.
 
-    Uses the explicit-damping variant of equation (3) in the coRNN paper::
+    Uses the explicit-damping variant of equation (3) in the coRNN paper:
 
-        v_new = v + dt * (tanh(W_hh h + W_hv v + W_fb x + W_in u + b)
-                          - gamma*h - epsilon*v)
-        h_new = h + dt * v_new
+    ```python
+    v_new = v + dt * (tanh(W_hh h + W_hv v + W_fb x + W_in u + b)
+                      - gamma*h - epsilon*v)
+    h_new = h + dt * v_new
+    ```
 
-    The packed state is ``cat([h, v], -1)`` with width ``2*reservoir_size``;
-    the output is position ``h_new`` with width ``reservoir_size``.
-    ``recurrent_initializer`` configures the position matrix ``weight_hh``;
-    ``velocity_initializer`` configures the velocity matrix ``weight_hv``.
-    ``spectral_radius`` scales only the position matrix, respecting a builder's
+    The packed state is `cat([h, v], -1)` with width `2*reservoir_size`;
+    the output is position `h_new` with width `reservoir_size`.
+    `recurrent_initializer` configures the position matrix `weight_hh`;
+    `velocity_initializer` configures the velocity matrix `weight_hv`.
+    `spectral_radius` scales only the position matrix, respecting a builder's
     rescaling policy. It does not guarantee stability of the oscillator update.
-    ``dt``, ``gamma`` and ``epsilon`` are finite positive/nonnegative scalars.
+    `dt`, `gamma` and `epsilon` are finite positive/nonnegative scalars.
     Both recurrent matrices default to uniform(-1/sqrt(size), 1/sqrt(size)).
     Input projections default to uniform(-1, 1). Weights are initialized directly
-    in ``dtype`` on ``device`` (MPS initializes on CPU then transfers once). ``trainable=True`` enables ordinary backpropagation.
+    in `dtype` on `device` (MPS initializes on CPU then transfers once). `trainable=True` enables ordinary backpropagation.
 
     Reference: https://arxiv.org/abs/2010.00951
     """
@@ -152,12 +154,12 @@ class CoRNNCell(ProjectedInputCell):
 
     @property
     def state_size(self) -> int:
-        """Packed position-plus-velocity width, twice ``reservoir_size``."""
+        """Packed position-plus-velocity width, twice `reservoir_size`."""
         return 2 * self.reservoir_size
 
     @property
     def output_size(self) -> int:
-        """Position output width, equal to ``reservoir_size``."""
+        """Position output width, equal to `reservoir_size`."""
         return self.reservoir_size
 
     def step(self, projected_t: Tensor, state: Tensor) -> tuple[Tensor, Tensor]:

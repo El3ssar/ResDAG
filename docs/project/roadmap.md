@@ -119,9 +119,9 @@ are intentional mathematical corrections approved for phase 1: regenerated
 weights and experiment results can change even with the same seed. Migration
 notes accompany both initializers.
 
-Phase 1 does not silently change dataset normalization defaults, deep-stack
+Phase 1 did not change dataset normalization defaults, deep-stack
 seed schedules, feedback routing or the meaning of existing `save()` files.
-Those require the documented major-release migration below.
+Later breaking changes are recorded in the major-release migration below.
 
 ### Verification record
 
@@ -743,5 +743,6 @@ release/deployed Pages files verify against their source.
 | ID | Status | Work | Acceptance checks / evidence |
 | --- | --- | --- | --- |
 | SQ-02 | WIP | Keep the intended public API discoverable and hide implementation helpers. | Existing package layout and custom initializer/cell/readout/codec extension points remain. Internal memory-context builders, cell validators and worker adapters become private; duplicate top-level HPO aliases are removed in favor of `rd.hpo`. Public exports and rendered reference coverage have executable guards. See [migration guidance](esn-migration.md). Final combined acceptance is pending. |
-| SQ-03 | WIP | Reconcile all guides, examples and scientific visuals with current behavior. | All 18 example main bodies execute with explicit bounded budgets; 15 ordinary full-default tutorials and optional plot branches pass. Every registered built-in initializer has an inspected gallery figure (51 total). Recorded, predeclared Lorenz/Rössler cases drive plots and TSDynamics animations; asset generation does not refit or select cases. Strict MkDocs and built-page link/media/anchor checks are required in CI. Final combined acceptance is pending. |
+| SQ-03 | WIP | Reconcile all guides, examples and scientific visuals with current behavior. | All 18 example main bodies execute with explicit bounded budgets; 15 ordinary full-default tutorials and optional plot branches pass. Every registered built-in initializer has an inspected gallery figure (51 total). Recorded, predeclared Lorenz/Rössler cases drive plots and TSDynamics animations; asset generation does not refit or select cases. The source reference uses Markdown throughout; repeated module headings, incorrect parsed defaults and duplicate source-line anchors are repaired. Strict MkDocs and built-page link/media/anchor/prose checks are required in CI. Final combined acceptance is pending. |
 | SQ-04 | WIP | Sanitize persistence and development dependencies without changing model mathematics. | Ordinary raw checkpoints use restricted tensor loading, full Python model loads require explicit trust, unsupported metadata is rejected before writing, and saves replace files atomically. Malicious-payload, metadata and failed-write regressions cover raw and portable paths. The [dependency audit](security.md) refreshes affected non-numerical packages and records two remaining upstream Torch advisories without suppression. Final package/hosted acceptance is in progress. |
+| SQ-05 | WIP | Keep held-out observations out of generator preparation and tutorial state replay. | All seven built-in generators return raw values by default; explicit standard normalization preserves the previous transform. Sixteen new tests cover raw defaults, exact prefix invariance and training-only statistics, with unchanged explicit-standard golden fixtures. Low-level examples fit scaling on training rows, replay the continuous observed prefix and use stable SVD for their algebraic teaching paths. Final combined acceptance is pending. |

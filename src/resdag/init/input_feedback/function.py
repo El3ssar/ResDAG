@@ -2,10 +2,10 @@
 Function-Based Input/Feedback Initializer
 =========================================
 
-This module provides :class:`FunctionInitializer`, the adapter that turns
+This module provides `FunctionInitializer`, the adapter that turns
 any matrix-building callable into an input/feedback initializer — the
 rectangular-matrix counterpart of
-:class:`~resdag.init.topology.MatrixTopology`.
+`resdag.init.topology.MatrixTopology`.
 
 See Also
 --------
@@ -30,10 +30,10 @@ class FunctionInitializer(InputFeedbackInitializer):
     feedback weight matrices, without subclassing. Two calling conventions
     are supported, tried in order:
 
-    1. **Build style** — ``fn(rows, cols, **kwargs)`` returning a
-       ``(rows, cols)`` array-like (``torch.Tensor`` or ``numpy.ndarray``).
-    2. **In-place style** — ``fn(tensor, **kwargs)`` mutating a tensor in
-       place, e.g. any ``torch.nn.init.*_`` function.
+    1. **Build style** — `fn(rows, cols, **kwargs)` returning a
+       `(rows, cols)` array-like (`torch.Tensor` or `numpy.ndarray`).
+    2. **In-place style** — `fn(tensor, **kwargs)` mutating a tensor in
+       place, e.g. any `torch.nn.init.*_` function.
 
     Parameters
     ----------
@@ -55,7 +55,7 @@ class FunctionInitializer(InputFeedbackInitializer):
     >>> weight = torch.empty(100, 3)
     >>> init.initialize(weight)
 
-    Bare callables passed to ``ESNLayer`` are wrapped automatically:
+    Bare callables passed to `ESNLayer` are wrapped automatically:
 
     >>> from resdag.layers import ESNLayer
     >>> layer = ESNLayer(100, feedback_size=3, feedback_initializer=first_neuron_only)
@@ -65,7 +65,7 @@ class FunctionInitializer(InputFeedbackInitializer):
     ...     feedback_initializer=(first_neuron_only, {"scale": 0.1}),
     ... )
 
-    ``torch.nn.init`` functions work directly (in-place style):
+    `torch.nn.init` functions work directly (in-place style):
 
     >>> layer = ESNLayer(100, feedback_size=3, feedback_initializer=torch.nn.init.xavier_uniform_)
 
@@ -87,14 +87,14 @@ class FunctionInitializer(InputFeedbackInitializer):
         Parameters
         ----------
         weight : torch.Tensor
-            2D tensor of shape ``(rows, cols)`` to initialize. Modified
+            2D tensor of shape `(rows, cols)` to initialize. Modified
             in-place.
         **kwargs
             Per-call overrides merged over the bound keyword arguments (a
             recognized key wins for this call only). This is the same per-call
             contract the class-based initializers honor — see the **Per-call
             overrides** section of
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`.
+            `resdag.init.input_feedback.InputFeedbackInitializer`.
 
         Returns
         -------
@@ -104,7 +104,7 @@ class FunctionInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If ``weight`` is not 2-D, if the callable matches neither
+            If `weight` is not 2-D, if the callable matches neither
             calling convention, or if the built matrix has the wrong shape.
         """
         if weight.ndim != 2:

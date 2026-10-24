@@ -24,7 +24,7 @@ def one_entry_per_row_columns(matrix: torch.Tensor) -> torch.Tensor | None:
 def one_entry_recurrent(
     state: torch.Tensor, columns: torch.Tensor, values: torch.Tensor
 ) -> torch.Tensor:
-    """Compute ``state @ W.T`` with one selected weighted coordinate per row.
+    """Compute `state @ W.T` with one selected weighted coordinate per row.
 
     Inputs follow the cell's already-validated batch/state/device/dtype contract.
     Every result has one product per entry; upstream state gradients accumulate

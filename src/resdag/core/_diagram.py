@@ -255,7 +255,7 @@ def plot_model(
 ) -> Any:
     """Return a notebook-displayable Graphviz source, or save exactly one file.
 
-    DOT needs no optional dependencies. SVG/PNG/PDF use ``resdag[viz]`` and the
+    DOT needs no optional dependencies. SVG/PNG/PDF use `resdag[viz]` and the
     Graphviz system executable. An absent format is inferred from the suffix;
     without a suffix it defaults to SVG. No system viewer is launched.
     """

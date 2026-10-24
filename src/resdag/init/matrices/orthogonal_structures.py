@@ -21,16 +21,16 @@ def signed_permutation(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Build a random permutation with independent random signs, times ``gain``.
+    """Build a random permutation with independent random signs, times `gain`.
 
-    Each row and column has exactly one nonzero when ``gain != 0``. All
-    singular values and eigenvalue magnitudes equal ``abs(gain)``. These
-    matrices preserve norm for ``abs(gain)=1`` while allowing signed cycles
+    Each row and column has exactly one nonzero when `gain != 0`. All
+    singular values and eigenvalue magnitudes equal `abs(gain)`. These
+    matrices preserve norm for `abs(gain)=1` while allowing signed cycles
     instead of mixing every state coordinate as a dense Haar draw does.
     A direct call is O(n²) because the returned tensor is dense. Using this
-    registered initializer in an ESN with ``sparse=True`` constructs the
+    registered initializer in an ESN with `sparse=True` constructs the
     compressed weights directly in O(n) storage and uses a CPU gather update.
-    The permutation and signs use a local device RNG when ``seed`` is given.
+    The permutation and signs use a local device RNG when `seed` is given.
 
     Parameters
     ----------
@@ -50,7 +50,7 @@ def signed_permutation(
     Returns
     -------
     torch.Tensor
-        Dense ``(n, n)`` matrix for direct callers. Sparse ESN initialization
+        Dense `(n, n)` matrix for direct callers. Sparse ESN initialization
         bypasses this dense materialization while preserving the same draws.
 
     Raises
@@ -90,16 +90,16 @@ def householder_orthogonal(
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    r"""Build ``gain * H_k ... H_1``, with ``H_i = I - 2 v_i v_i.T``.
+    r"""Build `gain * H_k ... H_1`, with `H_i = I - 2 v_i v_i.T`.
 
-    Each ``v_i`` is an independently sampled Gaussian direction, normalized
-    to unit norm. ``reflectors=None`` uses ``n`` reflections; zero gives a
-    scaled identity. All singular values equal ``abs(gain)``. For ``k < n``
-    at least ``n-k`` directions are unchanged before applying ``gain``; choose
+    Each `v_i` is an independently sampled Gaussian direction, normalized
+    to unit norm. `reflectors=None` uses `n` reflections; zero gives a
+    scaled identity. All singular values equal `abs(gain)`. For `k < n`
+    at least `n-k` directions are unchanged before applying `gain`; choose
     the number of reflections to balance mixing against initialization cost.
 
     Dense rank-one updates cost O(k n²), with O(n²) storage. Thus the default
-    ``k=n`` costs O(n³); a fixed small ``k`` costs O(n²). The returned matrix
+    `k=n` costs O(n³); a fixed small `k` costs O(n²). The returned matrix
     still uses dense recurrent multiplication. This fixed-reflection product
     is not a Haar-uniform draw. Half-precision arithmetic is promoted to
     float32 until the result is cast to the requested dtype.
@@ -127,7 +127,7 @@ def householder_orthogonal(
     Returns
     -------
     torch.Tensor
-        Dense scaled orthogonal ``(n, n)`` matrix. Construction costs
+        Dense scaled orthogonal `(n, n)` matrix. Construction costs
         O(reflectors * n²), and dense storage/application cost O(n²).
 
     Raises

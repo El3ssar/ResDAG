@@ -17,19 +17,19 @@ def connected_graph(
     """Decorator to ensure a graph generation function produces a connected graph.
 
     Wraps a graph generation function and retries until a connected graph is
-    produced, up to ``max_tries`` attempts. Each retry advances a single shared
+    produced, up to `max_tries` attempts. Each retry advances a single shared
     random generator, so successive attempts draw fresh randomness and differ
-    even under a fixed integer ``seed`` (a fresh ``Generator`` rebuilt per call
+    even under a fixed integer `seed` (a fresh `Generator` rebuilt per call
     would otherwise make every attempt byte-identical). If no attempt yields a
-    connected graph, a :class:`ValueError` is raised rather than silently
+    connected graph, a `ValueError` is raised rather than silently
     returning a disconnected graph.
 
     Parameters
     ----------
     graph_func : callable
         A function that generates and returns a NetworkX graph. It must accept a
-        ``seed`` parameter compatible with :func:`resdag.utils.create_rng`
-        (an int, a :class:`numpy.random.Generator`, or ``None``).
+        `seed` parameter compatible with `resdag.utils.create_rng`
+        (an int, a `numpy.random.Generator`, or `None`).
     max_tries : int, optional
         Maximum number of attempts to generate a connected graph. Default: 100.
 
@@ -41,8 +41,8 @@ def connected_graph(
     Raises
     ------
     ValueError
-        If ``tries`` is less than 1, or if a connected graph cannot be generated
-        within ``tries`` attempts.
+        If `tries` is less than 1, or if a connected graph cannot be generated
+        within `tries` attempts.
 
     Examples
     --------
@@ -93,10 +93,10 @@ def connected_graph(
 
 
 def _seed_parameter_index(graph_func: Callable) -> int | None:
-    """Return the positional index of ``graph_func``'s ``seed`` parameter.
+    """Return the positional index of `graph_func`'s `seed` parameter.
 
-    Returns ``None`` when ``seed`` is not a positional-capable parameter (e.g.
-    the function has no ``seed`` parameter or it is keyword-only).
+    Returns `None` when `seed` is not a positional-capable parameter (e.g.
+    the function has no `seed` parameter or it is keyword-only).
     """
     try:
         params = list(inspect.signature(graph_func).parameters.values())
@@ -112,7 +112,7 @@ def _seed_parameter_index(graph_func: Callable) -> int | None:
 
 
 def _extract_seed(graph_func: Callable, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
-    """Resolve the seed value passed to ``graph_func`` (keyword or positional)."""
+    """Resolve the seed value passed to `graph_func` (keyword or positional)."""
     if "seed" in kwargs:
         return kwargs["seed"]
     index = _seed_parameter_index(graph_func)
@@ -122,7 +122,7 @@ def _extract_seed(graph_func: Callable, args: tuple[Any, ...], kwargs: dict[str,
 
 
 def _strip_positional_seed(graph_func: Callable, args: tuple[Any, ...]) -> tuple[Any, ...]:
-    """Drop a positionally-passed ``seed`` so it can be re-supplied as a kwarg."""
+    """Drop a positionally-passed `seed` so it can be re-supplied as a kwarg."""
     index = _seed_parameter_index(graph_func)
     if index is not None and index < len(args):
         return args[:index] + args[index + 1 :]
@@ -132,23 +132,23 @@ def _strip_positional_seed(graph_func: Callable, args: tuple[Any, ...]) -> tuple
 def _is_weakly_connected_adjacency(adjacency: np.ndarray, *, directed: bool) -> bool:
     """Return whether a dense adjacency is (weakly) connected.
 
-    Uses :func:`scipy.sparse.csgraph.connected_components` on a CSR view of the
+    Uses `scipy.sparse.csgraph.connected_components` on a CSR view of the
     adjacency's nonzero pattern — no NetworkX object is built. For a directed
-    graph this checks *weak* connectivity (``connection='weak'``), matching the
-    ``nx.is_weakly_connected`` check the NetworkX ``@connected_graph`` wrapper
+    graph this checks *weak* connectivity (`connection='weak'`), matching the
+    `nx.is_weakly_connected` check the NetworkX `@connected_graph` wrapper
     performs; for an undirected graph weak and strong connectivity coincide.
 
     Parameters
     ----------
     adjacency : numpy.ndarray
-        The ``(n, n)`` weighted adjacency to test.
+        The `(n, n)` weighted adjacency to test.
     directed : bool
         Whether the graph is directed (weak connectivity is checked either way).
 
     Returns
     -------
     bool
-        ``True`` when the graph has a single (weakly) connected component.
+        `True` when the graph has a single (weakly) connected component.
     """
     from scipy.sparse import csr_matrix
     from scipy.sparse.csgraph import connected_components
@@ -172,49 +172,49 @@ def connected_adjacency(
 ) -> Callable[..., np.ndarray]:
     """Wrap a dense-adjacency builder to guarantee a (weakly) connected result.
 
-    The adjacency-level analogue of :func:`connected_graph`: instead of building
-    a NetworkX object per attempt and calling ``nx.is_(weakly_)connected``, it
-    calls the vectorized ``adjacency_builder`` directly and checks connectivity
-    on a CSR view via :func:`scipy.sparse.csgraph.connected_components`. This is
-    the fast path used by :class:`~resdag.init.topology.GraphTopology` for the
-    ``connected_*`` topologies, which otherwise fell back to the NetworkX
+    The adjacency-level analogue of `connected_graph`: instead of building
+    a NetworkX object per attempt and calling `nx.is_(weakly_)connected`, it
+    calls the vectorized `adjacency_builder` directly and checks connectivity
+    on a CSR view via `scipy.sparse.csgraph.connected_components`. This is
+    the fast path used by `resdag.init.topology.GraphTopology` for the
+    `connected_*` topologies, which otherwise fell back to the NetworkX
     round-trip (build a graph edge-by-edge, check, then densify back) — pure
     overhead when the inner builder already produces the dense matrix.
 
-    Determinism matches :func:`connected_graph`: a single shared
-    :class:`numpy.random.Generator` (resolved from ``seed``) is advanced across
+    Determinism matches `connected_graph`: a single shared
+    `numpy.random.Generator` (resolved from `seed`) is advanced across
     attempts, so successive retries draw fresh randomness and a fixed integer
-    ``seed`` does not produce identical attempts. Exhausting ``max_tries``
-    raises :class:`ValueError` rather than returning a disconnected matrix,
+    `seed` does not produce identical attempts. Exhausting `max_tries`
+    raises `ValueError` rather than returning a disconnected matrix,
     honouring the same contract.
 
     Parameters
     ----------
     adjacency_builder : callable
-        A ``(n, **kwargs) -> numpy.ndarray`` dense-adjacency builder. It must
-        accept a ``seed`` keyword compatible with
-        :func:`resdag.utils.create_rng`.
+        A `(n, **kwargs) -> numpy.ndarray` dense-adjacency builder. It must
+        accept a `seed` keyword compatible with
+        `resdag.utils.create_rng`.
     directed : bool
         Whether the produced adjacency is directed (weak connectivity is checked
         either way, matching the NetworkX wrapper).
     max_tries : int, optional
         Maximum number of attempts. Default: 100.
     precondition : callable, optional
-        An optional ``(n, **kwargs) -> None`` check run once before any attempt
-        (e.g. the ``p > ln(n)/n`` guard for connected Erdős–Rényi). It should
-        raise :class:`ValueError` when a connected graph cannot be expected.
+        An optional `(n, **kwargs) -> None` check run once before any attempt
+        (e.g. the `p > ln(n)/n` guard for connected Erdős–Rényi). It should
+        raise `ValueError` when a connected graph cannot be expected.
 
     Returns
     -------
     callable
-        A ``(n, **kwargs) -> numpy.ndarray`` builder returning a connected
-        adjacency, suitable for :func:`register_dense_adjacency`.
+        A `(n, **kwargs) -> numpy.ndarray` builder returning a connected
+        adjacency, suitable for `register_dense_adjacency`.
 
     Raises
     ------
     ValueError
-        If ``tries`` is less than 1, or if a connected adjacency cannot be built
-        within ``tries`` attempts.
+        If `tries` is less than 1, or if a connected adjacency cannot be built
+        within `tries` attempts.
     """
 
     def builder(n: int, *, tries: int = max_tries, **kwargs: Any) -> np.ndarray:

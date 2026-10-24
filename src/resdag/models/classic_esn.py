@@ -1,14 +1,14 @@
 """Classic ESN architecture with input concatenation.
 
-This module provides the :func:`classic_esn` function for building traditional
+This module provides the `classic_esn` function for building traditional
 Echo State Network architectures where the input is concatenated with the
 reservoir output before the readout layer.
 
 See Also
 --------
-:func:`resdag.models.ott_esn` : ESN with selectively squared reservoir states
-:func:`resdag.models.linear_esn` : Linear ESN variant
-:func:`resdag.models.headless_esn` : Headless ESN (no readout)
+`resdag.models.ott_esn` : ESN with selectively squared reservoir states
+`resdag.models.linear_esn` : Linear ESN variant
+`resdag.models.headless_esn` : Headless ESN (no readout)
 """
 
 from typing import Any
@@ -49,12 +49,14 @@ def classic_esn(
     """Build a classic Echo State Network (ESN) model.
 
     By default, this architecture concatenates the input with the reservoir
-    output before passing to the readout layer. Set ``input_to_readout=False``
+    output before passing to the readout layer. Set `input_to_readout=False`
     to fit the readout on reservoir states alone.
 
-    Architecture::
+    Architecture:
 
-        Input -> Reservoir -> Concatenate(Input, Reservoir) -> Readout
+    ```text
+    Input -> Reservoir -> Concatenate(Input, Reservoir) -> Readout
+    ```
 
     The readout sees both the raw input and the reservoir's nonlinear
     transformation, which can improve performance on many tasks.
@@ -69,21 +71,21 @@ def classic_esn(
         Number of output features.
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
-        model takes two inputs ``(feedback, driver)`` and the driver feeds the
+        model takes two inputs `(feedback, driver)` and the driver feeds the
         reservoir alongside the autoregressive feedback.  The driver is kept out
-        of the input concatenation, so the readout ``in_features`` is
-        ``feedback_size + reservoir_size`` when ``input_to_readout=True`` and
-        ``reservoir_size`` otherwise. ``None`` (default) builds a
+        of the input concatenation, so the readout `in_features` is
+        `feedback_size + reservoir_size` when `input_to_readout=True` and
+        `reservoir_size` otherwise. `None` (default) builds a
         feedback-only model, unchanged from previous behavior.
     input_initializer : InitializerSpec, optional
         Initializer for the driving-input weights.  Same accepted forms as
-        ``feedback_initializer``.  Only used when ``input_size`` is given.
+        `feedback_initializer`.  Only used when `input_size` is given.
     topology : TopologySpec, optional
         Topology for recurrent weights. Accepts:
 
-        - str: Registry name (e.g., ``"erdos_renyi"``)
-        - tuple: (name, params) like ``("watts_strogatz", {"k": 6, "p": 0.1})``
-        - :class:`~resdag.init.topology.TopologyInitializer`: Pre-configured object
+        - str: Registry name (e.g., `"erdos_renyi"`)
+        - tuple: (name, params) like `("watts_strogatz", {"k": 6, "p": 0.1})`
+        - `resdag.init.topology.TopologyInitializer`: Pre-configured object
     spectral_radius : float, default=0.9
         Desired spectral radius for recurrent weights.
     leak_rate : float, default=1.0
@@ -91,25 +93,25 @@ def classic_esn(
     noise : float, default=0.0
         Standard deviation of additive Gaussian state noise injected into the
         reservoir after the activation.  Active only in training mode (a no-op
-        under :meth:`~torch.nn.Module.eval`); ``0.0`` disables it.  Forwarded to
-        :class:`~resdag.layers.ESNLayer`.  Must be non-negative.
+        under `torch.nn.Module.eval`); `0.0` disables it.  Forwarded to
+        `resdag.layers.ESNLayer`.  Must be non-negative.
     feedback_initializer : InitializerSpec, optional
         Initializer for feedback weights. Accepts:
 
-        - str: Registry name (e.g., ``"pseudo_diagonal"``)
-        - tuple: (name, params) like ``("chebyshev", {"p": 0.5})``
-        - :class:`~resdag.init.input_feedback.InputFeedbackInitializer`: Pre-configured object
+        - str: Registry name (e.g., `"pseudo_diagonal"`)
+        - tuple: (name, params) like `("chebyshev", {"p": 0.5})`
+        - `resdag.init.input_feedback.InputFeedbackInitializer`: Pre-configured object
     activation : str, default="tanh"
-        Activation function (``"tanh"``, ``"relu"``, ``"sigmoid"``, ``"identity"``).
+        Activation function (`"tanh"`, `"relu"`, `"sigmoid"`, `"identity"`).
     bias : bool, default=True
         Whether to use bias in the reservoir.
     trainable : bool, default=False
         Whether reservoir weights are trainable.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         Ridge regression regularization for readout.
     readout_bias : bool, default=True
@@ -120,14 +122,14 @@ def classic_esn(
     readout_name : str, default="output"
         Name for the readout layer (used in training targets).
     readout_kwargs : dict, optional
-        Extra readout options, such as ``trainable=True``, ``solver``,
-        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
+        Extra readout options, such as `trainable=True`, `solver`,
+        `state_noise` or `gram_dtype`. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
-        Additional keyword arguments passed to :class:`~resdag.layers.ESNLayer`.
+        Additional keyword arguments passed to `resdag.layers.ESNLayer`.
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
+    `resdag.core.ESNModel`
         Configured ESN model ready for training and inference.
 
     Examples
@@ -157,9 +159,9 @@ def classic_esn(
 
     See Also
     --------
-    :func:`resdag.models.ott_esn` : OTT ESN variant
-    :func:`resdag.models.linear_esn` : Linear ESN variant
-    :class:`resdag.training.ESNTrainer` : Trainer for fitting readouts
+    `resdag.models.ott_esn` : OTT ESN variant
+    `resdag.models.linear_esn` : Linear ESN variant
+    `resdag.training.ESNTrainer` : Trainer for fitting readouts
     """
     if type(input_to_readout) is not bool:
         raise TypeError("input_to_readout must be a bool")

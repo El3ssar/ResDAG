@@ -2,33 +2,33 @@
 FISTA Readout Layer (Lasso / Elastic-Net)
 =========================================
 
-This module provides :class:`FISTAReadoutLayer`, a sparse / robust readout that
+This module provides `FISTAReadoutLayer`, a sparse / robust readout that
 solves an L1 (lasso) or elastic-net regularised least-squares problem with
 **FISTA** — the Fast Iterative Shrinkage-Thresholding Algorithm of Beck &
-Teboulle (2009). Unlike the ridge readouts (:class:`RidgeReadoutLayer`,
-:class:`CholeskyReadoutLayer`, ...), whose L2 penalty only *shrinks* weights,
+Teboulle (2009). Unlike the ridge readouts (`RidgeReadoutLayer`,
+`CholeskyReadoutLayer`, ...), whose L2 penalty only *shrinks* weights,
 the L1 term here drives irrelevant coefficients **exactly to zero**, yielding a
 sparse readout that ignores uninformative reservoir states.
 
-The old name :class:`FISTAReadout` is retained as a deprecated alias.
+The old name `FISTAReadout` is retained as a deprecated alias.
 
 The solve is batched over **all** output columns at once (one FISTA run, not a
 per-output loop as in RC.jl's Float64-only implementation), runs on GPU or CPU,
-and supports ``float32`` / ``float64``.
+and supports `float32` / `float64`.
 
 Objective
 ---------
-The layer minimises the sklearn ``ElasticNet`` objective (see the
-:class:`FISTAReadoutLayer` docstring for the exact scaling / parameterisation),
+The layer minimises the sklearn `ElasticNet` objective (see the
+`FISTAReadoutLayer` docstring for the exact scaling / parameterisation),
 
-.. math::
+$$
+\\min_W \\; \\lVert X W - Y \\rVert_2^2
+    + \\alpha\\,\\rho\\,\\lVert W \\rVert_1
+    + \\tfrac{1}{2}\\,\\alpha\\,(1-\\rho)\\,\\lVert W \\rVert_2^2 ,
+$$
 
-    \\min_W \\; \\lVert X W - Y \\rVert_2^2
-        + \\alpha\\,\\rho\\,\\lVert W \\rVert_1
-        + \\tfrac{1}{2}\\,\\alpha\\,(1-\\rho)\\,\\lVert W \\rVert_2^2 ,
-
-with ``rho = l1_ratio``. ``l1_ratio=1`` is pure lasso; ``l1_ratio=0`` is pure
-ridge (FISTA then converges to the :class:`RidgeReadoutLayer` solution). The
+with `rho = l1_ratio`. `l1_ratio=1` is pure lasso; `l1_ratio=0` is pure
+ridge (FISTA then converges to the `RidgeReadoutLayer` solution). The
 intercept is fitted by centering and is **never** penalised.
 
 See Also
@@ -39,7 +39,7 @@ resdag.layers.readouts.SVDReadoutLayer : SVD filter-factor readout.
 
 References
 ----------
-.. [1] A. Beck and M. Teboulle, "A Fast Iterative Shrinkage-Thresholding
+[1] A. Beck and M. Teboulle, "A Fast Iterative Shrinkage-Thresholding
    Algorithm for Linear Inverse Problems," SIAM J. Imaging Sci., 2(1),
    183-202, 2009.
 """
@@ -59,72 +59,71 @@ class FISTAReadoutLayer(ReadoutLayer):
 
     Solves the elastic-net least-squares problem
 
-    .. math::
+    $$
+    \min_W \; \lVert X W - Y \rVert_2^2
+        + \alpha\,\rho\,\lVert W \rVert_1
+        + \tfrac{1}{2}\,\alpha\,(1-\rho)\,\lVert W \rVert_2^2
+    $$
 
-        \min_W \; \lVert X W - Y \rVert_2^2
-            + \alpha\,\rho\,\lVert W \rVert_1
-            + \tfrac{1}{2}\,\alpha\,(1-\rho)\,\lVert W \rVert_2^2
-
-    (``rho = l1_ratio``) with the accelerated proximal-gradient method FISTA
-    [1]_, batched across every output column simultaneously. ``l1_ratio=1``
-    gives pure lasso (maximally sparse); ``l1_ratio=0`` gives pure ridge, in
+    (`rho = l1_ratio`) with the accelerated proximal-gradient method FISTA
+    [1], batched across every output column simultaneously. `l1_ratio=1`
+    gives pure lasso (maximally sparse); `l1_ratio=0` gives pure ridge, in
     which case FISTA converges to the same solution as
-    :class:`RidgeReadoutLayer`. The intercept is recovered by centering and is
+    `RidgeReadoutLayer`. The intercept is recovered by centering and is
     left un-penalised.
 
     Objective and sklearn parameterisation
     --------------------------------------
     This layer minimises the **un-normalised sum-of-squares** objective above.
-    ``sklearn.linear_model.ElasticNet`` instead minimises a
+    `sklearn.linear_model.ElasticNet` instead minimises a
     *sample-size-normalised* objective:
 
-    .. math::
+    $$
+    \frac{1}{2 N} \lVert X w - y \rVert_2^2
+        + \alpha_{\mathrm{sk}}\,\rho\,\lVert w \rVert_1
+        + \tfrac{1}{2}\,\alpha_{\mathrm{sk}}\,(1-\rho)\,\lVert w \rVert_2^2 ,
+    $$
 
-        \frac{1}{2 N} \lVert X w - y \rVert_2^2
-            + \alpha_{\mathrm{sk}}\,\rho\,\lVert w \rVert_1
-            + \tfrac{1}{2}\,\alpha_{\mathrm{sk}}\,(1-\rho)\,\lVert w \rVert_2^2 ,
-
-    and ``sklearn.linear_model.Lasso(alpha=a)`` is the ``l1_ratio=1`` special
+    and `sklearn.linear_model.Lasso(alpha=a)` is the `l1_ratio=1` special
     case, i.e. it minimises
-    :math:`\tfrac{1}{2N}\lVert X w - y\rVert^2 + a\,\lVert w\rVert_1`.
+    $\tfrac{1}{2N}\lVert X w - y\rVert^2 + a\,\lVert w\rVert_1$.
 
-    Multiplying sklearn's objective by ``2 N`` shows the two objectives
+    Multiplying sklearn's objective by `2 N` shows the two objectives
     coincide when
 
-    .. math::
+    $$
+    \alpha_{\text{resdag}} = 2 N \, \alpha_{\mathrm{sk}} ,
+    $$
 
-        \alpha_{\text{resdag}} = 2 N \, \alpha_{\mathrm{sk}} ,
-
-    where ``N`` is the number of (flattened) samples. So to reproduce a
-    ``Lasso(alpha=a)`` / ``ElasticNet(alpha=a, l1_ratio=rho)`` fit with this
-    layer, pass ``alpha = 2 * N * a`` (and the same ``l1_ratio``). This scaling
+    where `N` is the number of (flattened) samples. So to reproduce a
+    `Lasso(alpha=a)` / `ElasticNet(alpha=a, l1_ratio=rho)` fit with this
+    layer, pass `alpha = 2 * N * a` (and the same `l1_ratio`). This scaling
     is what makes the FISTA coefficients match sklearn's to solver tolerance;
     see the tests for the round-trip.
 
     FISTA details
     -------------
     The smooth part
-    :math:`f(W) = \lVert X W - Y\rVert^2 + \tfrac{1}{2}\alpha(1-\rho)\lVert W\rVert^2`
-    has gradient :math:`2 X^\top X W - 2 X^\top Y + \alpha(1-\rho) W`, and the
+    $f(W) = \lVert X W - Y\rVert^2 + \tfrac{1}{2}\alpha(1-\rho)\lVert W\rVert^2$
+    has gradient $2 X^\top X W - 2 X^\top Y + \alpha(1-\rho) W$, and the
     non-smooth L1 part has the soft-threshold proximal operator
-    :math:`\operatorname{prox}(Z) = \operatorname{sign}(Z)\max(|Z| - \tau, 0)`
-    with threshold :math:`\tau = \text{step}\cdot\alpha\,\rho`. The constant
-    step size is :math:`1/L` with Lipschitz constant
+    $\operatorname{prox}(Z) = \operatorname{sign}(Z)\max(|Z| - \tau, 0)$
+    with threshold $\tau = \text{step}\cdot\alpha\,\rho$. The constant
+    step size is $1/L$ with Lipschitz constant
 
-    .. math::
+    $$
+    L = 2\,\lambda_{\max}(X^\top X) + \alpha\,(1-\rho) ,
+    $$
 
-        L = 2\,\lambda_{\max}(X^\top X) + \alpha\,(1-\rho) ,
+    where $\lambda_{\max}$ is the top eigenvalue of the Gram, obtained
+    from `torch.linalg.eigvalsh` (small `(F, F)` system) or, when
+    `power_iters > 0`, a few power iterations. Momentum follows the standard
+    recurrence $t_{k+1} = (1 + \sqrt{1 + 4 t_k^2})/2$. Iteration stops on
+    the relative change $\lVert W_{k+1} - W_k\rVert / \lVert W_k\rVert < \text{tol}$ or after `max_iter` steps (a non-converged run warns).
 
-    where :math:`\lambda_{\max}` is the top eigenvalue of the Gram, obtained
-    from :func:`torch.linalg.eigvalsh` (small ``(F, F)`` system) or, when
-    ``power_iters > 0``, a few power iterations. Momentum follows the standard
-    recurrence :math:`t_{k+1} = (1 + \sqrt{1 + 4 t_k^2})/2`. Iteration stops on
-    the relative change :math:`\lVert W_{k+1} - W_k\rVert / \lVert W_k\rVert <
-    \text{tol}` or after ``max_iter`` steps (a non-converged run warns).
-
-    Only the Gram :math:`X^\top X` and :math:`X^\top Y` enter the iteration, so
-    the per-step cost is one ``(F, F) @ (F, T)`` matmul independent of the
-    sample count ``N`` — cheap for the readout widths typical of reservoir
+    Only the Gram $X^\top X$ and $X^\top Y$ enter the iteration, so
+    the per-step cost is one `(F, F) @ (F, T)` matmul independent of the
+    sample count `N` — cheap for the readout widths typical of reservoir
     computing.
 
     Parameters
@@ -134,39 +133,39 @@ class FISTAReadoutLayer(ReadoutLayer):
     out_features : int
         Size of output features (prediction dimension).
     bias : bool, default=True
-        Whether to include a bias term. When ``True`` the data is centered and
-        an unpenalised intercept is recovered; when ``False`` the raw normal
+        Whether to include a bias term. When `True` the data is centered and
+        an unpenalised intercept is recovered; when `False` the raw normal
         equations are used with no intercept.
     name : str, optional
         Name for this readout layer. Used for identification in multi-readout
-        architectures and as the key into ``targets`` by :class:`ESNTrainer`.
+        architectures and as the key into `targets` by `ESNTrainer`.
     trainable : bool, default=False
-        If ``True``, weights are trainable via backpropagation.
+        If `True`, weights are trainable via backpropagation.
     alpha : float, default=1e-3
         Overall regularisation strength (must be non-negative). See the
-        parameterisation note above for the relation to sklearn's ``alpha``.
-        ``alpha == 0`` reduces to ordinary least squares (via FISTA).
+        parameterisation note above for the relation to sklearn's `alpha`.
+        `alpha == 0` reduces to ordinary least squares (via FISTA).
     l1_ratio : float, default=1.0
-        Elastic-net mixing in ``[0, 1]``. ``1.0`` is pure lasso, ``0.0`` is
+        Elastic-net mixing in `[0, 1]`. `1.0` is pure lasso, `0.0` is
         pure ridge, values in between blend the two.
     max_iter : int, default=1000
         Maximum number of FISTA iterations.
     tol : float, default=1e-6
         Relative-change convergence tolerance on the coefficient matrix. A run
-        that reaches ``max_iter`` without meeting it emits a ``RuntimeWarning``.
+        that reaches `max_iter` without meeting it emits a `RuntimeWarning`.
     use_float64 : bool, default=True
-        If ``True`` the iteration runs in ``float64`` and the result is cast
+        If `True` the iteration runs in `float64` and the result is cast
         back to the parameter dtype.
     gram_dtype : torch.dtype, optional
         Dtype for forming the Gram matrix and right-hand side (the heavy
-        ``(N, F)`` matmuls). Default ``None`` forms the Gram in the solve dtype
-        (``float64`` unless ``use_float64=False``) on every device; pass
-        ``torch.float32`` to opt into faster, lower-precision GPU Gram
+        `(N, F)` matmuls). Default `None` forms the Gram in the solve dtype
+        (`float64` unless `use_float64=False`) on every device; pass
+        `torch.float32` to opt into faster, lower-precision GPU Gram
         formation.
     power_iters : int, default=0
-        If ``> 0``, estimate the top Gram eigenvalue with this many power
-        iterations instead of the exact :func:`torch.linalg.eigvalsh`. The
-        estimate is scaled up by ``(1 + power_iter_margin)`` to initialize the
+        If `> 0`, estimate the top Gram eigenvalue with this many power
+        iterations instead of the exact `torch.linalg.eigvalsh`. The
+        estimate is scaled up by `(1 + power_iter_margin)` to initialize the
         step size. Backtracking verifies the quadratic majorizer before each
         update; the margin alone is not a guaranteed spectral upper bound.
     power_iter_margin : float, default=0.05
@@ -175,18 +174,18 @@ class FISTAReadoutLayer(ReadoutLayer):
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or ``None`` if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or `None` if `bias=False`.
     alpha : float
         Overall regularisation strength.
     l1_ratio : float
         Elastic-net mixing parameter.
     n_iter_ : int
-        Number of FISTA iterations run by the last :meth:`fit` (``0`` before
+        Number of FISTA iterations run by the last `fit` (`0` before
         the first fit).
     converged_ : bool
-        Whether the last :meth:`fit` met the ``tol`` stopping criterion.
+        Whether the last `fit` met the `tol` stopping criterion.
 
     Examples
     --------
@@ -206,7 +205,7 @@ class FISTAReadoutLayer(ReadoutLayer):
 
     References
     ----------
-    .. [1] A. Beck and M. Teboulle, "A Fast Iterative Shrinkage-Thresholding
+    [1] A. Beck and M. Teboulle, "A Fast Iterative Shrinkage-Thresholding
        Algorithm for Linear Inverse Problems," SIAM J. Imaging Sci., 2(1),
        183-202, 2009.
     """
@@ -257,20 +256,20 @@ class FISTAReadoutLayer(ReadoutLayer):
         """Largest eigenvalue of the symmetric PSD Gram matrix.
 
         Uses an exact symmetric eigenvalue solve by default (the Gram is only
-        ``(F, F)``); with ``power_iters > 0`` it runs that many power
-        iterations and inflates the estimate by ``(1 + power_iter_margin)``.
+        `(F, F)`); with `power_iters > 0` it runs that many power
+        iterations and inflates the estimate by `(1 + power_iter_margin)`.
         The estimate need not be an upper bound; proximal-step backtracking
         verifies the quadratic majorizer before accepting an update.
 
         Parameters
         ----------
         gram : torch.Tensor
-            Symmetric PSD Gram matrix ``XᵀX`` of shape ``(F, F)``.
+            Symmetric PSD Gram matrix `XᵀX` of shape `(F, F)`.
 
         Returns
         -------
         float
-            An estimate of ``λ_max(XᵀX)`` used to initialize backtracking.
+            An estimate of `λ_max(XᵀX)` used to initialize backtracking.
         """
         if gram.shape[0] == 0:
             return 0.0
@@ -303,17 +302,17 @@ class FISTAReadoutLayer(ReadoutLayer):
         Parameters
         ----------
         states : torch.Tensor
-            Flattened state matrix of shape ``(N, in_features)``.
+            Flattened state matrix of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened target matrix of shape ``(N, out_features)``.
+            Flattened target matrix of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
+            Coefficient matrix of shape `(in_features, out_features)`.
         intercept : torch.Tensor or None
-            Intercept vector of shape ``(out_features,)``, or ``None`` when the
-            layer was built with ``bias=False``.
+            Intercept vector of shape `(out_features,)`, or `None` when the
+            layer was built with `bias=False`.
         """
         problem = build_ridge_problem(
             states,
@@ -440,16 +439,17 @@ class FISTAReadoutLayer(ReadoutLayer):
 
 
 class FISTAReadout(FISTAReadoutLayer):
-    """Deprecated alias for :class:`FISTAReadoutLayer`.
+    """Deprecated alias for `FISTAReadoutLayer`.
 
     Retained for backward compatibility.  Instantiating this class emits a
-    :class:`DeprecationWarning` and constructs a :class:`FISTAReadoutLayer`;
-    the two are otherwise identical (``FISTAReadout`` is a subclass, so
-    ``isinstance(FISTAReadout(...), FISTAReadoutLayer)`` holds).
+    `DeprecationWarning` and constructs a `FISTAReadoutLayer`;
+    the two are otherwise identical (`FISTAReadout` is a subclass, so
+    `isinstance(FISTAReadout(...), FISTAReadoutLayer)` holds).
 
-    .. deprecated::
-        Use :class:`FISTAReadoutLayer` instead.  ``FISTAReadout`` will be
-        removed in a future release.
+    **Deprecated.**
+
+    Use `FISTAReadoutLayer` instead.  `FISTAReadout` will be
+    removed in a future release.
 
     See Also
     --------
@@ -467,11 +467,11 @@ class FISTAReadout(FISTAReadoutLayer):
 
 
 def _soft_threshold(z: torch.Tensor, threshold: float) -> torch.Tensor:
-    """Soft-thresholding operator ``sign(z) · max(|z| - threshold, 0)``.
+    """Soft-thresholding operator `sign(z) · max(|z| - threshold, 0)`.
 
-    This is the proximal operator of the scaled L1 norm ``threshold · ‖·‖₁``
+    This is the proximal operator of the scaled L1 norm `threshold · ‖·‖₁`
     and the shrinkage step of FISTA: entries with magnitude at or below
-    ``threshold`` are set to *exactly* zero, which is what produces the sparse
+    `threshold` are set to *exactly* zero, which is what produces the sparse
     lasso solution.
 
     Parameters
@@ -484,7 +484,7 @@ def _soft_threshold(z: torch.Tensor, threshold: float) -> torch.Tensor:
     Returns
     -------
     torch.Tensor
-        The soft-thresholded tensor, same shape as ``z``.
+        The soft-thresholded tensor, same shape as `z`.
     """
     if threshold <= 0.0:
         return z

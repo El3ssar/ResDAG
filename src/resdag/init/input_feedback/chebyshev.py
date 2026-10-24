@@ -27,15 +27,15 @@ class ChebyshevInitializer(InputFeedbackInitializer):
 
     where k controls chaotic behavior (optimal range: 2 < k < 4).
 
-    The seed column (column 0) lives on the small amplitude ``[-p, p]`` while the
-    chaotic columns span ``[-1, 1]``, so the raw map systematically de-weights the
-    first feedback dimension (its ``max|W|`` is ~``p`` against ~``1`` elsewhere).
-    To honor the shared scaling contract — whose magnitude statistic is ``max|W|``
+    The seed column (column 0) lives on the small amplitude `[-p, p]` while the
+    chaotic columns span `[-1, 1]`, so the raw map systematically de-weights the
+    first feedback dimension (its `max|W|` is ~`p` against ~`1` elsewhere).
+    To honor the shared scaling contract — whose magnitude statistic is `max|W|`
     per column for this elementwise initializer — each column is normalized to unit
-    peak amplitude (divided by its own ``max|W|``) before ``input_scaling`` applies.
-    Every column then peaks at the same ``input_scaling`` (or ``1`` when
-    ``input_scaling is None``), and the 1D-feedback matrix peaks at ``input_scaling``
-    rather than the unscaled seed amplitude ``p``.
+    peak amplitude (divided by its own `max|W|`) before `input_scaling` applies.
+    Every column then peaks at the same `input_scaling` (or `1` when
+    `input_scaling is None`), and the 1D-feedback matrix peaks at `input_scaling`
+    rather than the unscaled seed amplitude `p`.
 
     Parameters
     ----------
@@ -48,10 +48,10 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         behavior.
     input_scaling : float, optional
         Uniform magnitude knob from the shared scaling contract (see
-        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
-        (the default) applies no scaling; a float ``s`` multiplies every entry by
-        ``s`` as the documented final transform, so ``max|W|`` scales linearly
-        with ``s`` (``input_scaling=0.5`` halves it).
+        `resdag.init.input_feedback.InputFeedbackInitializer`). `None`
+        (the default) applies no scaling; a float `s` multiplies every entry by
+        `s` as the documented final transform, so `max|W|` scales linearly
+        with `s` (`input_scaling=0.5` halves it).
 
     Raises
     ------
@@ -97,10 +97,10 @@ class ChebyshevInitializer(InputFeedbackInitializer):
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored.
 
         Returns

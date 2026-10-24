@@ -1,11 +1,12 @@
 """File I/O utilities (compatibility shim).
 
-.. deprecated:: 0.7.0
-    This module moved to :mod:`resdag.data.io`. It is re-exported here unchanged
-    so ``from resdag.utils.data.io import load_file`` (etc.) keeps working. New
-    code should import from :mod:`resdag.data` (or :mod:`resdag.data.io`).
+**Deprecated since 0.7.0.**
 
-Every name below is the *same* object as its :mod:`resdag.data.io` counterpart.
+This module moved to `resdag.data.io`. It is re-exported here unchanged
+so `from resdag.utils.data.io import load_file` (etc.) keeps working. New
+code should import from `resdag.data` (or `resdag.data.io`).
+
+Every name below is the *same* object as its `resdag.data.io` counterpart.
 """
 
 from ...data.io import (

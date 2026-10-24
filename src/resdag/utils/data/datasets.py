@@ -1,32 +1,32 @@
 """Canonical reservoir-computing dataset generators.
 
 One-line access to the field's standard benchmark tasks. Every generator
-returns a ``(1, T, D)`` :class:`torch.Tensor` — ``(batch, time, features)``,
+returns a `(1, T, D)` `torch.Tensor` — `(batch, time, features)`,
 matching resdag's tensor convention — so the output drops straight into
-:func:`resdag.utils.prepare_esn_data`, :class:`resdag.training.ESNTrainer`, or
-the :class:`resdag.ESN` facade.
+`resdag.utils.prepare_esn_data`, `resdag.training.ESNTrainer`, or
+the `resdag.ESN` facade.
 
 Shared conventions
 ------------------
 Every generator accepts:
 
-``n_timesteps`` : int
+`n_timesteps` : int
     Number of timesteps to return, *after* the discarded transient.
-``discard`` : int
+`discard` : int
     Leading transient steps integrated then dropped, so the trajectory sits on
     the attractor (continuous systems) or past the warm-up of the recurrence
     (discrete maps / delay systems).
-``normalize`` : {"standard", "minmax", None}
+`normalize` : {"standard", "minmax", None}
     Optional per-channel normalization applied to the returned window:
-    ``"standard"`` (zero mean, unit std — the usual ESN preprocessing),
-    ``"minmax"`` (scaled to ``[-1, 1]``), or ``None`` (raw values).
-``seed`` : int, numpy.random.Generator, or None
-    Threaded through :func:`resdag.utils.create_rng` for reproducibility.
-``dtype`` / ``device`` : torch dtype / device
+    `"standard"` (zero mean, unit std — the usual ESN preprocessing),
+    `"minmax"` (scaled to `[-1, 1]`), or `None` (raw values).
+`seed` : int, numpy.random.Generator, or None
+    Threaded through `resdag.utils.create_rng` for reproducibility.
+`dtype` / `device` : torch dtype / device
     Dtype and device of the returned tensor (integration is always done in
     NumPy float64 for numerical stability, then cast).
 
-Continuous systems (:func:`lorenz`, :func:`rossler`) are integrated with a
+Continuous systems (`lorenz`, `rossler`) are integrated with a
 fixed-step classic RK4 scheme.
 
 Examples
@@ -66,18 +66,17 @@ __all__ = [
     "dataset_lambda_max",
 ]
 
-#: Default integration step ``dt`` of each built-in generator, keyed by name.
-#: These mirror the ``dt=`` defaults in the generator signatures below (the
+#: Default integration step `dt` of each built-in generator, keyed by name.
+#: These mirror the `dt=` defaults in the generator signatures below (the
 #: continuous systems integrate with RK4; the discrete map / delay system /
-#: NARMA / sine advance one sample per step, so ``dt = 1.0``).  Reservoir
-#: forecast horizons are converted to Lyapunov times with ``steps * dt *
-#: lambda_max`` (see :mod:`resdag.metrics`), so the ``dt`` a series was sampled
+#: NARMA / sine advance one sample per step, so `dt = 1.0`).  Reservoir
+#: forecast horizons are converted to Lyapunov times with `steps * dt * lambda_max` (see `resdag.metrics`), so the `dt` a series was sampled
 #: at has to travel with it.
 #:
-#: Single source of truth: :mod:`resdag.metrics.forecast` keeps a byte-identical
-#: private copy (``_DATASET_DT``) so the metrics module never imports the
+#: Single source of truth: `resdag.metrics.forecast` keeps a byte-identical
+#: private copy (`_DATASET_DT`) so the metrics module never imports the
 #: dataset generators (avoiding a circular import — this module imports the
-#: Lyapunov tables from :mod:`resdag.metrics`).  Keep the two in sync.
+#: Lyapunov tables from `resdag.metrics`).  Keep the two in sync.
 DATASET_DT: dict[str, float] = {
     "lorenz": 0.02,
     "rossler": 0.05,
@@ -92,26 +91,26 @@ DATASET_DT: dict[str, float] = {
 def dataset_lambda_max(name: str, **params: float) -> float | None:
     """Return the canonical largest Lyapunov exponent for a built-in generator.
 
-    Reads the literature tables in :mod:`resdag.metrics` — imported lazily here
+    Reads the literature tables in `resdag.metrics` — imported lazily here
     so the dataset module and the metrics module never form an import cycle
     (metrics owns the constant tables; this module is imported *by* metrics'
-    dt/lambda helpers only through the duplicated :data:`DATASET_DT`).
+    dt/lambda helpers only through the duplicated `DATASET_DT`).
 
     Parameters
     ----------
     name : str
-        Generator name (case-insensitive): ``"lorenz"``, ``"rossler"``, or
-        ``"mackey_glass"``.  Non-chaotic generators (``"sine"``, ``"narma"``)
-        have no Lyapunov exponent and return ``None``.
+        Generator name (case-insensitive): `"lorenz"`, `"rossler"`, or
+        `"mackey_glass"`.  Non-chaotic generators (`"sine"`, `"narma"`)
+        have no Lyapunov exponent and return `None`.
     **params
-        Generator parameters; ``tau=`` selects the Mackey-Glass value (default
-        ``17``).
+        Generator parameters; `tau=` selects the Mackey-Glass value (default
+        `17`).
 
     Returns
     -------
     float or None
-        The canonical :math:`\\lambda_\\mathrm{max}`, or ``None`` for a
-        non-chaotic generator or an unknown / non-canonical ``tau``.
+        The canonical $\\lambda_\\mathrm{max}$, or `None` for a
+        non-chaotic generator or an unknown / non-canonical `tau`.
 
     Examples
     --------
@@ -135,22 +134,22 @@ def dataset_lambda_max(name: str, **params: float) -> float | None:
 
 
 def _normalize(series: np.ndarray, method: Normalize | None) -> np.ndarray:
-    """Apply optional per-channel normalization to a ``(T, D)`` array.
+    """Apply optional per-channel normalization to a `(T, D)` array.
 
     Parameters
     ----------
     series : numpy.ndarray
-        Trajectory of shape ``(T, D)``.
+        Trajectory of shape `(T, D)`.
     method : {"standard", "minmax"} or None
-        ``"standard"`` rescales each channel to zero mean / unit std;
-        ``"minmax"`` rescales each channel to ``[-1, 1]``; ``None`` returns the
+        `"standard"` rescales each channel to zero mean / unit std;
+        `"minmax"` rescales each channel to `[-1, 1]`; `None` returns the
         input unchanged. Channels with zero spread are left untouched (their
-        scale is treated as ``1.0``) to avoid division by zero.
+        scale is treated as `1.0`) to avoid division by zero.
 
     Returns
     -------
     numpy.ndarray
-        The normalized (or unchanged) array, ``float64``.
+        The normalized (or unchanged) array, `float64`.
     """
     if method is None:
         return series
@@ -177,12 +176,12 @@ def _to_tensor(
     dtype: torch.dtype,
     device: torch.device | str | None,
 ) -> torch.Tensor:
-    """Turn a ``(T, D)`` NumPy array into a ``(1, T, D)`` tensor.
+    """Turn a `(T, D)` NumPy array into a `(1, T, D)` tensor.
 
     Parameters
     ----------
     series : numpy.ndarray
-        Trajectory of shape ``(T, D)``.
+        Trajectory of shape `(T, D)`.
     dtype : torch.dtype
         Dtype of the returned tensor.
     device : torch.device, str, or None
@@ -191,7 +190,7 @@ def _to_tensor(
     Returns
     -------
     torch.Tensor
-        Tensor of shape ``(1, T, D)`` — a leading singleton batch axis.
+        Tensor of shape `(1, T, D)` — a leading singleton batch axis.
     """
     tensor = torch.as_tensor(np.ascontiguousarray(series), dtype=dtype, device=device)
     return tensor.unsqueeze(0)
@@ -208,9 +207,9 @@ def _integrate_rk4(
     Parameters
     ----------
     rhs : callable
-        Right-hand side ``f(state) -> dstate/dt``, operating on a ``(D,)`` array.
+        Right-hand side `f(state) -> dstate/dt`, operating on a `(D,)` array.
     state : numpy.ndarray
-        Initial condition of shape ``(D,)``.
+        Initial condition of shape `(D,)`.
     n_steps : int
         Number of states to record (including the initial condition).
     dt : float
@@ -219,7 +218,7 @@ def _integrate_rk4(
     Returns
     -------
     numpy.ndarray
-        Trajectory of shape ``(n_steps, D)``, ``float64``.
+        Trajectory of shape `(n_steps, D)`, `float64`.
     """
     out = np.empty((n_steps, state.shape[0]), dtype=np.float64)
     for i in range(n_steps):
@@ -242,7 +241,7 @@ def lorenz(
     x0: tuple[float, float, float] = (1.0, 1.0, 1.0),
     perturb: float = 0.01,
     discard: int = 1000,
-    normalize: Normalize | None = "standard",
+    normalize: Normalize | None = None,
     seed: int | np.random.Generator | None = 0,
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
@@ -250,44 +249,47 @@ def lorenz(
     """Generate a Lorenz-63 trajectory (classic RK4 integration).
 
     The Lorenz-63 system is the canonical chaotic benchmark for reservoir
-    forecasting::
+    forecasting:
 
-        dx/dt = sigma * (y - x)
-        dy/dt = x * (rho - z) - y
-        dz/dt = x * y - beta * z
+    ```text
+    dx/dt = sigma * (y - x)
+    dy/dt = x * (rho - z) - y
+    dz/dt = x * y - beta * z
+    ```
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     dt : float, optional
-        Integration step (RK4). Default ``0.02``.
+        Integration step (RK4). Default `0.02`.
     sigma, rho, beta : float, optional
-        Lorenz parameters. Defaults ``10.0``, ``28.0``, ``8/3`` (the classic
+        Lorenz parameters. Defaults `10.0`, `28.0`, `8/3` (the classic
         chaotic regime).
     x0 : tuple of float, optional
-        Base initial condition ``(x, y, z)``. Default ``(1.0, 1.0, 1.0)``.
+        Base initial condition `(x, y, z)`. Default `(1.0, 1.0, 1.0)`.
     perturb : float, optional
-        Std of the Gaussian perturbation added to ``x0`` (drawn from the seeded
-        RNG). Set to ``0`` for a fully deterministic initial condition.
+        Std of the Gaussian perturbation added to `x0` (drawn from the seeded
+        RNG). Set to `0` for a fully deterministic initial condition.
     discard : int, optional
         Leading transient steps to drop so the trajectory sits on the
-        attractor. Default ``1000``.
-    normalize : {"standard", "minmax"} or None, optional
-        Per-channel normalization of the returned window. Default ``"standard"``.
+        attractor. Default `1000`.
+    normalize : str or None, optional
+        Per-channel normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (raw values).
     seed : int, numpy.random.Generator, or None, optional
         Seed for the initial-condition perturbation (via
-        :func:`resdag.utils.create_rng`). Default ``0``.
+        `resdag.utils.create_rng`). Default `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor. Default ``torch.float32`` (matches
+        Dtype of the returned tensor. Default `torch.float32` (matches
         torch's default, so the series drops straight into a model).
     device : torch.device, str, or None, optional
-        Device of the returned tensor. Default ``None`` (CPU).
+        Device of the returned tensor. Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, 3)``.
+        Trajectory of shape `(1, n_timesteps, 3)`.
 
     See Also
     --------
@@ -317,49 +319,52 @@ def rossler(
     x0: tuple[float, float, float] = (1.0, 1.0, 1.0),
     perturb: float = 0.01,
     discard: int = 1000,
-    normalize: Normalize | None = "standard",
+    normalize: Normalize | None = None,
     seed: int | np.random.Generator | None = 0,
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
     """Generate a Rössler trajectory (classic RK4 integration).
 
-    The Rössler system is a three-dimensional chaotic attractor::
+    The Rössler system is a three-dimensional chaotic attractor:
 
-        dx/dt = -y - z
-        dy/dt = x + a * y
-        dz/dt = b + z * (x - c)
+    ```text
+    dx/dt = -y - z
+    dy/dt = x + a * y
+    dz/dt = b + z * (x - c)
+    ```
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     dt : float, optional
-        Integration step (RK4). Default ``0.05``.
+        Integration step (RK4). Default `0.05`.
     a, b, c : float, optional
-        Rössler parameters. Defaults ``0.2``, ``0.2``, ``5.7`` (the standard
+        Rössler parameters. Defaults `0.2`, `0.2`, `5.7` (the standard
         chaotic regime).
     x0 : tuple of float, optional
-        Base initial condition ``(x, y, z)``. Default ``(1.0, 1.0, 1.0)``.
+        Base initial condition `(x, y, z)`. Default `(1.0, 1.0, 1.0)`.
     perturb : float, optional
-        Std of the Gaussian perturbation added to ``x0``. Set to ``0`` for a
+        Std of the Gaussian perturbation added to `x0`. Set to `0` for a
         deterministic initial condition.
     discard : int, optional
-        Leading transient steps to drop. Default ``1000``.
-    normalize : {"standard", "minmax"} or None, optional
-        Per-channel normalization of the returned window. Default ``"standard"``.
+        Leading transient steps to drop. Default `1000`.
+    normalize : str or None, optional
+        Per-channel normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (raw values).
     seed : int, numpy.random.Generator, or None, optional
-        Seed for the initial-condition perturbation. Default ``0``.
+        Seed for the initial-condition perturbation. Default `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor. Default ``torch.float32`` (matches
+        Dtype of the returned tensor. Default `torch.float32` (matches
         torch's default, so the series drops straight into a model).
     device : torch.device, str, or None, optional
-        Device of the returned tensor. Default ``None`` (CPU).
+        Device of the returned tensor. Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, 3)``.
+        Trajectory of shape `(1, n_timesteps, 3)`.
 
     See Also
     --------
@@ -387,46 +392,49 @@ def henon(
     x0: tuple[float, float] = (0.0, 0.0),
     perturb: float = 0.0,
     discard: int = 1000,
-    normalize: Normalize | None = "standard",
+    normalize: Normalize | None = None,
     seed: int | np.random.Generator | None = 0,
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
     """Generate a Hénon-map trajectory.
 
-    The Hénon map is a two-dimensional discrete-time chaotic system::
+    The Hénon map is a two-dimensional discrete-time chaotic system:
 
-        x_{n+1} = 1 - a * x_n^2 + y_n
-        y_{n+1} = b * x_n
+    ```text
+    x_{n+1} = 1 - a * x_n^2 + y_n
+    y_{n+1} = b * x_n
+    ```
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     a, b : float, optional
-        Hénon parameters. Defaults ``1.4``, ``0.3`` (the classic chaotic
+        Hénon parameters. Defaults `1.4`, `0.3` (the classic chaotic
         regime).
     x0 : tuple of float, optional
-        Base initial condition ``(x, y)``. Default ``(0.0, 0.0)``.
+        Base initial condition `(x, y)`. Default `(0.0, 0.0)`.
     perturb : float, optional
-        Std of the Gaussian perturbation added to ``x0``. Default ``0.0`` (the
+        Std of the Gaussian perturbation added to `x0`. Default `0.0` (the
         map is robustly chaotic, so a fixed start suffices).
     discard : int, optional
-        Leading transient steps to drop. Default ``1000``.
-    normalize : {"standard", "minmax"} or None, optional
-        Per-channel normalization of the returned window. Default ``"standard"``.
+        Leading transient steps to drop. Default `1000`.
+    normalize : str or None, optional
+        Per-channel normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (raw values).
     seed : int, numpy.random.Generator, or None, optional
-        Seed for the initial-condition perturbation. Default ``0``.
+        Seed for the initial-condition perturbation. Default `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor. Default ``torch.float32`` (matches
+        Dtype of the returned tensor. Default `torch.float32` (matches
         torch's default, so the series drops straight into a model).
     device : torch.device, str, or None, optional
-        Device of the returned tensor. Default ``None`` (CPU).
+        Device of the returned tensor. Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, 2)``.
+        Trajectory of shape `(1, n_timesteps, 2)`.
     """
     rng = create_rng(seed)
     state = np.asarray(x0, dtype=np.float64)
@@ -454,7 +462,7 @@ def mackey_glass(
     dt: float = 1.0,
     x0: float = 1.2,
     discard: int = 1000,
-    normalize: Normalize | None = "standard",
+    normalize: Normalize | None = None,
     seed: int | np.random.Generator | None = 0,
     dtype: torch.dtype = torch.float32,
     device: torch.device | str | None = None,
@@ -462,45 +470,48 @@ def mackey_glass(
     """Generate a Mackey-Glass delay-differential-equation trajectory.
 
     The Mackey-Glass equation is a scalar delay system whose dynamics are
-    chaotic for ``tau > ~16.8``::
+    chaotic for `tau > ~16.8`:
 
-        dx/dt = beta * x(t - tau) / (1 + x(t - tau)^n) - gamma * x(t)
+    ```text
+    dx/dt = beta * x(t - tau) / (1 + x(t - tau)^n) - gamma * x(t)
+    ```
 
     Integrated with the Euler method on the history buffer (the standard scheme
-    for this benchmark). The delay ``tau`` and step ``dt`` give an effective
-    integer lag of exactly ``round(tau / dt)`` samples, so the default
-    ``tau=17`` is the canonical chaotic MG-17 system.
+    for this benchmark). The delay `tau` and step `dt` give an effective
+    integer lag of exactly `round(tau / dt)` samples, so the default
+    `tau=17` is the canonical chaotic MG-17 system.
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     tau : int, optional
-        Delay. Default ``17`` (the canonical chaotic value).
+        Delay. Default `17` (the canonical chaotic value).
     beta, gamma, n : float, optional
-        Equation parameters. Defaults ``0.2``, ``0.1``, ``10.0``.
+        Equation parameters. Defaults `0.2`, `0.1`, `10.0`.
     dt : float, optional
-        Integration step. Default ``1.0``.
+        Integration step. Default `1.0`.
     x0 : float, optional
-        Constant value of the history buffer for ``t <= 0``. Default ``1.2``.
+        Constant value of the history buffer for `t <= 0`. Default `1.2`.
     discard : int, optional
-        Leading transient steps to drop. Default ``1000``.
-    normalize : {"standard", "minmax"} or None, optional
-        Normalization of the returned window. Default ``"standard"``.
+        Leading transient steps to drop. Default `1000`.
+    normalize : str or None, optional
+        Normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (raw values).
     seed : int, numpy.random.Generator, or None, optional
         Accepted for signature symmetry with the other generators but unused:
         the trajectory is fully deterministic and draws no randomness. Default
-        ``0``.
+        `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor. Default ``torch.float32`` (matches
+        Dtype of the returned tensor. Default `torch.float32` (matches
         torch's default, so the series drops straight into a model).
     device : torch.device, str, or None, optional
-        Device of the returned tensor. Default ``None`` (CPU).
+        Device of the returned tensor. Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, 1)``.
+        Trajectory of shape `(1, n_timesteps, 1)`.
     """
     # ``seed`` is unused: the trajectory is fully deterministic and draws no
     # randomness, so no RNG is created (calling ``create_rng(None)`` would draw
@@ -547,46 +558,48 @@ def narma(
 ) -> torch.Tensor:
     """Generate a NARMA (Nonlinear Auto-Regressive Moving Average) series.
 
-    NARMA-``order`` is a standard nonlinear system-identification benchmark: a
-    random uniform input ``u`` drives a recurrence whose output ``y`` depends on
-    its own ``order`` past values::
+    NARMA-`order` is a standard nonlinear system-identification benchmark: a
+    random uniform input `u` drives a recurrence whose output `y` depends on
+    its own `order` past values:
 
-        y_{t+1} = alpha * y_t
-                  + beta * y_t * sum_{i=0}^{order-1} y_{t-i}
-                  + gamma * u_t * u_{t-order+1}
-                  + delta
+    ```text
+    y_{t+1} = alpha * y_t
+              + beta * y_t * sum_{i=0}^{order-1} y_{t-i}
+              + gamma * u_t * u_{t-order+1}
+              + delta
+    ```
 
-    Two channels are returned per timestep: the input ``u`` and the output
-    ``y`` (so a readout can be trained to map ``u -> y``).
+    Two channels are returned per timestep: the input `u` and the output
+    `y` (so a readout can be trained to map `u -> y`).
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     order : int, optional
-        Memory order of the recurrence. Default ``10`` (NARMA-10).
+        Memory order of the recurrence. Default `10` (NARMA-10).
     alpha, beta, gamma, delta : float, optional
-        Recurrence coefficients. Defaults ``0.3``, ``0.05``, ``1.5``, ``0.1``.
+        Recurrence coefficients. Defaults `0.3`, `0.05`, `1.5`, `0.1`.
     input_low, input_high : float, optional
-        Bounds of the uniform input ``u``. Defaults ``0.0``, ``0.5``.
+        Bounds of the uniform input `u`. Defaults `0.0`, `0.5`.
     discard : int, optional
-        Leading transient steps to drop. Default ``200``.
-    normalize : {"standard", "minmax"} or None, optional
-        Per-channel normalization of the returned window. Default ``None``
-        (NARMA is conventionally used on its native scale).
+        Leading transient steps to drop. Default `200`.
+    normalize : str or None, optional
+        Per-channel normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (NARMA is conventionally used on its native scale).
     seed : int, numpy.random.Generator, or None, optional
-        Seed for the random input (via :func:`resdag.utils.create_rng`).
-        Default ``0``.
+        Seed for the random input (via `resdag.utils.create_rng`).
+        Default `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor. Default ``torch.float32`` (matches
+        Dtype of the returned tensor. Default `torch.float32` (matches
         torch's default, so the series drops straight into a model).
     device : torch.device, str, or None, optional
-        Device of the returned tensor. Default ``None`` (CPU).
+        Device of the returned tensor. Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, 2)`` — columns ``[u, y]``.
+        Trajectory of shape `(1, n_timesteps, 2)` — columns `[u, y]`.
     """
     rng = create_rng(seed)
     total = n_timesteps + discard
@@ -623,43 +636,46 @@ def sine(
     """Generate a (optionally noisy) sine wave.
 
     A simple, smooth, periodic signal — useful as a sanity-check task and for
-    illustrating the API::
+    illustrating the API:
 
-        y_t = offset + amplitude * sin(2*pi * periods * t / n_timesteps + phase)
+    ```python
+    y_t = offset + amplitude * sin(2*pi * periods * t / n_timesteps + phase)
+    ```
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     periods : float, optional
-        Number of full oscillations over the returned window. Default ``20.0``.
+        Number of full oscillations over the returned window. Default `20.0`.
     amplitude : float, optional
-        Peak amplitude. Default ``1.0``.
+        Peak amplitude. Default `1.0`.
     phase : float, optional
-        Phase offset in radians. Default ``0.0``.
+        Phase offset in radians. Default `0.0`.
     offset : float, optional
-        Additive vertical offset. Default ``0.0``.
+        Additive vertical offset. Default `0.0`.
     noise : float, optional
         Std of additive Gaussian noise (drawn from the seeded RNG). Default
-        ``0.0``.
+        `0.0`.
     discard : int, optional
-        Leading transient steps to drop. Default ``0`` (a pure sine has no
+        Leading transient steps to drop. Default `0` (a pure sine has no
         transient).
-    normalize : {"standard", "minmax"} or None, optional
-        Normalization of the returned window. Default ``None``.
+    normalize : str or None, optional
+        Normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (raw values).
     seed : int, numpy.random.Generator, or None, optional
-        Seed for the additive noise (via :func:`resdag.utils.create_rng`).
-        Default ``0``.
+        Seed for the additive noise (via `resdag.utils.create_rng`).
+        Default `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor. Default ``torch.float32`` (matches
+        Dtype of the returned tensor. Default `torch.float32` (matches
         torch's default, so the series drops straight into a model).
     device : torch.device, str, or None, optional
-        Device of the returned tensor. Default ``None`` (CPU).
+        Device of the returned tensor. Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, 1)``.
+        Trajectory of shape `(1, n_timesteps, 1)`.
     """
     rng = create_rng(seed)
     total = n_timesteps + discard
@@ -690,68 +706,69 @@ def kuramoto_sivashinsky(
     r"""Generate a Kuramoto-Sivashinsky (KS) 1-D PDE trajectory.
 
     The KS equation is the canonical *spatiotemporally chaotic* benchmark for
-    reservoir computing — a 1-D field :math:`u(x, t)` on a periodic domain of
-    length ``L`` obeying
+    reservoir computing — a 1-D field $u(x, t)$ on a periodic domain of
+    length `L` obeying
 
-    .. math::
-
-        u_t = -u\,u_x - u_{xx} - u_{xxxx},
+    $$
+    u_t = -u\,u_x - u_{xx} - u_{xxxx},
+    $$
 
     which develops a chaotic attractor whose number of positive Lyapunov
-    exponents grows with ``L``.  On the standard ``L = 22`` domain (Pathak et
+    exponents grows with `L`.  On the standard `L = 22` domain (Pathak et
     al. 2018) it is high-dimensionally chaotic — too large for a single global
     reservoir to forecast well, which is exactly what the parallel / local-state
-    architecture (:func:`resdag.models.parallel_esn`) targets.
+    architecture (`resdag.models.parallel_esn`) targets.
 
     Integration uses the fourth-order exponential time-differencing Runge-Kutta
     scheme **ETDRK4** (Kassam & Trefethen 2005) in Fourier space — the standard,
-    stiffly-accurate integrator for KS — so the linear :math:`-u_{xx} - u_{xxxx}`
+    stiffly-accurate integrator for KS — so the linear $-u_{xx} - u_{xxxx}$
     term is handled exactly and only the nonlinear advection is stepped.
 
-    The returned trajectory is the field sampled on the ``n_grid`` spatial
-    points, so the output has ``n_grid`` feature channels: shape
-    ``(1, n_timesteps, n_grid)``.
+    The returned trajectory is the field sampled on the `n_grid` spatial
+    points, so the output has `n_grid` feature channels: shape
+    `(1, n_timesteps, n_grid)`.
 
     Parameters
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
     n_grid : int, optional
-        Number of spatial grid points (the feature dimension ``D``).  Should be
-        even for the real FFT grid.  Default ``64``.
+        Number of spatial grid points (the feature dimension `D`).  Should be
+        even for the real FFT grid.  Default `64`.
     length : float, optional
-        Domain length ``L`` (periodic).  Default ``22.0`` — the canonical
+        Domain length `L` (periodic).  Default `22.0` — the canonical
         parallel-RC benchmark size.  The Lyapunov exponent in
-        :data:`resdag.metrics.CANONICAL_LAMBDA_MAX` is only valid for this value.
+        `resdag.metrics.CANONICAL_LAMBDA_MAX` is only valid for this value.
     dt : float, optional
-        Integration / sampling step.  Default ``0.25``.
+        Integration / sampling step.  Default `0.25`.
     x0 : numpy.ndarray, optional
-        Initial field of shape ``(n_grid,)``.  ``None`` (default) uses the
-        classic ``cos(2*pi*x/L) * (1 + sin(2*pi*x/L))`` seed.
+        Initial field of shape `(n_grid,)`.  `None` (default) uses the
+        classic `cos(2*pi*x/L) * (1 + sin(2*pi*x/L))` seed.
     perturb : float, optional
         Std of a Gaussian perturbation added to the initial field (drawn from the
         seeded RNG), breaking symmetry so seeds give distinct trajectories on the
-        same attractor.  Set to ``0`` for a fully deterministic start.  Default
-        ``1.0``.
+        same attractor.  Set to `0` for a fully deterministic start.  Default
+        `1.0`.
     discard : int, optional
         Leading transient steps to drop so the trajectory sits on the attractor.
-        Default ``1000``.
-    normalize : {"standard", "minmax"} or None, optional
-        Per-channel normalization of the returned window.  Default ``None`` (KS
+        Default `1000`.
+    normalize : str or None, optional
+        Per-channel normalization: `"standard"`, `"minmax"`, or `None`.
+        Default `None` (KS
         is conventionally used on its native scale, and the channels are already
         comparable across the homogeneous spatial grid).
     seed : int, numpy.random.Generator, or None, optional
         Seed for the initial-field perturbation (via
-        :func:`resdag.utils.create_rng`).  Default ``0``.
+        `resdag.utils.create_rng`).  Default `0`.
     dtype : torch.dtype, optional
-        Dtype of the returned tensor.  Default ``torch.float32``.
+        Dtype of the returned tensor.  Default `torch.float32`.
     device : torch.device, str, or None, optional
-        Device of the returned tensor.  Default ``None`` (CPU).
+        Device of the returned tensor.  Default `None` (CPU).
 
     Returns
     -------
     torch.Tensor
-        Trajectory of shape ``(1, n_timesteps, n_grid)`` — the KS field sampled
+        Trajectory of shape `(1, n_timesteps, n_grid)` — the KS field sampled
         on the spatial grid at each timestep.
 
     References

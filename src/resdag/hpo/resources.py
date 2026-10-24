@@ -88,10 +88,10 @@ def _metadata(value: Any) -> Any:
 class Screening:
     """Evaluate a cohort cheaply, then reevaluate its best fraction in full.
 
-    Screening is opt-in. The default ``None`` uses all configured seeds and
+    Screening is opt-in. The default `None` uses all configured seeds and
     origins for every candidate. With balanced tuning, this default screen
     checks all 24 candidates on one seed/origin, then promotes the best eight.
-    ``cohort_size=None`` uses the entire new-trial budget as one cohort.
+    `cohort_size=None` uses the entire new-trial budget as one cohort.
     """
 
     seed_count: int = 1
@@ -152,7 +152,7 @@ def _bytes(value: int | str, name: str, *, zero: bool = False) -> int:
 class MemoryEstimate:
     """Estimated peak bytes for one candidate, including its final full refit.
 
-    ``host_bytes`` and ``device_bytes`` are separate planning accounts. A custom
+    `host_bytes` and `device_bytes` are separate planning accounts. A custom
     estimator owns their accuracy. Details are detached immutable metadata.
     """
 
@@ -177,7 +177,7 @@ class MemoryEstimate:
 class MemoryBudget:
     """Admission budget for estimated host/device peaks and worker overhead.
 
-    ``limit`` bounds their sum. ``device_limit`` adds a device-only bound.
+    `limit` bounds their sum. `device_limit` adds a device-only bound.
     Decimal GB and binary GiB are distinct. Values are parsed to integer bytes
     once. This never sets an OS, RSS, process or accelerator allocator limit.
     """
@@ -197,8 +197,8 @@ class MemoryBudget:
     def fits(self, estimate: MemoryEstimate, current: Sequence[MemoryEstimate] = ()) -> bool:
         """Whether adding a candidate fits alongside all active estimates.
 
-        Each candidate, including the first, adds ``worker_overhead`` host
-        bytes. Call with an empty ``current`` to reject an oversized candidate
+        Each candidate, including the first, adds `worker_overhead` host
+        bytes. Call with an empty `current` to reject an oversized candidate
         before construction; otherwise wait/reduce concurrency until it fits.
         """
         estimates = (*current, estimate)
@@ -234,9 +234,9 @@ class MemoryContext:
     Sample counts cover complete observation prefixes, including washout. The
     final refit is therefore included even when validation fits are shorter.
     Storage counts deduplicate aliases within the dataset and within the model.
-    Optional ``readout_*_samples`` describe fitted rows after washout and any
+    Optional `readout_*_samples` describe fitted rows after washout and any
     built-in batch expansion; the observation counts above keep their original
-    meaning. ``sequence_layout`` contains detached immutable shape facts for
+    meaning. `sequence_layout` contains detached immutable shape facts for
     recognized built-in execution only. Empty defaults preserve the generic
     estimate and existing custom-estimator contracts.
     """

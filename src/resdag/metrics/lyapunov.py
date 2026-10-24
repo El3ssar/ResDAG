@@ -1,32 +1,31 @@
 """Largest-Lyapunov-exponent estimation and Lyapunov-time bookkeeping.
 
 Reservoir forecasts on chaotic systems are best reported in **Lyapunov times**
-rather than raw integration steps: one Lyapunov time :math:`t_\\lambda = 1 /
-\\lambda_\\mathrm{max}` is the natural clock of a chaotic attractor — the
-timescale over which nearby trajectories separate by a factor of :math:`e`.
-Expressing a valid-prediction horizon as ``VPT_steps * dt * lambda_max`` makes
+rather than raw integration steps: one Lyapunov time $t_\\lambda = 1 / \\lambda_\\mathrm{max}$ is the natural clock of a chaotic attractor — the
+timescale over which nearby trajectories separate by a factor of $e$.
+Expressing a valid-prediction horizon as `VPT_steps * dt * lambda_max` makes
 it comparable across systems, integration steps, and papers.
 
 This module supplies
 
 * pure, dependency-free conversions between steps and Lyapunov times
-  (:func:`lyapunov_time`, :func:`steps_per_lyapunov_time`,
-  :func:`steps_to_lyapunov`, :func:`lyapunov_to_steps`);
-* a table of **canonical literature** :math:`\\lambda_\\mathrm{max}` values for
-  resdag's built-in generators (:data:`CANONICAL_LAMBDA_MAX`,
-  :data:`MACKEY_GLASS_LAMBDA`);
-* :func:`largest_lyapunov`, a single entry point that dispatches on its argument
+  (`lyapunov_time`, `steps_per_lyapunov_time`,
+  `steps_to_lyapunov`, `lyapunov_to_steps`);
+* a table of **canonical literature** $\\lambda_\\mathrm{max}$ values for
+  resdag's built-in generators (`CANONICAL_LAMBDA_MAX`,
+  `MACKEY_GLASS_LAMBDA`);
+* `largest_lyapunov`, a single entry point that dispatches on its argument
   — a known generator *name* (no dependency), a measured *series*, or a
   `tsdynamics` *System* — to a canonical constant or an on-the-fly estimate; and
-* :func:`reservoir_lyapunov`, a **native-torch** (no dependency) Benettin/QR
+* `reservoir_lyapunov`, a **native-torch** (no dependency) Benettin/QR
   estimate of the maximal Lyapunov exponent of a trained reservoir's own
   autonomous dynamics — the standard edge-of-chaos / stability diagnostic for
   reservoir computers.
 
-The `tsdynamics <https://pypi.org/project/tsdynamics/>`_ paths
+The [tsdynamics](https://pypi.org/project/tsdynamics/) paths
 (series-from-data and System-spectrum estimation) are **optional**: every
-`tsdynamics` import is lazy and guarded with a friendly :class:`ImportError`
-pointing at ``pip install resdag[dynamics]``.  The pure conversions and the
+`tsdynamics` import is lazy and guarded with a friendly `ImportError`
+pointing at `pip install resdag[dynamics]`.  The pure conversions and the
 canonical-constant and reservoir-Jacobian paths never touch it.
 """
 
@@ -45,22 +44,22 @@ if TYPE_CHECKING:
 # Canonical literature constants.
 # --------------------------------------------------------------------------- #
 
-#: Largest Lyapunov exponent :math:`\lambda_\mathrm{max}` for resdag's built-in
+#: Largest Lyapunov exponent $\lambda_\mathrm{max}$ for resdag's built-in
 #: chaotic generators, keyed by generator name.  These are the accepted
 #: literature values for the *standard* parameterisation used by
-#: :func:`resdag.lorenz` / :func:`resdag.rossler` (the classic chaotic regime):
+#: `resdag.lorenz` / `resdag.rossler` (the classic chaotic regime):
 #:
-#: * ``lorenz`` — Lorenz-63 with ``(sigma, rho, beta) = (10, 28, 8/3)``:
-#:   :math:`\lambda_\mathrm{max} \approx 0.9056` (natural-time units, i.e. per
-#:   unit :math:`t`, independent of the integration step ``dt``).  Sprott (2003),
+#: * `lorenz` — Lorenz-63 with `(sigma, rho, beta) = (10, 28, 8/3)`:
+#:   $\lambda_\mathrm{max} \approx 0.9056$ (natural-time units, i.e. per
+#:   unit $t$, independent of the integration step `dt`).  Sprott (2003),
 #:   *Chaos and Time-Series Analysis*; the widely quoted reservoir-computing
 #:   reference value (e.g. Pathak et al. 2018).
-#: * ``rossler`` — Rössler with ``(a, b, c) = (0.2, 0.2, 5.7)``:
-#:   :math:`\lambda_\mathrm{max} \approx 0.0714`.  Sprott (2003).
+#: * `rossler` — Rössler with `(a, b, c) = (0.2, 0.2, 5.7)`:
+#:   $\lambda_\mathrm{max} \approx 0.0714$.  Sprott (2003).
 #:
-#: Both agree with a `tsdynamics` ``lyapunov_spectrum`` estimate to two decimals
-#: (verified in ``tests/test_metrics``).  The value is in **inverse natural-time
-#: units**; multiply by the integrator step ``dt`` to convert a step count to
+#: Both agree with a `tsdynamics` `lyapunov_spectrum` estimate to two decimals
+#: (verified in `tests/test_metrics`).  The value is in **inverse natural-time
+#: units**; multiply by the integrator step `dt` to convert a step count to
 #: Lyapunov times.
 CANONICAL_LAMBDA_MAX: dict[str, float] = {
     "lorenz": 0.9056,
@@ -75,18 +74,18 @@ CANONICAL_LAMBDA_MAX: dict[str, float] = {
 }
 
 #: Largest Lyapunov exponent of the Mackey-Glass delay system, keyed by the
-#: delay ``tau``.  Mackey-Glass has no single :math:`\lambda_\mathrm{max}`: it
-#: depends strongly on ``tau`` (the system is chaotic for ``tau`` above
+#: delay `tau`.  Mackey-Glass has no single $\lambda_\mathrm{max}$: it
+#: depends strongly on `tau` (the system is chaotic for `tau` above
 #: ~16.8 and its exponent grows with the delay).  Values are the standard
-#: literature figures for ``(beta, gamma, n) = (0.2, 0.1, 10)``:
+#: literature figures for `(beta, gamma, n) = (0.2, 0.1, 10)`:
 #:
-#: * ``tau = 17`` — the canonical MG-17 benchmark: :math:`\approx 0.0086`.
-#: * ``tau = 23`` — :math:`\approx 0.0097`.
-#: * ``tau = 30`` — :math:`\approx 0.0071`.
+#: * `tau = 17` — the canonical MG-17 benchmark: $\approx 0.0086$.
+#: * `tau = 23` — $\approx 0.0097$.
+#: * `tau = 30` — $\approx 0.0071$.
 #:
 #: Sources: Farmer (1982), *Chaotic attractors of an infinite-dimensional
 #: dynamical system*; Grassberger & Procaccia (1983).  Keyed by the integer
-#: delay because the exponent is not a smooth single number across ``tau``.
+#: delay because the exponent is not a smooth single number across `tau`.
 MACKEY_GLASS_LAMBDA: dict[int, float] = {
     17: 0.0086,
     23: 0.0097,
@@ -100,18 +99,18 @@ _DYNAMICS_HINT = (
 
 
 def _import_tsdynamics() -> Any:
-    """Import :mod:`tsdynamics` lazily, raising a friendly error if missing.
+    """Import `tsdynamics` lazily, raising a friendly error if missing.
 
     Returns
     -------
     module
-        The imported ``tsdynamics`` module.
+        The imported `tsdynamics` module.
 
     Raises
     ------
     ImportError
-        If ``tsdynamics`` is not installed, with a message pointing at the
-        ``resdag[dynamics]`` extra.
+        If `tsdynamics` is not installed, with a message pointing at the
+        `resdag[dynamics]` extra.
     """
     try:
         import tsdynamics  # noqa: F401
@@ -126,10 +125,10 @@ def _import_tsdynamics() -> Any:
 
 
 def lyapunov_time(lambda_max: float) -> float:
-    """Return the Lyapunov time :math:`t_\\lambda = 1 / \\lambda_\\mathrm{max}`.
+    """Return the Lyapunov time $t_\\lambda = 1 / \\lambda_\\mathrm{max}$.
 
     One Lyapunov time is the characteristic timescale over which infinitesimally
-    close trajectories of a chaotic system separate by a factor of :math:`e`.
+    close trajectories of a chaotic system separate by a factor of $e$.
 
     Parameters
     ----------
@@ -140,13 +139,13 @@ def lyapunov_time(lambda_max: float) -> float:
     Returns
     -------
     float
-        The Lyapunov time :math:`1 / \\lambda_\\mathrm{max}`, in the same time
-        units as ``lambda_max`` is inverse to.
+        The Lyapunov time $1 / \\lambda_\\mathrm{max}$, in the same time
+        units as `lambda_max` is inverse to.
 
     Raises
     ------
     ValueError
-        If ``lambda_max`` is not strictly positive.
+        If `lambda_max` is not strictly positive.
     """
     if lambda_max <= 0.0:
         raise ValueError(f"lambda_max must be positive to define a Lyapunov time, got {lambda_max}")
@@ -169,13 +168,13 @@ def steps_per_lyapunov_time(dt: float, lambda_max: float) -> float:
     Returns
     -------
     float
-        ``1 / (dt * lambda_max)`` — the number of samples spanning one Lyapunov
-        time :math:`t_\\lambda`.
+        `1 / (dt * lambda_max)` — the number of samples spanning one Lyapunov
+        time $t_\\lambda$.
 
     Raises
     ------
     ValueError
-        If ``dt`` or ``lambda_max`` is not strictly positive.
+        If `dt` or `lambda_max` is not strictly positive.
     """
     if dt <= 0.0:
         raise ValueError(f"dt must be positive, got {dt}")
@@ -185,10 +184,9 @@ def steps_per_lyapunov_time(dt: float, lambda_max: float) -> float:
 
 
 def steps_to_lyapunov(steps: float, dt: float, lambda_max: float) -> float:
-    """Convert a step count to Lyapunov times :math:`\\Lambda t`.
+    """Convert a step count to Lyapunov times $\\Lambda t$.
 
-    This is the headline conversion: ``VPT_in_Lyapunov = steps * dt *
-    lambda_max``.
+    This is the headline conversion: `VPT_in_Lyapunov = steps * dt * lambda_max`.
 
     Parameters
     ----------
@@ -202,16 +200,16 @@ def steps_to_lyapunov(steps: float, dt: float, lambda_max: float) -> float:
     Returns
     -------
     float
-        The horizon expressed in Lyapunov times, ``steps * dt * lambda_max``.
+        The horizon expressed in Lyapunov times, `steps * dt * lambda_max`.
 
     Raises
     ------
     ValueError
-        If ``dt`` or ``lambda_max`` is not strictly positive.
+        If `dt` or `lambda_max` is not strictly positive.
 
     Examples
     --------
-    A Lorenz-63 valid-prediction time of 357 steps at ``dt = 0.02``:
+    A Lorenz-63 valid-prediction time of 357 steps at `dt = 0.02`:
 
     >>> round(steps_to_lyapunov(357, dt=0.02, lambda_max=0.9056), 2)
     6.47
@@ -226,13 +224,13 @@ def steps_to_lyapunov(steps: float, dt: float, lambda_max: float) -> float:
 def lyapunov_to_steps(lyap: float, dt: float, lambda_max: float) -> int:
     """Convert a horizon in Lyapunov times back to a whole number of steps.
 
-    The inverse of :func:`steps_to_lyapunov`, rounded to the nearest integer
+    The inverse of `steps_to_lyapunov`, rounded to the nearest integer
     step (horizons are discrete step counts).
 
     Parameters
     ----------
     lyap : float
-        Horizon in Lyapunov times :math:`\\Lambda t`.
+        Horizon in Lyapunov times $\\Lambda t$.
     dt : float
         Integration step.
     lambda_max : float
@@ -241,12 +239,12 @@ def lyapunov_to_steps(lyap: float, dt: float, lambda_max: float) -> int:
     Returns
     -------
     int
-        ``round(lyap / (dt * lambda_max))`` — the equivalent step count.
+        `round(lyap / (dt * lambda_max))` — the equivalent step count.
 
     Raises
     ------
     ValueError
-        If ``dt`` or ``lambda_max`` is not strictly positive.
+        If `dt` or `lambda_max` is not strictly positive.
     """
     if dt <= 0.0:
         raise ValueError(f"dt must be positive, got {dt}")
@@ -261,15 +259,15 @@ def lyapunov_to_steps(lyap: float, dt: float, lambda_max: float) -> int:
 
 
 def _lambda_from_name(name: str, **kw: Any) -> float:
-    """Resolve a generator name to a canonical :math:`\\lambda_\\mathrm{max}`.
+    """Resolve a generator name to a canonical $\\lambda_\\mathrm{max}$.
 
     Parameters
     ----------
     name : str
-        A resdag generator name (case-insensitive), e.g. ``"lorenz"``,
-        ``"rossler"``, or ``"mackey_glass"``.
+        A resdag generator name (case-insensitive), e.g. `"lorenz"`,
+        `"rossler"`, or `"mackey_glass"`.
     **kw
-        Generator parameters; ``tau`` selects the Mackey-Glass value.
+        Generator parameters; `tau` selects the Mackey-Glass value.
 
     Returns
     -------
@@ -279,7 +277,7 @@ def _lambda_from_name(name: str, **kw: Any) -> float:
     Raises
     ------
     KeyError
-        If the name (or, for Mackey-Glass, the ``tau``) has no canonical value.
+        If the name (or, for Mackey-Glass, the `tau`) has no canonical value.
     """
     key = name.lower()
     if key in CANONICAL_LAMBDA_MAX:
@@ -301,12 +299,12 @@ def _lambda_from_name(name: str, **kw: Any) -> float:
 
 
 def _lambda_from_series(series: Any, *, dt: float, **kw: Any) -> float:
-    """Estimate :math:`\\lambda_\\mathrm{max}` from a scalar/vector time series.
+    """Estimate $\\lambda_\\mathrm{max}$ from a scalar/vector time series.
 
-    Uses ``tsdynamics.lyapunov_from_data`` (Kantz / Rosenstein slope of the mean
+    Uses `tsdynamics.lyapunov_from_data` (Kantz / Rosenstein slope of the mean
     log-divergence).  This is a **diagnostic** estimate: data-driven exponents
     are noisy and sensitive to the embedding and fit window, so they can differ
-    from the canonical value by a large factor.  Prefer :data:`CANONICAL_LAMBDA_MAX`
+    from the canonical value by a large factor.  Prefer `CANONICAL_LAMBDA_MAX`
     (a known generator name) or a `tsdynamics` System when accuracy matters.
     """
     tsdynamics = _import_tsdynamics()
@@ -333,11 +331,11 @@ def _lambda_from_series(series: Any, *, dt: float, **kw: Any) -> float:
 
 
 def _lambda_from_system(system: Any, *, dt: float | None, **kw: Any) -> float:
-    """Estimate :math:`\\lambda_\\mathrm{max}` from a `tsdynamics` System.
+    """Estimate $\\lambda_\\mathrm{max}$ from a `tsdynamics` System.
 
-    Uses ``tsdynamics.analysis.lyapunov_spectrum`` (Benettin QR integration of the
+    Uses `tsdynamics.analysis.lyapunov_spectrum` (Benettin QR integration of the
     variational equations) and returns the leading exponent — a high-accuracy
-    estimate.  Falls back to the system's own ``known_lyapunov`` spectrum when
+    estimate.  Falls back to the system's own `known_lyapunov` spectrum when
     available and no override kwargs force a recompute is *not* done here: the
     spectrum is always computed so custom parameters are honoured.
     """
@@ -363,20 +361,20 @@ def largest_lyapunov(
     from_: str | None = None,
     **kw: Any,
 ) -> float:
-    """Estimate the largest Lyapunov exponent of ``source``.
+    """Estimate the largest Lyapunov exponent of `source`.
 
-    A single entry point that dispatches on the type of ``source``:
+    A single entry point that dispatches on the type of `source`:
 
-    * **generator name** (:class:`str`, e.g. ``"lorenz"``, ``"mackey_glass"``) —
-      returns the canonical literature value from :data:`CANONICAL_LAMBDA_MAX`
-      / :data:`MACKEY_GLASS_LAMBDA` (keyed by ``tau=`` for Mackey-Glass).
+    * **generator name** (`str`, e.g. `"lorenz"`, `"mackey_glass"`) —
+      returns the canonical literature value from `CANONICAL_LAMBDA_MAX`
+      / `MACKEY_GLASS_LAMBDA` (keyed by `tau=` for Mackey-Glass).
       **No dependency.**
-    * **time series** (:class:`numpy.ndarray` / :class:`torch.Tensor`) — a
-      *diagnostic* estimate via ``tsdynamics.lyapunov_from_data``.  Data-driven
-      exponents are noisy; you must opt in with ``from_="data"`` so a series is
-      never silently mistaken for accurate.  **Needs** ``resdag[dynamics]``.
+    * **time series** (`numpy.ndarray` / `torch.Tensor`) — a
+      *diagnostic* estimate via `tsdynamics.lyapunov_from_data`.  Data-driven
+      exponents are noisy; you must opt in with `from_="data"` so a series is
+      never silently mistaken for accurate.  **Needs** `resdag[dynamics]`.
     * **tsdynamics System** — a high-accuracy Benettin estimate via
-      ``tsdynamics.lyapunov_spectrum``.  **Needs** ``resdag[dynamics]``.
+      `tsdynamics.lyapunov_spectrum`.  **Needs** `resdag[dynamics]`.
 
     Parameters
     ----------
@@ -386,13 +384,13 @@ def largest_lyapunov(
         Integration step.  Required for the series path; forwarded to the
         System path if given.  Ignored for a generator name.
     from_ : {"data", None}, optional
-        Set to ``"data"`` to force the noisy data-driven estimate for an array
+        Set to `"data"` to force the noisy data-driven estimate for an array
         source.  Without it, passing a raw array raises to prevent silently
         trusting a diagnostic number.
     **kw
-        Extra arguments: ``tau=`` selects the Mackey-Glass canonical value;
+        Extra arguments: `tau=` selects the Mackey-Glass canonical value;
         otherwise forwarded to the underlying `tsdynamics` estimator (e.g.
-        ``method=``, ``fit=`` for data; ``final_time=``, ``transient=`` for a
+        `method=`, `fit=` for data; `final_time=`, `transient=` for a
         System).
 
     Returns
@@ -405,7 +403,7 @@ def largest_lyapunov(
     ImportError
         If a `tsdynamics` path is taken but the package is not installed.
     TypeError
-        If an array is passed without ``from_="data"``.
+        If an array is passed without `from_="data"`.
     KeyError
         If a generator name has no canonical value.
 
@@ -444,17 +442,17 @@ def largest_lyapunov(
 
 
 def _resolve_reservoir(source: Any) -> "BaseReservoirLayer":
-    """Return the single ESN reservoir layer to analyse from ``source``.
+    """Return the single ESN reservoir layer to analyse from `source`.
 
-    Accepts a :class:`BaseReservoirLayer` directly, or an :class:`ESNModel`
-    (or any ``nn.Module``) containing exactly one tanh-style ESN reservoir.
+    Accepts a `BaseReservoirLayer` directly, or an `ESNModel`
+    (or any `nn.Module`) containing exactly one tanh-style ESN reservoir.
 
     Raises
     ------
     ValueError
         If no ESN reservoir, or more than one, is found in a model.
     TypeError
-        If the reservoir's cell exposes no ``weight_hh`` (not an ESN cell).
+        If the reservoir's cell exposes no `weight_hh` (not an ESN cell).
     """
     from resdag.layers.reservoirs.base_reservoir import BaseReservoirLayer
 
@@ -487,7 +485,7 @@ def _diagnostic_cell(source: Any, *, tanh_esn: bool = False) -> Any:
 
     Jacobian formulas here describe the standard ESN update exactly, including
     its calibration and vector leak. Other update equations need their own
-    validated tangent map; a ``weight_hh`` attribute alone is insufficient.
+    validated tangent map; a `weight_hh` attribute alone is insufficient.
     """
     from resdag.layers.cells import ESNCell
 
@@ -539,7 +537,7 @@ def reservoir_lyapunov(
     transient: int = 100,
     seed: int | None = 0,
 ) -> float | np.ndarray:
-    """Largest (or top-``k``) Lyapunov exponent of a driven ESN reservoir.
+    """Largest (or top-`k`) Lyapunov exponent of a driven ESN reservoir.
 
     Estimates the maximal Lyapunov exponent of the reservoir's own dynamics via
     **Benettin's algorithm with QR reorthonormalisation** of the analytic
@@ -551,27 +549,27 @@ def reservoir_lyapunov(
 
     A local CPU float64 evaluation copy preserves caller weights, device,
     cached state and training mode. Training-only noise is disabled. The
-    validated tangent map supports the standard tanh ``ESNCell``, including
+    validated tangent map supports the standard tanh `ESNCell`, including
     per-neuron leaks, recurrent calibration gains and intrinsic gains/biases.
     Other update equations are rejected until their tangent maps are validated.
 
     The reservoir map is the leaky-ESN update
 
-    .. math::
-
-        h_t = (1-\\alpha) h_{t-1} + \\alpha\\, f(W_\\mathrm{fb} x_t
-              + W_\\mathrm{in} u_t + W_\\mathrm{hh} h_{t-1} + b),
+    $$
+    h_t = (1-\\alpha) h_{t-1} + \\alpha\\, f(W_\\mathrm{fb} x_t
+          + W_\\mathrm{in} u_t + W_\\mathrm{hh} h_{t-1} + b),
+    $$
 
     whose Jacobian with respect to the state is
 
-    .. math::
+    $$
+    J_t = (1-\\alpha) I + \\alpha\\, \\mathrm{diag}\\!\\big(f'(\\mathrm{pre}_t)\\big)\\, W_\\mathrm{hh},
+    $$
 
-        J_t = (1-\\alpha) I + \\alpha\\, \\mathrm{diag}\\!\\big(f'(\\mathrm{pre}_t)\\big)\\, W_\\mathrm{hh},
-
-    with :math:`f' = 1 - \\tanh^2` and calibrated gains included in
-    :math:`W_\\mathrm{hh}`. Scalar leakage generalizes row-wise for vector leaks.  The
-    driving inputs come from ``warmup_inputs``; the trajectory is looped over
-    them if ``horizon`` exceeds their length, so a short synchronisation window
+    with $f' = 1 - \\tanh^2$ and calibrated gains included in
+    $W_\\mathrm{hh}$. Scalar leakage generalizes row-wise for vector leaks.  The
+    driving inputs come from `warmup_inputs`; the trajectory is looped over
+    them if `horizon` exceeds their length, so a short synchronisation window
     still yields a long tangent-space average.
 
     Parameters
@@ -580,43 +578,43 @@ def reservoir_lyapunov(
         The reservoir to analyse, or a model containing exactly one ESN
         reservoir.
     warmup_inputs : torch.Tensor or tuple of torch.Tensor
-        Driving inputs of shape ``(batch, time, features)``.  A bare tensor is
-        the feedback stream; a tuple is ``(feedback, driver, ...)``.  Only the
+        Driving inputs of shape `(batch, time, features)`.  A bare tensor is
+        the feedback stream; a tuple is `(feedback, driver, ...)`.  Only the
         first sample of the batch is used (the exponent is a property of the
         dynamics, not the batch).
     horizon : int, default=1000
         Number of tangent-map iterations (after the transient).  Longer gives a
         tighter estimate.
     k : int, default=1
-        Number of leading exponents to return.  ``k=1`` returns the scalar
-        maximal exponent; ``k>1`` returns the top-``k`` as a ``(k,)`` array.
+        Number of leading exponents to return.  `k=1` returns the scalar
+        maximal exponent; `k>1` returns the top-`k` as a `(k,)` array.
     transient : int, default=100
-        Additional tangent iterations discarded before the ``horizon`` scoring
+        Additional tangent iterations discarded before the `horizon` scoring
         iterations. Must be non-negative; it is not subtracted from the horizon.
     seed : int or None, default=0
-        Seed for the random initial tangent frame.  Defaults to ``0`` so the
+        Seed for the random initial tangent frame.  Defaults to `0` so the
         estimate is fully deterministic (the converged leading exponent is robust
-        to the frame regardless).  Pass ``None`` to draw from the process-global
+        to the frame regardless).  Pass `None` to draw from the process-global
         RNG instead.
 
     Returns
     -------
     float or numpy.ndarray
-        The maximal Lyapunov exponent (``k=1``) or the top-``k`` spectrum as a
-        ``(k,)`` array, in **inverse-step units** (per reservoir update).
+        The maximal Lyapunov exponent (`k=1`) or the top-`k` spectrum as a
+        `(k,)` array, in **inverse-step units** (per reservoir update).
 
     Raises
     ------
     ValueError
-        If ``source`` has no (or more than one) ESN reservoir, or ``k`` exceeds
+        If `source` has no (or more than one) ESN reservoir, or `k` exceeds
         the reservoir size.
     NotImplementedError
-        If the cell is not a standard tanh ``ESNCell``.
+        If the cell is not a standard tanh `ESNCell`.
 
     Notes
     -----
-    Exponents are per **reservoir step**.  Multiply by ``1/dt`` to compare with
-    a natural-time attractor exponent from :data:`CANONICAL_LAMBDA_MAX`.
+    Exponents are per **reservoir step**.  Multiply by `1/dt` to compare with
+    a natural-time attractor exponent from `CANONICAL_LAMBDA_MAX`.
 
     Examples
     --------

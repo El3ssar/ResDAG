@@ -2,7 +2,7 @@
 Ott's ESN Architecture
 ======================
 
-This module provides :func:`ott_esn`, which builds an ESN model following
+This module provides `ott_esn`, which builds an ESN model following
 the architecture proposed by Edward Ott for predicting chaotic systems.
 
 The key innovation is state augmentation: reservoir states are transformed
@@ -60,9 +60,11 @@ def ott_esn(
     reservoir states by squaring even-indexed units and concatenating with input.
     This augmentation helps capture higher-order dynamics in chaotic systems.
 
-    Architecture::
+    Architecture:
 
-        Input -> Reservoir -> SelectiveExponentiation -> Concatenate(Input, Augmented) -> Readout
+    ```text
+    Input -> Reservoir -> SelectiveExponentiation -> Concatenate(Input, Augmented) -> Readout
+    ```
 
     Parameters
     ----------
@@ -74,19 +76,19 @@ def ott_esn(
         Dimension of output signal.
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
-        model takes two inputs ``(feedback, driver)`` and the driver feeds the
+        model takes two inputs `(feedback, driver)` and the driver feeds the
         reservoir alongside the autoregressive feedback.  The driver is kept out
-        of the input concatenation, so the readout ``in_features`` stays
-        ``feedback_size + reservoir_size``.  ``None`` (default) builds a
+        of the input concatenation, so the readout `in_features` stays
+        `feedback_size + reservoir_size`.  `None` (default) builds a
         feedback-only model, unchanged from previous behavior.
     input_initializer : str, tuple, or InputFeedbackInitializer, optional
         Initializer for the driving-input weights.  Same format as
-        ``feedback_initializer``.  Only used when ``input_size`` is given.
+        `feedback_initializer`.  Only used when `input_size` is given.
     topology : str, tuple, or TopologyInitializer, optional
         Topology for recurrent weights. Accepts:
 
-        - str: Registry name (e.g., ``"erdos_renyi"``)
-        - tuple: ``(name, params)`` like ``("watts_strogatz", {"k": 6, "p": 0.1})``
+        - str: Registry name (e.g., `"erdos_renyi"`)
+        - tuple: `(name, params)` like `("watts_strogatz", {"k": 6, "p": 0.1})`
         - TopologyInitializer: Pre-configured object
 
     spectral_radius : float, default=0.9
@@ -94,7 +96,7 @@ def ott_esn(
     leak_rate : float, default=1.0
         Leaky integration rate. 1.0 = no leaking (standard ESN).
     feedback_initializer : str, tuple, or InputFeedbackInitializer, optional
-        Initializer for feedback weights. Same format as ``topology``.
+        Initializer for feedback weights. Same format as `topology`.
     activation : {'tanh', 'relu', 'sigmoid', 'identity'}, default='tanh'
         Activation function for reservoir neurons.
     bias : bool, default=True
@@ -102,10 +104,10 @@ def ott_esn(
     trainable : bool, default=False
         If True, reservoir weights are trainable via backpropagation.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         L2 regularization strength for ridge regression in readout.
     readout_bias : bool, default=True
@@ -113,10 +115,10 @@ def ott_esn(
     readout_name : str, default='output'
         Name for the readout layer. Used as target key in training.
     readout_kwargs : dict, optional
-        Extra readout constructor options, including ``trainable``, ``rcond``,
-        ``state_noise`` or ``gram_dtype``. Architecture widths are fixed.
+        Extra readout constructor options, including `trainable`, `rcond`,
+        `state_noise` or `gram_dtype`. Architecture widths are fixed.
     **reservoir_kwargs
-        Additional keyword arguments passed to :class:`ESNLayer`.
+        Additional keyword arguments passed to `ESNLayer`.
 
     Returns
     -------

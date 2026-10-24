@@ -11,14 +11,14 @@ from .base_cell import ReservoirCell
 
 
 class TorchRecurrentCell(ReservoirCell):
-    """Use an existing ``nn.GRUCell`` or ``nn.LSTMCell`` in a ResDAG graph.
+    """Use an existing `nn.GRUCell` or `nn.LSTMCell` in a ResDAG graph.
 
     Deep-copies the supplied standard cell, preserving its parameters, device,
-    and dtype. ``trainable=False`` freezes the copy; the caller's cell is never
-    changed. Its ``input_size`` must equal ``feedback_size + (input_size or 0)``.
+    and dtype. `trainable=False` freezes the copy; the caller's cell is never
+    changed. Its `input_size` must equal `feedback_size + (input_size or 0)`.
     Inputs are ordered feedback then optional driver. LSTM state is packed
-    ``cat([h, c], -1)`` of width ``2*hidden_size``; GRU state is ``h``. Both
-    expose only ``h`` as output. This permits imported/pretrained cells and
+    `cat([h, c], -1)` of width `2*hidden_size`; GRU state is `h`. Both
+    expose only `h` as output. This permits imported/pretrained cells and
     ordinary gradient training without requiring a separate RNN implementation.
 
     Input gate projections are batched across the entire sequence; recurrent
@@ -60,7 +60,7 @@ class TorchRecurrentCell(ReservoirCell):
 
     @property
     def output_size(self) -> int:
-        """Hidden-state width, equal to the supplied native cell's ``hidden_size``."""
+        """Hidden-state width, equal to the supplied native cell's `hidden_size`."""
         return self.reservoir_size
 
     @property

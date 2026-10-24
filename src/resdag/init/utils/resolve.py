@@ -44,8 +44,8 @@ def select_recurrent_spec(
 ) -> RecurrentInitializerSpec:
     """Choose the recurrent specification, rejecting two explicit choices.
 
-    ``topology`` is the original spelling. Both parameters accept graph and
-    matrix builders; ``recurrent_initializer`` makes that scope explicit.
+    `topology` is the original spelling. Both parameters accept graph and
+    matrix builders; `recurrent_initializer` makes that scope explicit.
     """
     if topology is not None and recurrent_initializer is not None:
         raise ValueError("Specify only one of topology and recurrent_initializer, not both.")
@@ -58,18 +58,18 @@ def resolve_recurrent_initializer(
 ) -> TopologyInitializer | None:
     """Resolve a graph or matrix recurrent initializer using the shared registry.
 
-    Strings, ``(name_or_callable, kwargs)`` tuples, dimension-based or in-place
-    callables, and preconfigured objects retain :func:`resolve_topology`'s
+    Strings, `(name_or_callable, kwargs)` tuples, dimension-based or in-place
+    callables, and preconfigured objects retain `resolve_topology`'s
     seeding and calling conventions.
     """
     return resolve_topology(spec, seed=seed)
 
 
 def _accepts_seed(func: Callable) -> bool:
-    """Return True if ``func`` accepts a ``seed`` keyword argument.
+    """Return True if `func` accepts a `seed` keyword argument.
 
-    A builder accepts ``seed`` if its signature names a ``seed`` parameter or
-    declares ``**kwargs`` (variadic keyword). When introspection fails (e.g.
+    A builder accepts `seed` if its signature names a `seed` parameter or
+    declares `**kwargs` (variadic keyword). When introspection fails (e.g.
     a C builtin without a signature) we assume it does not.
     """
     try:
@@ -82,11 +82,11 @@ def _accepts_seed(func: Callable) -> bool:
 
 
 def _inject_seed(kwargs: dict[str, Any], builder: Callable, seed: int | None) -> dict[str, Any]:
-    """Return ``kwargs`` with ``seed`` added if appropriate.
+    """Return `kwargs` with `seed` added if appropriate.
 
-    The seed is injected only when ``seed`` is not None, ``kwargs`` does not
-    already pin a ``seed`` (an explicit spec value always wins), and ``builder``
-    accepts a ``seed`` argument.
+    The seed is injected only when `seed` is not None, `kwargs` does not
+    already pin a `seed` (an explicit spec value always wins), and `builder`
+    accepts a `seed` argument.
     """
     if seed is None or "seed" in kwargs or not _accepts_seed(builder):
         return kwargs
@@ -94,14 +94,14 @@ def _inject_seed(kwargs: dict[str, Any], builder: Callable, seed: int | None) ->
 
 
 def _generator_seed(builder: Callable, params: dict[str, Any], seed: int | None) -> int | None:
-    """Return the seed to hand a :class:`MatrixTopology` for ``generator=`` builders.
+    """Return the seed to hand a `MatrixTopology` for `generator=` builders.
 
-    In-place initializers like :func:`torch.nn.init.orthogonal_` take a
-    ``generator=`` keyword rather than ``seed=``; :meth:`MatrixTopology.initialize`
-    then builds a device-correct :class:`torch.Generator` from this seed. The
+    In-place initializers like `torch.nn.init.orthogonal_` take a
+    `generator=` keyword rather than `seed=`; `MatrixTopology.initialize`
+    then builds a device-correct `torch.Generator` from this seed. The
     seed is forwarded only when it is not None, the builder does *not* already
-    take a ``seed`` (that path threads the int through ``kwargs`` instead), the
-    builder *does* accept ``generator``, and the spec did not already bind one.
+    take a `seed` (that path threads the int through `kwargs` instead), the
+    builder *does* accept `generator`, and the spec did not already bind one.
     """
     if _accepts_seed(builder) or "generator" in params:
         return None
@@ -111,7 +111,7 @@ def _generator_seed(builder: Callable, params: dict[str, Any], seed: int | None)
 
 
 def _callback_kwargs(builder: Callable, params: dict[str, Any], seed: int | None) -> dict[str, Any]:
-    """Keep ``seed`` out of callbacks that take a Torch generator instead."""
+    """Keep `seed` out of callbacks that take a Torch generator instead."""
     kwargs = _inject_seed(dict(params), builder, seed)
     if not _accepts_seed(builder) and _accepts_generator(builder):
         kwargs.pop("seed", None)
@@ -134,13 +134,13 @@ def resolve_topology(
 
     Accepts six formats:
 
-    - ``None`` — returns None (use default random initialization)
-    - ``str`` — registry name, uses registered default parameters
-    - ``tuple[str, dict]`` — registry name with parameter overrides
-    - ``callable`` — any matrix builder ``fn(n, **kw) -> matrix | graph`` or
-      in-place ``fn(tensor, **kw)``; wrapped in :class:`MatrixTopology`
-    - ``tuple[callable, dict]`` — matrix builder with bound parameters
-    - ``TopologyInitializer`` — already resolved, returned as-is
+    - `None` — returns None (use default random initialization)
+    - `str` — registry name, uses registered default parameters
+    - `tuple[str, dict]` — registry name with parameter overrides
+    - `callable` — any matrix builder `fn(n, **kw) -> matrix | graph` or
+      in-place `fn(tensor, **kw)`; wrapped in `MatrixTopology`
+    - `tuple[callable, dict]` — matrix builder with bound parameters
+    - `TopologyInitializer` — already resolved, returned as-is
 
     Parameters
     ----------
@@ -148,12 +148,12 @@ def resolve_topology(
         Topology specification in one of the accepted formats.
     seed : int or torch.Generator, optional
         Seed forwarded to the underlying builder for reproducibility. It is
-        applied only to the ``str``, ``tuple[str, dict]``, ``callable``, and
-        ``tuple[callable, dict]`` forms, only when the builder accepts a
-        ``seed`` argument, and only when the spec did not already pin one (an
-        explicit spec seed always wins). A :class:`torch.Generator` is reduced
-        to its ``initial_seed()`` before use. Pre-resolved
-        ``TopologyInitializer`` objects are returned untouched.
+        applied only to the `str`, `tuple[str, dict]`, `callable`, and
+        `tuple[callable, dict]` forms, only when the builder accepts a
+        `seed` argument, and only when the spec did not already pin one (an
+        explicit spec seed always wins). A `torch.Generator` is reduced
+        to its `initial_seed()` before use. Pre-resolved
+        `TopologyInitializer` objects are returned untouched.
 
     Returns
     -------
@@ -228,9 +228,9 @@ def resolve_topology(
 
 
 def _initializer_seed_target(initializer: InputFeedbackInitializer) -> Callable:
-    """Return the callable whose signature decides ``seed`` acceptance.
+    """Return the callable whose signature decides `seed` acceptance.
 
-    For function-wrapped initializers (:class:`FunctionInitializer`) this is
+    For function-wrapped initializers (`FunctionInitializer`) this is
     the wrapped function; for class-based initializers it is the class
     constructor.
     """
@@ -243,7 +243,7 @@ def _initializer_seed_target(initializer: InputFeedbackInitializer) -> Callable:
 def _function_initializer(
     builder: Callable, params: dict[str, Any], seed: int | None
 ) -> FunctionInitializer:
-    """Bind callback keywords without reserving a callback's ``seed`` argument."""
+    """Bind callback keywords without reserving a callback's `seed` argument."""
     initializer = FunctionInitializer(builder, **_callback_kwargs(builder, params, seed))
     initializer._generator_seed = _generator_seed(builder, params, seed)
     return initializer
@@ -257,13 +257,13 @@ def resolve_initializer(
 
     Accepts six formats:
 
-    - ``None`` — returns None (use default random initialization)
-    - ``str`` — registry name, uses registered default parameters
-    - ``tuple[str, dict]`` — registry name with parameter overrides
-    - ``callable`` — any matrix builder ``fn(rows, cols, **kw) -> matrix`` or
-      in-place ``fn(tensor, **kw)``; wrapped in :class:`FunctionInitializer`
-    - ``tuple[callable, dict]`` — matrix builder with bound parameters
-    - ``InputFeedbackInitializer`` — already resolved, returned as-is
+    - `None` — returns None (use default random initialization)
+    - `str` — registry name, uses registered default parameters
+    - `tuple[str, dict]` — registry name with parameter overrides
+    - `callable` — any matrix builder `fn(rows, cols, **kw) -> matrix` or
+      in-place `fn(tensor, **kw)`; wrapped in `FunctionInitializer`
+    - `tuple[callable, dict]` — matrix builder with bound parameters
+    - `InputFeedbackInitializer` — already resolved, returned as-is
 
     Parameters
     ----------
@@ -271,12 +271,12 @@ def resolve_initializer(
         Initializer specification in one of the accepted formats.
     seed : int or torch.Generator, optional
         Seed forwarded to the underlying initializer for reproducibility. It
-        is applied only to the ``str``, ``tuple[str, dict]``, ``callable``,
-        and ``tuple[callable, dict]`` forms, only when the initializer accepts
-        a ``seed`` argument, and only when the spec did not already pin one (an
-        explicit spec seed always wins). A :class:`torch.Generator` is reduced
-        to its ``initial_seed()`` before use. Pre-resolved
-        ``InputFeedbackInitializer`` objects are returned untouched.
+        is applied only to the `str`, `tuple[str, dict]`, `callable`,
+        and `tuple[callable, dict]` forms, only when the initializer accepts
+        a `seed` argument, and only when the spec did not already pin one (an
+        explicit spec seed always wins). A `torch.Generator` is reduced
+        to its `initial_seed()` before use. Pre-resolved
+        `InputFeedbackInitializer` objects are returned untouched.
 
     Returns
     -------

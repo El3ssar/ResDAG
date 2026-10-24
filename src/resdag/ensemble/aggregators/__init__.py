@@ -2,14 +2,14 @@
 Ensemble Aggregators
 =====================
 
-This module hosts ``nn.Module`` layers that combine N per-sub-model outputs
+This module hosts `nn.Module` layers that combine N per-sub-model outputs
 into a single aggregated tensor.  Aggregators expect a 4-D input of shape
-``(samples, batch, timesteps, features)`` (or a list of length ``samples``
-each of shape ``(batch, timesteps, features)``) and return a 3-D tensor of
-shape ``(batch, timesteps, features)``.
+`(samples, batch, timesteps, features)` (or a list of length `samples`
+each of shape `(batch, timesteps, features)`) and return a 3-D tensor of
+shape `(batch, timesteps, features)`.
 
-They plug into :class:`~resdag.ensemble.CoupledEnsembleESNModel` via the
-``aggregator`` argument.
+They plug into `resdag.ensemble.CoupledEnsembleESNModel` via the
+`aggregator` argument.
 
 Classes
 -------
@@ -29,5 +29,5 @@ __all__ = ["OutliersFilteredMean"]
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

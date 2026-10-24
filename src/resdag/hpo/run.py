@@ -129,11 +129,11 @@ def run_hpo(
 ) -> optuna.Study:
     """Tune raw ESNModel factories with explicit five-array data preparation.
 
-    The usual ``Model.tune``/``ESN.tune`` workflow prepares chronological views
+    The usual `Model.tune`/`ESN.tune` workflow prepares chronological views
     and installs its winner. This advanced entry point returns an Optuna study;
     callers own split alignment, scaling and winner reconstruction.
 
-    ``n_trials`` counts NEW attempts in this call, including failures/pruning.
+    `n_trials` counts NEW attempts in this call, including failures/pruning.
     Single-worker jobs run in the caller; multiple workers use the shared
     managed joblib/loky executor, including notebook closures. Search-space and
     data callbacks run once per new attempt in the parent with a real Trial.
@@ -144,14 +144,14 @@ def run_hpo(
     Parameters
     ----------
     model_creator : callable
-        ``model_creator(**resolved_settings) -> ESNModel``. Fixed settings as
+        `model_creator(**resolved_settings) -> ESNModel`. Fixed settings as
         well as suggested parameters are recorded. Capture custom Python
         modules/initializers in this callable rather than in JSON settings.
     search_space : callable
-        ``search_space(trial) -> mapping`` of finite JSON/literal settings.
+        `search_space(trial) -> mapping` of finite JSON/literal settings.
     data_loader : callable
-        Returns 3D tensors keyed ``warmup``, ``train``, ``target``, ``f_warmup``
-        and ``val``. Each driver requires warmup/train/f_warmup/forecast entries
+        Returns 3D tensors keyed `warmup`, `train`, `target`, `f_warmup`
+        and `val`. Each driver requires warmup/train/f_warmup/forecast entries
         with its name suffix. This function may also make Optuna suggestions.
     n_trials : int
         Positive count of NEW attempted configurations; transferred scores do
@@ -187,7 +187,7 @@ def run_hpo(
         Record invalid evaluation attempts rather than aborting on their error.
     penalty_value, clip_value, prune_on_clip : optional
         Explicit numeric failure penalty or clipping/pruning controls.
-        ``error_policy="fail"`` prevents invalid evaluations becoming winners.
+        `error_policy="fail"` prevents invalid evaluations becoming winners.
     horizon_key : str, optional
         Data key specifying the forecast length; cannot exceed validation truth.
     n_checkpoints : int, default=5

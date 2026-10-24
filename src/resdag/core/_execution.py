@@ -73,7 +73,7 @@ class ExecutionPlan:
 
         Unlike explicit-state inference, this path preserves reservoir,
         container and readout hooks and the modules' ordinary stored states.
-        Batch fitting uses it under ``no_grad`` so discarded feature tensors
+        Batch fitting uses it under `no_grad` so discarded feature tensors
         do not remain reachable through an autograd graph.
         """
         self.validate_inputs(inputs)
@@ -205,10 +205,10 @@ class ExecutionPlan:
 
 @contextmanager
 def stateful_execution(model: nn.Module, plan: ExecutionPlan) -> Iterator[None]:
-    """Use a fitting executor through the model's real ``nn.Module.__call__``.
+    """Use a fitting executor through the model's real `nn.Module.__call__`.
 
     A temporary forward keeps model/global hooks in PyTorch's own dispatcher.
-    Temporarily bypass ``Module.compile`` too: its cached callable must not
+    Temporarily bypass `Module.compile` too: its cached callable must not
     execute an older forward instead of the fitting plan. Restore the exact
     prior instance attributes even when a pre-hook or fitting operation fails.
     Fitting the same mutable model recursively or concurrently is unsupported.
@@ -285,7 +285,7 @@ def _symbolic_operations(
 ) -> tuple[tuple[Any, nn.Module, tuple[Any, ...], tuple[Any, ...]], ...]:
     """Adapt the symbolic library's operation grouping in one place.
 
-    Public ``parents`` and ``layer`` provide graph edges and layer objects.
+    Public `parents` and `layer` provide graph edges and layer objects.
     The library's private execution order and multi-output sibling grouping
     are necessary to preserve shared-layer invocation order and unpack nodes.
     Keep those compatibility details here rather than duplicating them in

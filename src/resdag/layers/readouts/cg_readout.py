@@ -2,8 +2,8 @@
 Conjugate Gradient Readout Layer
 ================================
 
-This module provides :class:`CGReadoutLayer`, which extends
-:class:`ReadoutLayer` with an efficient Conjugate Gradient solver
+This module provides `CGReadoutLayer`, which extends
+`ReadoutLayer` with an efficient Conjugate Gradient solver
 for ridge regression fitting.
 
 See Also
@@ -25,7 +25,7 @@ class CGReadoutLayer(ReadoutLayer):
     """
     Readout layer with Conjugate Gradient ridge regression solver.
 
-    This layer extends :class:`ReadoutLayer` with an efficient Conjugate
+    This layer extends `ReadoutLayer` with an efficient Conjugate
     Gradient (CG) solver for fitting weights via ridge regression. The CG
     solver is:
 
@@ -36,11 +36,11 @@ class CGReadoutLayer(ReadoutLayer):
 
     The solver finds weights W that minimize:
 
-    .. math::
+    $$
+    ||XW - Y||^2 + \\alpha ||W||^2
+    $$
 
-        ||XW - Y||^2 + \\alpha ||W||^2
-
-    where :math:`\\alpha` is the regularization strength.
+    where $\\alpha$ is the regularization strength.
 
     Parameters
     ----------
@@ -52,7 +52,7 @@ class CGReadoutLayer(ReadoutLayer):
         Whether to include a bias term.
     name : str, optional
         Name for this readout layer. Used for identification in
-        multi-readout architectures and by :class:`ESNTrainer`.
+        multi-readout architectures and by `ESNTrainer`.
     trainable : bool, default=False
         If True, weights are trainable via backpropagation.
     alpha : float, default=1e-6
@@ -63,30 +63,30 @@ class CGReadoutLayer(ReadoutLayer):
     tol : float, default=1e-5
         Convergence tolerance for the CG solver. Must be positive. Each output
         column is considered converged when its residual-norm-squared falls
-        below ``tol**2``. This is an absolute criterion and depends on target
+        below `tol**2`. This is an absolute criterion and depends on target
         units. Use explicit tighter tolerances or normalize targets when needed.
     use_float64 : bool, default=True
-        If ``True`` (default), the CG iterations on the small
-        ``(in_features, in_features)`` system run in ``float64`` and the
+        If `True` (default), the CG iterations on the small
+        `(in_features, in_features)` system run in `float64` and the
         result is cast back to the layer's parameter dtype. Gram formation uses
-        the separate ``gram_dtype`` policy. Float64 support and throughput depend
-        on the device; MPS requires ``use_float64=False``.
+        the separate `gram_dtype` policy. Float64 support and throughput depend
+        on the device; MPS requires `use_float64=False`.
     gram_dtype : torch.dtype, optional
         Dtype for forming the Gram matrix and right-hand side (the heavy
-        ``(N, F)`` matmuls).  Default ``None`` is automatic: ``float64`` on
+        `(N, F)` matmuls).  Default `None` is automatic: `float64` on
         CPU (cheap there), the input dtype on CUDA — float64 matmuls run at
         1/32–1/64 speed on consumer GPUs and are the classic reason ESN
         training measures *slower* on GPU than CPU.  Pass
-        ``torch.float64`` to force full-precision Gram formation on any
+        `torch.float64` to force full-precision Gram formation on any
         device (needed only for badly scaled states, e.g. unnormalized
         inputs concatenated into the readout; prefer normalizing the data).
 
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or None if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or None if `bias=False`.
     alpha : float
         L2 regularization strength.
     max_iter : int
@@ -153,17 +153,17 @@ class CGReadoutLayer(ReadoutLayer):
         Parameters
         ----------
         states : torch.Tensor
-            Flattened state matrix of shape ``(N, in_features)``.
+            Flattened state matrix of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened target matrix of shape ``(N, out_features)``.
+            Flattened target matrix of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
+            Coefficient matrix of shape `(in_features, out_features)`.
         intercept : torch.Tensor or None
-            Intercept vector of shape ``(out_features,)``, or ``None`` when
-            the layer was built with ``bias=False`` (the ridge problem is
+            Intercept vector of shape `(out_features,)`, or `None` when
+            the layer was built with `bias=False` (the ridge problem is
             then solved without centering, i.e. with no intercept).
         """
         return self._solve_ridge_cg(states, targets, self.alpha)
@@ -178,15 +178,15 @@ class CGReadoutLayer(ReadoutLayer):
 
         When the layer has a bias, the data is centered and an unpenalized
         intercept is recovered afterwards (standard ridge-with-intercept).
-        When built with ``bias=False`` the raw, uncentered normal equations
+        When built with `bias=False` the raw, uncentered normal equations
         are solved instead — centering without applying the intercept at
         predict time would systematically shift every prediction.
 
-        Precision strategy: the heavy ``(N, F)`` matmuls that form the Gram
-        matrix and right-hand side run in ``gram_dtype`` (default: the input
+        Precision strategy: the heavy `(N, F)` matmuls that form the Gram
+        matrix and right-hand side run in `gram_dtype` (default: the input
         dtype — float64 here is catastrophically slow on consumer GPUs),
-        while the CG iterations on the small ``(F, F)`` system run in
-        float64 when ``use_float64=True``. Pass ``gram_dtype=torch.float64``
+        while the CG iterations on the small `(F, F)` system run in
+        float64 when `use_float64=True`. Pass `gram_dtype=torch.float64`
         to also form the Gram in full precision (legacy behaviour; only
         matters for ill-conditioned state matrices). This route forms the full
         Gram matrix; use LSMRReadoutLayer for an opt-in matrix-free CPU solve.
@@ -221,46 +221,46 @@ class CGReadoutLayer(ReadoutLayer):
             max_iter: int,
             tol: float,
         ) -> tuple[torch.Tensor, torch.Tensor]:
-            """Solve ``A @ X = B`` column-by-column with Conjugate Gradient.
+            """Solve `A @ X = B` column-by-column with Conjugate Gradient.
 
             The system is solved for every output column simultaneously; each
             column carries its own residual and step size. Three guards keep a
             degenerate column from poisoning the whole fitted weight matrix
-            with ``NaN`` (the bug this method fixes):
+            with `NaN` (the bug this method fixes):
 
             - **Per-column converged/degenerate mask.** A column is *frozen*
               once its residual reaches zero — either it started at zero (a
               trivial/all-zero target column) or it converged to exact zero.
-              Frozen columns take a zero step and a zero ``beta`` and so never
-              evaluate ``0 / 0``; an all-zero target column therefore fits to
-              ``W = 0`` (no ``NaN``) instead of poisoning every other column.
-            - **Floored ``alpha`` denominator.** ``(P · AP)`` is replaced by
-              ``1`` wherever it is exactly zero before dividing, so a column
-              whose search direction collapses (``denom == 0``) yields a finite
-              step rather than ``NaN``. (For the symmetric positive-definite
-              normal-equations operator solved here ``denom`` is only zero when
-              ``P`` itself is zero — i.e. the column is already converged — so
+              Frozen columns take a zero step and a zero `beta` and so never
+              evaluate `0 / 0`; an all-zero target column therefore fits to
+              `W = 0` (no `NaN`) instead of poisoning every other column.
+            - **Floored `alpha` denominator.** `(P · AP)` is replaced by
+              `1` wherever it is exactly zero before dividing, so a column
+              whose search direction collapses (`denom == 0`) yields a finite
+              step rather than `NaN`. (For the symmetric positive-definite
+              normal-equations operator solved here `denom` is only zero when
+              `P` itself is zero — i.e. the column is already converged — so
               the floored step does not perturb the solution; the guard is
               defensive.)
-            - **Floored ``beta`` divisor.** ``Rs_old`` is floored before
-              forming ``beta = Rs_new / Rs_old`` so a column that converges to
-              exactly zero never produces ``0 / 0`` for ``beta`` either.
+            - **Floored `beta` divisor.** `Rs_old` is floored before
+              forming `beta = Rs_new / Rs_old` so a column that converges to
+              exactly zero never produces `0 / 0` for `beta` either.
 
             Convergence per column uses the residual-norm-squared test
-            ``||r||^2 <= tol^2``. (Making ``tol`` scale-invariant is tracked
-            separately as ``readouts-cg-relative-tolerance``; this ticket keeps
+            `||r||^2 <= tol^2`. (Making `tol` scale-invariant is tracked
+            separately as `readouts-cg-relative-tolerance`; this ticket keeps
             the legacy stopping precision so existing fits are unchanged and
-            only adds the degenerate-column ``NaN`` guards.)
+            only adds the degenerate-column `NaN` guards.)
 
             Returns
             -------
             X : torch.Tensor
-                Solution ``X`` of the same shape as ``B``.
+                Solution `X` of the same shape as `B`.
             converged : torch.Tensor
-                Boolean vector, one entry per output column, ``True`` where the
+                Boolean vector, one entry per output column, `True` where the
                 column met the residual tolerance (or was a trivial/frozen
-                zero-residual column) and ``False`` where the iteration hit
-                ``max_iter`` while still above tolerance. Used by the caller to
+                zero-residual column) and `False` where the iteration hit
+                `max_iter` while still above tolerance. Used by the caller to
                 warn on silent under-convergence.
             """
             X = torch.zeros_like(B)

@@ -19,15 +19,15 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
     """Initializer that connects each input to two opposite anchors on an n-node ring.
 
     Each input channel connects to two anchor nodes on opposite sides of the ring,
-    with equal-magnitude bipolar weights on both anchors (``input_scaling`` normalized
-    by sqrt(2), so the per-channel L2 norm equals ``input_scaling``). If the two
+    with equal-magnitude bipolar weights on both anchors (`input_scaling` normalized
+    by sqrt(2), so the per-channel L2 norm equals `input_scaling`). If the two
     anchors coincide (n=1), all weight goes to that single node.
 
-    The first (positive) anchor of channel ``i`` is placed at ``round(i * n / m) % n``,
-    spreading the ``m`` anchors evenly around the **full** ring; the second (negative)
-    anchor is the diametrically opposite node ``(anchor + n // 2) % n``. Spreading over
+    The first (positive) anchor of channel `i` is placed at `round(i * n / m) % n`,
+    spreading the `m` anchors evenly around the **full** ring; the second (negative)
+    anchor is the diametrically opposite node `(anchor + n // 2) % n`. Spreading over
     the full ring (rather than a semicircle) keeps the columns distinct for any
-    ``in_features <= reservoir_size``, so ``W_in``/``W_fb`` stays full column rank.
+    `in_features <= reservoir_size`, so `W_in`/`W_fb` stays full column rank.
 
     This is useful for ring/cycle topologies where you want inputs distributed evenly
     around the ring with bipolar activation patterns.
@@ -35,33 +35,33 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
     Scaling
     -------
     For this structured initializer the magnitude statistic governed by the shared
-    contract is the **per-channel L2 norm**, which equals ``input_scaling``. Hence
-    ``input_scaling=0.5`` makes every channel's column have L2 norm ``0.5`` (and,
-    since each column is two equal-magnitude bipolar entries, ``max|W| = 0.5/sqrt(2)``).
-    The per-channel L2 norm therefore scales linearly with ``input_scaling``.
+    contract is the **per-channel L2 norm**, which equals `input_scaling`. Hence
+    `input_scaling=0.5` makes every channel's column have L2 norm `0.5` (and,
+    since each column is two equal-magnitude bipolar entries, `max|W| = 0.5/sqrt(2)`).
+    The per-channel L2 norm therefore scales linearly with `input_scaling`.
 
     Capacity limit
     --------------
-    The ring has only ``n = reservoir_size`` nodes, so at most ``n`` channels can be
-    assigned distinct anchors. ``initialize`` raises ``ValueError`` when
-    ``in_features > reservoir_size`` (more channels than nodes), since duplicate
+    The ring has only `n = reservoir_size` nodes, so at most `n` channels can be
+    assigned distinct anchors. `initialize` raises `ValueError` when
+    `in_features > reservoir_size` (more channels than nodes), since duplicate
     columns would be unavoidable.
 
     Parameters
     ----------
     input_scaling : float, optional
-        Per-channel L2 norm of each input column. Defaults to ``1.0`` when neither
-        ``input_scaling`` nor the deprecated ``gain`` is given.
+        Per-channel L2 norm of each input column. Defaults to `1.0` when neither
+        `input_scaling` nor the deprecated `gain` is given.
     gain : float, optional
-        Deprecated alias for ``input_scaling`` (same meaning). Emits a
-        ``DeprecationWarning``; passing both ``input_scaling`` and ``gain`` raises.
+        Deprecated alias for `input_scaling` (same meaning). Emits a
+        `DeprecationWarning`; passing both `input_scaling` and `gain` raises.
 
     Raises
     ------
     ValueError
         If the resolved scaling is not a positive finite float (at construction),
-        if both ``input_scaling`` and ``gain`` are supplied, or if
-        ``in_features > reservoir_size`` when :meth:`initialize` is called.
+        if both `input_scaling` and `gain` are supplied, or if
+        `in_features > reservoir_size` when `initialize` is called.
 
     Examples
     --------
@@ -87,7 +87,7 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
 
     @property
     def gain(self) -> float | None:
-        """Deprecated alias for :attr:`input_scaling`."""
+        """Deprecated alias for `input_scaling`."""
         return self.input_scaling
 
     def initialize(self, weight: torch.Tensor, **kwargs: Any) -> torch.Tensor:
@@ -100,12 +100,12 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
             out_features = number of ring nodes (n)
             in_features = number of input channels (m)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` (the per-channel L2-norm
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` (the per-channel L2-norm
             target) for this call only (the shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored. The override must be a positive finite float
-            (``None`` is not accepted for this structured initializer).
+            (`None` is not accepted for this structured initializer).
 
         Returns
         -------
@@ -115,9 +115,9 @@ class OppositeAnchorsInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If ``m`` or ``n`` is non-positive, if ``m > n`` (more input channels
+            If `m` or `n` is non-positive, if `m > n` (more input channels
             than ring nodes), which would force duplicate columns, or if a
-            per-call ``input_scaling`` override is not a positive finite float.
+            per-call `input_scaling` override is not a positive finite float.
         """
         n, m = _resolve_shape(weight)  # n=ring nodes, m=input channels
         device = weight.device

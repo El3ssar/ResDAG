@@ -24,11 +24,11 @@ def multi_cycle_graph(
     Node labels are contiguous integers starting at `start_node`.
 
     This topology is **pre-scaled**: the recurrent matrix is block-diagonal with
-    ``k`` cycle-permutation blocks scaled by ``weight``, so its spectral radius
-    is exactly ``|weight|`` — the ``weight`` parameter *is* the spectral scale.
-    The layer-level spectral-radius rescale would overwrite ``weight`` entirely,
-    so it is suppressed: a layer ``spectral_radius`` passed alongside this
-    topology is ignored (with a warning). Set the radius through ``weight``.
+    `k` cycle-permutation blocks scaled by `weight`, so its spectral radius
+    is exactly `|weight|` — the `weight` parameter *is* the spectral scale.
+    The layer-level spectral-radius rescale would overwrite `weight` entirely,
+    so it is suppressed: a layer `spectral_radius` passed alongside this
+    topology is ignored (with a warning). Set the radius through `weight`.
 
     Parameters
     ----------
@@ -38,8 +38,8 @@ def multi_cycle_graph(
         Number of disjoint cycles (must be >= 1).
     weight : float, default=1.0
         Edge weight assigned to all recurrent connections (typically λ with
-        0 < λ < 1). Because this topology is pre-scaled, ``weight`` is the
-        spectral radius of the recurrent matrix; any layer ``spectral_radius``
+        0 < λ < 1). Because this topology is pre-scaled, `weight` is the
+        spectral radius of the recurrent matrix; any layer `spectral_radius`
         is ignored.
     Returns
     -------

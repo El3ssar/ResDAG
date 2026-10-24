@@ -5,7 +5,7 @@ ESN Cell
 This module provides the concrete Echo State Network (ESN) implementation of
 the reservoir cell:
 
-- :class:`ESNCell` — single-timestep leaky-ESN update; owns all parameters.
+- `ESNCell` — single-timestep leaky-ESN update; owns all parameters.
 
 See Also
 --------
@@ -94,25 +94,25 @@ _RECURRENT_SEED_OFFSET = 2 * _INPUT_SEED_OFFSET
 
 
 def _salt_seed(seed: int | None, offset: int) -> int | None:
-    """Derive a distinct-but-deterministic integer seed from ``seed``.
+    """Derive a distinct-but-deterministic integer seed from `seed`.
 
-    Adds a fixed ``offset`` modulo the 63-bit seed range so a single
+    Adds a fixed `offset` modulo the 63-bit seed range so a single
     layer-level seed can drive several independent init streams (feedback vs
-    input weights, weight init vs state noise).  ``None`` is passed through
+    input weights, weight init vs state noise).  `None` is passed through
     unchanged, keeping the stream tied to torch's global RNG.
 
     Parameters
     ----------
     seed : int or None
-        Base integer seed (typically ``self._seed_int``), or ``None``.
+        Base integer seed (typically `self._seed_int`), or `None`.
     offset : int
         Additive constant that separates this stream from the base stream.
 
     Returns
     -------
     int or None
-        ``(seed + offset) % (2**63 - 1)`` when ``seed`` is an ``int``,
-        otherwise ``None``.
+        `(seed + offset) % (2**63 - 1)` when `seed` is an `int`,
+        otherwise `None`.
     """
     if seed is None:
         return None
@@ -122,11 +122,11 @@ def _salt_seed(seed: int | None, offset: int) -> int | None:
 def _identity(x: torch.Tensor) -> torch.Tensor:
     """Identity activation.
 
-    Defined at module level (rather than as a ``lambda``) so that cells using
-    ``activation="identity"`` — e.g. :func:`resdag.models.linear_esn` — stay
+    Defined at module level (rather than as a `lambda`) so that cells using
+    `activation="identity"` — e.g. `resdag.models.linear_esn` — stay
     picklable.  A local lambda would make whole-model serialization
-    (``ESNModel.save_full`` / ``torch.save(model)``) fail with a
-    ``PicklingError``.
+    (`ESNModel.save_full` / `torch.save(model)`) fail with a
+    `PicklingError`.
     """
     return x
 
@@ -136,23 +136,23 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     Single-timestep leaky Echo State Network update.
 
     Owns all weight matrices and bias.  Sequence iteration is delegated to
-    the enclosing :class:`ESNLayer`.
+    the enclosing `ESNLayer`.
 
     The state update follows the standard leaky-integrator ESN equation
     (Jaeger 2001; Lukoševičius 2012):
 
-    .. math::
+    $$
+    h_t = (1 - \\alpha)\\,h_{t-1} + \\alpha\\,f(W_{fb}\\,x_{fb,t}
+           + W_{in}\\,x_{in,t} + W_{rec}\\,h_{t-1} + b)
+    $$
 
-        h_t = (1 - \\alpha)\\,h_{t-1} + \\alpha\\,f(W_{fb}\\,x_{fb,t}
-               + W_{in}\\,x_{in,t} + W_{rec}\\,h_{t-1} + b)
+    where $f$ is the activation function, $\\alpha$ is the leak
+    rate, $W_{fb}$ is the feedback weight matrix, $W_{in}$ is the
+    (optional) input weight matrix, $W_{rec}$ is the recurrent
+    weight matrix, and $b$ is a fixed random bias drawn from
+    $\\mathcal{U}(-\\beta, \\beta)$ with $\\beta$ = `bias_scaling`.
 
-    where :math:`f` is the activation function, :math:`\\alpha` is the leak
-    rate, :math:`W_{fb}` is the feedback weight matrix, :math:`W_{in}` is the
-    (optional) input weight matrix, :math:`W_{rec}` is the recurrent
-    weight matrix, and :math:`b` is a fixed random bias drawn from
-    :math:`\\mathcal{U}(-\\beta, \\beta)` with :math:`\\beta` = ``bias_scaling``.
-
-    The bias breaks the odd symmetry of ``tanh`` dynamics: without it,
+    The bias breaks the odd symmetry of `tanh` dynamics: without it,
     negated inputs produce exactly negated states, which constrains the
     representations the readout can draw from.
 
@@ -163,36 +163,36 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     feedback_size : int
         Dimension of feedback signal.  Required for all ESN cells.
     input_size : int, optional
-        Dimension of driving inputs.  If ``None``, no driving input weight
+        Dimension of driving inputs.  If `None`, no driving input weight
         matrix is created.
     spectral_radius : float, optional
-        Target spectral radius for recurrent weights.  If ``None``, no
+        Target spectral radius for recurrent weights.  If `None`, no
         spectral radius scaling is applied.
     bias : bool, default=True
         Whether to include a bias term.
     bias_scaling : float, default=1.0
         Scale of the random bias: entries are drawn from
-        ``uniform(-bias_scaling, bias_scaling)``, matching the default
+        `uniform(-bias_scaling, bias_scaling)`, matching the default
         initialization of the feedback/input weights.  Ignored when
-        ``bias=False``.  Set to ``0.0`` to keep a zero bias (the historical
-        pre-0.5 behaviour, where ``bias=True`` was effectively a no-op
+        `bias=False`.  Set to `0.0` to keep a zero bias (the historical
+        pre-0.5 behaviour, where `bias=True` was effectively a no-op
         because the bias was zero-initialized and frozen).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation function for reservoir dynamics.
-    leak_rate : float or 1-D tensor/sequence of shape ``(reservoir_size,)``, default=1.0
-        Leaky integration rate in ``(0, 1]``.  A scalar value of 1.0 means no
+    leak_rate : float or 1-D tensor/sequence of shape `(reservoir_size,)`, default=1.0
+        Leaky integration rate in `(0, 1]`.  A scalar value of 1.0 means no
         leaking (standard RNN update); smaller values create slower dynamics.
-        Values outside ``(0, 1]`` are rejected at construction with a
-        ``ValueError``: ``0.0`` would freeze the state entirely and values
-        ``> 1.0`` (or ``< 0``) produce ill-defined dynamics.
+        Values outside `(0, 1]` are rejected at construction with a
+        `ValueError`: `0.0` would freeze the state entirely and values
+        `> 1.0` (or `< 0`) produce ill-defined dynamics.
 
         A **per-neuron** leak rate — a 1-D tensor or sequence of length
-        ``reservoir_size`` — assigns each unit its own timescale (heterogeneous
-        reservoir, matching RC.jl's ``leak_coefficient`` vector).  Every entry
-        must be finite and in ``(0, 1]``; a wrong length or any out-of-range /
-        non-finite entry raises ``ValueError``.  A vector leak is stored as a
-        registered buffer (``_leak_rate_vec``), so it moves with
-        ``.to(device)`` / ``.double()`` and round-trips through save/load; a
+        `reservoir_size` — assigns each unit its own timescale (heterogeneous
+        reservoir, matching RC.jl's `leak_coefficient` vector).  Every entry
+        must be finite and in `(0, 1]`; a wrong length or any out-of-range /
+        non-finite entry raises `ValueError`.  A vector leak is stored as a
+        registered buffer (`_leak_rate_vec`), so it moves with
+        `.to(device)` / `.double()` and round-trips through save/load; a
         scalar stays a plain float with byte-identical dynamics to the
         pre-vector cell.
     noise : float, default=0.0
@@ -200,34 +200,34 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         activation, following the classical ESN regularizer (Jaeger 2001;
         Lukoševičius 2012):
 
-        .. math::
+        $$
+        \\tilde{h}_t = f(\\cdot) + \\nu\\,\\epsilon_t,
+        \\quad \\epsilon_t \\sim \\mathcal{N}(0, 1)
+        $$
 
-            \\tilde{h}_t = f(\\cdot) + \\nu\\,\\epsilon_t,
-            \\quad \\epsilon_t \\sim \\mathcal{N}(0, 1)
-
-        where :math:`\\nu` = ``noise``.  Noise is applied **only in training
-        mode** (``self.training is True``, like dropout) and is a no-op under
-        :meth:`~torch.nn.Module.eval`.  The default ``0.0`` disables it
+        where $\\nu$ = `noise`.  Noise is applied **only in training
+        mode** (`self.training is True`, like dropout) and is a no-op under
+        `torch.nn.Module.eval`.  The default `0.0` disables it
         entirely, leaving outputs bit-identical to the noiseless cell.  The
         noise stream is reproducible: it is seeded deterministically from
-        ``seed`` (independently of the weight-init draws), so a given ``seed``
+        `seed` (independently of the weight-init draws), so a given `seed`
         reproduces the same perturbations on every run.  Must be non-negative.
     trainable : bool, default=False
-        If ``True``, reservoir weights are trainable via backpropagation.
+        If `True`, reservoir weights are trainable via backpropagation.
         Standard ESNs use frozen (non-trainable) weights.
     sparse : bool or {'auto'}, default=False
-        ``False`` keeps a dense recurrent Parameter and the ordinary dense path.
-        ``True`` stores only CSR row indices, column indices and values as
-        persistent buffers. ``weight_hh`` then exposes a zero-copy CSR Tensor;
-        call ``weight_hh.to_dense()`` for an explicit dense inspection copy.
-        Editing ``weight_hh.values()`` updates the live operator directly.
+        `False` keeps a dense recurrent Parameter and the ordinary dense path.
+        `True` stores only CSR row indices, column indices and values as
+        persistent buffers. `weight_hh` then exposes a zero-copy CSR Tensor;
+        call `weight_hh.to_dense()` for an explicit dense inspection copy.
+        Editing `weight_hh.values()` updates the live operator directly.
 
-        ``"auto"`` retains the size/density heuristic: at least 1,000 units on
+        `"auto"` retains the size/density heuristic: at least 1,000 units on
         CPU or 5,000 on CUDA and density at most 0.2. This is not a calibrated
         speed guarantee: dense can be faster on Apple Silicon CPU. Explicit
-        ``False``/``True`` always let users choose the representation.
+        `False`/`True` always let users choose the representation.
 
-        CSR requires a frozen reservoir. Setting ``trainable=True`` later
+        CSR requires a frozen reservoir. Setting `trainable=True` later
         explicitly materializes dense weights and emits a warning; freeze again
         to restore the original sparse request. Moving to MPS uses dense weights,
         since MPS has no CSR operator, and returning to CPU restores CSR.
@@ -240,33 +240,33 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         it raises on failed convergence instead of allocating a dense fallback.
         Its numerical scaling can differ from dense eigvals in the last digits.
         Custom in-place-only initializers may still need a temporary dense
-        matrix; override ``TopologyInitializer.build_sparse`` to avoid it.
+        matrix; override `TopologyInitializer.build_sparse` to avoid it.
         Other graph functions may allocate dense arrays internally. Collected
         sequence features and readout workspaces are separate memory costs.
     feedback_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the feedback weight matrix.  Accepts a registry
-        name, ``(name, params)``, any matrix-building callable, a
-        ``(callable, params)`` tuple, or a configured initializer object.
+        name, `(name, params)`, any matrix-building callable, a
+        `(callable, params)` tuple, or a configured initializer object.
     input_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Initializer for the input weight matrix.  Same formats as
-        ``feedback_initializer``.  Only used when ``input_size`` is provided.
+        `feedback_initializer`.  Only used when `input_size` is provided.
     topology : str, callable, tuple, or TopologyInitializer, optional
         Structure of the recurrent weight matrix: a registry name (graph or
         matrix topology), any matrix-building callable, a
-        ``(callable, params)`` tuple, or a configured topology object.
+        `(callable, params)` tuple, or a configured topology object.
     recurrent_initializer : str, callable, tuple, or TopologyInitializer, optional
-        First-class alias for ``topology`` accepting graph and matrix builders,
+        First-class alias for `topology` accepting graph and matrix builders,
         registered names and custom callables. Supply only one of the two.
     bias_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
         Override the default random bias. Uses the same formats as input
-        initialization on a ``(1, reservoir_size)`` tensor, then flattens to
-        the bias vector. Requires ``bias=True``. Explicit hook values take
-        precedence over ``bias_scaling``.
+        initialization on a `(1, reservoir_size)` tensor, then flattens to
+        the bias vector. Requires `bias=True`. Explicit hook values take
+        precedence over `bias_scaling`.
     initial_state_initializer : str, callable, tuple, or InputFeedbackInitializer, optional
-        Initialize a persistent ``(1, reservoir_size)`` state template once
+        Initialize a persistent `(1, reservoir_size)` state template once
         at construction. Every reset broadcasts an independent copy to each
-        batch item. ``None`` keeps the zero-state default. The template moves
-        with ``.to()`` and is included in checkpoints.
+        batch item. `None` keeps the zero-state default. The template moves
+        with `.to()` and is included in checkpoints.
     device : torch.device or str, optional
         Device on which parameters are constructed. Defaults to the Torch
         default device. CUDA initialization runs on the requested device;
@@ -274,38 +274,38 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         preserving compatibility across supported Torch versions.
     dtype : torch.dtype, optional
         Floating-point initialization precision. Defaults to Torch's default
-        dtype. ``torch.float64`` constructs in double precision rather than
+        dtype. `torch.float64` constructs in double precision rather than
         rounding float32 weights and converting afterward.
     seed : int or torch.Generator, optional
         Reproducibility seed that deterministically fixes *every* reservoir
         parameter — the recurrent (topology) matrix, the feedback and input
-        weights (including the default ``uniform(-1, 1)`` draw used when no
-        initializer is given), and the random bias. Accepts a plain ``int`` or
-        a :class:`torch.Generator`, whose ``initial_seed()`` defines the master
+        weights (including the default `uniform(-1, 1)` draw used when no
+        initializer is given), and the random bias. Accepts a plain `int` or
+        a `torch.Generator`, whose `initial_seed()` defines the master
         seed without advancing the caller's generator. Independent fixed role
         seeds drive feedback, input, recurrent weights, bias and reset state.
-        With ``seed`` set, a string- or callable-form
-        ``topology='erdos_renyi'`` produces the same recurrent matrix on every
-        build, without the ``('erdos_renyi', {'seed': ...})`` tuple form. An
-        explicit ``seed`` inside a tuple/object spec always wins over this
-        argument. When ``seed=None`` (the default), one master integer is drawn
+        With `seed` set, a string- or callable-form
+        `topology='erdos_renyi'` produces the same recurrent matrix on every
+        build, without the `('erdos_renyi', {'seed': ...})` tuple form. An
+        explicit `seed` inside a tuple/object spec always wins over this
+        argument. When `seed=None` (the default), one master integer is drawn
         from Torch's CPU global RNG, then every role uses its own local stream.
         This advances the global RNG once and remains reproducible under
-        ``torch.manual_seed``. Explicit initializer RNG policies remain owned by
-        their callbacks/objects, including an explicitly bound ``seed=None``.
+        `torch.manual_seed`. Explicit initializer RNG policies remain owned by
+        their callbacks/objects, including an explicitly bound `seed=None`.
 
     Attributes
     ----------
     weight_feedback : torch.nn.Parameter
-        Feedback weight matrix of shape ``(reservoir_size, feedback_size)``.
+        Feedback weight matrix of shape `(reservoir_size, feedback_size)`.
     weight_input : torch.nn.Parameter or None
-        Input weight matrix of shape ``(reservoir_size, input_size)``, or
-        ``None`` if ``input_size`` was not provided.
+        Input weight matrix of shape `(reservoir_size, input_size)`, or
+        `None` if `input_size` was not provided.
     weight_hh : torch.Tensor
-        Dense Parameter or frozen CSR view of the recurrent weight matrix of shape ``(reservoir_size, reservoir_size)``.
+        Dense Parameter or frozen CSR view of the recurrent weight matrix of shape `(reservoir_size, reservoir_size)`.
     bias_h : torch.nn.Parameter or None
-        Bias vector of shape ``(reservoir_size,)``, or ``None`` if
-        ``bias=False``.
+        Bias vector of shape `(reservoir_size,)`, or `None` if
+        `bias=False`.
 
     See Also
     --------
@@ -504,11 +504,11 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         bool : Whether the reservoir weights participate in backpropagation.
 
         This is a *live* switch, not a construction-time-only flag.  Assigning
-        to it flips ``requires_grad_`` on **every** cell parameter
-        (``weight_hh``, ``weight_feedback``, ``weight_input``, ``bias_h``) so a
-        post-construction ``cell.trainable = True`` genuinely unfreezes the
+        to it flips `requires_grad_` on **every** cell parameter
+        (`weight_hh`, `weight_feedback`, `weight_input`, `bias_h`) so a
+        post-construction `cell.trainable = True` genuinely unfreezes the
         reservoir for a BPTT rollout — the documented
-        ``reservoir.trainable = True`` recipe now takes effect instead of being
+        `reservoir.trainable = True` recipe now takes effect instead of being
         a silent no-op.  The getter reflects the current state.
         """
         return self._trainable
@@ -546,11 +546,11 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         float or torch.Tensor : Leaky-integration rate(s) read fresh every step.
 
         A *live* knob: assigning to it (directly or through
-        ``ESNLayer.leak_rate = ...``) validates the value and takes effect on the
-        next forward.  Returns the scalar ``float`` for a homogeneous leak
-        (``1.0`` means no leaking, standard ESN) or the ``(reservoir_size,)``
+        `ESNLayer.leak_rate = ...`) validates the value and takes effect on the
+        next forward.  Returns the scalar `float` for a homogeneous leak
+        (`1.0` means no leaking, standard ESN) or the `(reservoir_size,)`
         buffer for a per-neuron heterogeneous leak.  Every entry stays in
-        ``(0, 1]``.
+        `(0, 1]`.
         """
         if self._is_vector_leak:
             assert self._leak_rate_vec is not None  # invariant when flag is set
@@ -574,10 +574,10 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         """Validate and store a homogeneous scalar leak (the byte-identical path).
 
         Accepts a Python scalar or a 0-d tensor; both collapse to a plain
-        ``float`` so the ``!= 1.0`` fast path in :meth:`forward` / :meth:`step`
+        `float` so the `!= 1.0` fast path in `forward` / `step`
         stays unchanged.  Clears any previously-set per-neuron buffer.  The
-        ``Sequence`` arm of the type is never reached at runtime (the setter
-        dispatches sequences to :meth:`_set_vector_leak`); it only widens the
+        `Sequence` arm of the type is never reached at runtime (the setter
+        dispatches sequences to `_set_vector_leak`); it only widens the
         signature to the shared leak-rate union.
         """
         scalar = float(value)  # type: ignore[arg-type]
@@ -592,12 +592,12 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def _set_vector_leak(self, value: float | torch.Tensor | Sequence[float]) -> None:
         """Validate and store a per-neuron leak vector as a persistent buffer.
 
-        The vector must be 1-D of length ``reservoir_size`` with every entry
-        finite and in ``(0, 1]``.  It is stored as a buffer (matching the
+        The vector must be 1-D of length `reservoir_size` with every entry
+        finite and in `(0, 1]`.  It is stored as a buffer (matching the
         cell's current parameter dtype/device when available) so it moves under
-        ``.to()`` / ``.double()`` and round-trips through save/load; the
-        ``_is_vector_leak`` flag then routes the per-step update through an
-        unconditional ``torch.lerp`` (the scalar ``!= 1.0`` shortcut cannot be
+        `.to()` / `.double()` and round-trips through save/load; the
+        `_is_vector_leak` flag then routes the per-step update through an
+        unconditional `torch.lerp` (the scalar `!= 1.0` shortcut cannot be
         used once the leak is a tensor).
         """
         vec = torch.as_tensor(
@@ -630,16 +630,16 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def _reconcile_leak_buffer(self, state_dict: dict, prefix: str) -> None:
         """Align the optional per-neuron leak buffer with the checkpoint.
 
-        The vector-leak buffer ``_leak_rate_vec`` is present in a checkpoint only
+        The vector-leak buffer `_leak_rate_vec` is present in a checkpoint only
         when the saved cell had a *vector* leak (a scalar-leak cell registers it
-        as ``None``, so it is absent from ``state_dict``).  Without this
+        as `None`, so it is absent from `state_dict`).  Without this
         reconciliation, loading a vector-leak checkpoint into a scalar-rebuilt
         cell (or vice versa) would raise on the mismatched key or silently drop
         the leak configuration.  We align our buffer's presence — and the
-        :attr:`_is_vector_leak` flag — to the incoming checkpoint before the
+        `_is_vector_leak` flag — to the incoming checkpoint before the
         normal load, so the loaded leak configuration always wins.
 
-        Called from :meth:`_load_from_state_dict` before the parent copy.
+        Called from `_load_from_state_dict` before the parent copy.
         """
         vec_key = prefix + "_leak_rate_vec"
         if vec_key in state_dict:
@@ -656,10 +656,10 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     @property
     def noise(self) -> float:
         """
-        float : Std-dev of additive train-mode state noise (``>= 0``).
+        float : Std-dev of additive train-mode state noise (`>= 0`).
 
-        A *live* knob validated on assignment; ``0.0`` disables noise.  Noise is
-        applied only when the cell is in training mode (see ``_apply_noise``).
+        A *live* knob validated on assignment; `0.0` disables noise.  Noise is
+        applied only when the cell is in training mode (see `_apply_noise`).
         """
         return self._noise
 
@@ -677,7 +677,7 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     ) -> torch.Tensor:
         """Return the configured initial state, broadcast independently per batch item.
 
-        The optional initializer is sampled once at construction as ``(1, N)``
+        The optional initializer is sampled once at construction as `(1, N)`
         and saved with the weights. Every reset reuses that same vector.
         """
         if self._initial_state is not None:
@@ -702,16 +702,16 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            Per-timestep input slices.  ``inputs[0]`` is the feedback slice
-            of shape ``(batch, feedback_size)``.  If a driving input is
-            present, ``inputs[1]`` has shape ``(batch, input_size)``.
+            Per-timestep input slices.  `inputs[0]` is the feedback slice
+            of shape `(batch, feedback_size)`.  If a driving input is
+            present, `inputs[1]` has shape `(batch, input_size)`.
         state : torch.Tensor
-            Current hidden state of shape ``(batch, reservoir_size)``.
+            Current hidden state of shape `(batch, reservoir_size)`.
 
         Returns
         -------
         output : torch.Tensor
-            Next hidden state of shape ``(batch, reservoir_size)``.
+            Next hidden state of shape `(batch, reservoir_size)`.
         new_state : torch.Tensor
             Same tensor as output (state and output are identical for ESN).
 
@@ -719,16 +719,16 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         ------
         ValueError
             If the feedback feature dimension does not match
-            ``self.feedback_size``, if a driving input is provided but
-            ``self.weight_input`` is ``None``, or if the driving input
-            feature dimension does not match ``self.input_size``.
+            `self.feedback_size`, if a driving input is provided but
+            `self.weight_input` is `None`, or if the driving input
+            feature dimension does not match `self.input_size`.
 
         Notes
         -----
-        When ``self.noise > 0`` and the cell is in training mode, additive
+        When `self.noise > 0` and the cell is in training mode, additive
         Gaussian noise is injected into the post-activation state (see the
-        ``noise`` constructor parameter).  This matches the noise applied in
-        the :meth:`step` fast path, so the two paths stay consistent.
+        `noise` constructor parameter).  This matches the noise applied in
+        the `step` fast path, so the two paths stay consistent.
         """
         projected = self.project_inputs(inputs)
         pre_activation = projected + self._recurrent(state)
@@ -744,28 +744,28 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         """
         Precompute all input-dependent pre-activation terms.
 
-        Computes ``W_fb x_fb + W_in x_in + b`` for every timestep at once.
-        Works on full ``(batch, timesteps, features)`` sequences (the layer's
-        fast path) and on single-step ``(batch, features)`` slices (reused by
-        :meth:`forward`).
+        Computes `W_fb x_fb + W_in x_in + b` for every timestep at once.
+        Works on full `(batch, timesteps, features)` sequences (the layer's
+        fast path) and on single-step `(batch, features)` slices (reused by
+        `forward`).
 
         Parameters
         ----------
         inputs : list[torch.Tensor]
-            Input streams; ``inputs[0]`` is feedback, ``inputs[1]`` (if
+            Input streams; `inputs[0]` is feedback, `inputs[1]` (if
             present) is the driving input.
 
         Returns
         -------
         torch.Tensor
             Input projection with the same leading dimensions as the inputs
-            and trailing dimension ``reservoir_size``.
+            and trailing dimension `reservoir_size`.
 
         Raises
         ------
         ValueError
             If feature dimensions do not match the cell configuration, or a
-            driving input is supplied to a cell built without ``input_size``.
+            driving input is supplied to a cell built without `input_size`.
         """
         fb = inputs[0]
 
@@ -802,17 +802,17 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         """
         Recurrent-only single-step update for the projected fast path.
 
-        ``addmm`` fuses the recurrent matmul with the precomputed input
+        `addmm` fuses the recurrent matmul with the precomputed input
         projection into one kernel; with activation and leak that is three
         kernel launches per timestep instead of six.
 
         Parameters
         ----------
         projected_t : torch.Tensor
-            Slice of :meth:`project_inputs` output, shape
-            ``(batch, reservoir_size)``.
+            Slice of `project_inputs` output, shape
+            `(batch, reservoir_size)`.
         state : torch.Tensor
-            Current hidden state, shape ``(batch, reservoir_size)``.
+            Current hidden state, shape `(batch, reservoir_size)`.
 
         Returns
         -------
@@ -839,25 +839,25 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         """Blend the previous and freshly-computed state by the leak rate.
 
         Realises the leaky-integrator mix
-        ``h_t = (1 - α) h_{t-1} + α · f(·)`` shared by :meth:`forward` and the
-        :meth:`step` fast path, so the two never drift.
+        `h_t = (1 - α) h_{t-1} + α · f(·)` shared by `forward` and the
+        `step` fast path, so the two never drift.
 
-        Two paths, chosen by :attr:`_is_vector_leak`:
+        Two paths, chosen by `_is_vector_leak`:
 
-        * **Scalar** — the historical fast path.  ``leak_rate`` is validated to
-          ``(0, 1]`` at construction, so ``!= 1.0`` applies the leaky mix only
-          when there is actual leaking (and ``1.0`` returns ``new_state``
+        * **Scalar** — the historical fast path.  `leak_rate` is validated to
+          `(0, 1]` at construction, so `!= 1.0` applies the leaky mix only
+          when there is actual leaking (and `1.0` returns `new_state`
           untouched, byte-identical to the pre-vector cell).
-        * **Per-neuron vector** — ``leak`` is a ``(reservoir_size,)`` buffer.
-          ``leak != 1.0`` would be a *tensor* (unusable as a Python branch), so
-          the mix is always taken; ``torch.lerp`` broadcasts the leak vector
-          over the ``(batch, reservoir_size)`` state, giving each unit its own
+        * **Per-neuron vector** — `leak` is a `(reservoir_size,)` buffer.
+          `leak != 1.0` would be a *tensor* (unusable as a Python branch), so
+          the mix is always taken; `torch.lerp` broadcasts the leak vector
+          over the `(batch, reservoir_size)` state, giving each unit its own
           timescale.
 
         Parameters
         ----------
         state : torch.Tensor
-            Previous hidden state, shape ``(batch, reservoir_size)``.
+            Previous hidden state, shape `(batch, reservoir_size)`.
         new_state : torch.Tensor
             Freshly computed (post-activation, post-noise) state, same shape.
 
@@ -883,29 +883,29 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     # ------------------------------------------------------------------
 
     def _recurrent(self, state: torch.Tensor) -> torch.Tensor:
-        r"""Compute the recurrent contribution ``state @ weight_hh.T``.
+        r"""Compute the recurrent contribution `state @ weight_hh.T`.
 
         The single place the recurrent matmul is expressed, so the dense and
         sparse paths never drift.  Two branches, chosen by
-        :attr:`_sparse_active`:
+        `_sparse_active`:
 
-        * **Dense** — ``F.linear(state, weight_hh)`` = ``state @ weight_hh.T``,
+        * **Dense** — `F.linear(state, weight_hh)` = `state @ weight_hh.T`,
           the historical path, byte-for-byte unchanged.
         * **Sparse CSR** — a compressed-row spmv on the derived
-          :attr:`_weight_hh_csr` operator.  ``torch.sparse.mm`` computes
-          ``W @ state.T``; transposing both sides gives
-          ``state @ W.T``, matching the dense result to floating-point
+          `_weight_hh_csr` operator.  `torch.sparse.mm` computes
+          `W @ state.T`; transposing both sides gives
+          `state @ W.T`, matching the dense result to floating-point
           round-off (the same nonzeros, just skipping the structural zeros).
 
         Parameters
         ----------
         state : torch.Tensor
-            Current hidden state, shape ``(batch, reservoir_size)``.
+            Current hidden state, shape `(batch, reservoir_size)`.
 
         Returns
         -------
         torch.Tensor
-            The recurrent contribution, shape ``(batch, reservoir_size)``.
+            The recurrent contribution, shape `(batch, reservoir_size)`.
         """
         if self._sparse_active:
             # Canonical CSR values are shared with their operator view: edits
@@ -953,9 +953,9 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def sparse(self) -> bool:
         """bool : Whether the CSR sparse recurrent-matmul path is active.
 
-        Reflects the *resolved* decision (after the ``"auto"`` density gate and
+        Reflects the *resolved* decision (after the `"auto"` density gate and
         the frozen-reservoir requirement), not the raw construction request.
-        ``False`` for a dense cell or when ``sparse="auto"`` fell back to dense.
+        `False` for a dense cell or when `sparse="auto"` fell back to dense.
         """
         return self._sparse_active
 
@@ -969,32 +969,32 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         return float((values != 0).sum().item()) / total
 
     def _auto_min_size(self) -> int:
-        """Device-dependent size gate for the ``"auto"`` sparse decision.
+        """Device-dependent size gate for the `"auto"` sparse decision.
 
-        The dense-``addmm``/CSR-spmv crossover moves with the device: a GPU's
+        The dense-`addmm`/CSR-spmv crossover moves with the device: a GPU's
         dense BLAS is fast enough that the reservoir must be far larger before a
         CSR spmv pays for its per-nonzero overhead.  Returns the higher CUDA
-        floor (:data:`_SPARSE_AUTO_MIN_SIZE_CUDA`) when the recurrent weights live
-        on a CUDA device, and the CPU floor (:data:`_SPARSE_AUTO_MIN_SIZE_CPU`)
+        floor (`_SPARSE_AUTO_MIN_SIZE_CUDA`) when the recurrent weights live
+        on a CUDA device, and the CPU floor (`_SPARSE_AUTO_MIN_SIZE_CPU`)
         otherwise.  Consulting the *weight's* device (not a construction-time
-        argument) means a cell moved to GPU via ``.cuda()`` before the ``"auto"``
-        decision is re-taken — e.g. on ``load_state_dict`` — sees the right gate.
+        argument) means a cell moved to GPU via `.cuda()` before the `"auto"`
+        decision is re-taken — e.g. on `load_state_dict` — sees the right gate.
         """
         if self.weight_hh.device.type == "cuda":
             return _SPARSE_AUTO_MIN_SIZE_CUDA
         return _SPARSE_AUTO_MIN_SIZE_CPU
 
     def _should_use_sparse(self) -> bool:
-        """Resolve the ``sparse`` request against the size/density ``auto`` gates.
+        """Resolve the `sparse` request against the size/density `auto` gates.
 
-        ``True`` / ``False`` are honoured verbatim (explicit opt-in / opt-out);
-        ``"auto"`` enables the CSR path only when the reservoir is large enough
-        (``reservoir_size >= self._auto_min_size()`` — a **device-dependent**
+        `True` / `False` are honoured verbatim (explicit opt-in / opt-out);
+        `"auto"` enables the CSR path only when the reservoir is large enough
+        (`reservoir_size >= self._auto_min_size()` — a **device-dependent**
         floor, higher on CUDA where the dense BLAS is faster) *and* the recurrent
-        matrix meets the density gate (``<= _SPARSE_AUTO_MAX_DENSITY``). These
-        are fixed heuristics, not a measured speed guarantee. A ``trainable``
-        reservoir is always dense (the constructor rejects ``sparse=True`` +
-        ``trainable``; ``"auto"`` and a live re-freeze route here).
+        matrix meets the density gate (`<= _SPARSE_AUTO_MAX_DENSITY`). These
+        are fixed heuristics, not a measured speed guarantee. A `trainable`
+        reservoir is always dense (the constructor rejects `sparse=True` +
+        `trainable`; `"auto"` and a live re-freeze route here).
         """
         if self._trainable or self.weight_hh.requires_grad or self.weight_hh.device.type == "mps":
             return False
@@ -1053,7 +1053,7 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def _apply(self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True) -> "ESNCell":
         """Move canonical components and rebuild their zero-copy operator view.
 
-        PyTorch's ``to_empty`` preserves the sparse pattern while leaving values
+        PyTorch's `to_empty` preserves the sparse pattern while leaving values
         uninitialized. Re-resolve the requested policy after every placement.
         """
         # The cached CSR tensor aliases these ordinary buffers. Discard the
@@ -1118,11 +1118,11 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     # ------------------------------------------------------------------
 
     def _noise_generator(self, device: torch.device) -> torch.Generator:
-        """Return the cached noise generator for ``device`` (lazily built).
+        """Return the cached noise generator for `device` (lazily built).
 
-        Each device gets its own :class:`torch.Generator` so the noise can be
+        Each device gets its own `torch.Generator` so the noise can be
         drawn directly on the state's device.  The generators are seeded from
-        ``self.seed`` but on a stream *offset* from the weight-init draws, so
+        `self.seed` but on a stream *offset* from the weight-init draws, so
         the perturbations are reproducible without disturbing weight
         reproducibility.
 
@@ -1134,7 +1134,7 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         Returns
         -------
         torch.Generator
-            A generator placed on ``device``, deterministic in ``self.seed``.
+            A generator placed on `device`, deterministic in `self.seed`.
         """
         generator = self._noise_generators.get(device)
         if generator is None:
@@ -1153,21 +1153,21 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         """Add Gaussian state noise in training mode (no-op otherwise).
 
         Mirrors the dropout gating convention: noise is injected only when
-        ``self.training`` is ``True`` and ``self.noise > 0``; under
-        :meth:`~torch.nn.Module.eval` (or with ``noise == 0.0``) the state is
+        `self.training` is `True` and `self.noise > 0`; under
+        `torch.nn.Module.eval` (or with `noise == 0.0`) the state is
         returned unchanged, so eval-mode and noiseless outputs stay
         bit-identical to the legacy cell.
 
         Parameters
         ----------
         state : torch.Tensor
-            Post-activation state of shape ``(batch, reservoir_size)``.
+            Post-activation state of shape `(batch, reservoir_size)`.
 
         Returns
         -------
         torch.Tensor
-            ``state`` perturbed by ``noise * N(0, 1)`` in training mode,
-            otherwise ``state`` itself.
+            `state` perturbed by `noise * N(0, 1)` in training mode,
+            otherwise `state` itself.
         """
         if not self.training or self.noise == 0.0:
             return state
@@ -1296,15 +1296,15 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def _initialize_input_weights(self, generator: torch.Generator) -> None:
         """Initialize driving input weight matrix.
 
-        The input initializer is seeded from a salted copy of ``_seed_int`` (see
-        :data:`_INPUT_SEED_OFFSET`) rather than the raw feedback seed.  Feeding
+        The input initializer is seeded from a salted copy of `_seed_int` (see
+        `_INPUT_SEED_OFFSET`) rather than the raw feedback seed.  Feeding
         the same named initializer the identical integer for both roles produced
-        ``weight_input == weight_feedback``, silently collapsing feedback and
+        `weight_input == weight_feedback`, silently collapsing feedback and
         driving input into a single projection.  The salt only alters the
-        layer-level fallback seed forwarded to ``resolve_initializer``; an
+        layer-level fallback seed forwarded to `resolve_initializer`; an
         explicit seed pinned inside a tuple/object spec (e.g.
-        ``('random', {'seed': 7})``) still wins via ``resolve_initializer``'s
-        ``_inject_seed`` (spec seed beats forwarded seed).
+        `('random', {'seed': 7})`) still wins via `resolve_initializer`'s
+        `_inject_seed` (spec seed beats forwarded seed).
         """
         assert self.input_size is not None
         self.weight_input = nn.Parameter(
@@ -1369,10 +1369,10 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         """Scale recurrent weights to the target spectral radius.
 
         Delegates to the single shared
-        :func:`resdag.init.topology.scale_to_spectral_radius` implementation,
+        `resdag.init.topology.scale_to_spectral_radius` implementation,
         so the cell and the topology base never drift apart.  That routine
-        uses dense eigvals or scipy sparse ``eigs`` for sparse ones, with a tiny-N dense
-        ``eigvals`` fallback) instead of always paying for a full dense
+        uses dense eigvals or scipy sparse `eigs` for sparse ones, with a tiny-N dense
+        `eigvals` fallback) instead of always paying for a full dense
         eigendecomposition.
         """
         assert self.spectral_radius is not None
@@ -1384,8 +1384,8 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
     def spectral_radius_achieved(self) -> float:
         """float : Spectral radius of the effective pre-activation recurrent operator.
 
-        Measures ``diag(intrinsic_gain * recurrent_gain) @ weight_hh`` when
-        calibration gains exist, or simply ``weight_hh`` for an uncalibrated
+        Measures `diag(intrinsic_gain * recurrent_gain) @ weight_hh` when
+        calibration gains exist, or simply `weight_hh` for an uncalibrated
         cell. Intrinsic plasticity scales both input and recurrent drive;
         flow control scales recurrent rows only. Neither additive bias affects
         this matrix radius.
@@ -1393,7 +1393,7 @@ class ESNCell(CompactRecurrentMixin, ReservoirCell):
         This is the linear recurrent operator immediately before the activation,
         not the state-dependent tanh derivative or the leaky-update Jacobian.
         It therefore does not guarantee stable nonlinear dynamics. The original
-        :attr:`spectral_radius` remains the requested construction-time value.
+        `spectral_radius` remains the requested construction-time value.
         Measurement uses the shared estimator; MPS performs its unsupported
         eigendecomposition on CPU.
         """

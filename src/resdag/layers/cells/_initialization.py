@@ -14,7 +14,7 @@ def device_matches_seed(seed: object, device: torch.device | str | None) -> bool
 
 
 def initialize_vector(weight: torch.Tensor, spec: InitializerSpec, *, seed: int | None) -> None:
-    """Apply the rectangular initializer grammar to a vector viewed as ``(1, N)``."""
+    """Apply the rectangular initializer grammar to a vector viewed as `(1, N)`."""
     initializer = resolve_initializer(spec, seed=seed)
     if initializer is None:
         return

@@ -20,9 +20,9 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
     ----------
     features : int, optional
         Number of chains. Must equal the number of inputs (the weight's
-        ``in_features``). ``None`` (the default) infers it from the weight's
-        column count at :meth:`initialize` time, so the bare-name registry
-        path ``get_input_feedback("chain_of_neurons_input")`` works. When an
+        `in_features`). `None` (the default) infers it from the weight's
+        column count at `initialize` time, so the bare-name registry
+        path `get_input_feedback("chain_of_neurons_input")` works. When an
         explicit value is given it is validated against the weight shape.
     weights : float or Sequence[float], default=1.0
         Either a single float (same weight for all input→chain pairs) or
@@ -53,7 +53,7 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If ``features`` is given but ``< 1``.
+            If `features` is given but `< 1`.
         """
         if features is not None and features < 1:
             raise ValueError(f"'features' must be >= 1, got {features}.")
@@ -68,8 +68,8 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
             out_features = reservoir_size (units)
-            in_features = num_inputs (must equal features; when ``features`` is
-            ``None`` it is inferred from this column count)
+            in_features = num_inputs (must equal features; when `features` is
+            `None` it is inferred from this column count)
 
         Returns
         -------
@@ -79,8 +79,8 @@ class ChainOfNeuronsInputInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If an explicit ``features`` does not equal ``in_features``, or
-            ``units`` is not a multiple of the number of chains.
+            If an explicit `features` does not equal `in_features`, or
+            `units` is not a multiple of the number of chains.
         """
         units, input_dim = _resolve_shape(weight)
         device = weight.device

@@ -2,11 +2,11 @@
 ES2N Architecture
 =================
 
-This module provides :func:`es2n`, which builds an Edge-of-Stability State
+This module provides `es2n`, which builds an Edge-of-Stability State
 Network (ES2N) model with input concatenation, following the same
-``Input -> Reservoir -> Concatenate(Input) -> Readout`` design as
-:func:`~resdag.models.classic_esn` but with an
-:class:`~resdag.layers.reservoirs.es2n.ES2NLayer` reservoir.
+`Input -> Reservoir -> Concatenate(Input) -> Readout` design as
+`resdag.models.classic_esn` but with an
+`resdag.layers.reservoirs.es2n.ES2NLayer` reservoir.
 
 References
 ----------
@@ -58,16 +58,18 @@ def es2n(
     update with a convex combination of a nonlinear ESN branch and a fixed
     random *orthogonal* skip:
 
-    .. math::
+    $$
+    x_t = \beta\,\phi(W_r x_{t-1} + \cdots) + (1 - \beta)\,O\,x_{t-1}
+    $$
 
-        x_t = \beta\,\phi(W_r x_{t-1} + \cdots) + (1 - \beta)\,O\,x_{t-1}
-
-    Small ``beta`` sits the reservoir near the edge of stability (orthogonal,
-    norm-preserving, long memory); ``beta = 1`` recovers a standard ESN.  This
+    Small `beta` sits the reservoir near the edge of stability (orthogonal,
+    norm-preserving, long memory); `beta = 1` recovers a standard ESN.  This
     factory wires the same input-concatenation architecture as
-    :func:`~resdag.models.classic_esn`::
+    `resdag.models.classic_esn`:
 
-        Input -> ES2N Reservoir -> Concatenate(Input, Reservoir) -> Readout
+    ```text
+    Input -> ES2N Reservoir -> Concatenate(Input, Reservoir) -> Readout
+    ```
 
     Parameters
     ----------
@@ -78,26 +80,26 @@ def es2n(
     output_size : int
         Number of output features.
     beta : float, default=0.9
-        Proximity to the edge of stability in :math:`(0, 1]`.  Smaller values
-        weight the orthogonal skip (longer memory); ``1.0`` recovers a standard
-        non-leaky ESN.  For chaotic-system forecasting, smaller ``beta`` (e.g.
+        Proximity to the edge of stability in $(0, 1]$.  Smaller values
+        weight the orthogonal skip (longer memory); `1.0` recovers a standard
+        non-leaky ESN.  For chaotic-system forecasting, smaller `beta` (e.g.
         0.1--0.3) is typically preferred.
     input_size : int or None, optional
         Dimension of an optional driving (exogenous) input.  When given, the
-        model takes two inputs ``(feedback, driver)``; the driver is kept out of
-        the input concatenation.  ``None`` (default) builds a feedback-only
+        model takes two inputs `(feedback, driver)`; the driver is kept out of
+        the input concatenation.  `None` (default) builds a feedback-only
         model.
     input_initializer : InitializerSpec, optional
         Initializer for the driving-input weights.  Only used when
-        ``input_size`` is given.
+        `input_size` is given.
     topology : TopologySpec, optional
-        Topology for the recurrent weights ``W_r``.  Accepts a registry name, a
-        ``(name, params)`` tuple, a callable, or a pre-configured
-        :class:`~resdag.init.topology.TopologyInitializer`.
+        Topology for the recurrent weights `W_r`.  Accepts a registry name, a
+        `(name, params)` tuple, a callable, or a pre-configured
+        `resdag.init.topology.TopologyInitializer`.
     spectral_radius : float, default=0.9
-        Target spectral radius for the recurrent weights ``W_r``.
+        Target spectral radius for the recurrent weights `W_r`.
     orthogonal_scaling : float, default=1.0
-        Gain on the orthogonal skip matrix ``O``.  ``1.0`` keeps it exactly
+        Gain on the orthogonal skip matrix `O`.  `1.0` keeps it exactly
         norm-preserving (the edge-of-stability regime).
     feedback_initializer : InitializerSpec, optional
         Initializer for the feedback weights.
@@ -109,10 +111,10 @@ def es2n(
         Whether the reservoir weights are trainable.  The orthogonal skip stays
         frozen regardless.
     readout : str or type[ReadoutLayer], default="ridge"
-        A built-in name (``"ridge"``, ``"cholesky"``, ``"cg"``, ``"svd"``,
-        ``"pinv"``, ``"incremental"``, ``"rls"``, ``"fista"``, ``"lsmr"``) or a
-        :class:`~resdag.layers.readouts.ReadoutLayer` subclass. Additional
-        solver options go in ``readout_kwargs``.
+        A built-in name (`"ridge"`, `"cholesky"`, `"cg"`, `"svd"`,
+        `"pinv"`, `"incremental"`, `"rls"`, `"fista"`, `"lsmr"`) or a
+        `resdag.layers.readouts.ReadoutLayer` subclass. Additional
+        solver options go in `readout_kwargs`.
     readout_alpha : float, default=1e-6
         Ridge regularization for the readout.
     readout_bias : bool, default=True
@@ -120,16 +122,16 @@ def es2n(
     readout_name : str, default="output"
         Name for the readout layer (used as the target key in training).
     readout_kwargs : dict, optional
-        Extra readout options, such as ``trainable=True``, ``solver``,
-        ``state_noise`` or ``gram_dtype``. Architecture dimensions are fixed.
+        Extra readout options, such as `trainable=True`, `solver`,
+        `state_noise` or `gram_dtype`. Architecture dimensions are fixed.
     **reservoir_kwargs : Any
         Additional keyword arguments forwarded to
-        :class:`~resdag.layers.reservoirs.es2n.ES2NLayer` (e.g. ``bias_scaling``,
-        ``seed``).
+        `resdag.layers.reservoirs.es2n.ES2NLayer` (e.g. `bias_scaling`,
+        `seed`).
 
     Returns
     -------
-    :class:`~resdag.core.ESNModel`
+    `resdag.core.ESNModel`
         Configured ES2N model ready for training and inference.
 
     Examples

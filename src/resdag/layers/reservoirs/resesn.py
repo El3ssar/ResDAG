@@ -5,7 +5,7 @@ ResESN Reservoir Layer
 This module provides the public-facing Residual Echo State Network (ResESN)
 sequence layer:
 
-- :class:`ResESNLayer` — stateful RNN layer wrapping a :class:`ResESNCell`.
+- `ResESNLayer` — stateful RNN layer wrapping a `ResESNCell`.
 
 References
 ----------
@@ -36,22 +36,21 @@ class ResESNLayer(BaseReservoirLayer):
     Stateful Residual Echo State Network (ResESN) reservoir layer.
 
     Public-facing class.  Internally creates a
-    :class:`~resdag.layers.cells.resesn_cell.ResESNCell` that owns all
+    `resdag.layers.cells.resesn_cell.ResESNCell` that owns all
     parameters and performs the single-step update; the sequence loop and state
     management live in the parent
-    :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
 
     ResESN (Ceni & Gallicchio, 2024) generalises ES2N by **decoupling** the
     skip and nonlinear branch weights:
 
-    .. math::
+    $$
+    x_t = \alpha\,O\,x_{t-1}
+          + \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
+    $$
 
-        x_t = \alpha\,O\,x_{t-1}
-              + \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
-
-    with independent scaling coefficients :math:`\alpha` (orthogonal skip) and
-    :math:`\beta` (nonlinear branch) replacing the leak rate.  :math:`\alpha =
-    1 - \beta` recovers ES2N; :math:`O = I` with :math:`1 - \alpha = \beta`
+    with independent scaling coefficients $\alpha$ (orthogonal skip) and
+    $\beta$ (nonlinear branch) replacing the leak rate.  $\alpha = 1 - \beta$ recovers ES2N; $O = I$ with $1 - \alpha = \beta$
     recovers a leaky ESN.
 
     Parameters
@@ -62,40 +61,40 @@ class ResESNLayer(BaseReservoirLayer):
         Dimension of the feedback signal.  Required.
     alpha : float, default=0.5
         Scaling of the orthogonal skip (residual) branch.  A *live* knob:
-        ``layer.alpha = ...`` takes effect on the next forward.
+        `layer.alpha = ...` takes effect on the next forward.
     beta : float, default=0.9
         Scaling of the nonlinear branch.  A *live* knob.
     input_size : int, optional
-        Dimension of a driving input.  ``None`` builds a feedback-only layer.
+        Dimension of a driving input.  `None` builds a feedback-only layer.
     spectral_radius : float, optional
-        Target spectral radius for the recurrent matrix ``W_r``.
+        Target spectral radius for the recurrent matrix `W_r`.
     bias : bool, default=True
         Whether to include a bias term.
     bias_scaling : float, default=1.0
-        Scale of the random bias (``uniform(-bias_scaling, bias_scaling)``).
+        Scale of the random bias (`uniform(-bias_scaling, bias_scaling)`).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation for the nonlinear branch.
     orthogonal_scaling : float, default=1.0
-        Gain on the orthogonal skip matrix ``O``.  ``1.0`` keeps it exactly
+        Gain on the orthogonal skip matrix `O`.  `1.0` keeps it exactly
         norm-preserving.
     trainable : bool, default=False
-        If ``True``, reservoir weights are trainable via backpropagation.  The
+        If `True`, reservoir weights are trainable via backpropagation.  The
         orthogonal skip stays a frozen buffer regardless.
     feedback_initializer, input_initializer, topology : spec, optional
-        Same accepted forms as :class:`~resdag.layers.ESNLayer`.
+        Same accepted forms as `resdag.layers.ESNLayer`.
     seed : int or torch.Generator, optional
         Reproducibility seed fixing the recurrent, feedback, input, bias, and
         orthogonal-skip draws (the skip is drawn on an independent, deterministic
         sub-stream).
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -106,8 +105,8 @@ class ResESNLayer(BaseReservoirLayer):
     Attributes
     ----------
     state : torch.Tensor or None
-        Current reservoir state of shape ``(batch, reservoir_size)``, or
-        ``None`` before the first forward.
+        Current reservoir state of shape `(batch, reservoir_size)`, or
+        `None` before the first forward.
 
     Examples
     --------

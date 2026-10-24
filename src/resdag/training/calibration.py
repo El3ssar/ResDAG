@@ -22,8 +22,8 @@ from resdag.layers.reservoirs.esn import ESNLayer
 class CalibrationReport:
     """Small immutable summary of calibration, measured on the training inputs.
 
-    ``steps`` counts parameter updates (batch-averaged, not individual samples).
-    Activity statistics pool all neurons and samples after ``warmup`` and are
+    `steps` counts parameter updates (batch-averaged, not individual samples).
+    Activity statistics pool all neurons and samples after `warmup` and are
     descriptive; a Gaussian target or a requested radius is not a guarantee of
     task accuracy. Radius fields are populated only for flow control.
     """
@@ -233,22 +233,23 @@ def calibrate_intrinsic_plasticity(
 ) -> CalibrationReport:
     r"""Adapt tanh gains and offsets before fitting a readout.
 
-    Pass only training data, shaped ``(T, F)`` or ``(B, T, F)``. Supply a driver
-    with ``driver=...`` or pass ``(feedback, driver)``. Each batch item starts
-    from the configured initial state each epoch; ``warmup`` evolves the state
+    Pass only training data, shaped `(T, F)` or `(B, T, F)`. Supply a driver
+    with `driver=...` or pass `(feedback, driver)`. Each batch item starts
+    from the configured initial state each epoch; `warmup` evolves the state
     without adapting. Noise is not applied, and there is no random sampling.
     Repeating the call on identically initialized layers is deterministic.
 
     This is Gaussian-target intrinsic plasticity, with neuron output
-    ``y=tanh(a*x+b)`` and the stochastic updates
+    `y=tanh(a*x+b)` and the stochastic updates
 
-    .. math::
-        \Delta b=-\eta[-\mu/\sigma^2+(y/\sigma^2)
-          (2\sigma^2+1-y^2+\mu y)],\quad
-        \Delta a=\eta/a+\Delta b\,x.
+    $$
+    \Delta b=-\eta[-\mu/\sigma^2+(y/\sigma^2)
+      (2\sigma^2+1-y^2+\mu y)],\quad
+    \Delta a=\eta/a+\Delta b\,x.
+    $$
 
     For batched inputs updates are averaged over batch items. Gain clipping to
-    ``[min_gain, max_gain]`` bounds unsafe updates. The target is approximate:
+    `[min_gain, max_gain]` bounds unsafe updates. The target is approximate:
     bounded tanh outputs cannot realize an arbitrary Gaussian distribution.
     Reservoir weights remain fixed. Changes are committed only after a finite
     rollout succeeds; failure leaves weights, buffers, mode and state intact.
@@ -320,8 +321,8 @@ def calibrate_flow_control(
 ) -> CalibrationReport:
     r"""Adapt recurrent row gains using local or global flow control.
 
-    ``a <- a * (1 + learning_rate * (target_radius**2 * h_prev**2 - x_rec**2))``
-    where ``x_rec=a*(W@h_prev)``. Updates average over batch items; ``global``
+    `a <- a * (1 + learning_rate * (target_radius**2 * h_prev**2 - x_rec**2))`
+    where `x_rec=a*(W@h_prev)`. Updates average over batch items; `global`
     also averages over neurons, applying a shared multiplicative update.
     Input/feedback weights and bias are fixed. Gain clipping supplies numerical
     bounds. No eigenvalue calculation occurs in the adaptation loop; measured
@@ -332,7 +333,7 @@ def calibrate_flow_control(
     approximate and can miss the requested radius for strongly correlated
     inputs or structured weights. A target radius is not a stability guarantee.
     Input shapes, warmup, state cleanup and transactional behavior match
-    :func:`calibrate_intrinsic_plasticity`.
+    `calibrate_intrinsic_plasticity`.
 
     Reference: Schubert & Gros (2021), *Local homeostatic regulation of the
     spectral radius of echo-state networks*, equations 5–6,

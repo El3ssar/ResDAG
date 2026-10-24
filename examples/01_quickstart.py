@@ -36,8 +36,8 @@ def main() -> None:
     print("=" * 70)
 
     # rd.lorenz ships a correct RK4 Lorenz-63 integrator in the public API:
-    # a (1, 2300, 3) = (batch, time, features) standardized tensor.
-    data = rd.lorenz(options.choose(141, 2300), seed=42)
+    # a raw (1, 2300, 3) = (batch, time, features) tensor.
+    data = rd.lorenz(options.choose(141, 2300), seed=42, normalize=None)
 
     # prepare_esn_data slices one long series into the five segments every
     # ESN workflow needs (val follows the final training target, which f_warmup includes):
@@ -48,6 +48,8 @@ def main() -> None:
         warmup_steps=options.choose(12, 200),
         train_steps=options.choose(100, 1600),
         val_steps=options.choose(24, 400),
+        normalize=True,
+        norm_method="standard",  # fit only the training rows, then reuse for every split
     )
     print(f"warmup   {tuple(warmup.shape)}   - synchronizes reservoir state")
     print(f"train    {tuple(train.shape)}  - readout fitting input")
@@ -108,6 +110,7 @@ def main() -> None:
     print("\n" + "=" * 70)
     print("5. Evaluate against ground truth")
     print("=" * 70)
+    print("Errors use training-standardized units, shared by forecasts and truth.")
 
     mse_short = torch.mean((predictions[:, :50] - val[:, :50]) ** 2).item()
     mse_full = torch.mean((predictions - val) ** 2).item()

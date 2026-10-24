@@ -3,16 +3,20 @@ Canonical Dataset Generators
 ============================
 
 Canonical public home for resdag's benchmark time-series generators. The two
-most standard import forms both work::
+most standard import forms both work:
 
-    import resdag.datasets
-    from resdag.datasets import lorenz
+```python
+import resdag.datasets
+from resdag.datasets import lorenz
+```
 
 For back-compat the same callables are also reachable through
-:mod:`resdag.utils.data`, and they are the *same* function objects, so identity
-checks hold::
+`resdag.utils.data`, and they are the *same* function objects, so identity
+checks hold:
 
-    resdag.datasets.lorenz is resdag.utils.data.lorenz  # True
+```text
+resdag.datasets.lorenz is resdag.utils.data.lorenz  # True
+```
 
 Generators
 ----------
@@ -28,9 +32,9 @@ sine
     Simple periodic signal for sanity checks.
 kuramoto_sivashinsky
     1-D spatiotemporally chaotic PDE (ETDRK4) — the canonical parallel-RC
-    benchmark; ``D = n_grid`` feature channels.
+    benchmark; `D = n_grid` feature channels.
 
-Each generator returns a ``(1, T, D)`` tensor, is seedable, supports a
+Each generator returns a `(1, T, D)` tensor, is seedable, supports a
 transient/discard period, and supports optional normalization.
 
 Examples
@@ -65,5 +69,5 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    """Restrict ``dir()`` / tab-completion to the public API (:pep:`562`)."""
+    """Restrict `dir()` / tab-completion to the public API ([PEP 562](https://peps.python.org/pep-0562/))."""
     return list(__all__)

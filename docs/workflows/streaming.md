@@ -32,7 +32,7 @@ from leaking into the next.
 import torch
 from resdag import make_dataloader, lorenz
 
-series = lorenz(4000, seed=0)[0]           # (4000, 3) — drop the batch axis: lorenz is (1, T, 3)
+series = lorenz(4000, seed=0, normalize="standard")[0]           # (4000, 3) — drop the batch axis: lorenz is (1, T, 3)
 
 loader = make_dataloader(
     series,
@@ -49,6 +49,11 @@ print(x.shape, y.shape, washout)           # (16, 250, 3) (16, 250, 3) 50
 ```
 
 </div>
+
+These examples use the entire generated series for training, so their explicit
+standardization uses training observations only. For held-out evaluation, split
+the raw series first and reuse statistics fitted on the training prefix. The
+common `Model.fit` workflow owns that scaling automatically.
 
 `series` may be a single `(T, D)` tensor, a batched `(B, T, D)` tensor (each
 slice becomes one trajectory), or a ragged list of `(T, D)` tensors of
@@ -73,7 +78,7 @@ import torch
 import torch.nn as nn
 from resdag import ESNLayer, make_dataloader, lorenz
 
-series = lorenz(4000, seed=0)[0]
+series = lorenz(4000, seed=0, normalize="standard")[0]
 loader = make_dataloader(series, batch_size=16, window_len=250,
                          horizon=1, stride=125, washout=50, shuffle=True)
 
@@ -118,7 +123,7 @@ import torch
 from resdag import ESNLayer, make_dataloader, lorenz
 from resdag.layers import IncrementalRidgeReadoutLayer
 
-series = lorenz(4000, seed=0)[0]
+series = lorenz(4000, seed=0, normalize="standard")[0]
 loader = make_dataloader(series, batch_size=16, window_len=250,
                          horizon=1, stride=125, washout=50)
 
@@ -164,7 +169,7 @@ import resdag as rd
 from resdag import ESNLayer, ESNModel, reservoir_input, make_dataloader, lorenz
 from resdag.layers import IncrementalRidgeReadoutLayer
 
-series = lorenz(4000, seed=0)                # keep (1, T, D): one continuous stream
+series = lorenz(4000, seed=0, normalize="standard")                # keep (1, T, D): one continuous stream
 
 inp = reservoir_input(3)
 states = ESNLayer(200, feedback_size=3, spectral_radius=0.9)(inp)

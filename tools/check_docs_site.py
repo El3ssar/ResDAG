@@ -10,6 +10,8 @@ it never contacts external websites or executes page scripts.
 from __future__ import annotations
 
 import argparse
+import re
+from collections import Counter
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -28,17 +30,29 @@ class _Page(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.references: list[_Reference] = []
         self.anchors: set[str] = set()
+        self.anchor_counts: Counter[str] = Counter()
+        self.prose: list[tuple[int, str]] = []
+        self._ignored: list[str] = []
         self.feed(text)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
-        if values.get("id"):
-            self.anchors.add(values["id"])
-        if tag == "a" and values.get("name"):
-            self.anchors.add(values["name"])
+        if tag in {"pre", "code", "script", "style"}:
+            self._ignored.append(tag)
+        anchors = {values.get("id"), values.get("name") if tag == "a" else None} - {None, ""}
+        self.anchors.update(anchors)
+        self.anchor_counts.update(anchors)
         for attribute in ("href", "src", "poster"):
             if values.get(attribute):
                 self.references.append(_Reference(self.getpos()[0], attribute, values[attribute]))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._ignored:
+            self._ignored.remove(tag)
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignored:
+            self.prose.append((self.getpos()[0], data))
 
 
 def _base_path(value: str) -> str:
@@ -59,6 +73,16 @@ def check_site(site: Path, *, base_path: str = "/") -> list[str]:
     problems: list[str] = []
     for source, page in sorted(pages.items()):
         relative = source.relative_to(root).as_posix()
+        for anchor, count in page.anchor_counts.items():
+            if count > 1:
+                problems.append(f"{relative}: duplicate HTML anchor {anchor!r} ({count} copies)")
+        for line, prose in page.prose:
+            if re.search(
+                r":(?:(?:py|std):)?(?:attr|class|const|data|doi|exc|func|math|meth|mod|obj|pep|ref|term|type):"
+                r"|(?m:^\s*\.\.\s+[a-z][\w-]*::)",
+                prose,
+            ):
+                problems.append(f"{relative}:{line}: unrendered reStructuredText in prose")
         origin = f"https://docs.invalid{base}{relative}"
         for reference in page.references:
             parsed = urlsplit(reference.value)

@@ -1,12 +1,12 @@
 """Optuna pruner registry and resolution for HPO studies.
 
-This module turns the ``pruner`` argument of :func:`resdag.hpo.run_hpo` into a
-concrete :class:`optuna.pruners.BasePruner`.  A small registry maps short keys
-(``"asha"``, ``"hyperband"``, ``"median"``, ``"threshold"``, ``"none"``) onto
+This module turns the `pruner` argument of `resdag.hpo.run_hpo` into a
+concrete `optuna.pruners.BasePruner`.  A small registry maps short keys
+(`"asha"`, `"hyperband"`, `"median"`, `"threshold"`, `"none"`) onto
 factory callables, so a study can be early-stopped without the caller importing
 Optuna's pruner classes by hand.
 
-Pruning is driven by intermediate ``trial.report`` calls at growing
+Pruning is driven by intermediate `trial.report` calls at growing
 forecast prefixes. Forecast chunks stop being generated as soon as the pruner
 rejects a prefix. Both single- and multi-worker studies report/check the real
 Optuna Trial in the parent; numerical workers receive only a progress callback
@@ -60,11 +60,11 @@ _THRESHOLD_DEFAULT_WARMUP = 2
 
 
 def _default_threshold_pruner() -> optuna.pruners.ThresholdPruner:
-    """Build the registry's default divergence-catching ``ThresholdPruner``.
+    """Build the registry's default divergence-catching `ThresholdPruner`.
 
     Prunes negated-horizon trials whose intermediate loss rises above
-    :data:`_THRESHOLD_DEFAULT_UPPER` (a collapsed, ``≈ 0`` forecast horizon)
-    once past :data:`_THRESHOLD_DEFAULT_WARMUP` checkpoints.  See the module-level
+    `_THRESHOLD_DEFAULT_UPPER` (a collapsed, `≈ 0` forecast horizon)
+    once past `_THRESHOLD_DEFAULT_WARMUP` checkpoints.  See the module-level
     comment for why a fixed positive bound could never fire for the default loss.
     """
     return optuna.pruners.ThresholdPruner(
@@ -91,10 +91,10 @@ def resolve_pruner(
 ) -> optuna.pruners.BasePruner:
     """Resolve a pruner specification to a concrete Optuna pruner.
 
-    Accepts a registry key, an already-constructed pruner instance, or ``None``
-    (and the string ``"none"``), always returning a usable
-    :class:`optuna.pruners.BasePruner`.  ``None``/``"none"`` resolve to
-    :class:`optuna.pruners.NopPruner` so the study never reaches Optuna without a
+    Accepts a registry key, an already-constructed pruner instance, or `None`
+    (and the string `"none"`), always returning a usable
+    `optuna.pruners.BasePruner`.  `None`/`"none"` resolve to
+    `optuna.pruners.NopPruner` so the study never reaches Optuna without a
     pruner object.
 
     Parameters
@@ -102,31 +102,31 @@ def resolve_pruner(
     pruner : str or optuna.pruners.BasePruner or None
         The pruner to resolve:
 
-        - ``None`` or ``"none"`` → :class:`optuna.pruners.NopPruner` (no pruning).
-        - A registry key — one of ``"asha"`` (ASHA /
-          :class:`~optuna.pruners.SuccessiveHalvingPruner`), ``"hyperband"``,
-          ``"median"`` (recommended starting point), or ``"threshold"`` (a
-          :class:`~optuna.pruners.ThresholdPruner` tuned for the default
+        - `None` or `"none"` → `optuna.pruners.NopPruner` (no pruning).
+        - A registry key — one of `"asha"` (ASHA /
+          `optuna.pruners.SuccessiveHalvingPruner`), `"hyperband"`,
+          `"median"` (recommended starting point), or `"threshold"` (a
+          `optuna.pruners.ThresholdPruner` tuned for the default
           *negated-horizon* losses: it prunes a trial once its intermediate loss
-          rises above ``upper=-0.1`` after two warmup checkpoints — i.e. its
-          forecast horizon has collapsed to ``≈ 0``.  Pass a configured instance
-          for a different bound, e.g. a positive ``upper`` for the raw-error
-          ``"standard"`` / ``"lyapunov"`` losses).
-        - A :class:`optuna.pruners.BasePruner` instance, returned unchanged so
+          rises above `upper=-0.1` after two warmup checkpoints — i.e. its
+          forecast horizon has collapsed to `≈ 0`.  Pass a configured instance
+          for a different bound, e.g. a positive `upper` for the raw-error
+          `"standard"` / `"lyapunov"` losses).
+        - A `optuna.pruners.BasePruner` instance, returned unchanged so
           callers can fully configure a pruner before passing it in.
 
     Returns
     -------
     optuna.pruners.BasePruner
-        The resolved pruner, ready to hand to :func:`optuna.create_study` or
-        :func:`optuna.load_study`.
+        The resolved pruner, ready to hand to `optuna.create_study` or
+        `optuna.load_study`.
 
     Raises
     ------
     ValueError
         If *pruner* is a string that is not a registered key.
     TypeError
-        If *pruner* is neither ``None``, a string, nor a ``BasePruner``.
+        If *pruner* is neither `None`, a string, nor a `BasePruner`.
 
     Examples
     --------

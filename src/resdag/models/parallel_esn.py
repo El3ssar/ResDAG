@@ -2,24 +2,24 @@
 Parallel Reservoir with Local States (Pathak et al. 2018)
 =========================================================
 
-This module provides :func:`parallel_esn` and :class:`ParallelESNModel`, the
+This module provides `parallel_esn` and `ParallelESNModel`, the
 **parallel / local-state** reservoir architecture of Pathak et al. 2018 for
 forecasting large spatiotemporally chaotic systems (PDEs / weather / coupled
 lattices) that a single global reservoir cannot scale to.
 
-The idea: a spatially-extended state of dimension ``D`` is split into ``P``
-overlapping local **patches** of core width ``w`` (``P = D / w``), each with a
-halo of ``g`` neighbouring cells on either side (so each patch *reads* width
-``w + 2g`` but *predicts* only its core width ``w``).  Every patch has its **own
+The idea: a spatially-extended state of dimension `D` is split into `P`
+overlapping local **patches** of core width `w` (`P = D / w`), each with a
+halo of `g` neighbouring cells on either side (so each patch *reads* width
+`w + 2g` but *predicts* only its core width `w`).  Every patch has its **own
 reservoir state**, but they all **share one set of reservoir weights** — so the
-``P`` patches advance as a **single batched matmul** with the patch axis playing
+`P` patches advance as a **single batched matmul** with the patch axis playing
 the role of the reservoir batch dimension.  Each patch's readout predicts only
 its core region; the per-patch core predictions are stitched back into the full
-``D``-dimensional next state, re-windowed into patches, and the loop repeats
+`D`-dimensional next state, re-windowed into patches, and the loop repeats
 (closed-loop autoregressive forecast).
 
-The reservoir size ``N`` and input/output widths (``w + 2g`` / ``w``) stay fixed
-as ``D`` grows; the batch count ``P`` grows instead. Computational work scales
+The reservoir size `N` and input/output widths (`w + 2g` / `w`) stay fixed
+as `D` grows; the batch count `P` grows instead. Computational work scales
 with the number of patches, and batching lets accelerators process them in
 parallel. Runtime depends on patch count, reservoir size and available hardware.
 
@@ -91,35 +91,35 @@ def _has_original_methods(
 def _patch_gather_index(input_dim: int, core_width: int, halo: int) -> torch.Tensor:
     """Build the periodic per-patch gather index for windowing a full state.
 
-    Partitions ``input_dim`` into ``P = input_dim / core_width`` contiguous
-    cores and returns, for each patch, the ``core_width + 2 * halo`` **wrapped**
-    spatial indices it reads (its core plus ``halo`` neighbours on each side,
+    Partitions `input_dim` into `P = input_dim / core_width` contiguous
+    cores and returns, for each patch, the `core_width + 2 * halo` **wrapped**
+    spatial indices it reads (its core plus `halo` neighbours on each side,
     with periodic boundaries — the standard convention for the Kuramoto-
     Sivashinsky and other periodic-domain benchmarks).
 
-    A single ``state[..., idx]`` with the returned index then windows the whole
-    field into all ``P`` patches at once (no Python loop over patches), which is
+    A single `state[..., idx]` with the returned index then windows the whole
+    field into all `P` patches at once (no Python loop over patches), which is
     what lets the patches advance as one batched reservoir op.
 
     Parameters
     ----------
     input_dim : int
-        Full spatial dimension ``D`` of the state.
+        Full spatial dimension `D` of the state.
     core_width : int
-        Core width ``w`` predicted by each patch.  Must divide ``input_dim``.
+        Core width `w` predicted by each patch.  Must divide `input_dim`.
     halo : int
-        Number of neighbouring cells ``g`` added on each side of the core.
+        Number of neighbouring cells `g` added on each side of the core.
 
     Returns
     -------
     torch.Tensor
-        Long tensor of shape ``(P, core_width + 2 * halo)`` where row ``p`` holds
-        the periodic indices for patch ``p`` (``P = input_dim // core_width``).
+        Long tensor of shape `(P, core_width + 2 * halo)` where row `p` holds
+        the periodic indices for patch `p` (`P = input_dim // core_width`).
 
     Raises
     ------
     ValueError
-        If ``core_width`` does not divide ``input_dim``, or if any argument is
+        If `core_width` does not divide `input_dim`, or if any argument is
         out of range (non-positive core width, negative halo).
     """
     if input_dim <= 0:
@@ -144,31 +144,31 @@ def _patch_gather_index(input_dim: int, core_width: int, halo: int) -> torch.Ten
 class ParallelESNModel(torch.nn.Module):
     """Parallel local-state reservoir for spatiotemporal forecasting.
 
-    Holds one shared-weight :class:`~resdag.layers.ESNLayer` (advanced batched
-    over patches) and one weight-tied :class:`~resdag.layers.readouts.ReadoutLayer`
+    Holds one shared-weight `resdag.layers.ESNLayer` (advanced batched
+    over patches) and one weight-tied `resdag.layers.readouts.ReadoutLayer`
     (fitted once over the pooled per-patch data), plus the patch geometry
-    (``input_dim``, ``core_width``, ``halo``).  Build it with
-    :func:`parallel_esn` rather than directly.
+    (`input_dim`, `core_width`, `halo`).  Build it with
+    `parallel_esn` rather than directly.
 
-    The public workflow mirrors the rest of the library — :meth:`fit` then
-    :meth:`forecast` — but the forecasting is spatial-autoregressive: it stitches
+    The public workflow mirrors the rest of the library — `fit` then
+    `forecast` — but the forecasting is spatial-autoregressive: it stitches
     per-patch core predictions into the full field and re-windows every step,
     rather than feeding a single output straight back.
 
     Parameters
     ----------
     reservoir : ESNLayer
-        The shared reservoir.  Its ``feedback_size`` must equal
-        ``core_width + 2 * halo`` (the per-patch input width).
+        The shared reservoir.  Its `feedback_size` must equal
+        `core_width + 2 * halo` (the per-patch input width).
     readout : ReadoutLayer
-        The weight-tied readout.  Its ``in_features`` must equal the reservoir
-        size and its ``out_features`` must equal ``core_width``.
+        The weight-tied readout.  Its `in_features` must equal the reservoir
+        size and its `out_features` must equal `core_width`.
     input_dim : int
-        Full spatial dimension ``D`` of the modelled field.
+        Full spatial dimension `D` of the modelled field.
     core_width : int
-        Core width ``w`` each patch predicts (``P = input_dim // core_width``).
+        Core width `w` each patch predicts (`P = input_dim // core_width`).
     halo : int
-        Halo width ``g`` (neighbouring cells read on each side of the core).
+        Halo width `g` (neighbouring cells read on each side of the core).
 
     Attributes
     ----------
@@ -177,7 +177,7 @@ class ParallelESNModel(torch.nn.Module):
     readout : ReadoutLayer
         The weight-tied readout layer.
     n_patches : int
-        Number of patches ``P = input_dim // core_width``.
+        Number of patches `P = input_dim // core_width`.
 
     See Also
     --------
@@ -236,10 +236,10 @@ class ParallelESNModel(torch.nn.Module):
     def forward(self, series: torch.Tensor, *, reset: bool = False) -> torch.Tensor:
         """Predict each timestep, preserving gradients through the model.
 
-        Accepts ``(batch, time, input_dim)`` and returns that shape. Reservoir
-        state carries across calls; use ``reset=True`` for independent batches.
+        Accepts `(batch, time, input_dim)` and returns that shape. Reservoir
+        state carries across calls; use `reset=True` for independent batches.
         This teacher-forced path composes with ordinary PyTorch modules and
-        optimizers. Use :meth:`forecast` for an autonomous rollout.
+        optimizers. Use `forecast` for an autonomous rollout.
         """
         validate_sequence_inputs(
             (series,), feature_sizes=(self.input_dim,), reference=module_reference(self)
@@ -263,9 +263,9 @@ class ParallelESNModel(torch.nn.Module):
     ) -> tuple[torch.Tensor, ReservoirStates]:
         """Predict independently or continue explicit per-patch recurrent states.
 
-        Pass one ``(batch, time, input_dim)`` field. The returned ``reservoir``
+        Pass one `(batch, time, input_dim)` field. The returned `reservoir`
         state folds the patches into its batch axis, with shape
-        ``(batch * n_patches, reservoir_size)``. State tensors retain gradients;
+        `(batch * n_patches, reservoir_size)`. State tensors retain gradients;
         this method leaves the model's stored streaming states untouched.
         """
         validate_sequence_inputs(
@@ -308,21 +308,21 @@ class ParallelESNModel(torch.nn.Module):
         return ReservoirModelModule(self, stateful=stateful)
 
     def window(self, series: torch.Tensor) -> torch.Tensor:
-        """Window a full ``(batch, T, D)`` field into per-patch inputs.
+        """Window a full `(batch, T, D)` field into per-patch inputs.
 
-        Gathers, for every patch, its ``core_width + 2 * halo`` periodic cells in
+        Gathers, for every patch, its `core_width + 2 * halo` periodic cells in
         one indexing op, then folds the patch axis into the batch axis so the
         result drops straight into the shared reservoir as a batched sequence.
 
         Parameters
         ----------
         series : torch.Tensor
-            Full field of shape ``(batch, T, input_dim)``.
+            Full field of shape `(batch, T, input_dim)`.
 
         Returns
         -------
         torch.Tensor
-            Windowed input of shape ``(batch * P, T, core_width + 2 * halo)`` —
+            Windowed input of shape `(batch * P, T, core_width + 2 * halo)` —
             the patch axis is folded into the leading (reservoir-batch) axis.
         """
         if series.dim() != 3 or series.shape[-1] != self.input_dim:
@@ -338,27 +338,27 @@ class ParallelESNModel(torch.nn.Module):
         return windowed
 
     def _cores_from_index(self) -> torch.Tensor:
-        """Column offsets of the core region inside each patch window (``(w,)``)."""
+        """Column offsets of the core region inside each patch window (`(w,)`)."""
         return torch.arange(self.halo, self.halo + self.core_width, device=self.patch_index.device)
 
     def stitch(self, patch_cores: torch.Tensor) -> torch.Tensor:
         """Assemble per-patch core predictions into the full field.
 
-        Inverse of :meth:`window` for the core regions: patch ``p`` owns cores
-        ``[p*w : (p+1)*w]`` of the full field, so concatenating the patches' core
-        predictions along the spatial axis reconstructs the whole ``D``-wide
+        Inverse of `window` for the core regions: patch `p` owns cores
+        `[p*w : (p+1)*w]` of the full field, so concatenating the patches' core
+        predictions along the spatial axis reconstructs the whole `D`-wide
         state.  With non-overlapping cores this is a contiguous reshape (no
         averaging needed).
 
         Parameters
         ----------
         patch_cores : torch.Tensor
-            Per-patch core predictions of shape ``(batch, P, core_width)``.
+            Per-patch core predictions of shape `(batch, P, core_width)`.
 
         Returns
         -------
         torch.Tensor
-            Full field of shape ``(batch, input_dim)``.
+            Full field of shape `(batch, input_dim)`.
         """
         b = patch_cores.shape[0]
         return patch_cores.reshape(b, self.input_dim)
@@ -394,11 +394,11 @@ class ParallelESNModel(torch.nn.Module):
             self.reservoir.set_state(state.to(device=device, dtype=dtype))
 
     def get_reservoir_states(self) -> ReservoirStates:
-        """Return the named recurrent state; alias of :meth:`get_state`."""
+        """Return the named recurrent state; alias of `get_state`."""
         return self.get_state()
 
     def set_reservoir_states(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
-        """Restore named recurrent state; alias of :meth:`set_state`."""
+        """Restore named recurrent state; alias of `set_state`."""
         self.set_state(states, strict=strict)
 
     # ------------------------------------------------------------------
@@ -415,31 +415,31 @@ class ParallelESNModel(torch.nn.Module):
     ) -> None:
         """Fit the weight-tied readout over all patches in one pooled solve.
 
-        Windows ``warmup`` / ``train`` into per-patch inputs, runs them through
-        the shared reservoir (batched over ``batch * P``), and fits the single
-        readout on the pooled ``(reservoir_state -> core_target)`` pairs from
+        Windows `warmup` / `train` into per-patch inputs, runs them through
+        the shared reservoir (batched over `batch * P`), and fits the single
+        readout on the pooled `(reservoir_state -> core_target)` pairs from
         every patch and timestep — the weight-tied readout of Pathak et al.
 
         Parameters
         ----------
         warmup : torch.Tensor
-            Teacher-forced warmup field of shape ``(batch, warmup_steps, D)``
+            Teacher-forced warmup field of shape `(batch, warmup_steps, D)`
             used only to synchronise the reservoir states.
         train : torch.Tensor
-            Training field of shape ``(batch, train_steps, D)`` whose reservoir
-            states are regressed onto ``targets``.
+            Training field of shape `(batch, train_steps, D)` whose reservoir
+            states are regressed onto `targets`.
         targets : torch.Tensor
-            Next-step field of shape ``(batch, train_steps, D)`` — typically
-            ``train`` shifted one step ahead.  Each patch is supervised on its
+            Next-step field of shape `(batch, train_steps, D)` — typically
+            `train` shifted one step ahead.  Each patch is supervised on its
             own core slice of this field.
         reset : bool, default=True
-            If ``True``, reset the reservoir states before warmup.
+            If `True`, reset the reservoir states before warmup.
 
         Raises
         ------
         ValueError
             If any input is not 3-D, if their feature dimension is not
-            ``input_dim``, or if ``train`` and ``targets`` disagree on
+            `input_dim`, or if `train` and `targets` disagree on
             batch/length.
         """
         for name, arr in (("warmup", warmup), ("train", train), ("targets", targets)):
@@ -551,25 +551,25 @@ class ParallelESNModel(torch.nn.Module):
         return_warmup: bool = False,
         alignment: ForecastAlignment = "next",
     ) -> torch.Tensor:
-        """Predict the next full fields after the observed ``warmup``.
+        """Predict the next full fields after the observed `warmup`.
 
-        Inputs have shape ``(batch, time, input_dim)`` and results have shape
-        ``(batch, horizon, input_dim)``. Slot zero is the final warmup prediction,
+        Inputs have shape `(batch, time, input_dim)` and results have shape
+        `(batch, horizon, input_dim)`. Slot zero is the final warmup prediction,
         estimating the immediate unseen field. Each later step feeds the previous
-        prediction through the batched patches. ``horizon`` is a positive integer.
+        prediction through the batched patches. `horizon` is a positive integer.
 
-        ``initial_feedback`` is a distinct extra field consumed after all warmup
-        fields, shaped ``(batch, 1, input_dim)``. It also permits empty history;
-        use ``reset=False`` to continue states with the previous final prediction
+        `initial_feedback` is a distinct extra field consumed after all warmup
+        fields, shaped `(batch, 1, input_dim)`. It also permits empty history;
+        use `reset=False` to continue states with the previous final prediction
         as this seed. The final returned prediction has not yet been consumed.
 
-        ``return_warmup=True`` prepends historical *predictions*, giving length
-        ``warmup_steps - 1 + horizon``. Explicit seeds give ``warmup_steps + horizon``.
-        ``alignment="legacy"`` uses the old low-level ESN convention: omit the
-        final warmup prediction, then generate ``horizon`` steps, giving a
-        ``warmup_steps + horizon`` result when historical predictions are included.
+        `return_warmup=True` prepends historical *predictions*, giving length
+        `warmup_steps - 1 + horizon`. Explicit seeds give `warmup_steps + horizon`.
+        `alignment="legacy"` uses the old low-level ESN convention: omit the
+        final warmup prediction, then generate `horizon` steps, giving a
+        `warmup_steps + horizon` result when historical predictions are included.
         The default future timing already matches earlier ParallelESN releases;
-        their ``return_warmup`` prefix contained raw observations instead.
+        their `return_warmup` prefix contained raw observations instead.
         """
         inputs, _, horizon, boundary = prepare_forecast_inputs(
             warmup,
@@ -658,9 +658,9 @@ class ParallelESNModel(torch.nn.Module):
     def save_full(self, path: str | Path, **metadata: Any) -> None:
         """Serialize the whole model (architecture + weights + states) to a file.
 
-        Mirrors :meth:`resdag.core.ESNModel.save_full`: pickles the entire module
-        so :meth:`load_full` reconstructs it with no pre-built architecture.  The
-        file is a ``torch.save`` payload loaded back with ``weights_only=False`` —
+        Mirrors `resdag.core.ESNModel.save_full`: pickles the entire module
+        so `load_full` reconstructs it with no pre-built architecture.  The
+        file is a `torch.save` payload loaded back with `weights_only=False` —
         only open files you trust.
 
         Parameters
@@ -681,20 +681,20 @@ class ParallelESNModel(torch.nn.Module):
         *,
         trusted: bool = False,
     ) -> "ParallelESNModel | tuple[ParallelESNModel, dict[str, Any]]":
-        """Reconstruct a model saved with :meth:`save_full`.
+        """Reconstruct a model saved with `save_full`.
 
         Parameters
         ----------
         path : str or Path
-            File path written by :meth:`save_full`.
+            File path written by `save_full`.
         return_metadata : bool, default=False
-            If ``True``, return ``(model, metadata)`` instead of just the model.
+            If `True`, return `(model, metadata)` instead of just the model.
         map_location : optional
-            Passed to ``torch.load`` to remap storage devices.
+            Passed to `torch.load` to remap storage devices.
 
         trusted : bool, default=False
             Explicit opt-in to execute the saved Python. Required for full
-            pickle files; prefer ``Model.save`` and ``resdag.load`` otherwise.
+            pickle files; prefer `Model.save` and `resdag.load` otherwise.
 
         Returns
         -------
@@ -708,7 +708,7 @@ class ParallelESNModel(torch.nn.Module):
 
         Warnings
         --------
-        Loads with ``weights_only=False`` (unpickles arbitrary objects); only
+        Loads with `weights_only=False` (unpickles arbitrary objects); only
         call on trusted files.
         """
         return load_full_model(cls, path, return_metadata, map_location, trusted=trusted)
@@ -755,19 +755,18 @@ def parallel_esn(
 ) -> ParallelESNModel:
     r"""Build a parallel local-state reservoir (Pathak et al. 2018).
 
-    Splits a spatially-extended field of dimension ``input_dim`` into ``P =
-    input_dim / core_width`` overlapping patches (core width ``core_width``, halo
-    ``halo`` on each side, periodic boundaries), all sharing **one** reservoir
+    Splits a spatially-extended field of dimension `input_dim` into `P = input_dim / core_width` overlapping patches (core width `core_width`, halo
+    `halo` on each side, periodic boundaries), all sharing **one** reservoir
     (advanced batched over patches) and **one** weight-tied readout (core width
-    ``core_width``).  See :class:`ParallelESNModel` and the module docstring for
+    `core_width`).  See `ParallelESNModel` and the module docstring for
     the full architecture and the forecasting loop.
 
-    The defaults (``spectral_radius=0.6``, ``input_scaling=0.1``,
-    ``readout_alpha=1e-4``) are tuned for the local-patch regime, which uses a
+    The defaults (`spectral_radius=0.6`, `input_scaling=0.1`,
+    `readout_alpha=1e-4`) are tuned for the local-patch regime, which uses a
     smaller, better-conditioned reservoir per patch than a single global ESN —
-    the classic Pathak KS settings.  ``input_scaling=0.1`` in particular is
-    decisive: the per-patch input width (``core_width + 2*halo``) is large enough
-    that an unscaled ``uniform(-1, 1)`` input map drives ``tanh`` deep into
+    the classic Pathak KS settings.  `input_scaling=0.1` in particular is
+    decisive: the per-patch input width (`core_width + 2*halo`) is large enough
+    that an unscaled `uniform(-1, 1)` input map drives `tanh` deep into
     saturation, collapsing the reservoir's memory; scaling the input weights down
     keeps the dynamics responsive (on the canonical L=22 KS field it is the
     difference between a fraction of a Lyapunov time and ~4 Lyapunov times of
@@ -776,38 +775,36 @@ def parallel_esn(
     Parameters
     ----------
     input_dim : int
-        Full spatial dimension ``D`` of the field (e.g. the KS grid size).
+        Full spatial dimension `D` of the field (e.g. the KS grid size).
     core_width : int
-        Core width ``w`` each patch predicts.  Must divide ``input_dim``.
+        Core width `w` each patch predicts.  Must divide `input_dim`.
     halo : int
-        Halo width ``g`` — neighbouring cells read on each side of the core
-        (periodic).  The per-patch reservoir input width is ``core_width + 2 *
-        halo``.
+        Halo width `g` — neighbouring cells read on each side of the core
+        (periodic).  The per-patch reservoir input width is `core_width + 2 * halo`.
     reservoir_size : int, default=500
-        Number of units ``N`` in the shared reservoir (per patch).
+        Number of units `N` in the shared reservoir (per patch).
     topology : TopologySpec, optional
         Topology for the recurrent weights.  Accepts a registry name, a
-        ``(name, params)`` tuple, a callable, or a configured
-        :class:`~resdag.init.topology.TopologyInitializer`.
+        `(name, params)` tuple, a callable, or a configured
+        `resdag.init.topology.TopologyInitializer`.
     spectral_radius : float, default=0.6
         Target spectral radius for the recurrent weights.
     leak_rate : float, default=1.0
         Leaky-integration rate (1.0 = no leak).
     input_scaling : float, default=0.1
         Scale of the per-patch input (feedback) weights when
-        ``feedback_initializer`` is left at its default.  The weights are drawn
-        from ``uniform(-input_scaling, input_scaling)`` (via the ``"random"``
-        initializer), keeping the ``tanh`` reservoir out of saturation on a
-        wide per-patch input.  Ignored when an explicit ``feedback_initializer``
+        `feedback_initializer` is left at its default.  The weights are drawn
+        from `uniform(-input_scaling, input_scaling)` (via the `"random"`
+        initializer), keeping the `tanh` reservoir out of saturation on a
+        wide per-patch input.  Ignored when an explicit `feedback_initializer`
         is supplied (it then owns the input-weight scale).
     feedback_initializer : InitializerSpec, optional
         Initializer for the per-patch input weights.  Same accepted forms as
-        ``topology``.  When given, it overrides ``input_scaling``.  Left at its
-        default (``None``), the factory uses ``("random", {"input_scaling":
-        input_scaling})``.
+        `topology`.  When given, it overrides `input_scaling`.  Left at its
+        default (`None`), the factory uses `("random", {"input_scaling": input_scaling})`.
     activation : str, default="tanh"
-        Activation function (``"tanh"``, ``"relu"``, ``"sigmoid"``,
-        ``"identity"``).
+        Activation function (`"tanh"`, `"relu"`, `"sigmoid"`,
+        `"identity"`).
     bias : bool, default=True
         Whether the reservoir uses a bias term.
     trainable : bool, default=False
@@ -816,7 +813,7 @@ def parallel_esn(
         Reproducibility seed fixing every reservoir parameter.
     readout : str or type[ReadoutLayer], default="ridge"
         A built-in readout name or a ReadoutLayer subclass, with the same
-        solver choices as :func:`resdag.models.classic_esn`.
+        solver choices as `resdag.models.classic_esn`.
     readout_alpha : float, default=1e-4
         Ridge regularization for the readout.
     readout_bias : bool, default=True
@@ -826,19 +823,19 @@ def parallel_esn(
     readout_kwargs : dict, optional
         Additional readout constructor options. Architecture widths are fixed.
     **reservoir_kwargs : Any
-        Additional keyword arguments forwarded to :class:`~resdag.layers.ESNLayer`
-        (e.g. ``sparse``, ``noise``, ``input_initializer``).
+        Additional keyword arguments forwarded to `resdag.layers.ESNLayer`
+        (e.g. `sparse`, `noise`, `input_initializer`).
 
     Returns
     -------
     ParallelESNModel
-        The assembled parallel reservoir, ready for :meth:`~ParallelESNModel.fit`
-        and :meth:`~ParallelESNModel.forecast`.
+        The assembled parallel reservoir, ready for `ParallelESNModel.fit`
+        and `ParallelESNModel.forecast`.
 
     Raises
     ------
     ValueError
-        If ``core_width`` does not divide ``input_dim``, or if a size argument is
+        If `core_width` does not divide `input_dim`, or if a size argument is
         out of range.
 
     Examples

@@ -18,9 +18,9 @@ def regular_adjacency(
     """Build the dense weighted adjacency of a regular ring-lattice graph.
 
     Vectorized NumPy construction of the same banded adjacency that
-    :func:`regular_graph` describes, without the ``O(n*k)`` Python loop. Each
-    node has exactly ``k`` distinct neighbours. Paired ring offsets contribute
-    two neighbours each; an odd ``k`` adds the antipodal matching on an even
+    `regular_graph` describes, without the `O(n*k)` Python loop. Each
+    node has exactly `k` distinct neighbours. Paired ring offsets contribute
+    two neighbours each; an odd `k` adds the antipodal matching on an even
     ring. Directed graphs replace each pair with independently weighted arcs.
 
     Parameters
@@ -30,25 +30,25 @@ def regular_adjacency(
     k : int
         Number of neighbours per node, excluding optional self-loops.
     directed : bool, optional
-        If ``True``, the forward and reverse edges are drawn independently;
+        If `True`, the forward and reverse edges are drawn independently;
         otherwise the forward edges are mirrored to keep the matrix symmetric.
     self_loops : bool, optional
-        If ``True``, the diagonal carries a self-loop on every node.
+        If `True`, the diagonal carries a self-loop on every node.
     random_weights : bool, optional
-        If ``True``, weights are random ``{-1, +1}``; otherwise they follow
-        ``(-1) ** (i + neighbour)``.
+        If `True`, weights are random `{-1, +1}`; otherwise they follow
+        `(-1) ** (i + neighbour)`.
     seed : int or numpy.random.Generator or None, optional
         Seed for the random number generator.
 
     Returns
     -------
     numpy.ndarray
-        An ``(n, n)`` ``float32`` weighted adjacency matrix.
+        An `(n, n)` `float32` weighted adjacency matrix.
 
     Raises
     ------
     ValueError
-        If ``n`` or ``k`` is invalid, ``k >= n``, or both ``n`` and ``k``
+        If `n` or `k` is invalid, `k >= n`, or both `n` and `k`
         are odd (an impossible undirected regular degree).
 
     See Also
@@ -123,13 +123,14 @@ def regular_graph(
     """
     Generates a regular ring-lattice graph (each node has k neighbors).
 
-    .. note::
-        - If ``directed=True``, each undirected edge is replaced with two directed edges.
-        - If ``self_loops=True``, each node also has a self-loop.
-        - Weights can either be random in {-1, 1} or deterministically alternating.
+    **Note.**
+
+    - If `directed=True`, each undirected edge is replaced with two directed edges.
+    - If `self_loops=True`, each node also has a self-loop.
+    - Weights can either be random in {-1, 1} or deterministically alternating.
 
     The adjacency is built with vectorized NumPy (see
-    :func:`regular_adjacency`); the NetworkX object is materialised only for
+    `regular_adjacency`); the NetworkX object is materialised only for
     direct callers, and the dense topology fast path skips it entirely.
 
     Parameters
@@ -138,7 +139,7 @@ def regular_graph(
         Number of nodes.
     k : int
         Number of distinct neighbours, excluding optional self-loops. Must
-        satisfy ``0 <= k < n`` and ``n * k`` even.
+        satisfy `0 <= k < n` and `n * k` even.
     directed : bool, optional
         If True, the graph is directed; else undirected. Default: False.
     self_loops : bool, optional
@@ -157,7 +158,7 @@ def regular_graph(
     Raises
     ------
     ValueError
-        If ``n`` or ``k`` is invalid, or ``n * k`` is odd.
+        If `n` or `k` is invalid, or `n * k` is odd.
     """
     # ``regular_adjacency`` performs the ``k`` validation (raising the same
     # ValueError) so the fast path and the NetworkX path agree.

@@ -26,13 +26,13 @@ def run_jobs(
     """Run jobs with loky and return results in input order.
 
     Notebook functions and closures are serialized by joblib's cloudpickle
-    support. ``n_jobs`` follows joblib conventions: one runs in the caller,
+    support. `n_jobs` follows joblib conventions: one runs in the caller,
     negative values select a CPU-relative worker count, and zero is invalid.
     The thread limit applies to worker processes, leaving the caller's thread
-    configuration unchanged. An outer ``joblib.parallel_config`` can configure
+    configuration unchanged. An outer `joblib.parallel_config` can configure
     options such as memory mapping and its temporary directory.
 
-    For progress reporting or early stopping, consume :func:`iter_jobs` in its
+    For progress reporting or early stopping, consume `iter_jobs` in its
     context manager instead of accumulating the complete result list.
     """
     with iter_jobs(
@@ -57,13 +57,13 @@ def iter_jobs(
     """Yield job results within an explicitly managed execution context.
 
     Results arrive in completion order by default, allowing a caller to process
-    a fast evaluation while another is still running. ``ordered=True`` yields
+    a fast evaluation while another is still running. `ordered=True` yields
     in input order. Exiting the context closes the result generator and lets
     joblib cancel outstanding work, including after an error or interrupt.
     Joblib may warn about completed results that were intentionally unused.
     Successfully completed pools follow joblib's standard reuse policy.
 
-    ``batch_size=1`` and ``pre_dispatch='n_jobs'`` keep the initial queue small.
+    `batch_size=1` and `pre_dispatch='n_jobs'` keep the initial queue small.
     Completion callbacks can continue drawing from the input independently of
     result consumption: pre-dispatch is not a trial or time budget. For strict
     budgets, pass a finite, parent-prepared window, consume it, then decide

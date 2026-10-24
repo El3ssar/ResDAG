@@ -54,8 +54,8 @@ class CompactRecurrentMixin(nn.Module):
     def weight_hh(self) -> torch.Tensor:
         """Dense Parameter or zero-copy CSR view of frozen recurrent weights.
 
-        Use ``weight_hh.to_dense()`` when a dense inspection copy is wanted.
-        Sparse values can be edited in place through ``weight_hh.values()``.
+        Use `weight_hh.to_dense()` when a dense inspection copy is wanted.
+        Sparse values can be edited in place through `weight_hh.values()`.
         """
         parameter = self._parameters.get("weight_hh")
         if parameter is not None:

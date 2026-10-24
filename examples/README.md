@@ -5,6 +5,13 @@ blocks. Fixed seeds make each example repeatable in a declared software/device
 environment; they do not guarantee identical results across platforms. Full
 defaults are tutorial settings, not forecast-quality or latency guarantees.
 
+Dataset generators return raw values by default. The low-level training examples
+fit normalization on their training prefix and apply those fixed statistics to
+held-out observations. Their printed losses use training-standardized units.
+The common `ESN`/`Model` workflow owns training-only scaling and returns forecasts
+in its input units. Example14 standardizes its complete training series explicitly;
+it has no held-out accuracy evaluation.
+
 ```bash
 # Run any example
 uv run python examples/01_quickstart.py

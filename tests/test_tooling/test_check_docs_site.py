@@ -82,3 +82,35 @@ def test_empty_output_and_escaping_encoded_path_are_rejected(tmp_path):
     assert "escapes" in checker.check_site(tmp_path)[0]
     with pytest.raises(ValueError, match="URL path"):
         checker.check_site(tmp_path, base_path="https://example.invalid/")
+
+
+def test_unrendered_docstring_roles_and_directives_are_rejected_in_prose(tmp_path):
+    _write(
+        tmp_path,
+        "index.html",
+        "<p>Return a :class:<code>torch.Tensor</code>.</p>\n"
+        "<p>.. deprecated:: 0.7.0</p>\n<p>.. math::</p>",
+    )
+    problems = checker.check_site(tmp_path)
+    assert len(problems) == 3
+    assert all("unrendered reStructuredText" in problem for problem in problems)
+
+
+def test_examples_source_and_script_literals_are_not_mistaken_for_rendering_failures(tmp_path):
+    _write(
+        tmp_path,
+        "index.html",
+        "<pre><code>:class:`torch.Tensor`\n.. math::</code></pre>"
+        '<code>:func:`example`</code><script>const literal = ":math:";</script>'
+        "<style>/* :class: */</style><p>Ordinary Markdown prose.</p>",
+    )
+    assert checker.check_site(tmp_path) == []
+
+
+def test_duplicate_ids_from_repeated_module_reference_directives_are_rejected(tmp_path):
+    _write(tmp_path, "index.html", '<h2 id="resdag.data">Data</h2><h2 id="resdag.data">Data</h2>')
+    assert checker.check_site(tmp_path) == [
+        "index.html: duplicate HTML anchor 'resdag.data' (2 copies)"
+    ]
+    _write(tmp_path, "index.html", '<a id="same" name="same">One anchor</a>')
+    assert checker.check_site(tmp_path) == []

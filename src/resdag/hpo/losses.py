@@ -2,38 +2,38 @@
 
 This module provides specialized loss functions for evaluating multi-step
 forecasts in reservoir computing applications.  All functions operate on
-batched predictions with shape ``(B, T, D)`` where *B* is batch size, *T* is
+batched predictions with shape `(B, T, D)` where *B* is batch size, *T* is
 time steps, and *D* is the number of dimensions.
 
 Available Losses
 ----------------
-- ``"efh"`` : Expected Forecast Horizon (default, recommended for chaotic systems)
-- ``"forecast_horizon"`` : Forecast Horizon Loss (contiguous valid steps)
-- ``"lyapunov"`` : Lyapunov-weighted Loss (exponential decay for chaotic systems)
-- ``"standard"`` : Standard Loss (mean geometric mean error)
-- ``"soft_horizon"`` : Soft valid horizon (cumulative survival probability)
-- ``"attractor_dimension"`` : Attractor-fidelity — correlation-dimension mismatch
+- `"efh"` : Expected Forecast Horizon (default, recommended for chaotic systems)
+- `"forecast_horizon"` : Forecast Horizon Loss (contiguous valid steps)
+- `"lyapunov"` : Lyapunov-weighted Loss (exponential decay for chaotic systems)
+- `"standard"` : Standard Loss (mean geometric mean error)
+- `"soft_horizon"` : Soft valid horizon (cumulative survival probability)
+- `"attractor_dimension"` : Attractor-fidelity — correlation-dimension mismatch
   of the forecast vs the truth (climate reconstruction, not short-horizon error)
 
 Scale conventions
 -----------------
-The threshold-based horizon losses (:func:`expected_forecast_horizon`,
-:func:`forecast_horizon`, :func:`soft_valid_horizon`) compare a per-timestep
-error against a fixed ``threshold``.  For that comparison to be meaningful the
+The threshold-based horizon losses (`expected_forecast_horizon`,
+`forecast_horizon`, `soft_valid_horizon`) compare a per-timestep
+error against a fixed `threshold`.  For that comparison to be meaningful the
 error metric must be *scale-free*, otherwise the same threshold collapses the
-horizon to ``0`` or ``T`` depending on the absolute scale of the data.  All of
-these losses therefore default to ``metric="nrmse"`` (RMSE normalised by the
-per-dimension standard deviation of ``y_true``).  Selecting a raw-scale metric
-(``"rmse"``, ``"mse"``, ``"mae"``) for a threshold-based loss emits a
-:class:`UserWarning`, because the threshold is then only valid on
+horizon to `0` or `T` depending on the absolute scale of the data.  All of
+these losses therefore default to `metric="nrmse"` (RMSE normalised by the
+per-dimension standard deviation of `y_true`).  Selecting a raw-scale metric
+(`"rmse"`, `"mse"`, `"mae"`) for a threshold-based loss emits a
+`UserWarning`, because the threshold is then only valid on
 unit-scale data.
 
 Batch aggregation
 -----------------
-Per-timestep errors of shape ``(B, T)`` are collapsed across the batch axis
-with the **median** in *every* loss (see :func:`_aggregate_batch`).  The median
+Per-timestep errors of shape `(B, T)` are collapsed across the batch axis
+with the **median** in *every* loss (see `_aggregate_batch`).  The median
 is robust to outlier trajectories and — unlike the geometric mean — does not
-collapse to ``0`` when a single batch element happens to be perfect at a step.
+collapse to `0` when a single batch element happens to be perfect at a step.
 When a geometric mean is requested explicitly it is computed on
 *clipped* errors so it is zero-safe.
 
@@ -86,7 +86,7 @@ class LossProtocol(Protocol):
     """Protocol for HPO loss functions.
 
     All loss functions must accept *y_true* and *y_pred* arrays of shape
-    ``(B, T, D)`` as positional-only arguments and return a single ``float``
+    `(B, T, D)` as positional-only arguments and return a single `float`
     value to minimize.
 
     Examples
@@ -151,10 +151,10 @@ def _warn_if_scale_unsafe(metric: MetricType, loss_name: str, threshold: float) 
     """Warn when a threshold-based loss is used with a raw-scale metric.
 
     Threshold-based horizon losses compare per-timestep errors against a fixed
-    ``threshold``.  A raw-scale metric (anything not in
-    :data:`SCALE_FREE_METRICS`) makes that comparison depend on the absolute
-    magnitude of the data, which silently collapses the horizon to ``0`` or
-    ``T`` on non-unit-scale inputs.
+    `threshold`.  A raw-scale metric (anything not in
+    `SCALE_FREE_METRICS`) makes that comparison depend on the absolute
+    magnitude of the data, which silently collapses the horizon to `0` or
+    `T` on non-unit-scale inputs.
 
     Parameters
     ----------
@@ -177,27 +177,27 @@ def _warn_if_scale_unsafe(metric: MetricType, loss_name: str, threshold: float) 
 
 
 def _aggregate_batch(errors: NDArray[np.floating], how: str = "median") -> NDArray[np.floating]:
-    """Collapse per-timestep errors ``(B, T)`` across the batch axis.
+    """Collapse per-timestep errors `(B, T)` across the batch axis.
 
     Parameters
     ----------
     errors : ndarray
-        Per-timestep errors of shape ``(B, T)``.
+        Per-timestep errors of shape `(B, T)`.
     how : {"median", "gmean"}, default="median"
-        Aggregation strategy.  ``"median"`` is robust to outlier trajectories
-        and is the default for every loss.  ``"gmean"`` computes a geometric
+        Aggregation strategy.  `"median"` is robust to outlier trajectories
+        and is the default for every loss.  `"gmean"` computes a geometric
         mean on errors clipped to a small positive floor so that a single
-        zero-error batch element cannot collapse the result to ``0``.
+        zero-error batch element cannot collapse the result to `0`.
 
     Returns
     -------
     ndarray
-        Aggregated errors of shape ``(T,)``.
+        Aggregated errors of shape `(T,)`.
 
     Raises
     ------
     ValueError
-        If *how* is not ``"median"`` or ``"gmean"``.
+        If *how* is not `"median"` or `"gmean"`.
     """
     if how == "median":
         return cast(NDArray[np.floating], np.median(errors, axis=0))
@@ -245,7 +245,7 @@ def expected_forecast_horizon(
     Warns
     -----
     UserWarning
-        If *metric* is not scale-free (i.e. not ``"nrmse"``), since the fixed
+        If *metric* is not scale-free (i.e. not `"nrmse"`), since the fixed
         *threshold* is then only meaningful on unit-scale data.
     """
     _warn_if_scale_unsafe(metric, "expected_forecast_horizon", threshold)
@@ -284,7 +284,7 @@ def forecast_horizon(
     y_pred : ndarray
         Predicted values of shape (B, T, D).
     metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
-        Error metric to compute.  Defaults to the scale-free ``"nrmse"`` so the
+        Error metric to compute.  Defaults to the scale-free `"nrmse"` so the
         fixed *threshold* is comparable across datasets of any magnitude.
     threshold : float, default=0.2
         Error threshold below which predictions are considered valid.
@@ -297,7 +297,7 @@ def forecast_horizon(
     Warns
     -----
     UserWarning
-        If *metric* is not scale-free (i.e. not ``"nrmse"``), since the fixed
+        If *metric* is not scale-free (i.e. not `"nrmse"`), since the fixed
         *threshold* is then only meaningful on unit-scale data.
     """
     _warn_if_scale_unsafe(metric, "forecast_horizon", threshold)
@@ -340,8 +340,8 @@ def standard_loss(
     Notes
     -----
     The geometric mean across the batch is zero-safe: errors are clipped to a
-    small positive floor before reduction (see :func:`_aggregate_batch`) so a
-    single perfect batch element cannot collapse a step to ``0``.
+    small positive floor before reduction (see `_aggregate_batch`) so a
+    single perfect batch element cannot collapse a step to `0`.
     """
     errors = _compute_errors(y_true, y_pred, metric)
     geom_mean = _aggregate_batch(errors, how="gmean")
@@ -372,7 +372,7 @@ def lyapunov_weighted(
         Predicted values of shape (B, T, D).
     metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
         Error metric to compute per time step.  Defaults to the scale-free
-        ``"nrmse"`` so the magnitude is comparable across datasets.
+        `"nrmse"` so the magnitude is comparable across datasets.
     lyapunov_t : int, default=64
         Characteristic Lyapunov time (in time steps) controlling the
         exponential decay rate of the weights.
@@ -385,7 +385,7 @@ def lyapunov_weighted(
     Notes
     -----
     Errors are reduced across the batch with a zero-safe geometric mean
-    (clipped to a small positive floor; see :func:`_aggregate_batch`).
+    (clipped to a small positive floor; see `_aggregate_batch`).
     """
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
     e_t = _aggregate_batch(errors, how="gmean")  # (T,)
@@ -409,18 +409,18 @@ def soft_valid_horizon(
     At each timestep a soft indicator measures how "good" the prediction is
     using a Hill-function gate:
 
-    .. math::
+    $$
+    g_t = \\frac{1}{1 + (e_t / \\theta)^n}
+    $$
 
-        g_t = \\frac{1}{1 + (e_t / \\theta)^n}
-
-    where :math:`e_t` is the median error at step *t*, :math:`\\theta` is the
+    where $e_t$ is the median error at step *t*, $\\theta$ is the
     threshold, and *n* controls the sharpness.  A cumulative product of these
     indicators gives a survival probability that drops to zero once any step
     fails, mimicking a contiguous forecast horizon:
 
-    .. math::
-
-        H = \\sum_t \\prod_{i \\leq t} g_i
+    $$
+    H = \\sum_t \\prod_{i \\leq t} g_i
+    $$
 
     The function is numerically safe: error ratios are clipped before
     exponentiation to prevent overflow.
@@ -433,7 +433,7 @@ def soft_valid_horizon(
         Predicted values of shape (B, T, D).
     metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
         Error metric to compute per timestep.  Defaults to the scale-free
-        ``"nrmse"`` so the fixed *threshold* is comparable across datasets.
+        `"nrmse"` so the fixed *threshold* is comparable across datasets.
     threshold : float, default=0.3
         Error threshold below which predictions are considered "good".
     n : int, default=6
@@ -449,19 +449,19 @@ def soft_valid_horizon(
     Warns
     -----
     UserWarning
-        If *metric* is not scale-free (i.e. not ``"nrmse"``), since the fixed
+        If *metric* is not scale-free (i.e. not `"nrmse"`), since the fixed
         *threshold* is then only meaningful on unit-scale data.
 
     Notes
     -----
-    Compared to :func:`expected_forecast_horizon` (which uses a sigmoid gate
+    Compared to `expected_forecast_horizon` (which uses a sigmoid gate
     and batch-median), this loss uses a Hill-function gate and batch-median.
     The Hill gate has a sharper but still tunable transition and is symmetric
     around the threshold on a log-error scale.
 
     See Also
     --------
-    expected_forecast_horizon : Sigmoid-gated variant with ``cumprod`` survival.
+    expected_forecast_horizon : Sigmoid-gated variant with `cumprod` survival.
     """
     _warn_if_scale_unsafe(metric, "soft_valid_horizon", threshold)
     errors = _compute_errors(y_true, y_pred, metric)  # (B, T)
@@ -492,23 +492,22 @@ def attractor_dimension_error(
     Scores how well a *free-running* forecast reproduces the true system's
     **climate** — the long-run geometry of its attractor — rather than its
     short-horizon pointwise accuracy.  It is the absolute difference of the
-    Grassberger-Procaccia correlation dimension (:func:`resdag.metrics.
-    correlation_dimension`) of the forecast and of the truth:
+    Grassberger-Procaccia correlation dimension (`resdag.metrics. correlation_dimension`) of the forecast and of the truth:
 
-    .. math::
-
-        \mathcal{L} = \big|\, D_2(\hat y) - D_2(y) \,\big|.
+    $$
+    \mathcal{L} = \big|\, D_2(\hat y) - D_2(y) \,\big|.
+    $$
 
     A forecast that has rebuilt the right attractor matches the truth's fractal
     dimension even after the pointwise trajectory has decorrelated, so this loss
     keeps rewarding a model long past the valid-prediction horizon — exactly the
-    regime the threshold-based horizon losses (:func:`expected_forecast_horizon`,
-    :func:`forecast_horizon`) go blind in.  Optimise it (or **monitor** it
+    regime the threshold-based horizon losses (`expected_forecast_horizon`,
+    `forecast_horizon`) go blind in.  Optimise it (or **monitor** it
     alongside a horizon loss) to select for climate / attractor fidelity, not
     just a few Lyapunov times of tracking.
 
     Because it depends only on the *geometry* of each trajectory, the two inputs
-    need not be time-aligned; each ``(T, D)`` trajectory is embedded and its
+    need not be time-aligned; each `(T, D)` trajectory is embedded and its
     dimension estimated independently.  A long enough forecast window is required
     for the correlation-sum scaling region to exist (a few thousand steps for a
     3-D chaotic system).
@@ -516,35 +515,35 @@ def attractor_dimension_error(
     Parameters
     ----------
     y_true : ndarray
-        Ground-truth trajectory of shape ``(B, T, D)``.  Its per-batch-element
-        trajectories are concatenated along time into one ``(B*T, D)`` point
+        Ground-truth trajectory of shape `(B, T, D)`.  Its per-batch-element
+        trajectories are concatenated along time into one `(B*T, D)` point
         cloud before the dimension estimate (a single attractor sampled by all
         batch elements).
     y_pred : ndarray
-        Forecast trajectory of shape ``(B, T, D)`` (same convention).
+        Forecast trajectory of shape `(B, T, D)` (same convention).
     max_points : int, default=2000
         Cap on the points used per dimension estimate (the pair count is
-        :math:`O(M^2)`); longer trajectories are subsampled.
+        $O(M^2)$); longer trajectories are subsampled.
     n_bins : int, default=20
         Number of log-spaced radii in the correlation sum.
     fit_window : tuple of float, default=(0.1, 0.5)
         Scaling region (as fractions of the log-radius span) over which the
-        :math:`\log C` vs :math:`\log r` slope is fit.
+        $\log C$ vs $\log r$ slope is fit.
     seed : int, default=0
         Seed for the subsampling draw, so the loss is deterministic.
 
     Returns
     -------
     float
-        :math:`|D_2(\hat y) - D_2(y)|\ge 0`.  Lower is better; ``0`` means the
+        $|D_2(\hat y) - D_2(y)|\ge 0$.  Lower is better; `0` means the
         forecast's attractor has the true correlation dimension.
 
     Notes
     -----
     This is a *monitor-friendly* fidelity score, not a smooth differentiable
     proxy: the correlation dimension is a slope estimate and can be noisy on a
-    short window, so it pairs best as a ``monitor_losses`` entry in
-    :func:`resdag.hpo.run_hpo` (logged but not optimised), or as the optimised
+    short window, so it pairs best as a `monitor_losses` entry in
+    `resdag.hpo.run_hpo` (logged but not optimised), or as the optimised
     objective when the study explicitly targets climate reconstruction.
 
     See Also

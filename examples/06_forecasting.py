@@ -24,7 +24,7 @@ import torch
 
 import resdag as rd
 from resdag.core import ESNModel, Input
-from resdag.layers import CGReadoutLayer, ESNLayer
+from resdag.layers import ESNLayer, SVDReadoutLayer
 from resdag.training import ESNTrainer
 
 
@@ -126,7 +126,7 @@ keeps that pairing, which fixes the alignment of forecast_inputs:
     feedback = Input((100, 1))
     driver = Input((100, 1))
     states = ESNLayer(size, feedback_size=1, input_size=1, spectral_radius=0.8)(feedback, driver)
-    out = CGReadoutLayer(size, 1, name="output")(states)
+    out = SVDReadoutLayer(size, 1, name="output")(states)
     driven = ESNModel([feedback, driver], out)
 
     # Train: inputs at t, target at t+1 — for feedback AND driver alike
@@ -162,10 +162,10 @@ keeps that pairing, which fixes the alignment of forecast_inputs:
     )  # (1, 1201, 3)
     inp = Input((100, 3))
     states = ESNLayer(options.choose(24, 250), feedback_size=3)(inp)
-    main_out = CGReadoutLayer(options.choose(24, 250), 3, name="main")(
+    main_out = SVDReadoutLayer(options.choose(24, 250), 3, name="main")(
         states
     )  # fed back (3 == feedback)
-    aux_out = CGReadoutLayer(options.choose(24, 250), 1, name="aux")(states)  # auxiliary scalar
+    aux_out = SVDReadoutLayer(options.choose(24, 250), 1, name="aux")(states)  # auxiliary scalar
     multi = ESNModel(inp, outputs=[main_out, aux_out])
 
     ESNTrainer(multi).fit(

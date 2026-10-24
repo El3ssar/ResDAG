@@ -8,33 +8,33 @@ scaling/connectivity contract** every initializer honors.
 
 The scaling contract
 --------------------
-``input_scaling`` is the single, uniform magnitude knob shared by every
+`input_scaling` is the single, uniform magnitude knob shared by every
 initializer:
 
-- ``input_scaling=None`` means **no scaling** — the initializer returns its
+- `input_scaling=None` means **no scaling** — the initializer returns its
   natural-range matrix untouched (the identity transform).
-- ``input_scaling=s`` (a finite float) applies ``W <- s * W`` as the
+- `input_scaling=s` (a finite float) applies `W <- s * W` as the
   *documented final transform*, so the relevant magnitude statistic of the
-  matrix scales **linearly** with ``s``.
+  matrix scales **linearly** with `s`.
 
-The "relevant magnitude statistic" is ``max|W|`` for the elementwise
+The "relevant magnitude statistic" is `max|W|` for the elementwise
 initializers (random, chessboard, chebyshev, ...) and the **per-channel L2
-norm** for the structured ring initializers (``opposite_anchors``,
-``ring_window``), whose value *is* the scaling target. Either way,
-``input_scaling=0.5`` halves it and ``input_scaling=2.0`` doubles it.
+norm** for the structured ring initializers (`opposite_anchors`,
+`ring_window`), whose value *is* the scaling target. Either way,
+`input_scaling=0.5` halves it and `input_scaling=2.0` doubles it.
 
-``connectivity`` is an optional density knob: the fraction of nonzero entries
-to keep per column (input channel). ``connectivity=None`` (the default) leaves
-the produced sparsity pattern untouched; a float in ``(0, 1]`` randomly zeros a
+`connectivity` is an optional density knob: the fraction of nonzero entries
+to keep per column (input channel). `connectivity=None` (the default) leaves
+the produced sparsity pattern untouched; a float in `(0, 1]` randomly zeros a
 fraction of each column's entries. Structured initializers that *define* their
 own connectivity pattern (only the core ring receives input, a fixed window per
 channel, ...) document whether they honor this knob.
 
 Subclasses cooperate with the contract by:
 
-1. calling ``super().__init__(input_scaling=..., connectivity=..., seed=...)``,
+1. calling `super().__init__(input_scaling=..., connectivity=..., seed=...)`,
 2. building their natural-range matrix, and
-3. returning ``self._apply_scaling(self._apply_connectivity(values, ...))`` —
+3. returning `self._apply_scaling(self._apply_connectivity(values, ...))` —
    or applying only the pieces that make sense for their structure.
 
 Classes
@@ -66,67 +66,69 @@ class InputFeedbackInitializer(ABC):
     Abstract base class for input/feedback weight initialization.
 
     All input/feedback weight initializers inherit from this class, implement
-    :meth:`initialize`, and honor the **shared scaling contract** owned here.
+    `initialize`, and honor the **shared scaling contract** owned here.
     These initializers create weight matrices for:
 
-    - Input connections: shape ``(reservoir_size, input_size)``
-    - Feedback connections: shape ``(reservoir_size, feedback_size)``
+    - Input connections: shape `(reservoir_size, input_size)`
+    - Feedback connections: shape `(reservoir_size, feedback_size)`
 
     The scaling contract
     --------------------
-    ``input_scaling`` is the single uniform magnitude knob:
+    `input_scaling` is the single uniform magnitude knob:
 
-    - ``None`` — no scaling; the natural-range matrix is returned as-is.
-    - ``s`` (finite float) — multiply the whole matrix by ``s`` as the
+    - `None` — no scaling; the natural-range matrix is returned as-is.
+    - `s` (finite float) — multiply the whole matrix by `s` as the
       documented final transform, so the matrix's magnitude statistic
-      (``max|W|`` for elementwise initializers, per-channel L2 norm for the
-      structured ring initializers) scales linearly with ``s``.
+      (`max|W|` for elementwise initializers, per-channel L2 norm for the
+      structured ring initializers) scales linearly with `s`.
 
-    ``connectivity`` is an optional density knob in ``(0, 1]``: the fraction of
-    nonzero entries kept per column. ``None`` leaves the produced sparsity
+    `connectivity` is an optional density knob in `(0, 1]`: the fraction of
+    nonzero entries kept per column. `None` leaves the produced sparsity
     untouched.
 
     Per-call overrides
     ------------------
-    The contract parameters are bound at construction, but :meth:`initialize`
-    (and the :meth:`__call__` alias) accept **per-call keyword overrides** for
-    the recognized contract parameters — ``input_scaling`` and ``connectivity``.
-    A recognized keyword passed to ``initialize`` takes precedence over the
-    bound attribute *for that call only*, and is validated identically::
+    The contract parameters are bound at construction, but `initialize`
+    (and the `__call__` alias) accept **per-call keyword overrides** for
+    the recognized contract parameters — `input_scaling` and `connectivity`.
+    A recognized keyword passed to `initialize` takes precedence over the
+    bound attribute *for that call only*, and is validated identically:
 
-        init = RandomInputInitializer(input_scaling=2.0)
-        init.initialize(weight)                         # uses input_scaling=2.0
-        init.initialize(weight, input_scaling=0.001)    # honored: uses 0.001
-        init.input_scaling                              # still 2.0 (unchanged)
+    ```python
+    init = RandomInputInitializer(input_scaling=2.0)
+    init.initialize(weight)                         # uses input_scaling=2.0
+    init.initialize(weight, input_scaling=0.001)    # honored: uses 0.001
+    init.input_scaling                              # still 2.0 (unchanged)
+    ```
 
-    This is the **same contract** :class:`FunctionInitializer` honors (per-call
+    This is the **same contract** `FunctionInitializer` honors (per-call
     kwargs merged over the bound ones), so a given call shape behaves
     identically for class-based and function-wrapped initializers. Subclasses
-    cooperate simply by threading their ``**kwargs`` into the contract helpers,
-    which read the override from ``**kwargs`` and fall back to the bound
+    cooperate simply by threading their `**kwargs` into the contract helpers,
+    which read the override from `**kwargs` and fall back to the bound
     attribute; unrecognized keys are ignored.
 
-    Subclasses must implement :meth:`initialize`, which builds the weight
+    Subclasses must implement `initialize`, which builds the weight
     tensor and returns it (modified in-place). They opt into the contract via
-    :meth:`_apply_scaling` (and optionally :meth:`_apply_connectivity`),
-    forwarding the per-call ``**kwargs`` so recognized overrides are honored.
+    `_apply_scaling` (and optionally `_apply_connectivity`),
+    forwarding the per-call `**kwargs` so recognized overrides are honored.
 
     Parameters
     ----------
     input_scaling : float, optional
-        Uniform multiplicative scaling applied as the final transform. ``None``
-        (the default) applies no scaling. A float ``s`` scales the matrix's
-        magnitude statistic linearly (``input_scaling=0.5`` halves it).
+        Uniform multiplicative scaling applied as the final transform. `None`
+        (the default) applies no scaling. A float `s` scales the matrix's
+        magnitude statistic linearly (`input_scaling=0.5` halves it).
     connectivity : float, optional
-        Fraction of nonzero entries to keep per column, in ``(0, 1]``. ``None``
+        Fraction of nonzero entries to keep per column, in `(0, 1]`. `None`
         (the default) leaves the produced sparsity pattern untouched.
     seed : int, torch.Generator, or None, optional
         Reproducibility seed for any subclass randomness (the uniform/binary
         draws of the random initializers) and the connectivity mask. Accepts a
-        plain ``int``, a :class:`torch.Generator` (whose ``initial_seed()`` is
-        used so a generator and the equivalent int agree), or ``None`` (defer to
+        plain `int`, a `torch.Generator` (whose `initial_seed()` is
+        used so a generator and the equivalent int agree), or `None` (defer to
         the global RNG). The torch-native random initializers draw on the target
-        tensor's device via :meth:`_torch_generator_for`, so the same ``seed``
+        tensor's device via `_torch_generator_for`, so the same `seed`
         is reproducible per device — including on CUDA.
 
     Examples
@@ -180,17 +182,17 @@ class InputFeedbackInitializer(ABC):
         Parameters
         ----------
         weight : torch.Tensor
-            2D tensor of shape ``(reservoir_size, input_size)`` to initialize.
+            2D tensor of shape `(reservoir_size, input_size)` to initialize.
             Modified in-place.
         **kwargs
             Per-call keyword overrides. The recognized contract parameters —
-            ``input_scaling`` and ``connectivity`` — override the bound
+            `input_scaling` and `connectivity` — override the bound
             attributes *for this call only* (see the **Per-call overrides**
-            section of :class:`InputFeedbackInitializer`); specific
+            section of `InputFeedbackInitializer`); specific
             initializers may recognize additional keys. Unrecognized keys are
             ignored. Implementations honor the overrides by forwarding
-            ``**kwargs`` into :meth:`_apply_scaling` /
-            :meth:`_apply_connectivity`.
+            `**kwargs` into `_apply_scaling` /
+            `_apply_connectivity`.
 
         Returns
         -------
@@ -200,33 +202,33 @@ class InputFeedbackInitializer(ABC):
         pass
 
     def _apply_scaling(self, values: ArrayT, **kwargs: Any) -> ArrayT:
-        """Apply the uniform ``input_scaling`` transform to ``values``.
+        """Apply the uniform `input_scaling` transform to `values`.
 
         This is the documented final transform of the scaling contract:
-        ``input_scaling=None`` returns ``values`` unchanged, while a finite
-        float ``s`` returns ``s * values``. The array dtype is preserved, so
+        `input_scaling=None` returns `values` unchanged, while a finite
+        float `s` returns `s * values`. The array dtype is preserved, so
         callers may apply this to a float64 intermediate before narrowing.
 
-        The effective scale is resolved from the per-call ``**kwargs`` (a
-        recognized ``input_scaling`` key wins) with the bound
-        ``self.input_scaling`` as the fallback, so forwarding an
-        :meth:`initialize` call's ``**kwargs`` here honors a per-call override.
+        The effective scale is resolved from the per-call `**kwargs` (a
+        recognized `input_scaling` key wins) with the bound
+        `self.input_scaling` as the fallback, so forwarding an
+        `initialize` call's `**kwargs` here honors a per-call override.
         The override is validated exactly like the constructor value and never
-        mutates ``self.input_scaling``.
+        mutates `self.input_scaling`.
 
         Parameters
         ----------
         values : numpy.ndarray or torch.Tensor
             The natural-range weight matrix to scale.
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
+            Per-call keyword overrides. A recognized `input_scaling` key
             overrides the bound value for this call; other keys are ignored.
 
         Returns
         -------
         numpy.ndarray or torch.Tensor
-            ``values`` unchanged when the effective ``input_scaling is None``;
-            otherwise ``input_scaling * values`` (a new array; ``values`` is not
+            `values` unchanged when the effective `input_scaling is None`;
+            otherwise `input_scaling * values` (a new array; `values` is not
             mutated).
         """
         input_scaling = self._resolve_input_scaling(kwargs)
@@ -240,16 +242,16 @@ class InputFeedbackInitializer(ABC):
         return values * input_scaling
 
     def _resolve_input_scaling(self, kwargs: dict[str, Any]) -> float | None:
-        """Resolve the effective ``input_scaling`` for one call.
+        """Resolve the effective `input_scaling` for one call.
 
-        A recognized ``input_scaling`` entry in the per-call ``kwargs`` wins and
+        A recognized `input_scaling` entry in the per-call `kwargs` wins and
         is validated exactly like the constructor argument; otherwise the bound
-        ``self.input_scaling`` is used. ``self.input_scaling`` is never mutated.
+        `self.input_scaling` is used. `self.input_scaling` is never mutated.
 
         Parameters
         ----------
         kwargs : dict
-            The per-call keyword arguments forwarded from :meth:`initialize`.
+            The per-call keyword arguments forwarded from `initialize`.
 
         Returns
         -------
@@ -261,16 +263,16 @@ class InputFeedbackInitializer(ABC):
         return self.input_scaling
 
     def _resolve_connectivity(self, kwargs: dict[str, Any]) -> float | None:
-        """Resolve the effective ``connectivity`` for one call.
+        """Resolve the effective `connectivity` for one call.
 
-        A recognized ``connectivity`` entry in the per-call ``kwargs`` wins and
+        A recognized `connectivity` entry in the per-call `kwargs` wins and
         is validated exactly like the constructor argument; otherwise the bound
-        ``self.connectivity`` is used. ``self.connectivity`` is never mutated.
+        `self.connectivity` is used. `self.connectivity` is never mutated.
 
         Parameters
         ----------
         kwargs : dict
-            The per-call keyword arguments forwarded from :meth:`initialize`.
+            The per-call keyword arguments forwarded from `initialize`.
 
         Returns
         -------
@@ -287,34 +289,34 @@ class InputFeedbackInitializer(ABC):
         rng: np.random.Generator | None = None,
         **kwargs: Any,
     ) -> ArrayT:
-        """Sparsify ``values`` to the configured per-column ``connectivity``.
+        """Sparsify `values` to the configured per-column `connectivity`.
 
-        For each column (input channel) a random fraction ``1 - connectivity``
+        For each column (input channel) a random fraction `1 - connectivity`
         of the entries is zeroed, keeping at least one nonzero per column. When
-        the effective ``connectivity is None`` the array is returned untouched.
+        the effective `connectivity is None` the array is returned untouched.
 
-        The effective density is resolved from the per-call ``**kwargs`` (a
-        recognized ``connectivity`` key wins) with the bound
-        ``self.connectivity`` as the fallback, so forwarding an
-        :meth:`initialize` call's ``**kwargs`` here honors a per-call override.
+        The effective density is resolved from the per-call `**kwargs` (a
+        recognized `connectivity` key wins) with the bound
+        `self.connectivity` as the fallback, so forwarding an
+        `initialize` call's `**kwargs` here honors a per-call override.
         The override is validated exactly like the constructor value and never
-        mutates ``self.connectivity``.
+        mutates `self.connectivity`.
 
         Parameters
         ----------
         values : numpy.ndarray or torch.Tensor
             The dense (or natural-sparsity) weight matrix to mask.
         rng : numpy.random.Generator, optional
-            Generator for the mask. Defaults to ``numpy.random.default_rng``
-            seeded with ``self.seed`` so masking is reproducible.
+            Generator for the mask. Defaults to `numpy.random.default_rng`
+            seeded with `self.seed` so masking is reproducible.
         **kwargs
-            Per-call keyword overrides. A recognized ``connectivity`` key
+            Per-call keyword overrides. A recognized `connectivity` key
             overrides the bound value for this call; other keys are ignored.
 
         Returns
         -------
         numpy.ndarray or torch.Tensor
-            ``values`` unchanged when the effective ``connectivity is None``;
+            `values` unchanged when the effective `connectivity is None`;
             otherwise a masked copy with the requested per-column density.
         """
         connectivity = self._resolve_connectivity(kwargs)
@@ -340,19 +342,18 @@ class InputFeedbackInitializer(ABC):
         return torch.where(torch_mask, values, torch.zeros_like(values))
 
     def _torch_generator_for(self, device: torch.device) -> torch.Generator:
-        """Build a device-native :class:`torch.Generator` seeded from ``self.seed``.
+        """Build a device-native `torch.Generator` seeded from `self.seed`.
 
         This is the single torch-RNG entry point the torch-native random
         initializers use, so every draw happens **on the target tensor's
         device** (no CPU build + copy) and is reproducible per device under the
-        same ``seed``.
+        same `seed`.
 
-        The seed is first reduced to a plain ``int`` via
-        :func:`~resdag.utils.general.coerce_seed_to_int` so that an ``int`` seed
-        ``k`` and a ``torch.Generator().manual_seed(k)`` agree; the resulting
-        generator is then created freshly on ``device``. When ``self.seed is
-        None`` the generator is seeded from torch's global RNG, so global
-        ``torch.manual_seed`` still propagates.
+        The seed is first reduced to a plain `int` via
+        `resdag.utils.general.coerce_seed_to_int` so that an `int` seed
+        `k` and a `torch.Generator().manual_seed(k)` agree; the resulting
+        generator is then created freshly on `device`. When `self.seed is None` the generator is seeded from torch's global RNG, so global
+        `torch.manual_seed` still propagates.
 
         Parameters
         ----------
@@ -362,7 +363,7 @@ class InputFeedbackInitializer(ABC):
         Returns
         -------
         torch.Generator
-            A generator on ``device``, deterministic in ``self.seed``.
+            A generator on `device`, deterministic in `self.seed`.
 
         Notes
         -----
@@ -382,7 +383,7 @@ class InputFeedbackInitializer(ABC):
         weight : torch.Tensor
             Weight tensor to initialize.
         **kwargs
-            Additional arguments passed to :meth:`initialize`.
+            Additional arguments passed to `initialize`.
 
         Returns
         -------
@@ -393,22 +394,22 @@ class InputFeedbackInitializer(ABC):
 
 
 def _validate_input_scaling(input_scaling: float | None) -> float | None:
-    """Validate the shared ``input_scaling`` parameter.
+    """Validate the shared `input_scaling` parameter.
 
     Parameters
     ----------
     input_scaling : float or None
-        ``None`` (no scaling) or a finite float.
+        `None` (no scaling) or a finite float.
 
     Returns
     -------
     float or None
-        ``None`` unchanged, otherwise ``float(input_scaling)``.
+        `None` unchanged, otherwise `float(input_scaling)`.
 
     Raises
     ------
     ValueError
-        If ``input_scaling`` is not finite.
+        If `input_scaling` is not finite.
     """
     if input_scaling is None:
         return None
@@ -419,22 +420,22 @@ def _validate_input_scaling(input_scaling: float | None) -> float | None:
 
 
 def _validate_connectivity(connectivity: float | None) -> float | None:
-    """Validate the shared ``connectivity`` parameter.
+    """Validate the shared `connectivity` parameter.
 
     Parameters
     ----------
     connectivity : float or None
-        ``None`` (keep the produced sparsity) or a float in ``(0, 1]``.
+        `None` (keep the produced sparsity) or a float in `(0, 1]`.
 
     Returns
     -------
     float or None
-        ``None`` unchanged, otherwise ``float(connectivity)``.
+        `None` unchanged, otherwise `float(connectivity)`.
 
     Raises
     ------
     ValueError
-        If ``connectivity`` is not in ``(0, 1]``.
+        If `connectivity` is not in `(0, 1]`.
     """
     if connectivity is None:
         return None
@@ -455,15 +456,15 @@ def _numpy_compute_dtype(weight_dtype: torch.dtype) -> type[np.floating]:
     """Pick the NumPy dtype to build initializer intermediates in.
 
     Structured initializers compute their values in NumPy before copying the
-    result into the target ``weight``. The intermediate dtype must match the
+    result into the target `weight`. The intermediate dtype must match the
     target's precision so that no precision is silently truncated: building a
-    ``float32`` intermediate for a ``float64`` weight rounds every value to
-    single precision before the widening ``.to()`` ever runs.
+    `float32` intermediate for a `float64` weight rounds every value to
+    single precision before the widening `.to()` ever runs.
 
     The mapping mirrors the target precision exactly where NumPy has a matching
-    type, and falls back to ``float64`` for the half-precision torch dtypes
-    (``float16``/``bfloat16``), which have no convenient NumPy compute type — the
-    final ``.to(dtype=weight.dtype)`` narrows the double-precision result down to
+    type, and falls back to `float64` for the half-precision torch dtypes
+    (`float16`/`bfloat16`), which have no convenient NumPy compute type — the
+    final `.to(dtype=weight.dtype)` narrows the double-precision result down to
     the target with a single rounding.
 
     Parameters
@@ -474,8 +475,8 @@ def _numpy_compute_dtype(weight_dtype: torch.dtype) -> type[np.floating]:
     Returns
     -------
     type of numpy.floating
-        ``numpy.float32`` for ``torch.float32`` targets, otherwise
-        ``numpy.float64``. Computing a ``float32`` target in ``float32`` keeps
+        `numpy.float32` for `torch.float32` targets, otherwise
+        `numpy.float64`. Computing a `float32` target in `float32` keeps
         its result bit-for-bit identical to the historical behavior, while every
         other target gains genuine double-precision intermediates.
 
@@ -498,23 +499,23 @@ def _resolve_scaling_alias(
     *,
     default: float | None,
 ) -> float | None:
-    """Resolve the deprecated ``gain`` alias to ``input_scaling``.
+    """Resolve the deprecated `gain` alias to `input_scaling`.
 
     Some structured initializers historically exposed their magnitude knob as
-    ``gain``. ``gain`` is now a deprecated alias for ``input_scaling`` with
+    `gain`. `gain` is now a deprecated alias for `input_scaling` with
     identical meaning (the per-channel L2 norm target). This helper centralizes
-    the alias handling: it emits a :class:`DeprecationWarning` when ``gain`` is
-    supplied, rejects supplying *both* names, and falls back to ``default`` when
+    the alias handling: it emits a `DeprecationWarning` when `gain` is
+    supplied, rejects supplying *both* names, and falls back to `default` when
     neither is given.
 
     Parameters
     ----------
     input_scaling : float or None
-        The new-name value as passed by the caller (``None`` if unset).
+        The new-name value as passed by the caller (`None` if unset).
     gain : float or None
-        The deprecated-name value as passed by the caller (``None`` if unset).
+        The deprecated-name value as passed by the caller (`None` if unset).
     default : float or None
-        Value to use when neither ``input_scaling`` nor ``gain`` is supplied.
+        Value to use when neither `input_scaling` nor `gain` is supplied.
 
     Returns
     -------
@@ -524,7 +525,7 @@ def _resolve_scaling_alias(
     Raises
     ------
     ValueError
-        If both ``input_scaling`` and ``gain`` are supplied.
+        If both `input_scaling` and `gain` are supplied.
     """
     if gain is not None:
         if input_scaling is not None:

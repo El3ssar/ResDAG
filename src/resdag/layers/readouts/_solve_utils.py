@@ -3,20 +3,20 @@ Shared Readout Solve Utilities
 ==============================
 
 Precision, centering, and intercept-recovery helpers shared by every
-algebraic readout solver (:class:`CGReadoutLayer`,
-:class:`RidgeReadoutLayer`, :class:`SVDReadoutLayer`,
-:class:`PinvReadoutLayer`).
+algebraic readout solver (`CGReadoutLayer`,
+`RidgeReadoutLayer`, `SVDReadoutLayer`,
+`PinvReadoutLayer`).
 
 The ridge-with-intercept problem every readout solves is
 
-.. math::
+$$
+\\min_{W,\\,b} \\; \\lVert X W + b - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 ,
+$$
 
-    \\min_{W,\\,b} \\; \\lVert X W + b - Y \\rVert_2^2 + \\alpha \\lVert W \\rVert_2^2 ,
-
-where the intercept :math:`b` is *not* penalised. The standard route is to
-center :math:`X` and :math:`Y`, solve the penalised problem on the centered
-data (which has no intercept), then recover :math:`b = \\bar{Y} - \\bar{X} W`.
-When a readout is built with ``bias=False`` the raw, uncentered normal
+where the intercept $b$ is *not* penalised. The standard route is to
+center $X$ and $Y$, solve the penalised problem on the centered
+data (which has no intercept), then recover $b = \\bar{Y} - \\bar{X} W$.
+When a readout is built with `bias=False` the raw, uncentered normal
 equations are solved instead — centering without applying the intercept at
 predict time would systematically shift every prediction.
 
@@ -28,23 +28,23 @@ inversion is shared here.
 Functions
 ---------
 resolve_solve_dtype
-    Pick the dtype the small ``(F, F)`` inversion runs in.
+    Pick the dtype the small `(F, F)` inversion runs in.
 resolve_gram_dtype
-    Pick the dtype the heavy ``(N, F)`` Gram-formation matmuls run in.
+    Pick the dtype the heavy `(N, F)` Gram-formation matmuls run in.
 build_ridge_problem
-    Center (when fitting an intercept), cast to ``gram_dtype``, and return a
-    :class:`RidgeProblem` carrying the data and centering means.
+    Center (when fitting an intercept), cast to `gram_dtype`, and return a
+    `RidgeProblem` carrying the data and centering means.
 lmnt_gram_add
     The closed-form LMNT (Linearized Multi-Noise Training) noise-covariance
     term added to the Gram diagonal — the exact expected noisy Gram for
     independently perturbed reservoir states.
 apply_lmnt_regularizer
-    Add the LMNT diagonal term to a prepared :class:`RidgeProblem`'s Gram in
+    Add the LMNT diagonal term to a prepared `RidgeProblem`'s Gram in
     place, so the closed-form solve costs one solve, not many noisy copies.
 solve_ridge
-    Robustly solve the regularised normal equations ``(gram + αI) W = rhs``:
+    Robustly solve the regularised normal equations `(gram + αI) W = rhs`:
     Cholesky first, escalated scale-aware jitter on failure, then an
-    ``eigh``-clamped fallback, plus a cheap post-solve accuracy guard.
+    `eigh`-clamped fallback, plus a cheap post-solve accuracy guard.
 recover_intercept
     Recover the unpenalised intercept from a coefficient matrix.
 
@@ -56,34 +56,34 @@ different target than plain L2 ridge: the injected noise mimics the feedback
 error the model sees when it free-runs on its own output, trading a little
 one-step accuracy for closed-loop stability (Jaeger's classic state-noise idea;
 Wikner et al. 2024, *Stabilizing machine learning prediction of dynamics*, Chaos
-34, 043105).  Whether it nets out positive is problem- and :math:`\\sigma`-
-dependent — it can help or hurt, and :math:`\\sigma` must be tuned per problem;
+34, 043105).  Whether it nets out positive is problem- and $\\sigma$-
+dependent — it can help or hurt, and $\\sigma$ must be tuned per problem;
 it is not a free forecast-quality win.  What *is* robustly guaranteed is the
 mechanism below: the analytic path solves the exact expected noisy normal
 equations in one solve. This is not the expectation of separately fitted
 weights or their autonomous forecasts.
 
-Explicit noise training perturbs each state row :math:`r_i \\to r_i + \\xi_i`
-with :math:`\\xi_i \\sim \\mathcal{N}(0, \\sigma^2 I_F)` (targets unchanged) and
+Explicit noise training perturbs each state row $r_i \\to r_i + \\xi_i$
+with $\\xi_i \\sim \\mathcal{N}(0, \\sigma^2 I_F)$ (targets unchanged) and
 refits.  Averaging over many noise draws, the *expected* noisy normal-equations
 Gram is
 
-.. math::
+$$
+\\mathbb{E}\\big[(R+\\Xi)^\\top (R+\\Xi)\\big]
+    = R^\\top R + \\mathbb{E}[\\Xi^\\top\\Xi]
+    = R^\\top R + N \\sigma^2 I_F ,
+$$
 
-    \\mathbb{E}\\big[(R+\\Xi)^\\top (R+\\Xi)\\big]
-        = R^\\top R + \\mathbb{E}[\\Xi^\\top\\Xi]
-        = R^\\top R + N \\sigma^2 I_F ,
-
-while the right-hand side :math:`\\mathbb{E}[(R+\\Xi)^\\top y] = R^\\top y` is
-unchanged (the noise is zero-mean and independent of both :math:`R` and
-:math:`y`). The analytic path replaces the Monte-Carlo average of noisy normal
+while the right-hand side $\\mathbb{E}[(R+\\Xi)^\\top y] = R^\\top y$ is
+unchanged (the noise is zero-mean and independent of both $R$ and
+$y$). The analytic path replaces the Monte-Carlo average of noisy normal
 equations with this expectation: add the closed-form term to the Gram diagonal
 and solve *once*. Averaging matrices before solving differs from averaging
 separately solved coefficient matrices. With an intercept the states are centered first, which
 removes one degree of freedom, so the centered pure-noise Gram expectation is
-:math:`(N-1)\\sigma^2 I_F` (verified analytically and by Monte-Carlo); the raw
-``bias=False`` term is :math:`N\\sigma^2 I_F`.  Either way the cost is a single
-diagonal update, so LMNT :math:`\\approx` many-noise-copy training at the price
+$(N-1)\\sigma^2 I_F$ (verified analytically and by Monte-Carlo); the raw
+`bias=False` term is $N\\sigma^2 I_F$.  Either way the cost is a single
+diagonal update, so LMNT $\\approx$ many-noise-copy training at the price
 of one solve.
 
 See Also
@@ -157,22 +157,22 @@ _RESIDUAL_WARN_TOL = 1e-3
 
 
 def resolve_solve_dtype(input_dtype: torch.dtype, use_float64: bool) -> torch.dtype:
-    """Pick the dtype the small ``(F, F)`` system is inverted in.
+    """Pick the dtype the small `(F, F)` system is inverted in.
 
     Parameters
     ----------
     input_dtype : torch.dtype
         Dtype of the incoming state matrix.
     use_float64 : bool
-        If ``True``, the inversion runs in ``float64`` regardless of the
+        If `True`, the inversion runs in `float64` regardless of the
         input dtype, then the result is cast back. This is cheap on every
-        device — the system is only ``(F, F)`` — and is the default for
+        device — the system is only `(F, F)` — and is the default for
         numerical stability.
 
     Returns
     -------
     torch.dtype
-        ``torch.float64`` when ``use_float64`` is set, else ``input_dtype``.
+        `torch.float64` when `use_float64` is set, else `input_dtype`.
     """
     return torch.float64 if use_float64 else input_dtype
 
@@ -183,21 +183,21 @@ def resolve_gram_dtype(
     solve_dtype: torch.dtype,
     gram_dtype: torch.dtype | None,
 ) -> torch.dtype:
-    """Pick the dtype the heavy ``(N, F)`` Gram-formation matmuls run in.
+    """Pick the dtype the heavy `(N, F)` Gram-formation matmuls run in.
 
     **Accuracy first.** Reservoir readouts are ill-conditioned by construction
     (spectral radius near 1, raw inputs concatenated back in), and
-    ``cond(XᵀX) = cond(X)²`` amplifies a ``float32`` Gram's ~1e-7 entry error
-    past unity — a ``float64`` *solve* cannot recover precision destroyed at
+    `cond(XᵀX) = cond(X)²` amplifies a `float32` Gram's ~1e-7 entry error
+    past unity — a `float64` *solve* cannot recover precision destroyed at
     Gram *formation*. On GPU this silently produced wildly wrong (often
     non-finite, after autoregression) readouts for the premade concatenated-
-    input models. So the default forms the Gram in ``solve_dtype`` (``float64``)
-    on **every** device. The extra cost is a one-time ``O(N F²)`` matmul — a
+    input models. So the default forms the Gram in `solve_dtype` (`float64`)
+    on **every** device. The extra cost is a one-time `O(N F²)` matmul — a
     small fraction of a fit, dwarfed by the reservoir sequence pass — and
     correctness is the north star.
 
     Users with a large, provably well-conditioned fit who want the ~1/32–1/64
-    GPU ``float64`` throughput back can pass ``gram_dtype=torch.float32``
+    GPU `float64` throughput back can pass `gram_dtype=torch.float32`
     explicitly and opt into the speed/accuracy trade knowingly.
 
     Parameters
@@ -209,11 +209,11 @@ def resolve_gram_dtype(
         device-independent; kept for signature stability and explicit-override
         callers).
     solve_dtype : torch.dtype
-        Dtype the small inversion runs in (see :func:`resolve_solve_dtype`).
+        Dtype the small inversion runs in (see `resolve_solve_dtype`).
     gram_dtype : torch.dtype or None
-        Explicit override. When ``None`` (the default), the Gram is formed in
-        ``solve_dtype`` (``float64`` unless ``use_float64=False``) regardless of
-        device. Pass ``torch.float32`` to opt into faster, lower-precision GPU
+        Explicit override. When `None` (the default), the Gram is formed in
+        `solve_dtype` (`float64` unless `use_float64=False`) regardless of
+        device. Pass `torch.float32` to opt into faster, lower-precision GPU
         Gram formation.
 
     Returns
@@ -233,28 +233,28 @@ class RidgeProblem:
     Attributes
     ----------
     X : torch.Tensor
-        State matrix in ``gram_dtype``, of shape ``(N, F)``. Not centered —
-        centered copies form :attr:`gram` / :attr:`rhs` while
-        the raw ``X`` can still be reused by SVD-style solvers.
+        State matrix in `gram_dtype`, of shape `(N, F)`. Not centered —
+        centered copies form `gram` / `rhs` while
+        the raw `X` can still be reused by SVD-style solvers.
     y : torch.Tensor
-        Target matrix in ``gram_dtype``, of shape ``(N, T)``.
+        Target matrix in `gram_dtype`, of shape `(N, T)`.
     gram : torch.Tensor
-        The (optionally centered) Gram matrix ``XᵀX`` in ``solve_dtype``, of
-        shape ``(F, F)``.
+        The (optionally centered) Gram matrix `XᵀX` in `solve_dtype`, of
+        shape `(F, F)`.
     rhs : torch.Tensor
-        The (optionally centered) right-hand side ``Xᵀy`` in ``solve_dtype``,
-        of shape ``(F, T)``.
+        The (optionally centered) right-hand side `Xᵀy` in `solve_dtype`,
+        of shape `(F, T)`.
     x_mean : torch.Tensor or None
-        Column means of ``X`` of shape ``(1, F)`` when fitting an intercept,
-        else ``None``.
+        Column means of `X` of shape `(1, F)` when fitting an intercept,
+        else `None`.
     y_mean : torch.Tensor or None
-        Column means of ``y`` of shape ``(1, T)`` when fitting an intercept,
-        else ``None``.
+        Column means of `y` of shape `(1, T)` when fitting an intercept,
+        else `None`.
     n_features : int
-        Feature dimension ``F``.
+        Feature dimension `F`.
     n_samples : int
-        Sample count ``N`` (rows of ``X`` after flattening).  Needed by the
-        LMNT noise-covariance term, whose scale is :math:`N\\sigma^2`.
+        Sample count `N` (rows of `X` after flattening).  Needed by the
+        LMNT noise-covariance term, whose scale is $N\\sigma^2$.
     solve_dtype : torch.dtype
         Dtype the small inversion runs in.
     original_dtype : torch.dtype
@@ -289,30 +289,30 @@ def build_ridge_problem(
     This performs the shared work every algebraic ridge solver needs before
     the actual inversion: resolve the working dtypes, cast the heavy matmul
     operands, and form the (centered, when fitting an intercept) Gram matrix
-    ``XᵀX`` and right-hand side ``Xᵀy``.
+    `XᵀX` and right-hand side `Xᵀy`.
 
-    When ``fit_intercept`` is ``True`` form the products from explicitly
+    When `fit_intercept` is `True` form the products from explicitly
     centered data. Subtracting raw second moments can catastrophically cancel
     even in float64 when features have a large offset and small variation.
 
     Parameters
     ----------
     X : torch.Tensor
-        Flattened state matrix of shape ``(N, F)``.
+        Flattened state matrix of shape `(N, F)`.
     y : torch.Tensor
-        Flattened target matrix of shape ``(N, T)``.
+        Flattened target matrix of shape `(N, T)`.
     fit_intercept : bool
         Whether to center the data and recover an unpenalised intercept later.
     use_float64 : bool
-        Whether the small ``(F, F)`` inversion should run in ``float64``.
+        Whether the small `(F, F)` inversion should run in `float64`.
     gram_dtype : torch.dtype or None
-        Explicit override for the Gram-formation dtype, or ``None`` for the
-        device-aware default (see :func:`resolve_gram_dtype`).
+        Explicit override for the Gram-formation dtype, or `None` for the
+        device-aware default (see `resolve_gram_dtype`).
 
     Returns
     -------
     RidgeProblem
-        The prepared problem, carrying ``gram`` and ``rhs`` in ``solve_dtype``
+        The prepared problem, carrying `gram` and `rhs` in `solve_dtype`
         plus the centering means and bookkeeping needed to finalise the fit.
     """
     original_dtype = X.dtype
@@ -396,13 +396,13 @@ def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) ->
     r"""Closed-form LMNT noise-covariance term added to the Gram diagonal.
 
     Training a ridge readout on state-noise-perturbed reservoir states —
-    :math:`r_i \to r_i + \xi_i`, :math:`\xi_i \sim \mathcal{N}(0, \sigma^2 I)`,
+    $r_i \to r_i + \xi_i$, $\xi_i \sim \mathcal{N}(0, \sigma^2 I)$,
     targets fixed — is a standard, tunable regulariser targeting **closed-loop
     robustness**: the injected noise mimics the feedback error the model sees
     when it free-runs on its own output (whether it improves a given rollout is
-    problem- and :math:`\sigma`-dependent — tune :math:`\sigma` per problem).
+    problem- and $\sigma$-dependent — tune $\sigma$ per problem).
     Averaged over many noise draws the noisy Gram's expectation is
-    :math:`R^\top R` plus a scalar on the diagonal, and this function returns that
+    $R^\top R$ plus a scalar on the diagonal, and this function returns that
     scalar so **a single solve uses the exact expected normal equations**,
     the infinite-copy limit of the explicit-noise path (**LMNT** — Linearized Multi-Noise
     Training; Wikner et al. 2024, *Stabilizing machine learning prediction of
@@ -411,11 +411,11 @@ def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) ->
     The coefficient depends on whether an intercept is fitted (which centers the
     states, removing one degree of freedom):
 
-    - ``fit_intercept=False`` (raw Gram): :math:`N \sigma^2` — the expectation
-      of :math:`\Xi^\top\Xi`.
-    - ``fit_intercept=True`` (centered Gram): :math:`(N-1) \sigma^2` — the
+    - `fit_intercept=False` (raw Gram): $N \sigma^2$ — the expectation
+      of $\Xi^\top\Xi$.
+    - `fit_intercept=True` (centered Gram): $(N-1) \sigma^2$ — the
       expectation of the centered pure-noise Gram
-      :math:`\Xi^\top\Xi - N\,\bar\xi^\top\bar\xi`.
+      $\Xi^\top\Xi - N\,\bar\xi^\top\bar\xi$.
 
     Both are the *exact* analytic expectation of the corresponding explicit-noise
     procedure (verified against Monte-Carlo), so LMNT is not an approximation of
@@ -424,10 +424,10 @@ def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) ->
     Parameters
     ----------
     n_samples : int
-        Number of state rows ``N`` the Gram was formed from.
+        Number of state rows `N` the Gram was formed from.
     state_noise : float
-        Per-feature noise standard deviation :math:`\sigma \ge 0`.  ``0`` returns
-        ``0.0`` (no regularisation — byte-identical to a plain ridge fit).
+        Per-feature noise standard deviation $\sigma \ge 0$.  `0` returns
+        `0.0` (no regularisation — byte-identical to a plain ridge fit).
     fit_intercept : bool
         Whether the Gram is centered (an intercept is being recovered).
 
@@ -435,12 +435,12 @@ def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) ->
     -------
     float
         The scalar to add to every Gram diagonal entry
-        (:math:`N\sigma^2` raw, :math:`(N-1)\sigma^2` centered).
+        ($N\sigma^2$ raw, $(N-1)\sigma^2$ centered).
 
     Raises
     ------
     ValueError
-        If ``state_noise`` is negative.
+        If `state_noise` is negative.
     """
     if state_noise < 0:
         raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
@@ -458,28 +458,28 @@ def lmnt_gram_add(n_samples: int, state_noise: float, *, fit_intercept: bool) ->
 def apply_lmnt_regularizer(problem: RidgeProblem, state_noise: float) -> None:
     r"""Add the closed-form LMNT term to a prepared problem's Gram, in place.
 
-    Mutates ``problem.gram`` by adding :func:`lmnt_gram_add` to its diagonal —
+    Mutates `problem.gram` by adding `lmnt_gram_add` to its diagonal —
     the analytic expectation of the noise-perturbed Gram — so the subsequent
-    :func:`solve_ridge` call yields the LMNT (many-noise-copy-equivalent)
-    readout at the cost of one solve.  A no-op when ``state_noise == 0`` (the
+    `solve_ridge` call yields the LMNT (many-noise-copy-equivalent)
+    readout at the cost of one solve.  A no-op when `state_noise == 0` (the
     default everywhere), which keeps every noiseless fit byte-identical.
 
     The right-hand side is intentionally **not** touched: the expected noisy RHS
-    equals the noiseless :math:`R^\top y` (the noise is zero-mean and independent
+    equals the noiseless $R^\top y$ (the noise is zero-mean and independent
     of the targets), so only the Gram gains the noise covariance.
 
     Parameters
     ----------
     problem : RidgeProblem
-        A problem prepared by :func:`build_ridge_problem`.  Its ``gram`` is
+        A problem prepared by `build_ridge_problem`.  Its `gram` is
         updated in place.
     state_noise : float
-        Per-feature noise standard deviation :math:`\sigma \ge 0`.
+        Per-feature noise standard deviation $\sigma \ge 0$.
 
     Raises
     ------
     ValueError
-        If ``state_noise`` is negative.
+        If `state_noise` is negative.
     """
     add = lmnt_gram_add(problem.n_samples, state_noise, fit_intercept=problem.fit_intercept)
     if add == 0.0:
@@ -502,44 +502,43 @@ def build_noisy_ridge_problem(
     r"""Prepare a ridge problem from **explicitly** noise-perturbed states.
 
     The Monte-Carlo counterpart of the closed-form
-    :func:`apply_lmnt_regularizer`: instead of adding the analytic
-    :math:`N\sigma^2` term to the Gram, it draws ``n_draws`` i.i.d. Gaussian
-    perturbations :math:`R \to R + \Xi`, :math:`\Xi \sim \mathcal{N}(0,
-    \sigma^2 I)`, forms the (centered, when fitting an intercept) Gram and
+    `apply_lmnt_regularizer`: instead of adding the analytic
+    $N\sigma^2$ term to the Gram, it draws `n_draws` i.i.d. Gaussian
+    perturbations $R \to R + \Xi$, $\Xi \sim \mathcal{N}(0, \sigma^2 I)$, forms the (centered, when fitting an intercept) Gram and
     right-hand side for each draw, and averages them.  This is the
     definitely-correct baseline — Jaeger's state-noise training — and LMNT
-    converges to it as ``n_draws`` grows (the two agree to Monte-Carlo error).
+    converges to it as `n_draws` grows (the two agree to Monte-Carlo error).
 
     Both the Gram *and* the right-hand side are averaged over draws for an
     honest Monte-Carlo estimate, even though the RHS expectation is the
-    noiseless :math:`R^\top y`; averaging it keeps the finite-``n_draws`` result
+    noiseless $R^\top y$; averaging it keeps the finite-`n_draws` result
     faithful to literally refitting on noisy states rather than silently folding
     in the analytic simplification.
 
     Parameters
     ----------
     X : torch.Tensor
-        Flattened state matrix of shape ``(N, F)``.
+        Flattened state matrix of shape `(N, F)`.
     y : torch.Tensor
-        Flattened target matrix of shape ``(N, T)``.
+        Flattened target matrix of shape `(N, T)`.
     fit_intercept : bool
         Whether to center each noisy draw and recover an unpenalised intercept.
     use_float64 : bool
-        Whether the small ``(F, F)`` inversion should run in ``float64``.
+        Whether the small `(F, F)` inversion should run in `float64`.
     gram_dtype : torch.dtype or None
-        Explicit override for the Gram-formation dtype, or ``None`` for the
-        device-aware default (see :func:`resolve_gram_dtype`).
+        Explicit override for the Gram-formation dtype, or `None` for the
+        device-aware default (see `resolve_gram_dtype`).
     state_noise : float
-        Per-feature noise standard deviation :math:`\sigma > 0`.
+        Per-feature noise standard deviation $\sigma > 0$.
     n_draws : int
-        Number of Monte-Carlo noise draws to average (``>= 1``).
+        Number of Monte-Carlo noise draws to average (`>= 1`).
     generator : torch.Generator, optional
-        RNG for the noise draws.  ``None`` uses the process-global RNG.
+        RNG for the noise draws.  `None` uses the process-global RNG.
 
     Returns
     -------
     RidgeProblem
-        The prepared problem whose ``gram`` / ``rhs`` are the noise-averaged
+        The prepared problem whose `gram` / `rhs` are the noise-averaged
         normal equations.  The stored means (used to recover the intercept) are
         the *noiseless* column means, whose expectation matches the averaged
         noisy means (the added noise is zero-mean).
@@ -547,7 +546,7 @@ def build_noisy_ridge_problem(
     Raises
     ------
     ValueError
-        If ``state_noise`` is negative or ``n_draws < 1``.
+        If `state_noise` is negative or `n_draws < 1`.
     """
     if state_noise < 0:
         raise ValueError(f"state_noise must be non-negative, got {state_noise}.")
@@ -609,29 +608,29 @@ def _normal_equations_residual(
     rhs: torch.Tensor,
     alpha: float,
 ) -> float:
-    """Relative residual ``||(gram + αI) W - rhs|| / ||rhs||`` on the solve device.
+    """Relative residual `||(gram + αI) W - rhs|| / ||rhs||` on the solve device.
 
-    A cheap post-solve accuracy check: it is one ``(F, F) @ (F, T)`` matmul,
-    negligible next to the factorisation itself. CPU/CUDA use ``float64``;
-    MPS uses its supported ``float32`` without transferring a Gram matrix to
+    A cheap post-solve accuracy check: it is one `(F, F) @ (F, T)` matmul,
+    negligible next to the factorisation itself. CPU/CUDA use `float64`;
+    MPS uses its supported `float32` without transferring a Gram matrix to
     the CPU. The latter detects gross solve errors but cannot provide an
     independent float64 precision check.
 
     Parameters
     ----------
     gram : torch.Tensor
-        The (already regularisation-free) Gram matrix of shape ``(F, F)``.
+        The (already regularisation-free) Gram matrix of shape `(F, F)`.
     coefs : torch.Tensor
-        The solved coefficient matrix of shape ``(F, T)``.
+        The solved coefficient matrix of shape `(F, T)`.
     rhs : torch.Tensor
-        The right-hand side of shape ``(F, T)``.
+        The right-hand side of shape `(F, T)`.
     alpha : float
         The (effective) regularisation strength added to the diagonal.
 
     Returns
     -------
     float
-        The relative residual; ``0.0`` for an exact zero-RHS solution or
+        The relative residual; `0.0` for an exact zero-RHS solution or
         infinity when the RHS is zero but the residual is not.
     """
     dtype = torch.float32 if gram.device.type == "mps" else torch.float64
@@ -665,68 +664,68 @@ def solve_ridge(
     gram_dtype: torch.dtype | None = None,
     check_accuracy: bool = True,
 ) -> torch.Tensor:
-    """Robustly solve the regularised normal equations ``(gram + αI) W = rhs``.
+    """Robustly solve the regularised normal equations `(gram + αI) W = rhs`.
 
     This is the shared solve path for the explicit direct/incremental readouts
-    (:class:`CholeskyReadoutLayer`, :class:`RidgeReadoutLayer`,
-    :class:`IncrementalRidgeReadoutLayer`). It resolves the GPU-default ``float32``
-    Gram footgun: on a rank-deficient centered Gram, ``float32`` rounding noise
-    nudges zero eigenvalues slightly negative, past the default ``alpha=1e-6``
-    jitter, so a bare :func:`torch.linalg.cholesky` raises a raw
-    ``LinAlgError`` on CUDA while the identical ``float64`` CPU solve succeeds.
+    (`CholeskyReadoutLayer`, `RidgeReadoutLayer`,
+    `IncrementalRidgeReadoutLayer`). It resolves the GPU-default `float32`
+    Gram footgun: on a rank-deficient centered Gram, `float32` rounding noise
+    nudges zero eigenvalues slightly negative, past the default `alpha=1e-6`
+    jitter, so a bare `torch.linalg.cholesky` raises a raw
+    `LinAlgError` on CUDA while the identical `float64` CPU solve succeeds.
 
     The strategy is:
 
-    1. Try a Cholesky factorisation of ``gram + αI`` (fast, exact for an SPD
+    1. Try a Cholesky factorisation of `gram + αI` (fast, exact for an SPD
        system) and back-substitute.
-    2. On :class:`torch.linalg.LinAlgError`, retry once with escalated,
+    2. On `torch.linalg.LinAlgError`, retry once with escalated,
        scale-aware jitter
-       ``α_eff = max(α, k · eps(dtype) · max(abs(diag(gram))), tiny)`` —
+       `α_eff = max(α, k · eps(dtype) · max(abs(diag(gram))), tiny)` —
        just enough to lift the rounding-noise-negative eigenvalues back above
        zero. A single warning naming the layer is emitted.
     3. If that still fails, fall back to a symmetric-eigendecomposition solve
-       with eigenvalues clamped to ``≥ α_eff`` (always succeeds; robust to
+       with eigenvalues clamped to `≥ α_eff` (always succeeds; robust to
        exact rank deficiency).
 
     **Accuracy guard.** After the solve, two cheap checks run (both reusing
-    quantities the factorisation already produced, so no extra ``O(F³)`` work):
+    quantities the factorisation already produced, so no extra `O(F³)` work):
 
-    - a **precision-loss estimate** ``κ̂(A) · eps(gram_dtype)`` from the
+    - a **precision-loss estimate** `κ̂(A) · eps(gram_dtype)` from the
       factor's diagonal (Cholesky) or clamped eigenvalues (eigh). When the
-      Gram was formed in ``float32`` this crosses ``~1e-3`` around
-      ``cond(X) ≈ 3e3`` — exactly the cliff where a ``float32`` Gram starts
-      costing real accuracy (``cond(XᵀX) = cond(X)²`` pushes the ``float32``
-      entry error past unity) — and a ``float64`` solve cannot recover
+      Gram was formed in `float32` this crosses `~1e-3` around
+      `cond(X) ≈ 3e3` — exactly the cliff where a `float32` Gram starts
+      costing real accuracy (`cond(XᵀX) = cond(X)²` pushes the `float32`
+      entry error past unity) — and a `float64` solve cannot recover
       precision destroyed at Gram formation.
-    - a **normal-equations residual** ``‖(gram+αI)W − rhs‖ / ‖rhs‖`` in
-      ``float64`` (``float32`` on MPS, which does not support float64;
-      one ``(F, F) @ (F, T)`` matmul), which catches a genuinely
-      under-satisfied solve (a ``float32`` *solve* dtype, or a heavily clamped
+    - a **normal-equations residual** `‖(gram+αI)W − rhs‖ / ‖rhs‖` in
+      `float64` (`float32` on MPS, which does not support float64;
+      one `(F, F) @ (F, T)` matmul), which catches a genuinely
+      under-satisfied solve (a `float32` *solve* dtype, or a heavily clamped
       eigh fallback).
 
     Either check tripping emits one warning naming the layer, identifying
     which diagnostic exceeded its threshold and suggesting the appropriate
-    precision setting or :class:`SVDReadoutLayer`. These are sensitivity and
+    precision setting or `SVDReadoutLayer`. These are sensitivity and
     self-consistency checks, not measurements of prediction error. Even a
-    ``float64`` Gram and solve can be sensitive for nearly dependent features.
+    `float64` Gram and solve can be sensitive for nearly dependent features.
 
     Parameters
     ----------
     gram : torch.Tensor
-        The (optionally centered) Gram matrix ``XᵀX`` of shape ``(F, F)``, in
+        The (optionally centered) Gram matrix `XᵀX` of shape `(F, F)`, in
         the solve dtype. Regularisation is added here, so pass it *without*
-        ``αI`` already on the diagonal.
+        `αI` already on the diagonal.
     rhs : torch.Tensor
-        The (optionally centered) right-hand side ``Xᵀy`` of shape ``(F, T)``,
+        The (optionally centered) right-hand side `Xᵀy` of shape `(F, T)`,
         in the solve dtype.
     alpha : float
         The L2 regularisation strength (non-negative).
     layer_name : str
         Human-readable identifier for the calling layer, used in warnings.
     gram_dtype : torch.dtype, optional
-        The dtype the Gram was *formed* in (``float64`` by default).
+        The dtype the Gram was *formed* in (`float64` by default).
         Used only by the precision-loss estimate to weight the condition
-        number by the right machine epsilon; defaults to ``gram.dtype`` when
+        number by the right machine epsilon; defaults to `gram.dtype` when
         not supplied.
     check_accuracy : bool, default=True
         Whether to run the cheap post-solve accuracy guard. Left on by default;
@@ -735,7 +734,7 @@ def solve_ridge(
     Returns
     -------
     torch.Tensor
-        The coefficient matrix ``W`` of shape ``(F, T)`` in the solve dtype.
+        The coefficient matrix `W` of shape `(F, T)` in the solve dtype.
     """
     n_features = gram.shape[0]
     eye = torch.eye(n_features, dtype=gram.dtype, device=gram.device)
@@ -818,23 +817,23 @@ def solve_ridge(
 
 
 def _cond_from_cholesky(factor: torch.Tensor) -> float:
-    """Cheap lower-bound estimate of ``cond(A)`` from its Cholesky factor.
+    """Cheap lower-bound estimate of `cond(A)` from its Cholesky factor.
 
-    For ``A = L Lᵀ`` the ratio of the largest to smallest diagonal entry of
-    ``L`` squared lower-bounds ``cond(A)``. It underestimates the true
+    For `A = L Lᵀ` the ratio of the largest to smallest diagonal entry of
+    `L` squared lower-bounds `cond(A)`. It underestimates the true
     condition number (typically by ~1–2 orders of magnitude) but tracks it
-    closely enough on a log scale to flag the ``float32``-Gram precision cliff,
+    closely enough on a log scale to flag the `float32`-Gram precision cliff,
     and it is free — the factor is already computed.
 
     Parameters
     ----------
     factor : torch.Tensor
-        The lower-triangular Cholesky factor ``L`` of shape ``(F, F)``.
+        The lower-triangular Cholesky factor `L` of shape `(F, F)`.
 
     Returns
     -------
     float
-        The estimated condition number ``(max|Lᵢᵢ| / min|Lᵢᵢ|)²``.
+        The estimated condition number `(max|Lᵢᵢ| / min|Lᵢᵢ|)²`.
     """
     diag = factor.diagonal().abs()
     dmin = diag.min()
@@ -856,10 +855,10 @@ def _warn_on_precision_loss(
     """Emit (at most) one warning when the solve likely lost real accuracy.
 
     Combines two cheap signals: the estimated precision loss
-    ``κ̂(A) · eps(gram_dtype)`` (predicts error baked in at Gram formation, the
-    dominant ``float32``-on-GPU footgun) and the self-consistency residual
-    ``‖(gram+αI)W − rhs‖ / ‖rhs‖`` (catches an under-satisfied solve). See
-    :func:`solve_ridge` for the parameter meanings.
+    `κ̂(A) · eps(gram_dtype)` (predicts error baked in at Gram formation, the
+    dominant `float32`-on-GPU footgun) and the self-consistency residual
+    `‖(gram+αI)W − rhs‖ / ‖rhs‖` (catches an under-satisfied solve). See
+    `solve_ridge` for the parameter meanings.
     """
     est_error = None
     if cond_estimate is not None:
@@ -925,15 +924,15 @@ def recover_intercept(
     Parameters
     ----------
     problem : RidgeProblem
-        The prepared problem returned by :func:`build_ridge_problem`.
+        The prepared problem returned by `build_ridge_problem`.
     coefs : torch.Tensor
-        Coefficient matrix of shape ``(F, T)`` in ``problem.solve_dtype``.
+        Coefficient matrix of shape `(F, T)` in `problem.solve_dtype`.
 
     Returns
     -------
     torch.Tensor or None
-        Intercept vector of shape ``(T,)``, or ``None`` when the problem was
-        built with ``fit_intercept=False``.
+        Intercept vector of shape `(T,)`, or `None` when the problem was
+        built with `fit_intercept=False`.
     """
     if not problem.fit_intercept:
         return None
@@ -952,18 +951,18 @@ def finalize_fit(
     Parameters
     ----------
     problem : RidgeProblem
-        The prepared problem returned by :func:`build_ridge_problem`.
+        The prepared problem returned by `build_ridge_problem`.
     coefs : torch.Tensor
-        Coefficient matrix of shape ``(F, T)`` in ``problem.solve_dtype``.
+        Coefficient matrix of shape `(F, T)` in `problem.solve_dtype`.
 
     Returns
     -------
     coefs : torch.Tensor
-        Coefficient matrix of shape ``(F, T)`` cast to the original input
+        Coefficient matrix of shape `(F, T)` cast to the original input
         dtype.
     intercept : torch.Tensor or None
-        Intercept vector of shape ``(T,)`` cast to the original input dtype,
-        or ``None`` when no intercept is fitted.
+        Intercept vector of shape `(T,)` cast to the original input dtype,
+        or `None` when no intercept is fitted.
     """
     intercept = recover_intercept(problem, coefs)
     coefs_out = coefs.to(problem.original_dtype)

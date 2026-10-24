@@ -2,7 +2,7 @@
 Coupled Ensemble ESN Model
 ==========================
 
-This module provides :class:`CoupledEnsembleESNModel`, an ensemble of N
+This module provides `CoupledEnsembleESNModel`, an ensemble of N
 independently-trained ESN models whose forecasts are coupled through a shared
 averaged feedback signal at each autoregressive step.
 
@@ -39,8 +39,8 @@ from resdag.training.trainer import InputStreams, ReadoutTargets
 class CoupledEnsembleESNModel(nn.Module):
     """Ensemble of N independently-trained ESN models with coupled feedback.
 
-    Each sub-model is a complete :class:`~resdag.core.ESNModel` built
-    via the ``pytorch_symbolic`` API. The models are trained independently but
+    Each sub-model is a complete `resdag.core.ESNModel` built
+    via the `pytorch_symbolic` API. The models are trained independently but
     coupled during forecasting: at every autoregressive step every model
     receives the **same** aggregated output (e.g. the mean across models) as
     its next feedback input.
@@ -50,16 +50,16 @@ class CoupledEnsembleESNModel(nn.Module):
     models : list of ESNModel
         N pre-built ESN sub-models.  Diversity comes from their independent
         random reservoir initialization.
-    aggregator : str or nn.Module, default ``"mean"``
+    aggregator : str or nn.Module, default `"mean"`
         How to combine the N per-model outputs into a single feedback tensor.
 
-        - ``"mean"`` — arithmetic mean across models.
-        - ``"median"`` — interpolated (statistical) median across models;
+        - `"mean"` — arithmetic mean across models.
+        - `"median"` — interpolated (statistical) median across models;
           for an even number of models the two central values are averaged.
-        - Any ``nn.Module`` that accepts a stacked tensor of shape
-          ``(N, batch, timesteps, features)`` and returns
-          ``(batch, timesteps, features)``.  E.g.
-          :class:`~resdag.ensemble.aggregators.OutliersFilteredMean`.
+        - Any `nn.Module` that accepts a stacked tensor of shape
+          `(N, batch, timesteps, features)` and returns
+          `(batch, timesteps, features)`.  E.g.
+          `resdag.ensemble.aggregators.OutliersFilteredMean`.
 
     Examples
     --------
@@ -99,13 +99,13 @@ class CoupledEnsembleESNModel(nn.Module):
         ----------
         models : list of ESNModel
             Sub-models.  Must be non-empty.
-        aggregator : str or nn.Module, default ``"mean"``
+        aggregator : str or nn.Module, default `"mean"`
             Aggregation strategy.  See class docstring for options.
 
         Raises
         ------
         ValueError
-            If ``models`` is empty, if ``aggregator`` is an unknown string, if
+            If `models` is empty, if `aggregator` is an unknown string, if
             any sub-model is multi-output (multi-head), or if any sub-model's
             output dimension does not match its feedback (first input)
             dimension.  Multi-output sub-models are rejected because the
@@ -192,8 +192,8 @@ class CoupledEnsembleESNModel(nn.Module):
         """Check that every sub-model can be driven autoregressively.
 
         Two constraints are enforced, both raising a clear, sub-model-naming
-        :class:`ValueError` at construction rather than a cryptic failure deep
-        inside :meth:`forecast` / :meth:`forward`:
+        `ValueError` at construction rather than a cryptic failure deep
+        inside `forecast` / `forward`:
 
         1. **Single-output only.** The ensemble aggregates the N members'
            outputs (stack + mean/median across members) into a *single* shared
@@ -201,15 +201,15 @@ class CoupledEnsembleESNModel(nn.Module):
            member's output as one tensor.  A multi-output (multi-head) sub-model
            has no meaningful ensemble aggregation for its auxiliary heads — the
            mean of unrelated per-model aux readouts is not a coupled quantity —
-           so such models are rejected here.  (:class:`~resdag.core.ESNModel`'s
-           own ``forecast`` *does* support multi-output by feeding back the
+           so such models are rejected here.  (`resdag.core.ESNModel`'s
+           own `forecast` *does* support multi-output by feeding back the
            first head; the ensemble deliberately does not, to keep the coupling
            semantics well-defined.)
         2. **Autoregressive coupleability.** The coupled loop feeds each
            sub-model's aggregated output back as its next feedback input, so the
            output dimension must equal the feedback (first input) dimension.
            Headless / linear sub-models emit the raw reservoir state (e.g.
-           ``reservoir_size``) instead of a feedback-dimensioned readout and
+           `reservoir_size`) instead of a feedback-dimensioned readout and
            would silently break the loop — those are rejected too.
 
         Parameters
@@ -277,11 +277,11 @@ class CoupledEnsembleESNModel(nn.Module):
         return len(self.models)
 
     def _iter_models(self) -> Iterator[ESNModel]:
-        """Iterate over the sub-models with their concrete :class:`ESNModel` type.
+        """Iterate over the sub-models with their concrete `ESNModel` type.
 
-        ``self.models`` is an :class:`torch.nn.ModuleList` (so the sub-models are
-        registered for ``state_dict``/``to``), whose element type is the generic
-        ``Module``.  This helper re-exposes them as ``ESNModel`` for static
+        `self.models` is an `torch.nn.ModuleList` (so the sub-models are
+        registered for `state_dict`/`to`), whose element type is the generic
+        `Module`.  This helper re-exposes them as `ESNModel` for static
         type-checking; it does not copy or re-register anything.
         """
         for model in self.models:
@@ -302,7 +302,7 @@ class CoupledEnsembleESNModel(nn.Module):
         Returns
         -------
         torch.Tensor
-            Aggregated output of shape ``(batch, timesteps, output_size)``.
+            Aggregated output of shape `(batch, timesteps, output_size)`.
         """
         outputs = [model(*inputs) for model in self.models]
         return self._aggregate(outputs)
@@ -317,7 +317,7 @@ class CoupledEnsembleESNModel(nn.Module):
 
         Omitted states start every member from zero. Otherwise use the named
         dictionary returned by this method, whose keys are
-        ``models.<member index>.<reservoir name>``. The model's stored states
+        `models.<member index>.<reservoir name>`. The model's stored states
         remain untouched; returned states retain gradients across chunks.
         """
         names = {
@@ -412,7 +412,7 @@ class CoupledEnsembleESNModel(nn.Module):
         }
 
     def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
-        """Restore a named state dictionary matching ``forward_stateless``."""
+        """Restore a named state dictionary matching `forward_stateless`."""
         names = {
             f"models.{index}.{name}"
             for index, model in enumerate(self._iter_models())
@@ -443,17 +443,17 @@ class CoupledEnsembleESNModel(nn.Module):
         Parameters
         ----------
         states : list of dict
-            One dict per sub-model as returned by :meth:`get_reservoir_states`.
+            One dict per sub-model as returned by `get_reservoir_states`.
         strict : bool, default=True
-            Forwarded to :meth:`ESNModel.set_reservoir_states`.  When
-            ``True`` (default), each sub-model raises on missing/unexpected
+            Forwarded to `ESNModel.set_reservoir_states`.  When
+            `True` (default), each sub-model raises on missing/unexpected
             reservoir keys.
 
         Raises
         ------
         ValueError
-            If the number of dicts in ``states`` does not match
-            ``self.n_models``.
+            If the number of dicts in `states` does not match
+            `self.n_models`.
         """
         if len(states) != self.n_models:
             raise ValueError(
@@ -475,53 +475,53 @@ class CoupledEnsembleESNModel(nn.Module):
         n_workers: int = 1,
         coerce: bool = False,
     ) -> None:
-        """Train all sub-models independently using :class:`~resdag.training.ESNTrainer`.
+        """Train all sub-models independently using `resdag.training.ESNTrainer`.
 
         Each sub-model is trained separately on the same warmup/train data.
         Ensemble diversity comes from the different random reservoir
         initialisations of each sub-model.
 
-        Before dispatching to :class:`~resdag.training.ESNTrainer`, every
-        ``warmup_inputs`` / ``train_inputs`` tensor and every ``targets`` value
+        Before dispatching to `resdag.training.ESNTrainer`, every
+        `warmup_inputs` / `train_inputs` tensor and every `targets` value
         is checked against the ensemble's reference device/dtype (the first
         sub-model's first floating-point parameter; see
-        :meth:`_reference_device_dtype`).  A mismatch raises a clear, named
-        :class:`ValueError` — e.g. CPU targets fed to a GPU ensemble — instead
-        of a raw cross-device ``RuntimeError`` deep inside the readout solve.
-        Pass ``coerce=True`` to ``.to()``-coerce the data to the reference
+        `_reference_device_dtype`).  A mismatch raises a clear, named
+        `ValueError` — e.g. CPU targets fed to a GPU ensemble — instead
+        of a raw cross-device `RuntimeError` deep inside the readout solve.
+        Pass `coerce=True` to `.to()`-coerce the data to the reference
         instead of raising.
 
         Parameters
         ----------
         warmup_inputs : tuple of torch.Tensor
-            Warmup sequences ``(feedback, driver1, ...)``.
-            Shape of each: ``(batch, warmup_steps, features)``.
+            Warmup sequences `(feedback, driver1, ...)`.
+            Shape of each: `(batch, warmup_steps, features)`.
         train_inputs : tuple of torch.Tensor
-            Training sequences ``(feedback, driver1, ...)``.
-            Shape of each: ``(batch, train_steps, features)``.
+            Training sequences `(feedback, driver1, ...)`.
+            Shape of each: `(batch, train_steps, features)`.
         targets : dict of str to torch.Tensor
             Mapping from readout name to target tensor.
-            Shape of each target: ``(batch, train_steps, out_features)``.
-        n_workers : int, default ``1``
+            Shape of each target: `(batch, train_steps, out_features)`.
+        n_workers : int, default `1`
             Number of worker threads used to fit sub-models concurrently.
-            ``1`` (the default) runs sequentially in the calling thread.
+            `1` (the default) runs sequentially in the calling thread.
             Larger values dispatch fits through a
-            :class:`concurrent.futures.ThreadPoolExecutor` — PyTorch releases
+            `concurrent.futures.ThreadPoolExecutor` — PyTorch releases
             the GIL during BLAS, so threading gives a real speed-up for
             CPU-bound CG ridge solves without the pickling cost of
             multiprocessing.  On GPU, all workers share one device and may
             interfere via the same CUDA stream; benchmark before raising
-            ``n_workers`` above 1 in that case.
-        coerce : bool, default ``False``
-            If ``False`` (default), a device/dtype mismatch between any input or
+            `n_workers` above 1 in that case.
+        coerce : bool, default `False`
+            If `False` (default), a device/dtype mismatch between any input or
             target and the ensemble's sub-models raises a clear, named
-            :class:`ValueError`.  If ``True``, such tensors are coerced with
-            ``.to(device=..., dtype=...)`` to the reference instead.
+            `ValueError`.  If `True`, such tensors are coerced with
+            `.to(device=..., dtype=...)` to the reference instead.
 
         Raises
         ------
         ValueError
-            If ``n_workers < 1``, or if ``coerce=False`` and any input/target
+            If `n_workers < 1`, or if `coerce=False` and any input/target
             tensor's device or dtype does not match the ensemble's sub-models.
         """
         if n_workers < 1:
@@ -588,27 +588,27 @@ class CoupledEnsembleESNModel(nn.Module):
 
         All members consume the same observed history. The aggregate of their
         final warmup predictions is slot zero, then each additional step consumes
-        their previous aggregate. ``forecast_inputs`` contains future drivers
-        starting immediately after history and needs ``horizon - 1`` samples.
+        their previous aggregate. `forecast_inputs` contains future drivers
+        starting immediately after history and needs `horizon - 1` samples.
         A one-step forecast needs no future driver.
 
-        ``initial_feedback`` is a distinct extra input after all warmup inputs,
-        shaped ``(batch, 1, feedback_features)``; when supplied, every prediction
-        consumes a driver and an empty warmup is supported. ``reset=False``
-        continues saved states. ``alignment="legacy"`` reproduces the old
+        `initial_feedback` is a distinct extra input after all warmup inputs,
+        shaped `(batch, 1, feedback_features)`; when supplied, every prediction
+        consumes a driver and an empty warmup is supported. `reset=False`
+        continues saved states. `alignment="legacy"` reproduces the old
         convention which skipped the final warmup prediction and needs
-        ``horizon`` future drivers. These semantics match ``ESNModel.forecast``.
+        `horizon` future drivers. These semantics match `ESNModel.forecast`.
 
-        Results have shape ``(batch, horizon, output_features)``. With
-        ``return_warmup=True``, prepend historical predictions: total length is
-        ``warmup_steps - 1 + horizon``, or ``warmup_steps + horizon`` with an
-        explicit seed or legacy alignment. With ``return_individuals=True``,
+        Results have shape `(batch, horizon, output_features)`. With
+        `return_warmup=True`, prepend historical predictions: total length is
+        `warmup_steps - 1 + horizon`, or `warmup_steps + horizon` with an
+        explicit seed or legacy alignment. With `return_individuals=True`,
         also return a list of member trajectories, each covering only the
-        ``horizon`` future samples. Per-member buffers are allocated only when
-        requested. ``horizon`` must be a positive integer; zero is rejected.
+        `horizon` future samples. Per-member buffers are allocated only when
+        requested. `horizon` must be a positive integer; zero is rejected.
 
         The final returned prediction has not been consumed. Continue with
-        empty history, that prediction as ``initial_feedback``, and ``reset=False``.
+        empty history, that prediction as `initial_feedback`, and `reset=False`.
         """
         models = list(self._iter_models())
         for model in models:
@@ -812,8 +812,8 @@ class CoupledEnsembleESNModel(nn.Module):
         ----------
         path : str
             Destination file path.
-        include_states : bool, default ``False``
-            If ``True``, also save current reservoir states for all sub-models.
+        include_states : bool, default `False`
+            If `True`, also save current reservoir states for all sub-models.
         **metadata
             Arbitrary key-value pairs stored alongside the weights.
         """
@@ -826,18 +826,18 @@ class CoupledEnsembleESNModel(nn.Module):
         load_states: bool = False,
         map_location: Any = None,
     ) -> None:
-        """Load ensemble weights from a file created by :meth:`save`.
+        """Load ensemble weights from a file created by `save`.
 
         Parameters
         ----------
         path : str
             Source file path.
-        strict : bool, default ``True``
-            Passed to ``load_state_dict`` for each sub-model.
-        load_states : bool, default ``False``
-            If ``True``, also restore reservoir states.
+        strict : bool, default `True`
+            Passed to `load_state_dict` for each sub-model.
+        load_states : bool, default `False`
+            If `True`, also restore reservoir states.
         map_location : optional
-            Passed to ``torch.load`` to remap saved storage devices.
+            Passed to `torch.load` to remap saved storage devices.
 
         Raises
         ------
@@ -865,10 +865,10 @@ class CoupledEnsembleESNModel(nn.Module):
         """Serialize the entire ensemble — every sub-model's architecture,
         weights, and reservoir states — to a single file.
 
-        Unlike :meth:`save` (state dicts only, requires rebuilding the ensemble
-        before :meth:`load`), this pickles the whole ensemble object and is
-        restored with :meth:`load_full` without rebuilding anything.  Relies on
-        the pickle support added in ``pytorch-symbolic`` 1.2.
+        Unlike `save` (state dicts only, requires rebuilding the ensemble
+        before `load`), this pickles the whole ensemble object and is
+        restored with `load_full` without rebuilding anything.  Relies on
+        the pickle support added in `pytorch-symbolic` 1.2.
 
         Parameters
         ----------
@@ -879,10 +879,10 @@ class CoupledEnsembleESNModel(nn.Module):
 
         Notes
         -----
-        Loaded back with ``weights_only=False`` (arbitrary unpickling), so only
+        Loaded back with `weights_only=False` (arbitrary unpickling), so only
         open files you trust.  Custom callable topology/initializer/activation
         specs must be importable (module-level, not lambdas) to be picklable;
-        otherwise use the lighter state-dict :meth:`save`.
+        otherwise use the lighter state-dict `save`.
 
         See Also
         --------
@@ -900,33 +900,33 @@ class CoupledEnsembleESNModel(nn.Module):
         *,
         trusted: bool = False,
     ) -> "CoupledEnsembleESNModel | tuple[CoupledEnsembleESNModel, dict[str, Any]]":
-        """Reconstruct a complete ensemble saved with :meth:`save_full`.
+        """Reconstruct a complete ensemble saved with `save_full`.
 
         No pre-built ensemble is required — every sub-model is restored intact.
 
         Parameters
         ----------
         path : str
-            File path written by :meth:`save_full`.
-        return_metadata : bool, default ``False``
-            If ``True``, return ``(ensemble, metadata)`` instead of just the
+            File path written by `save_full`.
+        return_metadata : bool, default `False`
+            If `True`, return `(ensemble, metadata)` instead of just the
             ensemble.
         map_location : optional
-            Passed to ``torch.load`` to remap storage devices.
+            Passed to `torch.load` to remap storage devices.
 
         trusted : bool, default=False
             Explicit opt-in to execute the saved Python. Required for full
-            pickle files; prefer ``Model.save`` and ``resdag.load`` otherwise.
+            pickle files; prefer `Model.save` and `resdag.load` otherwise.
 
         Raises
         ------
         ValueError
             If the file does not contain a whole ensemble (e.g. a state-dict
-            checkpoint from :meth:`save`).
+            checkpoint from `save`).
 
         Warnings
         --------
-        Loads with ``weights_only=False``, which unpickles arbitrary Python
+        Loads with `weights_only=False`, which unpickles arbitrary Python
         objects.  Only call this on files from a source you trust.
 
         See Also
@@ -945,21 +945,21 @@ class CoupledEnsembleESNModel(nn.Module):
         The reference is the first floating-point parameter or buffer of the
         first sub-model — the same scan reservoir layers use to derive their
         own reference (see
-        :meth:`resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer._reference_device_dtype`)
-        — falling back to ``cpu`` / ``float32`` for a (hypothetical) weightless
-        sub-model.  This is the device/dtype that ``fit`` inputs/targets and the
-        ``forecast`` output buffer must agree with, so a CPU-target-on-GPU-model
+        `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer._reference_device_dtype`)
+        — falling back to `cpu` / `float32` for a (hypothetical) weightless
+        sub-model.  This is the device/dtype that `fit` inputs/targets and the
+        `forecast` output buffer must agree with, so a CPU-target-on-GPU-model
         mistake surfaces as a clear, named error rather than a raw cross-device
-        ``RuntimeError`` deep inside the readout solve.
+        `RuntimeError` deep inside the readout solve.
 
         Returns
         -------
         device : torch.device
             Device of the first sub-model's first floating-point tensor, or
-            ``cpu``.
+            `cpu`.
         dtype : torch.dtype
             Dtype of the first sub-model's first floating-point tensor, or
-            ``float32``.
+            `float32`.
         """
         first = next(self._iter_models())
         ref = next(
@@ -987,25 +987,25 @@ class CoupledEnsembleESNModel(nn.Module):
             The tensor to check.
         ref_device, ref_dtype : torch.device, torch.dtype
             The ensemble's reference device/dtype from
-            :meth:`_reference_device_dtype`.
+            `_reference_device_dtype`.
         coerce : bool
-            If ``True``, return ``tensor.to(device=ref_device, dtype=ref_dtype)``
-            (a no-op when already matching).  If ``False``, raise a clear,
-            named :class:`ValueError` on any device or dtype mismatch.
+            If `True`, return `tensor.to(device=ref_device, dtype=ref_dtype)`
+            (a no-op when already matching).  If `False`, raise a clear,
+            named `ValueError` on any device or dtype mismatch.
         label : str
-            Human-readable name of the tensor (e.g. ``"warmup_inputs[0]"`` or
-            ``"targets['output']"``) used in the error message.
+            Human-readable name of the tensor (e.g. `"warmup_inputs[0]"` or
+            `"targets['output']"`) used in the error message.
 
         Returns
         -------
         torch.Tensor
-            ``tensor`` unchanged when it already matches the reference, the
-            coerced tensor when ``coerce=True``, otherwise raises.
+            `tensor` unchanged when it already matches the reference, the
+            coerced tensor when `coerce=True`, otherwise raises.
 
         Raises
         ------
         ValueError
-            When ``coerce=False`` and ``tensor``'s device or dtype differs from
+            When `coerce=False` and `tensor`'s device or dtype differs from
             the reference.
         """
         if tensor.device == ref_device and tensor.dtype == ref_dtype:
@@ -1028,11 +1028,11 @@ class CoupledEnsembleESNModel(nn.Module):
     ) -> torch.Tensor:
         """Deliberately conform one autoregressive step to the output buffer.
 
-        The per-step in-place buffer writes in :meth:`forecast` would otherwise
+        The per-step in-place buffer writes in `forecast` would otherwise
         *silently* down/upcast a custom aggregator whose output dtype differs
-        from the buffer's (and raise an opaque cross-device ``RuntimeError`` on
+        from the buffer's (and raise an opaque cross-device `RuntimeError` on
         a device mismatch).  This makes both explicit: a device mismatch raises
-        a clear, named :class:`ValueError`; a dtype mismatch is cast on purpose
+        a clear, named `ValueError`; a dtype mismatch is cast on purpose
         (a no-op in the common matching case).
 
         Parameters
@@ -1046,13 +1046,13 @@ class CoupledEnsembleESNModel(nn.Module):
         Returns
         -------
         torch.Tensor
-            ``step`` unchanged when it already matches, else cast to
-            ``buf_dtype`` on ``buf_device``.
+            `step` unchanged when it already matches, else cast to
+            `buf_dtype` on `buf_device`.
 
         Raises
         ------
         ValueError
-            If ``step`` lives on a different device than the buffer (e.g. a
+            If `step` lives on a different device than the buffer (e.g. a
             custom aggregator that moved the output off-device).
         """
         if step.device != buf_device:
@@ -1075,16 +1075,16 @@ class CoupledEnsembleESNModel(nn.Module):
         """Collect a sub-model's reservoir states for explicit threading.
 
         Warmup leaves each reservoir's state set; this reads them (in the
-        ``flat.reservoir_layers`` order the flat step threads them) and lazily
-        initialises any that are somehow still ``None`` — mirroring the same
-        resolution :meth:`resdag.core.ESNModel.forecast` performs before it hands
-        the states to :func:`resdag.core._flat_inference.rollout`.
+        `flat.reservoir_layers` order the flat step threads them) and lazily
+        initialises any that are somehow still `None` — mirroring the same
+        resolution `resdag.core.ESNModel.forecast` performs before it hands
+        the states to `resdag.core._flat_inference.rollout`.
 
         Parameters
         ----------
         flat : FlatStep
             The sub-model's flattened single-step executor; its
-            ``reservoir_layers`` fix the threading order.
+            `reservoir_layers` fix the threading order.
         batch_size : int
             Batch size used to lazily initialise any missing state.
         device, dtype : torch.device, torch.dtype
@@ -1093,8 +1093,8 @@ class CoupledEnsembleESNModel(nn.Module):
         Returns
         -------
         list of torch.Tensor
-            The reservoir states in ``flat.reservoir_layers`` order, ready to be
-            threaded through :meth:`FlatStep.step`.
+            The reservoir states in `flat.reservoir_layers` order, ready to be
+            threaded through `FlatStep.step`.
         """
         states: list[torch.Tensor] = []
         for reservoir in flat.reservoir_layers:

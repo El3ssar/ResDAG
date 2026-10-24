@@ -29,7 +29,7 @@ from ._trajectory import (
 class PreparedTrajectoryPorts:
     """Full observed inputs and a separate contiguous supervision window.
 
-    ``targets`` contains rows for origins ``supervised_start:supervised_stop``.
+    `targets` contains rows for origins `supervised_start:supervised_stop`.
     Configured washout is not applied here. Every input retains the entire
     shared observed grid, including rows after the last supervised origin.
     """

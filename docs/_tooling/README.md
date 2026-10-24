@@ -49,7 +49,9 @@ uv run python tools/check_docs_site.py site --base-path /ResDAG/
 ```
 
 The local check validates HTML anchors, image sources, video posters and source
-files without contacting external sites or running JavaScript. Theme overrides
+files. It rejects duplicate anchors and unrendered reStructuredText roles or
+directives in prose, while allowing literal examples and displayed source.
+It does not contact external sites or run JavaScript. Theme overrides
 are source templates, not standalone documentation pages, and are excluded from
 the published site.
 

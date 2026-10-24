@@ -20,12 +20,12 @@ def simple_cycle_jumps_graph(
     """
     Generate a directed cycle with bidirectional jumps.
 
-    This topology is **pre-scaled**: the cycle weight ``r_c`` and jump weight
-    ``r_l`` *are* the spectral structure of the recurrent matrix. The
+    This topology is **pre-scaled**: the cycle weight `r_c` and jump weight
+    `r_l` *are* the spectral structure of the recurrent matrix. The
     layer-level spectral-radius rescale would multiply both by a single factor
     and discard the chosen cycle-vs-jump ratio, so it is suppressed: a layer
-    ``spectral_radius`` passed alongside this topology is ignored (with a
-    warning). Control the scale through ``r_c`` / ``r_l``.
+    `spectral_radius` passed alongside this topology is ignored (with a
+    warning). Control the scale through `r_c` / `r_l`.
 
     Parameters
     ----------
@@ -35,7 +35,7 @@ def simple_cycle_jumps_graph(
         Jump step size.
     r_c : float
         Weight for cycle edges. Used verbatim (pre-scaled topology); any layer
-        ``spectral_radius`` is ignored.
+        `spectral_radius` is ignored.
     r_l : float
         Weight for jump edges. Where a jump overlaps a cycle edge, its weight
         is added to the cycle contribution. Repeated jump pairs count once.

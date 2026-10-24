@@ -7,20 +7,20 @@ import torch.nn as nn
 class Pad(nn.Module):
     r"""Append a constant column to the feature dimension.
 
-    Concatenates a fixed constant (default ``1.0``) as one extra feature at the
-    end of the last dimension, mapping ``x`` of shape ``(..., F)`` to
-    ``[x, padding]`` of shape ``(..., F + 1)``. This is a bias-like augmentation:
+    Concatenates a fixed constant (default `1.0`) as one extra feature at the
+    end of the last dimension, mapping `x` of shape `(..., F)` to
+    `[x, padding]` of shape `(..., F + 1)`. This is a bias-like augmentation:
     a constant reservoir feature lets an affine readout absorb an intercept term
     directly from the state.
 
-    .. math::
+    $$
+    \tilde{x} = \begin{bmatrix} x \\ \text{padding} \end{bmatrix}
+    $$
 
-        \tilde{x} = \begin{bmatrix} x \\ \text{padding} \end{bmatrix}
-
-    This is the ResDAG equivalent of ``Pad`` in ReservoirComputing.jl
-    (SciML/ReservoirComputing.jl, ``src/states.jl``). RC.jl appends the padding
+    This is the ResDAG equivalent of `Pad` in ReservoirComputing.jl
+    (SciML/ReservoirComputing.jl, `src/states.jl`). RC.jl appends the padding
     as a trailing row of the (feature-major) state matrix; here features live on
-    the last axis, so the constant is appended along ``dim=-1``.
+    the last axis, so the constant is appended along `dim=-1`.
 
     Parameters
     ----------
@@ -60,23 +60,23 @@ class Pad(nn.Module):
         self.padding = padding
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Append the constant ``padding`` column along the last dimension.
+        """Append the constant `padding` column along the last dimension.
 
-        Rank-agnostic on the feature (last) dimension: ``(batch, features)``,
-        ``(batch, time, features)`` and any higher rank are all accepted, so the
+        Rank-agnostic on the feature (last) dimension: `(batch, features)`,
+        `(batch, time, features)` and any higher rank are all accepted, so the
         layer sits in both the full-sequence and the single-step autoregressive
-        ``forecast`` paths. The padding column inherits the device and dtype of
+        `forecast` paths. The padding column inherits the device and dtype of
         *input*.
 
         Parameters
         ----------
         input : torch.Tensor
-            Tensor of shape ``(..., features)``.
+            Tensor of shape `(..., features)`.
 
         Returns
         -------
         torch.Tensor
-            Tensor of shape ``(..., features + 1)`` with a constant ``padding``
+            Tensor of shape `(..., features + 1)` with a constant `padding`
             column appended. Gradients flow through the original features
             unchanged; the constant column carries no gradient.
         """

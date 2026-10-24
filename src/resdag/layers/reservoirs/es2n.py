@@ -5,7 +5,7 @@ ES2N Reservoir Layer
 This module provides the public-facing Edge-of-Stability State Network (ES2N)
 sequence layer:
 
-- :class:`ES2NLayer` — stateful RNN layer wrapping an :class:`ES2NCell`.
+- `ES2NLayer` — stateful RNN layer wrapping an `ES2NCell`.
 
 References
 ----------
@@ -35,21 +35,21 @@ class ES2NLayer(BaseReservoirLayer):
     Stateful Edge-of-Stability State Network (ES2N) reservoir layer.
 
     Public-facing class.  Internally creates an
-    :class:`~resdag.layers.cells.es2n_cell.ES2NCell` that owns all parameters
+    `resdag.layers.cells.es2n_cell.ES2NCell` that owns all parameters
     and performs the single-step update; the sequence loop and state management
-    live in the parent :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
+    live in the parent `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`.
 
     ES2N (Ceni & Gallicchio, arXiv:2308.02902) writes the state as a convex
     combination of a nonlinear ESN branch and a fixed random *orthogonal* skip:
 
-    .. math::
+    $$
+    x_t = \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
+          + (1 - \beta)\,O\,x_{t-1}
+    $$
 
-        x_t = \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
-              + (1 - \beta)\,O\,x_{t-1}
-
-    with :math:`\beta \in (0, 1]` the *proximity* to the edge of stability.
-    Small :math:`\beta` → nearly the orthogonal norm-preserving map (long
-    memory, edge of chaos); :math:`\beta = 1` → a standard non-leaky ESN.
+    with $\beta \in (0, 1]$ the *proximity* to the edge of stability.
+    Small $\beta$ → nearly the orthogonal norm-preserving map (long
+    memory, edge of chaos); $\beta = 1$ → a standard non-leaky ESN.
 
     Parameters
     ----------
@@ -58,40 +58,40 @@ class ES2NLayer(BaseReservoirLayer):
     feedback_size : int
         Dimension of the feedback signal.  Required.
     beta : float, default=0.9
-        Proximity to the edge of stability in :math:`(0, 1]` (see
-        :class:`ES2NCell`).  A *live* knob: ``layer.beta = ...`` takes effect on
+        Proximity to the edge of stability in $(0, 1]$ (see
+        `ES2NCell`).  A *live* knob: `layer.beta = ...` takes effect on
         the next forward.
     input_size : int, optional
-        Dimension of a driving input.  ``None`` builds a feedback-only layer.
+        Dimension of a driving input.  `None` builds a feedback-only layer.
     spectral_radius : float, optional
-        Target spectral radius for the recurrent matrix ``W_r``.
+        Target spectral radius for the recurrent matrix `W_r`.
     bias : bool, default=True
         Whether to include a bias term.
     bias_scaling : float, default=1.0
-        Scale of the random bias (``uniform(-bias_scaling, bias_scaling)``).
+        Scale of the random bias (`uniform(-bias_scaling, bias_scaling)`).
     activation : {'tanh', 'relu', 'identity', 'sigmoid'}, default='tanh'
         Activation for the nonlinear branch.
     orthogonal_scaling : float, default=1.0
-        Gain on the orthogonal skip matrix ``O``.  ``1.0`` keeps it exactly
+        Gain on the orthogonal skip matrix `O`.  `1.0` keeps it exactly
         norm-preserving (the edge-of-stability regime).
     trainable : bool, default=False
-        If ``True``, reservoir weights are trainable via backpropagation.  The
+        If `True`, reservoir weights are trainable via backpropagation.  The
         orthogonal skip stays a frozen buffer regardless.
     feedback_initializer, input_initializer, topology : spec, optional
-        Same accepted forms as :class:`~resdag.layers.ESNLayer`.
+        Same accepted forms as `resdag.layers.ESNLayer`.
     seed : int or torch.Generator, optional
         Reproducibility seed fixing the recurrent, feedback, input, bias, and
         orthogonal-skip draws (the skip is drawn on an independent, deterministic
         sub-stream).
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -102,8 +102,8 @@ class ES2NLayer(BaseReservoirLayer):
     Attributes
     ----------
     state : torch.Tensor or None
-        Current reservoir state of shape ``(batch, reservoir_size)``, or
-        ``None`` before the first forward.
+        Current reservoir state of shape `(batch, reservoir_size)`, or
+        `None` before the first forward.
 
     Examples
     --------

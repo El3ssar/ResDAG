@@ -88,7 +88,7 @@ controlled CPU ranking or any CUDA performance claim. See the
 
 The run completed all **48 validation trials**: 24 per system, with **432 fits
 and 1,296 forecasts**. Both selected recipes were frozen before the final bank
-was generated. Final evaluation used **60 independent fits and 180 forecasts**,
+was generated. Final evaluation used **60 separate fits and 180 forecasts**,
 including each incumbent control, with no exclusions or failed fits.
 
 The main statistic is the median of five independent trajectory medians. Each

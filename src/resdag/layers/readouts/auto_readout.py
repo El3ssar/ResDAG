@@ -22,12 +22,12 @@ class ReadoutSolveReport:
     """Diagnostics for the last successful algebraic solve.
 
     Residuals describe the working-precision solution before its cast back to
-    the input/parameter dtype. ``relative_optimality_residual`` measures the
-    ridge first-order equations; ``relative_prediction_residual`` measures
+    the input/parameter dtype. `relative_optimality_residual` measures the
+    ridge first-order equations; `relative_prediction_residual` measures
     training prediction error, which need not be small for a regularized fit.
     Conditioning and roundoff quantities are conservative numerical estimates,
     not guarantees about forecast accuracy. This report is ordinary Python
-    metadata; it adds no objects to a PyTorch ``state_dict``.
+    metadata; it adds no objects to a PyTorch `state_dict`.
     """
 
     requested_solver: str
@@ -75,8 +75,8 @@ def _triangular_solve(factor: torch.Tensor, rhs: torch.Tensor) -> torch.Tensor:
 class AutoReadoutLayer(ReadoutLayer):
     r"""Fit the same L2 readout with an automatic or explicitly chosen solver.
 
-    Every method minimizes ``||X W + b - Y||² + alpha ||W||²``. The intercept
-    is unpenalized. Automatic recovery never increases ``alpha`` and never
+    Every method minimizes `||X W + b - Y||² + alpha ||W||²`. The intercept
+    is unpenalized. Automatic recovery never increases `alpha` and never
     switches to an L1 or online-learning objective.
 
     Automatic fitting first tries a smaller primal (features by features) or
@@ -86,12 +86,12 @@ class AutoReadoutLayer(ReadoutLayer):
     Rejected tall systems use augmented QR, then SVD if rank/conditioning
     makes triangular substitution unreliable. Wide least-squares problems
     use SVD for their minimum-norm solution. These are numerical guards, not
-    accuracy guarantees; inspect :attr:`last_solve` to see the selected path.
+    accuracy guarantees; inspect `last_solve` to see the selected path.
 
     Parameters
     ----------
     in_features, out_features : int
-        Input and output dimensions, as for :class:`ReadoutLayer`.
+        Input and output dimensions, as for `ReadoutLayer`.
     bias : bool, default=True
         Fit an unpenalized intercept by centering the training data.
     name : str, optional
@@ -107,7 +107,7 @@ class AutoReadoutLayer(ReadoutLayer):
         unrepresentable products, failed factorization or unreliable forced
         QR raises an error.
     solve_dtype : torch.dtype, optional
-        Working precision: ``torch.float32`` or ``torch.float64``. By default
+        Working precision: `torch.float32` or `torch.float64`. By default
         CPU/CUDA use float64 and MPS first tries native float32. Parameters
         retain their normal PyTorch dtype and device.
     rcond : float, optional
@@ -117,7 +117,7 @@ class AutoReadoutLayer(ReadoutLayer):
     cpu_fallback : bool, default=True
         Allow an explicit CPU float64 bridge when MPS needs a stable
         decomposition, or another accelerator lacks a required operation.
-        Each bridge warns and is recorded in :attr:`last_solve`. ``False``
+        Each bridge warns and is recorded in `last_solve`. `False`
         raises instead. A forced method stays the same across the bridge.
 
     Examples

@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 
 from resdag import ESNLayer, ESNModel, ReservoirFeatureExtractor, lorenz, reservoir_input
+from resdag.data import normalize_data
 
 RESERVOIR_SIZE = 200
 
@@ -34,7 +35,10 @@ def regression_head(*, quick: bool = False) -> None:
     size = 24 if quick else RESERVOIR_SIZE
     washout, train_end, val_end = (12, 92, 116) if quick else (200, 1400, 1800)
     steps = 3 if quick else 300
-    data = lorenz(val_end + 1, seed=42)  # (1, 1801, 3) = (batch, time, features)
+    raw = lorenz(val_end + 1, seed=42, normalize=None)  # raw (1, 1801, 3)
+    # The held-out suffix never enters the fitted input/target scale.
+    _, stats = normalize_data(raw[:, washout:train_end], method="standard")
+    data, _ = normalize_data(raw, method="standard", stats=stats)
     warmup = data[:, :washout]
     train_in = data[:, washout:train_end]
     train_tgt = data[:, washout + 1 : train_end + 1]
@@ -76,7 +80,7 @@ def regression_head(*, quick: bool = False) -> None:
         val_pred = head(val_feats)[:, warmup.shape[1] :]
     mse = torch.mean((val_pred - val_tgt) ** 2).item()
     assert torch.isfinite(val_pred).all()
-    print(f"val one-step MSE = {mse:.2e}")
+    print(f"val one-step MSE = {mse:.2e} (training-standardized units)")
 
 
 def classification_head(*, quick: bool = False) -> None:

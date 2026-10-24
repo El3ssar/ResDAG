@@ -73,7 +73,7 @@ class ScoreContext:
     """Original-unit tensors and fixed training scales for a custom objective.
 
     Return one finite scalar per seed/origin. The trial score is their median.
-    Set ``direction='minimize'`` when returning an error rather than a reward.
+    Set `direction='minimize'` when returning an error rather than a reward.
     """
 
     predictions: dict[str, torch.Tensor]
@@ -88,7 +88,7 @@ class PrefixScoreContext(ScoreContext):
     """Explicitly prefix-safe pruning objective with the complete target horizon.
 
     Predictions and truth contain only the admitted prefix. This callback
-    controls pruning, while ``objective`` still scores the complete forecast.
+    controls pruning, while `objective` still scores the complete forecast.
     Keep its direction and scale comparable across matching resource steps.
     """
 
@@ -1001,10 +1001,10 @@ def tune_model(
 ) -> Model | ESN:
     """Compare autonomous forecasts and install a fully refitted winner.
 
-    ``factory(params, seed)`` builds custom candidate DAGs. Without a factory,
+    `factory(params, seed)` builds custom candidate DAGs. Without a factory,
     custom models keep their weights/wiring and tune alpha/washout; presets
     rebuild automatically. New attempts, including failed configurations, count
-    toward ``n_trials``. A timeout stops new windows; running fits and final
+    toward `n_trials`. A timeout stops new windows; running fits and final
     refitting finish normally. Tune before constructing a PyTorch optimizer.
     """
     started = time.perf_counter()

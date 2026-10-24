@@ -15,10 +15,10 @@ from resdag.core._forecast import positive_step_count
 
 @dataclass(frozen=True)
 class Feedback:
-    """Connect a named output to a named input after ``delay`` graph steps.
+    """Connect a named output to a named input after `delay` graph steps.
 
-    An output produced at graph step ``q`` is consumed at step ``q + delay``.
-    This delay is independent of the output's ``prediction_lead``: a head with
+    An output produced at graph step `q` is consumed at step `q + delay`.
+    This delay is independent of the output's `prediction_lead`: a head with
     lead two estimates the physical sample two steps after its input. Matching
     lead and delay gives naturally aligned self-feedback; other combinations
     deliberately model lagged coupling. Widths must match at both ports.

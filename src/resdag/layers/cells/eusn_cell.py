@@ -4,7 +4,7 @@ EuSN Cell (Euler State Network)
 
 This module provides the Euler State Network (EuSN) reservoir cell:
 
-- :class:`EuSNCell` — a :class:`~resdag.layers.cells.continuous_cell.ContinuousReservoirCell`
+- `EuSNCell` — a `resdag.layers.cells.continuous_cell.ContinuousReservoirCell`
   whose vector field uses an **antisymmetric** recurrent matrix minus a small
   **diffusion** term, integrated by a single forward-Euler step.
 
@@ -35,49 +35,49 @@ class EuSNCell(ContinuousReservoirCell):
 
     EuSN (Gallicchio, arXiv:2203.09382) models the reservoir as an ODE
 
-    .. math::
+    $$
+    \dot h(t) = \tanh\!\big(W_h\, h(t) + W_x\, x(t) + b\big),
+    $$
 
-        \dot h(t) = \tanh\!\big(W_h\, h(t) + W_x\, x(t) + b\big),
-
-    with :math:`W_h` **antisymmetric** (:math:`W_h = -W_h^\top`), and integrates
-    it with a single forward-Euler step of size :math:`\varepsilon`, subtracting
-    a small **diffusion** term :math:`\gamma I` from the recurrence for numerical
+    with $W_h$ **antisymmetric** ($W_h = -W_h^\top$), and integrates
+    it with a single forward-Euler step of size $\varepsilon$, subtracting
+    a small **diffusion** term $\gamma I$ from the recurrence for numerical
     stability:
 
-    .. math::
+    $$
+    h_t = h_{t-1} + \varepsilon\,
+          \tanh\!\big((W_h - \gamma I)\, h_{t-1} + W_x\, x_t + b\big).
+    $$
 
-        h_t = h_{t-1} + \varepsilon\,
-              \tanh\!\big((W_h - \gamma I)\, h_{t-1} + W_x\, x_t + b\big).
-
-    The antisymmetric :math:`W_h` is a rotation generator (purely imaginary
-    eigenvalues), so :math:`x \mapsto W_h x` conserves the state norm; a small
+    The antisymmetric $W_h$ is a rotation generator (purely imaginary
+    eigenvalues), so $x \mapsto W_h x$ conserves the state norm; a small
     Euler step of the resulting flow is therefore **near-norm-preserving** — a
     stable, non-dissipative, long-memory regime with local Lyapunov exponents
-    near zero (the "edge of stability").  The diffusion :math:`\gamma I` adds a
+    near zero (the "edge of stability").  The diffusion $\gamma I$ adds a
     tiny contraction that damps the forward-Euler discretization error and keeps
     the recurrence from drifting outward over long sequences.
 
     resdag construction
     -------------------
     resdag keeps feedback and driving inputs as *separate* projections, so the
-    paper's :math:`W_x x_t + b` maps to resdag's precomputed drive
-    :math:`W_{fb} x_{fb,t} + W_{in} u_t + b` (the inherited
-    :meth:`~resdag.layers.cells.esn_cell.ESNCell.project_inputs`).  The
-    antisymmetric :math:`W_h` is obtained **on the fly** from the frozen,
-    spectral-radius-scaled recurrent matrix ``weight_hh`` (``= W_r``) as
-    :math:`W_r - W_r^\top`; the stored ``W_r`` is left untouched (cleaner than
+    paper's $W_x x_t + b$ maps to resdag's precomputed drive
+    $W_{fb} x_{fb,t} + W_{in} u_t + b$ (the inherited
+    `resdag.layers.cells.esn_cell.ESNCell.project_inputs`).  The
+    antisymmetric $W_h$ is obtained **on the fly** from the frozen,
+    spectral-radius-scaled recurrent matrix `weight_hh` (`= W_r`) as
+    $W_r - W_r^\top$; the stored `W_r` is left untouched (cleaner than
     baking antisymmetry into the buffer, and matching the paper's constraint
     exactly).  The vector field is therefore
 
-    .. math::
+    $$
+    f(h, u) = \tanh\!\big((W_r - W_r^\top - \gamma I)\, h + u\big),
+    $$
 
-        f(h, u) = \tanh\!\big((W_r - W_r^\top - \gamma I)\, h + u\big),
+    with $u$ the precomputed drive and one Euler sub-step of size
+    $\varepsilon$ (`dt=epsilon`, `substeps=1`).
 
-    with :math:`u` the precomputed drive and one Euler sub-step of size
-    :math:`\varepsilon` (``dt=epsilon``, ``substeps=1``).
-
-    Because the antisymmetric part :math:`W_r - W_r^\top` has purely imaginary
-    eigenvalues, a layer-level ``spectral_radius`` on ``W_r`` still controls the
+    Because the antisymmetric part $W_r - W_r^\top$ has purely imaginary
+    eigenvalues, a layer-level `spectral_radius` on `W_r` still controls the
     *rotation rate* of the recurrence (the largest imaginary eigenvalue
     magnitude), so the usual scaling knob remains meaningful.
 
@@ -85,42 +85,42 @@ class EuSNCell(ContinuousReservoirCell):
     ----------
     reservoir_size, feedback_size, input_size, bias, bias_scaling, activation, \
 trainable, feedback_initializer, input_initializer, topology, seed
-        See :class:`~resdag.layers.cells.esn_cell.ESNCell`.  ``activation``
-        defaults to ``"tanh"`` (the EuSN nonlinearity); other activations are
+        See `resdag.layers.cells.esn_cell.ESNCell`.  `activation`
+        defaults to `"tanh"` (the EuSN nonlinearity); other activations are
         accepted for experimentation.
     epsilon : float, default=0.01
-        Forward-Euler step size :math:`\varepsilon`.  Small values sit the
+        Forward-Euler step size $\varepsilon$.  Small values sit the
         reservoir near the edge of stability (near-norm-preserving); the paper
-        sweeps :math:`\varepsilon \in \{10^{-5}, \dots, 1\}`.  Stored as the
-        base ``dt``.
+        sweeps $\varepsilon \in \{10^{-5}, \dots, 1\}$.  Stored as the
+        base `dt`.
     gamma : float, default=0.01
-        Diffusion coefficient :math:`\gamma \ge 0` subtracted as :math:`\gamma I`
+        Diffusion coefficient $\gamma \ge 0$ subtracted as $\gamma I$
         from the antisymmetric recurrence.  A small positive value damps the
-        Euler discretization error; ``0.0`` recovers the purely norm-preserving
+        Euler discretization error; `0.0` recovers the purely norm-preserving
         (undamped) antisymmetric flow.  A *live* knob validated on assignment.
     spectral_radius : float, optional
         Target **rotation rate** of the *effective* antisymmetric operator
-        :math:`W_r - W_r^\top` — its largest ``|imaginary eigenvalue|``, the
-        quantity that actually drives the dynamics — **not** the raw ``W_r``.
-        ``W_r`` is rescaled so the skew part hits this radius (see the notes on
-        antisymmetric scaling below).  ``None`` leaves ``W_r`` unscaled.
+        $W_r - W_r^\top$ — its largest `|imaginary eigenvalue|`, the
+        quantity that actually drives the dynamics — **not** the raw `W_r`.
+        `W_r` is rescaled so the skew part hits this radius (see the notes on
+        antisymmetric scaling below).  `None` leaves `W_r` unscaled.
     substeps : int, default=1
         Fixed integration sub-steps per interval (see
-        :class:`ContinuousReservoirCell`).  ``1`` is the single forward-Euler
+        `ContinuousReservoirCell`).  `1` is the single forward-Euler
         step of the paper.
     solver : {'euler', 'rk4', 'torchdiffeq'}, default='euler'
-        Integration scheme.  ``'euler'`` is the paper's method; ``'rk4'`` and
-        the adaptive ``'torchdiffeq'`` integrate the *same* vector field more
-        accurately (they agree with Euler in the small-``epsilon`` limit).
+        Integration scheme.  `'euler'` is the paper's method; `'rk4'` and
+        the adaptive `'torchdiffeq'` integrate the *same* vector field more
+        accurately (they agree with Euler in the small-`epsilon` limit).
 
     recurrent_initializer : spec, optional
-        First-class alias for ``topology``. Supply one spelling only. Names,
+        First-class alias for `topology`. Supply one spelling only. Names,
         tuples, callables and registered initializer objects are accepted.
     bias_initializer : spec, optional
-        Input/feedback initializer grammar applied to a ``(1, reservoir_size)``
-        view of the bias. Requires ``bias=True``; overrides ``bias_scaling``.
+        Input/feedback initializer grammar applied to a `(1, reservoir_size)`
+        view of the bias. Requires `bias=True`; overrides `bias_scaling`.
     initial_state_initializer : spec, optional
-        Initializes a persistent ``(1, cell.state_size)`` reset template once.
+        Initializes a persistent `(1, cell.state_size)` reset template once.
         Each batch example receives an independent copy at reset. Zero by default.
     device : torch.device or str, optional
         Initial parameter location. Metal construction initializes on CPU before
@@ -133,10 +133,10 @@ trainable, feedback_initializer, input_initializer, topology, seed
     gamma : float
         Diffusion coefficient (live knob).
     epsilon : float
-        Euler step size (alias of :attr:`dt`).
+        Euler step size (alias of `dt`).
     weight_hh, weight_feedback, weight_input, bias_h
-        Recurrent (``W_r``), feedback, input weights and bias (see
-        :class:`~resdag.layers.cells.esn_cell.ESNCell`).
+        Recurrent (`W_r`), feedback, input weights and bias (see
+        `resdag.layers.cells.esn_cell.ESNCell`).
 
     Examples
     --------
@@ -229,15 +229,15 @@ trainable, feedback_initializer, input_initializer, topology, seed
         self.gamma = gamma
 
     def _scale_skew_spectral_radius(self, target_radius: float) -> None:
-        r"""Rescale ``weight_hh`` so ``W_r - W_r^T`` has spectral radius ``target_radius``.
+        r"""Rescale `weight_hh` so `W_r - W_r^T` has spectral radius `target_radius`.
 
         The EuSN dynamics are driven by the antisymmetric operator
-        :math:`W_r - W_r^\top`, whose eigenvalues are purely imaginary; its
-        spectral radius is the largest ``|imaginary eigenvalue|`` (the rotation
-        rate).  Scaling ``W_r`` by a scalar scales the skew part by the same
-        scalar, so we measure the skew part's radius once and rescale ``W_r`` to
+        $W_r - W_r^\top$, whose eigenvalues are purely imaginary; its
+        spectral radius is the largest `|imaginary eigenvalue|` (the rotation
+        rate).  Scaling `W_r` by a scalar scales the skew part by the same
+        scalar, so we measure the skew part's radius once and rescale `W_r` to
         put it on target.  Left a no-op when the skew part is (numerically) zero
-        (e.g. a symmetric ``W_r``, whose antisymmetric part vanishes).
+        (e.g. a symmetric `W_r`, whose antisymmetric part vanishes).
         """
         with torch.no_grad():
             w = self.weight_hh.data
@@ -248,7 +248,7 @@ trainable, feedback_initializer, input_initializer, topology, seed
 
     @property
     def epsilon(self) -> float:
-        """float : Forward-Euler step size :math:`\\varepsilon` (alias of :attr:`dt`)."""
+        """float : Forward-Euler step size $\\varepsilon$ (alias of `dt`)."""
         return self.dt
 
     @epsilon.setter
@@ -258,11 +258,11 @@ trainable, feedback_initializer, input_initializer, topology, seed
     @property
     def gamma(self) -> float:
         r"""
-        float : Diffusion coefficient :math:`\gamma \ge 0`.
+        float : Diffusion coefficient $\gamma \ge 0$.
 
         A *live* knob: assigning to it (directly or through
-        ``EuSNLayer.gamma = ...``) validates the value and takes effect on the
-        next forward.  ``0.0`` recovers the undamped antisymmetric flow.
+        `EuSNLayer.gamma = ...`) validates the value and takes effect on the
+        next forward.  `0.0` recovers the undamped antisymmetric flow.
         """
         return self._gamma
 
@@ -274,25 +274,25 @@ trainable, feedback_initializer, input_initializer, topology, seed
         self._gamma = scalar
 
     def vector_field(self, state: torch.Tensor, projected_u: torch.Tensor) -> torch.Tensor:
-        r"""EuSN field :math:`\tanh\big((W_r - W_r^\top - \gamma I)\,h + u\big)`.
+        r"""EuSN field $\tanh\big((W_r - W_r^\top - \gamma I)\,h + u\big)$.
 
         Antisymmetrizes the frozen recurrent matrix on the fly
-        (:math:`W_r - W_r^\top`), subtracts the diffusion :math:`\gamma I`, adds
-        the precomputed input drive ``projected_u``, and applies the activation
-        (``tanh`` by default).
+        ($W_r - W_r^\top$), subtracts the diffusion $\gamma I$, adds
+        the precomputed input drive `projected_u`, and applies the activation
+        (`tanh` by default).
 
         Parameters
         ----------
         state : torch.Tensor
-            Current state ``h``, shape ``(batch, reservoir_size)``.
+            Current state `h`, shape `(batch, reservoir_size)`.
         projected_u : torch.Tensor
-            Precomputed input drive ``u = W_fb x_fb + W_in u + b`` for the
-            interval, shape ``(batch, reservoir_size)``.
+            Precomputed input drive `u = W_fb x_fb + W_in u + b` for the
+            interval, shape `(batch, reservoir_size)`.
 
         Returns
         -------
         torch.Tensor
-            :math:`\dot h`, shape ``(batch, reservoir_size)``.
+            $\dot h$, shape `(batch, reservoir_size)`.
         """
         # Antisymmetric recurrence W_h = W_r - W_r^T, applied as h (W_r - W_r^T)^T
         # = h W_r^T - h W_r via F.linear conventions.  Compute h @ W_h^T directly:

@@ -19,10 +19,10 @@ class SeedStreams:
     the same seed; it does not share parameter tensors or recurrent state.
     Names are exact UTF-8 strings and are independent of Python's hash seed.
 
-    The ``blake2b-v1`` algorithm is fixed: BLAKE2b with an eight-byte digest,
-    personalization ``b"ResDAG.seed.v1"``, decimal master seed, a NUL separator
+    The `blake2b-v1` algorithm is fixed: BLAKE2b with an eight-byte digest,
+    personalization `b"ResDAG.seed.v1"`, decimal master seed, a NUL separator
     and the UTF-8 name, masked to an unsigned 63-bit integer. These seeds work
-    with Torch generators and NumPy's ``default_rng``. This utility does not
+    with Torch generators and NumPy's `default_rng`. This utility does not
     enable deterministic accelerator kernels or capture stochastic execution
     state; it controls initialization seeds only.
 
@@ -54,5 +54,5 @@ class SeedStreams:
         return int.from_bytes(digest, "big") & ((1 << 63) - 1)
 
     def __getitem__(self, name: str) -> int:
-        """Use ``streams[name]`` as a short form of :meth:`seed_for`."""
+        """Use `streams[name]` as a short form of `seed_for`."""
         return self.seed_for(name)

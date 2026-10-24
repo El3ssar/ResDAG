@@ -31,12 +31,14 @@ def main() -> None:
     torch.manual_seed(42)
     size = options.choose(24, SIZE)
 
-    data = rd.lorenz(options.choose(141, 2300), seed=42)  # (1, 2300, 3) = (batch, time, features)
+    data = rd.lorenz(options.choose(141, 2300), seed=42, normalize=None)  # raw (1, 2300, 3)
     warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
         data,
         warmup_steps=options.choose(12, 200),
         train_steps=options.choose(100, 1600),
         val_steps=options.choose(24, 400),
+        normalize=True,
+        norm_method="standard",  # statistics come from training rows only
     )
 
     # ------------------------------------------------------------------
@@ -203,6 +205,7 @@ forecast_drivers via the forecast_inputs argument.
         print(f"{name:<22} {n_params:>10,} {fit_s:>8.2f} {mse50:>14.6f}")
     print("-" * len(header))
     print("MSE@50 = mean squared error over the first 50 forecast steps.")
+    print("All errors use the same training-standardized units.")
     print("Rankings shift with hyperparameters — use 10_hpo.py to tune properly.")
 
 

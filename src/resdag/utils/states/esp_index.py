@@ -2,19 +2,19 @@
 Echo State Property Index Calculation
 ======================================
 
-This module provides the :func:`esp_index` function for computing the Echo State
+This module provides the `esp_index` function for computing the Echo State
 Property (ESP) index of reservoir layers in ESN models.
 
 The implementation is **cell-agnostic**: it discovers every
-:class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer` in the model
-(not only :class:`~resdag.layers.reservoirs.esn.ESNLayer`), routes all state
+`resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer` in the model
+(not only `resdag.layers.reservoirs.esn.ESNLayer`), routes all state
 mutation through the public, validating state-management API
-(:meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.reset_state`
+(`resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.reset_state`
 and
-:meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`),
+`resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`),
 and supports states of any rank (the 2-D ESN hidden state as well as the 3-D
 NG-RC delay buffer).  Reservoirs whose ESP is undefined — those carrying no
-randomisable state, e.g. a ``k=1`` NG-RC reservoir — are skipped with an
+randomisable state, e.g. a `k=1` NG-RC reservoir — are skipped with an
 explicit message instead of silently producing a meaningless value.
 """
 
@@ -49,14 +49,14 @@ def esp_index(
 
     The ESP index measures how quickly trajectories from different initial
     states converge when driven by the same input.  All
-    :class:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer`
     reservoirs are discovered automatically, so the diagnostic applies equally
     to ESN, NG-RC, and any future custom-cell reservoir.
 
     Random restarts are drawn through each reservoir's public
-    :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`,
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`,
     which samples a **standard-normal** state — the same convention as
-    :meth:`~resdag.core.ESNModel.set_random_reservoir_states`.  The index is
+    `resdag.core.ESNModel.set_random_reservoir_states`.  The index is
     therefore directly comparable to states produced elsewhere in the library.
 
     Parameters
@@ -64,7 +64,7 @@ def esp_index(
     model : ESNModel
         Model containing reservoir layers.
     feedback_seq : torch.Tensor
-        Feedback sequence, shape ``(batch, timesteps, features)``.
+        Feedback sequence, shape `(batch, timesteps, features)`.
     *driving_seqs : torch.Tensor
         Optional driving sequences in model input order.
     history : bool, default=False
@@ -75,31 +75,31 @@ def esp_index(
         Timesteps to discard from sequence start.
     window : int or None, default=None
         Length of the trailing window over which the index is averaged.  By
-        default (``None``) the index is the mean over *every* post-transient
+        default (`None`) the index is the mean over *every* post-transient
         timestep, which for a healthy reservoir is dominated by the early
         convergence transient rather than the asymptotic distance.  Setting
-        ``window=k`` averages only the **last** ``k`` post-transient steps, so
+        `window=k` averages only the **last** `k` post-transient steps, so
         the index reflects the asymptotic regime — a far more diagnostic
         statistic.  Must be a positive integer no larger than the number of
-        post-transient timesteps.  Does not affect the returned ``history``
+        post-transient timesteps.  Does not affect the returned `history`
         tensors, which always span the full post-transient sequence.
     relative : bool, default=False
         If True, normalise each per-step distance by the corresponding
-        base-state norm, ``||base - rand|| / (||base|| + eps)``, yielding a
+        base-state norm, `||base - rand|| / (||base|| + eps)`, yielding a
         scale-free relative distance that is comparable across reservoir sizes
         and spectral radii.  If False (default), the raw absolute distance is
         used.  The normalisation is applied to both the returned index and the
-        ``history`` tensors.
+        `history` tensors.
     chunk_size : int or None, default=None
         Maximum number of random restarts run together in a single batched
         forward pass.  All restarts are statistically independent and differ
         only in their initial state, so they are folded into the batch
-        dimension and evaluated in one forward pass instead of ``iterations``
+        dimension and evaluated in one forward pass instead of `iterations`
         sequential passes (typically a ~3x speed-up).  A large
-        ``reservoir_size * iterations`` product can exhaust device memory,
-        however; set ``chunk_size`` to cap the per-pass batch at
-        ``batch * chunk_size`` and process the restarts in chunks.  ``None``
-        (default) runs all ``iterations`` restarts in one pass, transparently
+        `reservoir_size * iterations` product can exhaust device memory,
+        however; set `chunk_size` to cap the per-pass batch at
+        `batch * chunk_size` and process the restarts in chunks.  `None`
+        (default) runs all `iterations` restarts in one pass, transparently
         falling back to chunking (halving the chunk each time) if a CUDA
         out-of-memory error is raised.
     verbose : bool, default=True
@@ -108,11 +108,11 @@ def esp_index(
     Returns
     -------
     dict or tuple
-        If ``history=False``: dict mapping layer names to single-element
+        If `history=False`: dict mapping layer names to single-element
         lists containing the ESP index scalar tensor.
-        If ``history=True``: tuple of (ESP indices dict, history dict).
-        History tensors have shape ``(iterations, timesteps, batch)`` and span
-        the full post-transient sequence regardless of ``window``.
+        If `history=True`: tuple of (ESP indices dict, history dict).
+        History tensors have shape `(iterations, timesteps, batch)` and span
+        the full post-transient sequence regardless of `window`.
 
         Reservoirs whose ESP is undefined (no randomisable state) are omitted
         from both dictionaries.
@@ -120,8 +120,8 @@ def esp_index(
     Raises
     ------
     ValueError
-        If ``transient`` is not smaller than the number of timesteps, if
-        ``window`` is not a positive integer no larger than the number of
+        If `transient` is not smaller than the number of timesteps, if
+        `window` is not a positive integer no larger than the number of
         post-transient timesteps, if the model contains no reservoir layers,
         or if no reservoir has a well-defined ESP.
 
@@ -132,38 +132,40 @@ def esp_index(
     This is mathematically correct behavior.
 
     State is never mutated by direct assignment.  The zero base orbit is set
-    via ``res.reset_state(batch_size=...)`` and the random restarts via
-    ``res.set_random_state()``, so each cell's own shape contract (2-D for
+    via `res.reset_state(batch_size=...)` and the random restarts via
+    `res.set_random_state()`, so each cell's own shape contract (2-D for
     ESN, 3-D delay buffer for NG-RC) is honoured and validated by the public
     state-management API.
 
     The caller's reservoir states are saved before the computation and
-    restored afterwards (even on error), so calling ``esp_index`` never leaves
+    restored afterwards (even on error), so calling `esp_index` never leaves
     the model's reservoirs in a mutated (random) state.
 
-    **Batched restarts.**  The ``iterations`` random restarts are statistically
+    **Batched restarts.**  The `iterations` random restarts are statistically
     independent and differ only in their initial state, so they are folded into
-    the batch dimension: the feedback (and any drivers) are tiled ``iterations``
+    the batch dimension: the feedback (and any drivers) are tiled `iterations`
     times, one random initial state is composed per restart into a single
-    ``(batch * iterations, ...)`` state, and the whole ensemble is evaluated in
-    **one** forward pass rather than ``iterations`` sequential passes.  The
+    `(batch * iterations, ...)` state, and the whole ensemble is evaluated in
+    **one** forward pass rather than `iterations` sequential passes.  The
     random restarts are drawn in exactly the same order as the sequential loop
     (outer over restarts, inner over reservoirs), so the *initial states* are
     bit-identical to the sequential computation.  The reservoir *outputs* — and
     hence the returned index — match the sequential value to floating-point
-    rounding (typically ``< 1e-6`` relative), the only difference being the
+    rounding (typically `< 1e-6` relative), the only difference being the
     reassociation of a wider batched matmul; the result is fully deterministic
     under a fixed seed.  (If a reservoir cell injects per-step state noise in
-    training mode, ``noise > 0``, the batched noise draws differ from the
+    training mode, `noise > 0`, the batched noise draws differ from the
     sequential ones; the index remains a valid, seed-deterministic stochastic
     diagnostic but is no longer numerically identical.  Run the model in eval
     mode to disable noise entirely.)
 
     Examples
     --------
-    Score only the asymptotic regime with a scale-free statistic::
+    Score only the asymptotic regime with a scale-free statistic:
 
-        idx = esp_index(model, feedback, window=50, relative=True)
+    ```python
+    idx = esp_index(model, feedback, window=50, relative=True)
+    ```
 
     See Also
     --------
@@ -344,9 +346,9 @@ def _draw_restart_states(
     """
     Pre-draw every random restart state in the sequential RNG draw order.
 
-    The sequential ESP loop draws, for each restart ``i``, one standard-normal
+    The sequential ESP loop draws, for each restart `i`, one standard-normal
     state per reservoir *in reservoir order* via
-    :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`.
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_random_state`.
     Reproducing that exact nested order (restart-major, reservoir-minor) here —
     once, up front — makes the composed batched initial states **bit-identical**
     to the sequential ones, and decouples the RNG stream from how the forward
@@ -369,7 +371,7 @@ def _draw_restart_states(
     -------
     list of dict
         One dict per restart, mapping reservoir name to its cloned
-        ``(batch_size, ...)`` standard-normal initial state.
+        `(batch_size, ...)` standard-normal initial state.
     """
     per_iter: list[dict[str, torch.Tensor]] = []
     for _ in range(iterations):
@@ -398,12 +400,12 @@ def _run_chunk(
     """
     Evaluate a contiguous block of restarts in a single batched forward pass.
 
-    The ``len(chunk_states)`` restarts are folded into the batch dimension: the
+    The `len(chunk_states)` restarts are folded into the batch dimension: the
     inputs are tiled once per restart and each reservoir's per-restart states
-    are concatenated into a single ``(chunk * batch_size, ...)`` tensor set via
-    :meth:`~resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_state`.
+    are concatenated into a single `(chunk * batch_size, ...)` tensor set via
+    `resdag.layers.reservoirs.base_reservoir.BaseReservoirLayer.set_state`.
     One forward pass then produces every restart's output, which is reshaped
-    back to ``(chunk, batch_size, timesteps, ...)`` and split per restart.
+    back to `(chunk, batch_size, timesteps, ...)` and split per restart.
 
     Parameters
     ----------
@@ -412,7 +414,7 @@ def _run_chunk(
     reservoirs : list of (str, BaseReservoirLayer)
         Reservoirs to hook and seed.
     inputs : tuple of torch.Tensor
-        Driving sequences, each ``(batch_size, timesteps, features)``.
+        Driving sequences, each `(batch_size, timesteps, features)`.
     chunk_states : list of dict
         Per-restart initial states (one dict per restart in this chunk).
     batch_size : int
@@ -424,7 +426,7 @@ def _run_chunk(
     -------
     list of dict
         One dict per restart in the chunk, mapping reservoir name to its
-        post-transient output of shape ``(batch_size, timesteps, output_size)``.
+        post-transient output of shape `(batch_size, timesteps, output_size)`.
     """
     chunk = len(chunk_states)
 
@@ -466,11 +468,11 @@ def _collect_random_restarts(
     Evaluate all random restarts, batching them into the batch dimension.
 
     All restart states are drawn once up front in the sequential RNG order (see
-    :func:`_draw_restart_states`), then the forward passes are batched: with
-    ``chunk_size`` restarts share each forward pass.  When ``chunk_size`` is
-    ``None`` the whole ensemble runs in one pass, transparently retried with a
+    `_draw_restart_states`), then the forward passes are batched: with
+    `chunk_size` restarts share each forward pass.  When `chunk_size` is
+    `None` the whole ensemble runs in one pass, transparently retried with a
     halved chunk on a CUDA out-of-memory error — a large
-    ``reservoir_size * iterations`` product can otherwise exhaust device memory.
+    `reservoir_size * iterations` product can otherwise exhaust device memory.
     Because the states are pre-drawn, the chosen chunk size affects only memory
     and speed, never which random states are used.
 
@@ -481,7 +483,7 @@ def _collect_random_restarts(
     reservoirs : list of (str, BaseReservoirLayer)
         Reservoirs with a well-defined ESP.
     inputs : tuple of torch.Tensor
-        Driving sequences, each ``(batch_size, timesteps, features)``.
+        Driving sequences, each `(batch_size, timesteps, features)`.
     batch_size : int
         Batch size of a single restart.
     iterations : int
@@ -493,7 +495,7 @@ def _collect_random_restarts(
     dtype : torch.dtype
         Dtype the restart states are drawn in.
     chunk_size : int or None
-        Maximum restarts per batched forward pass; ``None`` runs all at once
+        Maximum restarts per batched forward pass; `None` runs all at once
         with an OOM-triggered fallback.
     verbose : bool
         Print per-chunk progress.
@@ -502,7 +504,7 @@ def _collect_random_restarts(
     -------
     list of dict
         One dict per restart, mapping reservoir name to its post-transient
-        output of shape ``(batch_size, timesteps, output_size)``.
+        output of shape `(batch_size, timesteps, output_size)`.
     """
     restart_states = _draw_restart_states(reservoirs, batch_size, iterations, device, dtype)
 
@@ -547,10 +549,10 @@ def _has_well_defined_esp(reservoir: "BaseReservoirLayer", batch_size: int) -> b
     *different* initial states converge under identical driving.  That is only
     meaningful when the reservoir actually carries a randomisable state: a
     reservoir whose materialised state has zero elements per sample (e.g. a
-    ``k=1`` NG-RC reservoir, whose delay buffer has ``state_size == 0``) has no
+    `k=1` NG-RC reservoir, whose delay buffer has `state_size == 0`) has no
     initial state to perturb, so its ESP is undefined.
 
-    State is materialised through the public ``reset_state`` API and inspected
+    State is materialised through the public `reset_state` API and inspected
     without any direct attribute assignment, keeping the check cell-agnostic.
     The materialised state inherits the cell's own device/dtype, so no device
     or dtype argument is needed here.
@@ -565,8 +567,8 @@ def _has_well_defined_esp(reservoir: "BaseReservoirLayer", batch_size: int) -> b
     Returns
     -------
     bool
-        ``True`` if the reservoir carries a non-empty per-sample state and its
-        ESP is therefore well-defined; ``False`` otherwise.
+        `True` if the reservoir carries a non-empty per-sample state and its
+        ESP is therefore well-defined; `False` otherwise.
     """
     reservoir.reset_state(batch_size=batch_size)
     state = reservoir.get_state()
@@ -590,13 +592,13 @@ def _run_and_collect(
     reservoirs : list of (str, BaseReservoirLayer)
         Reservoir layers to hook, paired with their module names.
     inputs : tuple of torch.Tensor
-        Positional inputs forwarded to ``model``.
+        Positional inputs forwarded to `model`.
 
     Returns
     -------
     dict
         Mapping of layer name to its output tensor of shape
-        ``(batch, timesteps, output_size)``.
+        `(batch, timesteps, output_size)`.
     """
     collected: dict[str, torch.Tensor] = {}
 

@@ -9,7 +9,7 @@ from .erdos_renyi import erdos_renyi_adjacency
 
 
 def _connected_erdos_renyi_precondition(n: int, **kwargs: object) -> None:
-    """Guard ``p > ln(n)/n`` before attempting a connected Erdős–Rényi build."""
+    """Guard `p > ln(n)/n` before attempting a connected Erdős–Rényi build."""
     p = kwargs.get("p", 0.1)
     assert isinstance(p, (int, float))
     if p < np.log(n) / n:
@@ -48,12 +48,12 @@ def connected_erdos_renyi_graph(
     """
     Generates a **connected** Erdos-Renyi graph.
 
-    This function wraps :func:`erdos_renyi` with a decorator that attempts multiple
+    This function wraps `erdos_renyi` with a decorator that attempts multiple
     generations until a connected graph is obtained (up to a certain number of tries).
 
-    The direct-call path returns a NetworkX graph (via the ``@connected_graph``
+    The direct-call path returns a NetworkX graph (via the `@connected_graph`
     retry wrapper). When used as a topology, the adjacency-level fast path
-    (:func:`~resdag.init.utils.graph_tools.connected_adjacency`) retries the
+    (`resdag.init.utils.graph_tools.connected_adjacency`) retries the
     vectorized dense builder and checks weak connectivity with scipy, skipping
     the NetworkX round-trip entirely.
 
@@ -72,7 +72,7 @@ def connected_erdos_renyi_graph(
 
     Notes
     -----
-    The ``tries`` argument is accepted by the ``@connected_graph`` wrapper, not
+    The `tries` argument is accepted by the `@connected_graph` wrapper, not
     this function's signature.
 
     Returns

@@ -116,9 +116,9 @@ class PreparedFit:
 
 @dataclass(frozen=True)
 class ForecastOrigin:
-    """One fixed forecast; discard ``skip`` unscored physical-clock preroll rows.
+    """One fixed forecast; discard `skip` unscored physical-clock preroll rows.
 
-    ``horizon`` includes preroll, whereas truth/times contain scored rows only.
+    `horizon` includes preroll, whereas truth/times contain scored rows only.
     Histories, predictions and truth preserve the input's 2-D/3-D layout.
     """
 
@@ -652,10 +652,10 @@ def prepare_tuning_data(
     horizon: int | None = None,
     n_origins: int = 3,
 ) -> TuningData:
-    """Prepare one chronological protocol without fitting or mutating ``model``.
+    """Prepare one chronological protocol without fitting or mutating `model`.
 
     Automatic validation uses the last 20% and refits the winner on all supplied
-    development observations. Explicit ``validation=(inputs, targets_or_None)``
+    development observations. Explicit `validation=(inputs, targets_or_None)`
     is held out even during final refitting. Its Tensor targets use the same
     origin alignment as training; scoring begins only when all heads have
     target support wholly within validation.

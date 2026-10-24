@@ -27,9 +27,9 @@ _STAT_KEYS: dict[NormMethod, tuple[str, ...]] = {
 class FittedNormalization(nn.Module):
     """A fitted, differentiable wrapper around the existing normalizers.
 
-    ``fit`` accepts ``(time, features)`` or ``(batch, time, features)`` floating
+    `fit` accepts `(time, features)` or `(batch, time, features)` floating
     tensors and adopts their device and dtype. It is the caller's responsibility
-    to pass only the training portion. ``forward`` and ``inverse`` preserve the
+    to pass only the training portion. `forward` and `inverse` preserve the
     input shape, dtype and device without changing the fitted buffers. Ordinary
     module conversions move/cast the buffers; as with other PyTorch modules,
     load into the desired dtype to control checkpoint conversion precision.
@@ -63,7 +63,7 @@ class FittedNormalization(nn.Module):
 
     @property
     def n_features(self) -> int | None:
-        """Fitted feature width, or ``None`` before fitting."""
+        """Fitted feature width, or `None` before fitting."""
         return int(self._stat0.shape[-1]) if self.is_fitted else None
 
     @staticmethod
@@ -83,7 +83,7 @@ class FittedNormalization(nn.Module):
         """Replace statistics with those of the supplied training tensor only.
 
         Validation completes before the old fitted statistics are replaced.
-        This also keeps a fit performed inside ``inference_mode`` usable later
+        This also keeps a fit performed inside `inference_mode` usable later
         in a differentiable pipeline.
         """
         data, _ = self._canonical(training)

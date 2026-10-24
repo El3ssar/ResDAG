@@ -1,25 +1,25 @@
 """Deterministic and stochastic sign-sampling rules (RC.jl parity).
 
 This module centralizes the sign-assignment rules that ReservoirComputing.jl
-(RC.jl) exposes as its ``sampling_type`` keyword for the minimal-complexity
+(RC.jl) exposes as its `sampling_type` keyword for the minimal-complexity
 input initializers of Rodan & Tiňo. Reproduced from RC.jl
-``src/inits/inits_components.jl`` (``no_sample`` / ``bernoulli_sample!`` /
-``irrational_sample!`` / ``_regular_sample!``).
+`src/inits/inits_components.jl` (`no_sample` / `bernoulli_sample!` /
+`irrational_sample!` / `_regular_sample!`).
 
 The one subtlety worth stating up front: RC.jl matrices are **column-major**
-(Julia), and every sampler walks a matrix in ``eachindex`` order — i.e. column 0
+(Julia), and every sampler walks a matrix in `eachindex` order — i.e. column 0
 top-to-bottom, then column 1, and so on. The deterministic samplers
-(``irrational``/``regular``) key their per-entry decision on that flat traversal
+(`irrational`/`regular`) key their per-entry decision on that flat traversal
 position, so a faithful reproduction must apply the flat sign vector in
 **column-major (Fortran) order**. All helpers here return a *flat* sign vector of
-length ``rows * cols`` in that column-major order; the initializers reshape it
-with ``order="F"`` before multiplying.
+length `rows * cols` in that column-major order; the initializers reshape it
+with `order="F"` before multiplying.
 
 Notes
 -----
 RC.jl's docstring *example outputs* for these samplers are RNG-/version
-dependent (the default sampler is ``:bernoulli_sample!``, and one docstring even
-names a non-existent ``:irrational`` alias), so they are **not** a reliable
+dependent (the default sampler is `:bernoulli_sample!`, and one docstring even
+names a non-existent `:irrational` alias), so they are **not** a reliable
 oracle. These helpers reproduce the *source algorithm* verbatim instead, which
 is the stable parity target.
 
@@ -41,16 +41,16 @@ _VALID_SIGN_RULES = ("none", "bernoulli", "irrational", "regular")
 
 
 def _pi_digits(count: int) -> np.ndarray:
-    """First ``count`` digits of pi with the decimal point removed.
+    """First `count` digits of pi with the decimal point removed.
 
-    Returns ``[3, 1, 4, 1, 5, 9, ...]`` — the same ``ir_array`` RC.jl builds via
-    ``string(BigFloat(pi))`` then stripping the ``.``. Computed on demand with a
+    Returns `[3, 1, 4, 1, 5, 9, ...]` — the same `ir_array` RC.jl builds via
+    `string(BigFloat(pi))` then stripping the `.`. Computed on demand with a
     self-contained integer spigot (no external dependency), so an arbitrarily
     large matrix always has enough digits (RC.jl likewise raises its BigFloat
     precision to fit the matrix).
 
-    The spigot yields the leading ``3`` then the fractional digits, so the
-    returned array is exactly RC.jl's 1-indexed ``ir_array`` shifted to 0-indexed
+    The spigot yields the leading `3` then the fractional digits, so the
+    returned array is exactly RC.jl's 1-indexed `ir_array` shifted to 0-indexed
     NumPy.
     """
     digits: list[int] = []
@@ -79,7 +79,7 @@ def _pi_digits(count: int) -> np.ndarray:
 
 
 def _validate_sign_rule(sign_rule: str) -> str:
-    """Validate and normalize a ``sign_rule`` name."""
+    """Validate and normalize a `sign_rule` name."""
     if sign_rule not in _VALID_SIGN_RULES:
         valid = ", ".join(repr(r) for r in _VALID_SIGN_RULES)
         raise ValueError(f"sign_rule must be one of {valid}; got {sign_rule!r}.")
@@ -87,10 +87,10 @@ def _validate_sign_rule(sign_rule: str) -> str:
 
 
 def _bernoulli_signs(total: int, positive_prob: float, rng: np.random.Generator) -> np.ndarray:
-    """RC.jl ``bernoulli_sample!``: each entry is negated with prob ``1 - positive_prob``.
+    """RC.jl `bernoulli_sample!`: each entry is negated with prob `1 - positive_prob`.
 
-    RC.jl flips the sign when ``rand(rng) > positive_prob``, so an entry stays
-    positive with probability ``positive_prob``.
+    RC.jl flips the sign when `rand(rng) > positive_prob`, so an entry stays
+    positive with probability `positive_prob`.
     """
     draws = rng.random(total)
     signs = np.ones(total, dtype=np.int64)
@@ -99,10 +99,10 @@ def _bernoulli_signs(total: int, positive_prob: float, rng: np.random.Generator)
 
 
 def _irrational_signs(total: int, start: int) -> np.ndarray:
-    """RC.jl ``irrational_sample!`` (pi): negate where the pi digit is odd.
+    """RC.jl `irrational_sample!` (pi): negate where the pi digit is odd.
 
-    Reproduces the source exactly: for element ``element_index = 1..total`` the
-    decision digit is ``ir_array[start + element_index]`` (Julia 1-indexed into
+    Reproduces the source exactly: for element `element_index = 1..total` the
+    decision digit is `ir_array[start + element_index]` (Julia 1-indexed into
     the digit string). The entry is negated when that digit is odd.
     """
     digit_indices = start + np.arange(1, total + 1)  # Julia 1-indexed positions
@@ -115,10 +115,10 @@ def _irrational_signs(total: int, start: int) -> np.ndarray:
 
 
 def _regular_signs(total: int, strides: int) -> np.ndarray:
-    """RC.jl ``_regular_sample!`` (integer strides): negate every ``strides``-th entry.
+    """RC.jl `_regular_sample!` (integer strides): negate every `strides`-th entry.
 
-    RC.jl negates entry ``idx`` (1-indexed flat position) when
-    ``idx % strides == 0``.
+    RC.jl negates entry `idx` (1-indexed flat position) when
+    `idx % strides == 0`.
     """
     idx = np.arange(1, total + 1)
     signs = np.where(idx % strides == 0, -1, 1).astype(np.int64)
@@ -135,34 +135,34 @@ def build_sign_matrix(
     strides: int = 2,
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
-    """Build a ``(rows, cols)`` matrix of ``{-1, +1}`` signs per a RC.jl rule.
+    """Build a `(rows, cols)` matrix of `{-1, +1}` signs per a RC.jl rule.
 
-    The flat sign vector is generated in RC.jl's column-major (``eachindex``)
-    traversal order and reshaped with ``order="F"`` so the per-entry decisions
+    The flat sign vector is generated in RC.jl's column-major (`eachindex`)
+    traversal order and reshaped with `order="F"` so the per-entry decisions
     land on the same matrix positions as RC.jl.
 
     Parameters
     ----------
     rows, cols : int
-        Matrix shape ``(reservoir_size, in_size)``.
+        Matrix shape `(reservoir_size, in_size)`.
     sign_rule : {"none", "bernoulli", "irrational", "regular"}
-        The RC.jl ``sampling_type`` (without the ``_sample!`` suffix). ``"none"``
-        leaves every sign ``+1``.
+        The RC.jl `sampling_type` (without the `_sample!` suffix). `"none"`
+        leaves every sign `+1`.
     positive_prob : float, default=0.5
-        Probability an entry stays positive under ``"bernoulli"`` (RC.jl
-        ``positive_prob``).
+        Probability an entry stays positive under `"bernoulli"` (RC.jl
+        `positive_prob`).
     start : int, default=1
-        First pi-digit offset for ``"irrational"`` (RC.jl ``start``).
+        First pi-digit offset for `"irrational"` (RC.jl `start`).
     strides : int, default=2
-        Stride for ``"regular"`` (RC.jl ``strides``); every ``strides``-th flat
+        Stride for `"regular"` (RC.jl `strides`); every `strides`-th flat
         entry is negated.
     rng : numpy.random.Generator, optional
-        Generator for ``"bernoulli"``. Defaults to a fresh ``default_rng()``.
+        Generator for `"bernoulli"`. Defaults to a fresh `default_rng()`.
 
     Returns
     -------
     numpy.ndarray
-        ``(rows, cols)`` array of ``+1`` / ``-1`` (``int64``).
+        `(rows, cols)` array of `+1` / `-1` (`int64`).
     """
     sign_rule = _validate_sign_rule(sign_rule)
     total = rows * cols

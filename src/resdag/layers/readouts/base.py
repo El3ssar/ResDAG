@@ -2,7 +2,7 @@
 Base Readout Layer
 ==================
 
-This module provides :class:`ReadoutLayer`, a per-timestep linear layer
+This module provides `ReadoutLayer`, a per-timestep linear layer
 with support for classical ESN training via ridge regression.
 
 See Also
@@ -18,14 +18,14 @@ from resdag._contracts import prepare_fit_inputs
 
 
 def _sync_fitted_flag_post_hook(module: "ReadoutLayer", incompatible_keys: object) -> None:
-    """Re-derive the Python ``_fitted_flag`` mirror from the loaded buffer.
+    """Re-derive the Python `_fitted_flag` mirror from the loaded buffer.
 
-    Registered via ``register_load_state_dict_post_hook`` in
-    :class:`ReadoutLayer`. ``load_state_dict`` copies into the ``_is_fitted``
+    Registered via `register_load_state_dict_post_hook` in
+    `ReadoutLayer`. `load_state_dict` copies into the `_is_fitted`
     buffer in-place but never touches the plain Python mirror, so without this
-    hook a readout loaded from a fitted ``state_dict`` would carry the correct
-    buffer yet a stale ``_fitted_flag`` (and hot paths reading the mirror would
-    see the wrong fittedness). The single ``.item()`` here runs once per load,
+    hook a readout loaded from a fitted `state_dict` would carry the correct
+    buffer yet a stale `_fitted_flag` (and hot paths reading the mirror would
+    see the wrong fittedness). The single `.item()` here runs once per load,
     never per forward.
     """
     module._fitted_flag = bool(module._is_fitted.item())
@@ -35,20 +35,20 @@ class ReadoutLayer(nn.Linear):
     """
     Per-timestep linear layer with custom fitting for ESN training.
 
-    This layer extends :class:`torch.nn.Linear` with:
+    This layer extends `torch.nn.Linear` with:
 
-    - Per-timestep application to sequence tensors ``(B, T, F)``
+    - Per-timestep application to sequence tensors `(B, T, F)`
     - Named identification for multi-readout architectures
-    - Custom ``fit()`` interface for classical ESN training
+    - Custom `fit()` interface for classical ESN training
 
     The layer applies the same linear transformation independently to each
     timestep in a sequence:
 
-    .. code-block:: text
-
-        Input:  (B, T, F_in)  -> Reshape to (B*T, F_in)
-        Apply:  linear(x) = x @ W.T + b
-        Output: (B*T, F_out) -> Reshape to (B, T, F_out)
+    ```text
+    Input:  (B, T, F_in)  -> Reshape to (B*T, F_in)
+    Apply:  linear(x) = x @ W.T + b
+    Output: (B*T, F_out) -> Reshape to (B, T, F_out)
+    ```
 
     This matches classical ESN semantics where readouts are fitted across
     the entire sequence at once using ridge regression.
@@ -63,7 +63,7 @@ class ReadoutLayer(nn.Linear):
         Whether to include a bias term.
     name : str, optional
         Name for this readout layer. Used for identification in
-        multi-readout architectures and by :class:`ESNTrainer`.
+        multi-readout architectures and by `ESNTrainer`.
     trainable : bool, default=False
         If True, weights are trainable via backpropagation.
         If False, weights are frozen (standard ESN behavior).
@@ -71,13 +71,13 @@ class ReadoutLayer(nn.Linear):
     Attributes
     ----------
     weight : torch.nn.Parameter
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight matrix of shape `(out_features, in_features)`.
     bias : torch.nn.Parameter or None
-        Bias vector of shape ``(out_features,)``, or None if ``bias=False``.
+        Bias vector of shape `(out_features,)`, or None if `bias=False`.
     name : str or None
         Name of this readout layer.
     is_fitted : bool
-        True if ``fit()`` has been called successfully.
+        True if `fit()` has been called successfully.
 
     Examples
     --------
@@ -146,9 +146,9 @@ class ReadoutLayer(nn.Linear):
         """
         bool : Whether the readout weights participate in backpropagation.
 
-        A *live* switch: assigning to it flips ``requires_grad_`` on **every**
-        readout parameter (``weight`` and, when present, ``bias``).  A
-        post-construction ``readout.trainable = True`` therefore genuinely
+        A *live* switch: assigning to it flips `requires_grad_` on **every**
+        readout parameter (`weight` and, when present, `bias`).  A
+        post-construction `readout.trainable = True` therefore genuinely
         unfreezes the readout for a gradient-based rollout rather than silently
         shadowing a construction-time-only flag.  The getter reflects the
         current state.
@@ -171,13 +171,13 @@ class ReadoutLayer(nn.Linear):
     @property
     def is_fitted(self) -> bool:
         """
-        bool : True if ``fit()`` has been called successfully.
+        bool : True if `fit()` has been called successfully.
 
         Backed by a registered buffer (so the flag is preserved across
-        ``state_dict`` / ``load_state_dict`` round-trips) but read from a plain
+        `state_dict` / `load_state_dict` round-trips) but read from a plain
         Python mirror kept coherent with it. Reading the mirror avoids the
-        buffer ``.item()`` device->host sync — negligible once, but ruinous
-        inside a per-step autoregressive forecast loop and a ``torch.compile``
+        buffer `.item()` device->host sync — negligible once, but ruinous
+        inside a per-step autoregressive forecast loop and a `torch.compile`
         graph-break.
         """
         return self._fitted_flag
@@ -185,10 +185,10 @@ class ReadoutLayer(nn.Linear):
     def _set_fitted(self, value: bool) -> None:
         """Set the fitted state, keeping the buffer and Python mirror coherent.
 
-        Every place that flips fittedness (base :meth:`fit`, and the
-        streaming :class:`IncrementalRidgeReadoutLayer` lifecycle) must go through
-        here so the persistent ``_is_fitted`` buffer and the sync-free
-        ``_fitted_flag`` mirror never disagree.
+        Every place that flips fittedness (base `fit`, and the
+        streaming `IncrementalRidgeReadoutLayer` lifecycle) must go through
+        here so the persistent `_is_fitted` buffer and the sync-free
+        `_fitted_flag` mirror never disagree.
         """
         self._fitted_flag = bool(value)
         self._is_fitted.fill_(value)
@@ -197,19 +197,19 @@ class ReadoutLayer(nn.Linear):
         """
         Apply linear transformation to input.
 
-        Handles both 2D ``(batch, features)`` and 3D ``(batch, seq_len, features)``
+        Handles both 2D `(batch, features)` and 3D `(batch, seq_len, features)`
         inputs. For 3D inputs, applies the linear transformation independently
         to each timestep.
 
         Parameters
         ----------
         input : torch.Tensor
-            Input tensor of shape ``(B, F)`` or ``(B, T, F)``.
+            Input tensor of shape `(B, F)` or `(B, T, F)`.
 
         Returns
         -------
         torch.Tensor
-            Output tensor of shape ``(B, F_out)`` or ``(B, T, F_out)``.
+            Output tensor of shape `(B, F_out)` or `(B, T, F_out)`.
 
         Raises
         ------
@@ -250,32 +250,32 @@ class ReadoutLayer(nn.Linear):
         Fit readout weights to the given (states, targets) pair.
 
         This base implementation handles the bookkeeping that every readout
-        needs: shape normalisation from ``(B, T, F)`` → ``(B*T, F)`` plus
+        needs: shape normalisation from `(B, T, F)` → `(B*T, F)` plus
         sample-count and out-features validation.  The actual algebraic
-        solve is delegated to :meth:`solve`, which subclasses override.
+        solve is delegated to `solve`, which subclasses override.
 
         Parameters
         ----------
         states : torch.Tensor
-            Input states of shape ``(B, T, F_in)`` or ``(N, F_in)``.
+            Input states of shape `(B, T, F_in)` or `(N, F_in)`.
         targets : torch.Tensor
-            Target outputs of shape ``(B, T, F_out)`` or ``(N, F_out)``.
+            Target outputs of shape `(B, T, F_out)` or `(N, F_out)`.
 
         Raises
         ------
         NotImplementedError
-            The base ``ReadoutLayer`` does not implement an algebraic solver;
-            use a subclass such as :class:`CGReadoutLayer`.
+            The base `ReadoutLayer` does not implement an algebraic solver;
+            use a subclass such as `CGReadoutLayer`.
         ValueError
-            If ``states`` and ``targets`` disagree on the sample dimension
+            If `states` and `targets` disagree on the sample dimension
             after flattening, if the state's feature dimension does not match
-            ``self.in_features``, if the target's feature dimension does not
-            match ``self.out_features``, or if ``states`` or ``targets``
+            `self.in_features`, if the target's feature dimension does not
+            match `self.out_features`, or if `states` or `targets`
             contain non-finite (NaN or Inf) values.
 
         Notes
         -----
-        After ``fit()`` returns successfully, :attr:`is_fitted` is ``True``.
+        After `fit()` returns successfully, `is_fitted` is `True`.
 
         See Also
         --------
@@ -325,29 +325,29 @@ class ReadoutLayer(nn.Linear):
         """
         Solve the readout fit on *already-flattened* inputs.
 
-        Subclasses override this hook instead of :meth:`fit` so they don't
+        Subclasses override this hook instead of `fit` so they don't
         need to re-implement shape normalisation, validation, or parameter
         copy-back.
 
         This is a fitting extension hook, not a pure analysis operation.
         Online variants may update accumulated/recursive statistics and
-        installed coefficients. Use :meth:`fit` as the training entrypoint.
+        installed coefficients. Use `fit` as the training entrypoint.
 
         Parameters
         ----------
         states : torch.Tensor
-            Flattened input states of shape ``(N, in_features)``.
+            Flattened input states of shape `(N, in_features)`.
         targets : torch.Tensor
-            Flattened targets of shape ``(N, out_features)``.
+            Flattened targets of shape `(N, out_features)`.
 
         Returns
         -------
         coefs : torch.Tensor
-            Coefficient matrix of shape ``(in_features, out_features)``.
-            The base ``fit`` transposes this into the ``(out, in)`` layout
-            expected by ``nn.Linear``.
+            Coefficient matrix of shape `(in_features, out_features)`.
+            The base `fit` transposes this into the `(out, in)` layout
+            expected by `nn.Linear`.
         intercept : torch.Tensor or None
-            Bias vector of shape ``(out_features,)``, or ``None`` to leave
+            Bias vector of shape `(out_features,)`, or `None` to leave
             the layer's bias untouched.
 
         Raises

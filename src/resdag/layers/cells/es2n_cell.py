@@ -4,7 +4,7 @@ ES2N Cell
 
 This module provides the Edge-of-Stability State Network (ES2N) reservoir cell:
 
-- :class:`ES2NCell` — single-timestep ES2N update with an orthogonal skip
+- `ES2NCell` — single-timestep ES2N update with an orthogonal skip
   connection; owns all parameters.
 
 References
@@ -32,57 +32,57 @@ class ES2NCell(_SkipReservoirCell):
     *orthogonal* branch.  Its update (paper Eq. 5, adapted to resdag's separate
     feedback / driving-input streams) is
 
-    .. math::
+    $$
+    x_t = \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
+          + (1 - \beta)\,O\,x_{t-1}
+    $$
 
-        x_t = \beta\,\phi(W_r x_{t-1} + W_{fb} x_{fb,t} + W_{in} u_t + b)
-              + (1 - \beta)\,O\,x_{t-1}
+    where $\phi$ is the activation, $O$ is a **fixed random
+    orthogonal** matrix (the skip / residual branch), $W_r$ is the
+    spectral-radius-scaled frozen recurrent matrix, $W_{fb}$ / $W_{in}$
+    the feedback / input weights, $b$ the random bias, and
+    $\beta \in (0, 1]$ the *proximity* hyperparameter.
 
-    where :math:`\phi` is the activation, :math:`O` is a **fixed random
-    orthogonal** matrix (the skip / residual branch), :math:`W_r` is the
-    spectral-radius-scaled frozen recurrent matrix, :math:`W_{fb}` / :math:`W_{in}`
-    the feedback / input weights, :math:`b` the random bias, and
-    :math:`\beta \in (0, 1]` the *proximity* hyperparameter.
-
-    The paper folds the feedback into the input term :math:`u_t`; resdag keeps
+    The paper folds the feedback into the input term $u_t$; resdag keeps
     feedback and driving inputs as separate projections, so the projectable
-    input part is :math:`W_{fb} x_{fb,t} + W_{in} u_t + b` and the recurrent
-    part is :math:`W_r x_{t-1}` (inside :math:`\phi`) plus :math:`O x_{t-1}`
+    input part is $W_{fb} x_{fb,t} + W_{in} u_t + b$ and the recurrent
+    part is $W_r x_{t-1}$ (inside $\phi$) plus $O x_{t-1}$
     (the skip).
 
-    Interpretation of ``beta``:
+    Interpretation of `beta`:
 
-    * :math:`\beta \to 0` — the map approaches the orthogonal, norm-preserving
-      linear map :math:`x_t \approx O x_{t-1}`.  All Jacobian eigenvalues hover
+    * $\beta \to 0$ — the map approaches the orthogonal, norm-preserving
+      linear map $x_t \approx O x_{t-1}$.  All Jacobian eigenvalues hover
       on the complex unit circle: the *edge of stability*, giving very long
       (near-lossless) memory (paper Thm. 3.5).
-    * :math:`\beta = 1` — the skip vanishes and the update reduces to a standard
-      **non-leaky** ESN :math:`x_t = \phi(W_r x_{t-1} + \cdots)`.
+    * $\beta = 1$ — the skip vanishes and the update reduces to a standard
+      **non-leaky** ESN $x_t = \phi(W_r x_{t-1} + \cdots)$.
 
     Because the proximity plays the memory-timescale role a leaky ESN gives to
-    its leak rate, ES2N takes **no** ``leak_rate`` argument (and no train-mode
-    ``noise``, which is not part of the ES2N formulation).
+    its leak rate, ES2N takes **no** `leak_rate` argument (and no train-mode
+    `noise`, which is not part of the ES2N formulation).
 
     Parameters
     ----------
     reservoir_size, feedback_size, input_size, spectral_radius, bias, \
 bias_scaling, activation, trainable, feedback_initializer, input_initializer, \
 topology, orthogonal_scaling, seed
-        See :class:`~resdag.layers.cells._skip_cell._SkipReservoirCell` and
-        :class:`~resdag.layers.cells.esn_cell.ESNCell` for the shared meanings.
+        See `resdag.layers.cells._skip_cell._SkipReservoirCell` and
+        `resdag.layers.cells.esn_cell.ESNCell` for the shared meanings.
     beta : float, default=0.9
-        Proximity to the edge of stability, in :math:`(0, 1]`.  Smaller values
+        Proximity to the edge of stability, in $(0, 1]$.  Smaller values
         weight the orthogonal skip more heavily (longer memory, closer to the
-        edge of chaos); ``1.0`` recovers a standard non-leaky ESN.  A *live*
-        knob validated on assignment (like a leak rate): ``cell.beta = ...``
+        edge of chaos); `1.0` recovers a standard non-leaky ESN.  A *live*
+        knob validated on assignment (like a leak rate): `cell.beta = ...`
         takes effect on the next forward.
 
     Attributes
     ----------
     skip_matrix : torch.Tensor
-        Frozen orthogonal skip matrix ``O`` (see the base class).
+        Frozen orthogonal skip matrix `O` (see the base class).
     weight_hh, weight_feedback, weight_input, bias_h
         Recurrent, feedback, input weights and bias (see
-        :class:`~resdag.layers.cells.esn_cell.ESNCell`).
+        `resdag.layers.cells.esn_cell.ESNCell`).
 
     Examples
     --------
@@ -117,12 +117,12 @@ topology, orthogonal_scaling, seed
     @property
     def beta(self) -> float:
         """
-        float : Proximity to the edge of stability, in :math:`(0, 1]`.
+        float : Proximity to the edge of stability, in $(0, 1]$.
 
         A *live* knob: assigning to it (directly or through
-        ``ES2NLayer.beta = ...``) validates the value and takes effect on the
-        next forward.  ``beta`` near 0 weights the orthogonal skip (long memory,
-        edge of stability); ``beta = 1`` recovers a standard non-leaky ESN.
+        `ES2NLayer.beta = ...`) validates the value and takes effect on the
+        next forward.  `beta` near 0 weights the orthogonal skip (long memory,
+        edge of stability); `beta = 1` recovers a standard non-leaky ESN.
         """
         return self._beta
 
@@ -134,10 +134,10 @@ topology, orthogonal_scaling, seed
         self._beta = scalar
 
     def _branch_weights(self) -> tuple[float, float]:
-        """Return ``(1 - beta, beta)`` — the ES2N convex-combination weights.
+        """Return `(1 - beta, beta)` — the ES2N convex-combination weights.
 
-        The skip branch is weighted by ``1 - beta`` and the nonlinear branch by
-        ``beta``, exactly matching paper Eq. 5.
+        The skip branch is weighted by `1 - beta` and the nonlinear branch by
+        `beta`, exactly matching paper Eq. 5.
         """
         return 1.0 - self._beta, self._beta
 

@@ -21,7 +21,8 @@ import torch
 import torch.nn as nn
 
 from resdag import ESNLayer, ESNModel, lorenz, reservoir_input
-from resdag.layers import CGReadoutLayer
+from resdag.data import normalize_data
+from resdag.layers import SVDReadoutLayer
 from resdag.training import ESNTrainer
 
 RESERVOIR_SIZE = 200
@@ -38,11 +39,13 @@ def main() -> None:
     bptt_window = options.choose(24, 400)
 
     # Shared task: one-step-ahead prediction of Lorenz-63.
-    data = lorenz(val_end + 1, seed=42)  # (1, 1801, 3) = (batch, time, features)
+    raw = lorenz(val_end + 1, seed=42, normalize=None)  # raw (1, 1801, 3)
+    # Fit on training inputs only; held-out observations reuse those statistics.
+    _, stats = normalize_data(raw[:, washout:train_end], method="standard")
+    data, _ = normalize_data(raw, method="standard", stats=stats)
     warmup = data[:, :washout]  # (1, 200, 3)
     train_in = data[:, washout:train_end]  # (1, 1200, 3)
     train_tgt = data[:, washout + 1 : train_end + 1]  # next step of train_in
-    val_in = data[:, train_end:val_end]  # (1, 400, 3)
     val_tgt = data[:, train_end + 1 : val_end + 1]
 
     results: list[tuple[str, int, float, float]] = []  # path, trainable params, time, MSE
@@ -51,14 +54,15 @@ def main() -> None:
         """One-step prediction error on the validation window."""
         model.reset_reservoirs()
         with torch.no_grad():
-            out = model(torch.cat([warmup, val_in], dim=1))
+            # Replay every observed row before validation, preserving chronology.
+            out = model(data[:, :val_end])
             if head is not None:
                 out = head(out)
-            out = out[:, warmup.shape[1] :]  # drop the warmup window
+            out = out[:, train_end:]  # keep only validation predictions
         return torch.mean((out - val_tgt) ** 2).item()
 
     # ------------------------------------------------------------------
-    # Path A: algebraic fitting (ESNTrainer + CGReadoutLayer)
+    # Path A: algebraic fitting (ESNTrainer + stable SVD readout)
     # ------------------------------------------------------------------
     print("=" * 70)
     print("Path A: algebraic — ESNTrainer fits the readout in one solve")
@@ -66,7 +70,7 @@ def main() -> None:
 
     inp = reservoir_input(3)  # symbolic input, any sequence length
     states = ESNLayer(size, feedback_size=3, spectral_radius=0.8)(inp)
-    out = CGReadoutLayer(size, 3, name="output", alpha=1e-6)(states)
+    out = SVDReadoutLayer(size, 3, name="output", alpha=1e-6)(states)
     model_a = ESNModel(inp, out)
 
     t0 = time.perf_counter()
@@ -158,7 +162,7 @@ def main() -> None:
 
     with torch.no_grad():
         reservoir_c.reset_state()
-        out = head_c(reservoir_c(torch.cat([warmup, val_in], dim=1)))[:, warmup.shape[1] :]
+        out = head_c(reservoir_c(data[:, :val_end]))[:, train_end:]
     mse_c = torch.mean((out - val_tgt) ** 2).item()
     print(f"trained in {time_c:.2f} s, val one-step MSE = {mse_c:.2e}")
     results.append(("C full BPTT", trainable_c, time_c, mse_c))
@@ -169,6 +173,7 @@ def main() -> None:
     print("\n" + "=" * 70)
     print("Comparison (same reservoir size, same task)")
     print("=" * 70)
+    print("Every loss and validation MSE uses training-standardized units.")
     header = f"{'path':<22} {'grad params':>12} {'time [s]':>10} {'val MSE':>12}"
     print(header)
     print("-" * len(header))
@@ -178,7 +183,7 @@ def main() -> None:
     print("-" * len(header))
     print("Rule of thumb: start with A. Reach for B when you need a nonlinear")
     print("head or custom loss; reach for C only when the random reservoir")
-    print("provably is not good enough — it is orders of magnitude slower.")
+    print("does not meet your validation target. Measure the actual training cost.")
 
 
 if __name__ == "__main__":

@@ -100,3 +100,24 @@ primitive containers; save-time validation rejects executable Python objects.
 Full Python files require explicit `load_full(path, trusted=True)`. Complete
 portable `Model.save`/`rd.load` remains the recommended workflow. Failed saves
 preserve an existing destination through an atomic replacement.
+
+
+## Dataset generators return raw values
+
+`lorenz`, `rossler`, `henon` and `mackey_glass` now default to `normalize=None`,
+matching NARMA, sine and Kuramoto–Sivashinsky. Previously, these four generators
+standardized the complete returned window before users split training and test
+data, letting held-out observations affect the training scale. Newly generated
+series therefore have different units unless normalization is explicit.
+
+For the common workflow, pass the raw training prefix to `model.fit`; the model
+learns its scaling from training observations and forecasts in original units.
+For raw graph workflows, split first and use
+`prepare_esn_data(..., normalize=True)` or fit `normalize_data` statistics on
+the training prefix and reuse them for later observations.
+
+`normalize="standard"` retains the previous transformation exactly for a fixed
+generator configuration and seed. It scales the full returned window, so use
+it only when that window belongs entirely to one training split or when
+reproducing an explicitly declared global-normalization experiment. Saved model
+weights and already materialized data are unchanged. See [data and datasets](../reference/data.md).

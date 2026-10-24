@@ -1,4 +1,4 @@
-"""Informed input initializer for hybrid/knowledge ESNs (RC.jl ``informed_init``)."""
+"""Informed input initializer for hybrid/knowledge ESNs (RC.jl `informed_init`)."""
 
 from typing import Any
 
@@ -19,52 +19,52 @@ from .registry import register_input_feedback
     seed=None,
 )
 class InformedInputInitializer(InputFeedbackInitializer):
-    """Informed input layer for hybrid/knowledge ESNs (RC.jl ``informed_init`` [Pathak2018]).
+    """Informed input layer for hybrid/knowledge ESNs (RC.jl `informed_init` [Pathak2018]).
 
     Splits the reservoir units into a "state" group and a "model" group so a
     hybrid ESN can wire the raw system state and the knowledge-based model output
     into disjoint fractions of the reservoir. The input columns are partitioned
-    the same way: the first ``state_size = in_size - model_in_size`` columns are
-    the raw state channels; the trailing ``model_in_size`` columns are the model
+    the same way: the first `state_size = in_size - model_in_size` columns are
+    the raw state channels; the trailing `model_in_size` columns are the model
     channels.
 
-    Construction (mirrors RC.jl ``informed_init``):
+    Construction (mirrors RC.jl `informed_init`):
 
-    1. ``state_size = in_size - model_in_size`` (must be ``> 0``).
-    2. ``num_for_state = floor(reservoir_size * gamma)`` reservoir rows receive a
+    1. `state_size = in_size - model_in_size` (must be `> 0`).
+    2. `num_for_state = floor(reservoir_size * gamma)` reservoir rows receive a
        single random connection to a randomly chosen **state** column
-       ``[0, state_size)``.
-    3. ``num_for_model = floor(reservoir_size * (1 - gamma))`` reservoir rows
+       `[0, state_size)`.
+    3. `num_for_model = floor(reservoir_size * (1 - gamma))` reservoir rows
        receive a single random connection to a randomly chosen **model** column
-       ``[state_size, in_size)``.
+       `[state_size, in_size)`.
 
-    Each chosen entry is a random value in ``[-input_scaling, input_scaling]``
-    (RC.jl: ``(rand - 0.5) * 2 * scaling``). Candidate rows are drawn only from
+    Each chosen entry is a random value in `[-input_scaling, input_scaling]`
+    (RC.jl: `(rand - 0.5) * 2 * scaling`). Candidate rows are drawn only from
     rows that are still all-zero, so a unit gets **at most one** input
     connection; when fewer zero rows remain than requested the loop stops early
-    (RC.jl's ``isempty(...) && break``). All other entries are zero.
+    (RC.jl's `isempty(...) && break`). All other entries are zero.
 
-    ``gamma`` is the fraction of the reservoir devoted to the raw state, so
-    ``gamma`` near ``1`` weights the reservoir toward the state and near ``0``
-    toward the knowledge model. A later ``HybridESN`` phase consumes this
+    `gamma` is the fraction of the reservoir devoted to the raw state, so
+    `gamma` near `1` weights the reservoir toward the state and near `0`
+    toward the knowledge model. A later `HybridESN` phase consumes this
     initializer to build its input matrix.
 
     Parameters
     ----------
     model_in_size : int
-        Number of *model* input channels (RC.jl ``model_in_size``). The weight's
-        ``in_features`` must exceed this so ``state_size > 0``. Required — the
-        bare-name registry default is ``None`` and raises at ``initialize`` time
+        Number of *model* input channels (RC.jl `model_in_size`). The weight's
+        `in_features` must exceed this so `state_size > 0`. Required — the
+        bare-name registry default is `None` and raises at `initialize` time
         if left unset.
     gamma : float, default=0.5
         Fraction of reservoir units wired to the raw state block (RC.jl
-        ``gamma``). Must lie in ``[0, 1]``.
+        `gamma`). Must lie in `[0, 1]`.
     input_scaling : float, default=0.1
         Half-width of the uniform draw for each connection: values land in
-        ``[-input_scaling, input_scaling]`` (RC.jl ``scaling``). Shared
-        scaling-contract knob, so ``max|W|`` scales linearly with it.
+        `[-input_scaling, input_scaling]` (RC.jl `scaling`). Shared
+        scaling-contract knob, so `max|W|` scales linearly with it.
     seed : int, torch.Generator, or None, optional
-        Reproducibility seed for the row/column choices and value draws. ``None``
+        Reproducibility seed for the row/column choices and value draws. `None`
         draws fresh each call.
 
     References
@@ -73,7 +73,7 @@ class InformedInputInitializer(InputFeedbackInitializer):
     learning in conjunction with a knowledge-based model," Chaos, vol. 28, no. 4,
     041101, 2018.
 
-    ReservoirComputing.jl ``informed_init`` (``src/inits/inits_input.jl``).
+    ReservoirComputing.jl `informed_init` (`src/inits/inits_input.jl`).
 
     Examples
     --------
@@ -98,7 +98,7 @@ class InformedInputInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If ``gamma`` is not in ``[0, 1]``, or ``model_in_size`` is negative.
+            If `gamma` is not in `[0, 1]`, or `model_in_size` is negative.
         """
         super().__init__(input_scaling=input_scaling, seed=seed)
         if not (0.0 <= float(gamma) <= 1.0):
@@ -114,10 +114,10 @@ class InformedInputInitializer(InputFeedbackInitializer):
         Parameters
         ----------
         weight : torch.Tensor
-            Weight tensor of shape ``(out_features, in_features)``.
+            Weight tensor of shape `(out_features, in_features)`.
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract); other keys are ignored.
 
         Returns
@@ -128,8 +128,8 @@ class InformedInputInitializer(InputFeedbackInitializer):
         Raises
         ------
         ValueError
-            If ``model_in_size`` is unset, or ``in_features <= model_in_size``
-            (so ``state_size <= 0``).
+            If `model_in_size` is unset, or `in_features <= model_in_size`
+            (so `state_size <= 0`).
         """
         out_features, in_features = _resolve_shape(weight)
         device = weight.device
@@ -166,7 +166,7 @@ class InformedInputInitializer(InputFeedbackInitializer):
             return np.flatnonzero(~values.any(axis=1))
 
         def wire(count: int, col_low: int, col_high: int) -> None:
-            """Wire ``count`` still-zero rows to a random column in ``[col_low, col_high)``."""
+            """Wire `count` still-zero rows to a random column in `[col_low, col_high)`."""
             for _ in range(count):
                 candidates = zero_row_indices()
                 if candidates.size == 0:

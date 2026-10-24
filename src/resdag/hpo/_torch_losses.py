@@ -37,7 +37,7 @@ def score_builtin_tensor_loss(
     y_pred: torch.Tensor,
     **kwargs: Any,
 ) -> torch.Tensor | None:
-    """Return an on-device scalar, or ``None`` for an unrecognized loss."""
+    """Return an on-device scalar, or `None` for an unrecognized loss."""
     base = fn
     if isinstance(fn, partial):
         if fn.args:

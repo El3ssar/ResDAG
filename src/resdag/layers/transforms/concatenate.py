@@ -2,7 +2,7 @@
 Concatenation Layer
 ===================
 
-This module provides :class:`Concatenate`, a layer for combining multiple
+This module provides `Concatenate`, a layer for combining multiple
 tensor inputs along the feature dimension.
 """
 

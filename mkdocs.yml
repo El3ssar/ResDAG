@@ -150,7 +150,7 @@ markdown_extensions:
   - pymdownx.betterem
   - pymdownx.details
   - pymdownx.highlight:
-      anchor_linenums: true
+      anchor_linenums: false
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.magiclink:

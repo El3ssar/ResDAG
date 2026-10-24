@@ -29,10 +29,10 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
     ----------
     input_scaling : float, optional
         Uniform magnitude knob from the shared scaling contract (see
-        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
-        (the default) leaves entries in ``{-1, +1}``; a float ``s`` multiplies
-        every entry by ``s`` (entries become ``{-s, +s}``), so ``max|W|`` scales
-        linearly with ``s`` (``input_scaling=0.5`` halves it).
+        `resdag.init.input_feedback.InputFeedbackInitializer`). `None`
+        (the default) leaves entries in `{-1, +1}`; a float `s` multiplies
+        every entry by `s` (entries become `{-s, +s}`), so `max|W|` scales
+        linearly with `s` (`input_scaling=0.5` halves it).
     balance_global : bool, default=True
         When rows is odd, enforce near-equal global count of +1 vs -1 column-sums
         by flipping full columns.
@@ -155,10 +155,10 @@ class BinaryBalancedInitializer(InputFeedbackInitializer):
         weight : torch.Tensor
             Weight tensor of shape (out_features, in_features)
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract — see
-            :class:`~resdag.init.input_feedback.InputFeedbackInitializer`);
+            `resdag.init.input_feedback.InputFeedbackInitializer`);
             other keys are ignored.
 
         Returns

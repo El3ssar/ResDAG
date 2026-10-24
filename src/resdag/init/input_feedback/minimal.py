@@ -1,4 +1,4 @@
-"""Minimal-complexity input initializer (Rodan & Tiňo 2011; RC.jl ``minimal_init``)."""
+"""Minimal-complexity input initializer (Rodan & Tiňo 2011; RC.jl `minimal_init`)."""
 
 from typing import Any
 
@@ -19,66 +19,66 @@ from .registry import register_input_feedback
     seed=None,
 )
 class MinimalInputInitializer(InputFeedbackInitializer):
-    """Minimal-complexity input weights (Rodan & Tiňo; RC.jl ``minimal_init``).
+    """Minimal-complexity input weights (Rodan & Tiňo; RC.jl `minimal_init`).
 
-    Every entry of the input matrix has the **same magnitude** ``weight``; only
-    the sign varies, chosen by a deterministic or stochastic ``sign_rule``. This
+    Every entry of the input matrix has the **same magnitude** `weight`; only
+    the sign varies, chosen by a deterministic or stochastic `sign_rule`. This
     is the "minimal complexity" input layer of Rodan & Tiňo — a single weight
     magnitude across all input-to-reservoir connections, paired with a simple
     cycle reservoir — which they show rivals fully random ESNs on many tasks.
 
     The matrix is **dense**: every reservoir unit receives every input (unlike
-    :class:`WeightedMinimalInitializer`, whose connections are block-diagonal).
+    `WeightedMinimalInitializer`, whose connections are block-diagonal).
 
-    Construction (mirrors RC.jl ``minimal_init``):
+    Construction (mirrors RC.jl `minimal_init`):
 
-    1. Fill an ``(reservoir_size, in_size)`` matrix with the constant ``weight``.
-    2. Apply the ``sign_rule`` in RC.jl's column-major traversal order.
+    1. Fill an `(reservoir_size, in_size)` matrix with the constant `weight`.
+    2. Apply the `sign_rule` in RC.jl's column-major traversal order.
 
-    Sign rules (RC.jl ``sampling_type``):
+    Sign rules (RC.jl `sampling_type`):
 
-    - ``"bernoulli"`` (default) — each entry keeps its ``+`` sign with
-      probability ``positive_prob`` and is negated otherwise (RC.jl
-      ``bernoulli_sample!``). This is the RC.jl default. Requires a ``seed`` for
+    - `"bernoulli"` (default) — each entry keeps its `+` sign with
+      probability `positive_prob` and is negated otherwise (RC.jl
+      `bernoulli_sample!`). This is the RC.jl default. Requires a `seed` for
       reproducibility.
-    - ``"irrational"`` — deterministic: an entry is negated when the
-      corresponding decimal digit of pi (offset by ``start``) is odd (RC.jl
-      ``irrational_sample!``). Fully reproducible, no RNG.
-    - ``"regular"`` — deterministic: every ``strides``-th entry (in flat
-      column-major order) is negated (RC.jl ``_regular_sample!``).
-    - ``"none"`` — leave every sign positive (RC.jl ``no_sample``).
+    - `"irrational"` — deterministic: an entry is negated when the
+      corresponding decimal digit of pi (offset by `start`) is odd (RC.jl
+      `irrational_sample!`). Fully reproducible, no RNG.
+    - `"regular"` — deterministic: every `strides`-th entry (in flat
+      column-major order) is negated (RC.jl `_regular_sample!`).
+    - `"none"` — leave every sign positive (RC.jl `no_sample`).
 
     Parameters
     ----------
     weight : float, default=0.1
-        The single magnitude assigned to every input weight (RC.jl ``weight``).
+        The single magnitude assigned to every input weight (RC.jl `weight`).
     sign_rule : {"bernoulli", "irrational", "regular", "none"}, default="bernoulli"
-        The sign-assignment rule (RC.jl ``sampling_type`` without the
-        ``_sample!`` suffix).
+        The sign-assignment rule (RC.jl `sampling_type` without the
+        `_sample!` suffix).
     positive_prob : float, default=0.5
-        Probability an entry stays positive under ``sign_rule="bernoulli"``
-        (RC.jl ``positive_prob``).
+        Probability an entry stays positive under `sign_rule="bernoulli"`
+        (RC.jl `positive_prob`).
     start : int, default=1
-        First pi-digit offset under ``sign_rule="irrational"`` (RC.jl ``start``).
+        First pi-digit offset under `sign_rule="irrational"` (RC.jl `start`).
     strides : int, default=2
-        Stride under ``sign_rule="regular"``; every ``strides``-th flat entry is
-        negated (RC.jl ``strides``).
+        Stride under `sign_rule="regular"`; every `strides`-th flat entry is
+        negated (RC.jl `strides`).
     input_scaling : float, optional
         Uniform magnitude knob from the shared scaling contract (see
-        :class:`~resdag.init.input_feedback.InputFeedbackInitializer`). ``None``
-        (the default) leaves entries at magnitude ``weight``; a float ``s``
-        multiplies every entry by ``s``, so ``max|W|`` scales linearly with ``s``
-        (``input_scaling=0.5`` halves it). Applied *on top of* ``weight``.
+        `resdag.init.input_feedback.InputFeedbackInitializer`). `None`
+        (the default) leaves entries at magnitude `weight`; a float `s`
+        multiplies every entry by `s`, so `max|W|` scales linearly with `s`
+        (`input_scaling=0.5` halves it). Applied *on top of* `weight`.
     seed : int, torch.Generator, or None, optional
-        Reproducibility seed for the ``"bernoulli"`` sign draw. Ignored by the
-        deterministic rules. ``None`` draws fresh each call.
+        Reproducibility seed for the `"bernoulli"` sign draw. Ignored by the
+        deterministic rules. `None` draws fresh each call.
 
     References
     ----------
     A. Rodan and P. Tiňo, "Minimum Complexity Echo State Network," IEEE Trans.
     Neural Netw., vol. 22, no. 1, pp. 131-144, Jan. 2011.
 
-    ReservoirComputing.jl ``minimal_init`` (``src/inits/inits_input.jl``).
+    ReservoirComputing.jl `minimal_init` (`src/inits/inits_input.jl`).
 
     Examples
     --------
@@ -114,10 +114,10 @@ class MinimalInputInitializer(InputFeedbackInitializer):
         Parameters
         ----------
         weight : torch.Tensor
-            Weight tensor of shape ``(out_features, in_features)``.
+            Weight tensor of shape `(out_features, in_features)`.
         **kwargs
-            Per-call keyword overrides. A recognized ``input_scaling`` key
-            overrides the bound ``self.input_scaling`` for this call only (the
+            Per-call keyword overrides. A recognized `input_scaling` key
+            overrides the bound `self.input_scaling` for this call only (the
             shared per-call contract); other keys are ignored.
 
         Returns

@@ -41,7 +41,8 @@ def main() -> None:
 
     # One long Lorenz-63 trajectory, shaped (T, D). The dataset slices it into
     # overlapping windows; the loader stacks them to (B, window_len, D).
-    series = lorenz(options.choose(100, 4000), seed=42)[0]  # (4000, 3)
+    # This complete series is training data; no held-out evaluation is used here.
+    series = lorenz(options.choose(100, 4000), seed=42, normalize="standard")[0]  # (4000, 3)
     print(f"source series: {tuple(series.shape)} (time, features)")
 
     loader = make_dataloader(

@@ -19,12 +19,12 @@ __all__ = ["make_study_name", "get_study_summary", "get_best_params"]
 
 
 def _unwrap_callable(fn: Callable) -> Callable:
-    """Recover the underlying callable from a wrapper such as ``functools.partial``.
+    """Recover the underlying callable from a wrapper such as `functools.partial`.
 
-    ``functools.partial`` objects (and other wrappers) hide the actual factory
-    behind a ``func`` attribute and carry no usable ``__name__``. Following the
-    ``func`` chain restores the original callable so its name and source file can
-    be recovered. ``functools.wraps``-style wrappers already expose ``__name__``,
+    `functools.partial` objects (and other wrappers) hide the actual factory
+    behind a `func` attribute and carry no usable `__name__`. Following the
+    `func` chain restores the original callable so its name and source file can
+    be recovered. `functools.wraps`-style wrappers already expose `__name__`,
     so they are left untouched.
 
     Parameters
@@ -35,7 +35,7 @@ def _unwrap_callable(fn: Callable) -> Callable:
     Returns
     -------
     Callable
-        The innermost callable reachable via ``func`` attributes, or ``fn`` if it
+        The innermost callable reachable via `func` attributes, or `fn` if it
         is not a recognised wrapper.
     """
     seen: set[int] = set()
@@ -51,25 +51,25 @@ def make_study_name(model_creator: Callable) -> str:
     Creates a study name based on the callable's source file and name. It is
     robust to callables that lack the usual introspection metadata:
 
-    - ``functools.partial`` objects are unwrapped to their underlying function so
-      the wrapped factory's name and source file are used (a bare ``partial``
-      raises ``TypeError`` in :func:`inspect.getsourcefile`).
-    - Callables without a usable ``__name__`` (e.g. lambdas or callable class
+    - `functools.partial` objects are unwrapped to their underlying function so
+      the wrapped factory's name and source file are used (a bare `partial`
+      raises `TypeError` in `inspect.getsourcefile`).
+    - Callables without a usable `__name__` (e.g. lambdas or callable class
       instances) fall back to their type name plus a short stable hash of their
-      ``repr``, so two logically-distinct creators do not collide onto the same
+      `repr`, so two logically-distinct creators do not collide onto the same
       study name and silently share persisted storage.
 
     Parameters
     ----------
     model_creator : Callable
         The model creator callable to generate a name from. May be a plain
-        function, a :class:`functools.partial`, a lambda, or any callable object.
+        function, a `functools.partial`, a lambda, or any callable object.
 
     Returns
     -------
     str
-        Study name in the format ``"filename:identifier"``. ``filename`` is
-        ``"<unknown>"`` when the source file cannot be determined.
+        Study name in the format `"filename:identifier"`. `filename` is
+        `"<unknown>"` when the source file cannot be determined.
 
     Example
     -------

@@ -24,11 +24,11 @@ def ring_chord_graph(
       - backward chords i -> (i - L_k) mod n with weight w * alpha**k
 
     This topology is **pre-scaled**: the unit ring weight together with the
-    ``w``/``alpha`` chord weights *are* the spectral structure of the recurrent
+    `w`/`alpha` chord weights *are* the spectral structure of the recurrent
     matrix. The layer-level spectral-radius rescale would multiply all of these
     by a single factor and discard the carefully chosen ring-vs-chord ratio, so
-    it is suppressed: a layer ``spectral_radius`` passed alongside this topology
-    is ignored (with a warning). Control the chord scale through ``w`` / ``alpha``.
+    it is suppressed: a layer `spectral_radius` passed alongside this topology
+    is ignored (with a warning). Control the chord scale through `w` / `alpha`.
 
     Parameters
     ----------
@@ -39,7 +39,7 @@ def ring_chord_graph(
     w : float
         Base chord weight (ratio vs. ring=1). Must be >= 0. Because this
         topology is pre-scaled, the ring/chord weights are used verbatim and any
-        layer ``spectral_radius`` is ignored.
+        layer `spectral_radius` is ignored.
     alpha : float
         Geometric decay across multiple chords (0<alpha<=1). Ignored if L is int.
 

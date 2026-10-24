@@ -115,8 +115,9 @@ print(f"reservoir lambda_max = {lam:.4f} per step  (< 0 => sampled contraction)"
 Results depend on reservoir weights, the data split, preprocessing and the
 numerical backend. The example deliberately computes scaling before preparing
 the split, using only the history that belongs to training. Built-in generators
-can normalize their entire returned series by default; request raw data with
-`normalize=None` for held-out forecasting experiments.
+return raw data by default. An explicit `normalize="standard"` or
+`normalize="minmax"` acts on the entire returned window; keep it disabled
+when fitting scaling separately on a training prefix.
 
 Report the normalized horizon alongside the threshold, data scaling, and
 evaluation conditions. Lyapunov-time conversion removes the arbitrary step

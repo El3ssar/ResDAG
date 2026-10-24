@@ -191,8 +191,9 @@ class TimeSeriesWindowDataset(Dataset[WindowItem]):
         `resdag.data.normalize_data`. Applied to inputs and shifted forecast
         targets; external regression targets retain their own units. Requires
         `norm_method`.
-    norm_method : {"minmax", "standard", "noncentered", "meanpreserving"}, optional
-        Normalization method matching `stats`. Required when `stats` is
+    norm_method : str or None, optional
+        Normalization method matching `stats`: `"minmax"`, `"standard"`,
+        `"noncentered"`, or `"meanpreserving"`. Required when `stats` is
         given, ignored otherwise.
 
     target_stats, target_norm_method : optional, keyword-only

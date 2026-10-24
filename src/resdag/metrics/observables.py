@@ -307,8 +307,10 @@ def memory_capacity(
         Non-negative ridge regularization on centered reservoir features. The
         intercept is unpenalized. Zero selects an unregularized least-squares
         fit; positive values stabilize correlated or underdetermined states.
-    input_low, input_high : float, default=(-1.0, 1.0)
-        Bounds of the uniform input distribution $u_t \sim \mathcal{U}(\text{low}, \text{high})$.  The default symmetric `[-1, 1]`
+    input_low : float, optional
+        Lower bound of the uniform input distribution.
+    input_high : float, optional
+        Upper bound of the uniform input distribution $u_t \sim \mathcal{U}(\text{low}, \text{high})$.  The default symmetric `[-1, 1]`
         is the Jaeger convention; a smaller range keeps a `tanh` reservoir
         nearer its linear regime (larger MC).
     seed : int, default=0
@@ -590,7 +592,10 @@ def correlation_dimension(
         the truth, embed both the same way and pass equal-length windows.
     n_bins : int, default=20
         Number of log-spaced radii $r$ at which $C(r)$ is evaluated.
-    r_min_frac, r_max_frac : float, default=(0.01, 0.5)
+    r_min_frac : float, optional
+        Smallest radius as a fraction of the largest pairwise distance.
+    r_max_frac : float, optional
+        Largest radius as a fraction of the largest pairwise distance.
         The radius grid spans `[r_min_frac, r_max_frac] * d_max` where
         `d_max` is the largest pairwise distance, so the grid adapts to the
         attractor's size.

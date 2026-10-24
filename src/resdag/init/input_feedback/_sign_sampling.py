@@ -145,9 +145,10 @@ def build_sign_matrix(
     ----------
     rows, cols : int
         Matrix shape `(reservoir_size, in_size)`.
-    sign_rule : {"none", "bernoulli", "irrational", "regular"}
-        The RC.jl `sampling_type` (without the `_sample!` suffix). `"none"`
-        leaves every sign `+1`.
+    sign_rule : str
+        Sign convention: `"none"`, `"bernoulli"`, `"irrational"`, or `"regular"`.
+        Corresponds to RC.jl `sampling_type` without the `_sample!` suffix.
+        `"none"` leaves every sign `+1`.
     positive_prob : float, default=0.5
         Probability an entry stays positive under `"bernoulli"` (RC.jl
         `positive_prob`).

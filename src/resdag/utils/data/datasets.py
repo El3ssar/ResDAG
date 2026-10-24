@@ -140,7 +140,7 @@ def _normalize(series: np.ndarray, method: Normalize | None) -> np.ndarray:
     ----------
     series : numpy.ndarray
         Trajectory of shape `(T, D)`.
-    method : {"standard", "minmax"} or None
+    method : str or None
         `"standard"` rescales each channel to zero mean / unit std;
         `"minmax"` rescales each channel to `[-1, 1]`; `None` returns the
         input unchanged. Channels with zero spread are left untouched (their
@@ -263,9 +263,12 @@ def lorenz(
         Number of timesteps to return (after the discarded transient).
     dt : float, optional
         Integration step (RK4). Default `0.02`.
-    sigma, rho, beta : float, optional
-        Lorenz parameters. Defaults `10.0`, `28.0`, `8/3` (the classic
-        chaotic regime).
+    sigma : float, optional
+        Lorenz Prandtl parameter.
+    rho : float, optional
+        Lorenz Rayleigh parameter. The defaults select the classic chaotic regime.
+    beta : float, optional
+        Lorenz geometric parameter.
     x0 : tuple of float, optional
         Base initial condition `(x, y, z)`. Default `(1.0, 1.0, 1.0)`.
     perturb : float, optional
@@ -340,9 +343,12 @@ def rossler(
         Number of timesteps to return (after the discarded transient).
     dt : float, optional
         Integration step (RK4). Default `0.05`.
-    a, b, c : float, optional
-        Rössler parameters. Defaults `0.2`, `0.2`, `5.7` (the standard
-        chaotic regime).
+    a : float, optional
+        Linear growth coefficient in the Rössler y equation.
+    b : float, optional
+        Constant forcing in the Rössler z equation.
+    c : float, optional
+        Rössler z damping parameter. The defaults select the classic chaotic regime.
     x0 : tuple of float, optional
         Base initial condition `(x, y, z)`. Default `(1.0, 1.0, 1.0)`.
     perturb : float, optional
@@ -410,9 +416,10 @@ def henon(
     ----------
     n_timesteps : int
         Number of timesteps to return (after the discarded transient).
-    a, b : float, optional
-        Hénon parameters. Defaults `1.4`, `0.3` (the classic chaotic
-        regime).
+    a : float, optional
+        Quadratic coefficient in the Hénon map.
+    b : float, optional
+        Linear feedback coefficient. The defaults select the classic chaotic regime.
     x0 : tuple of float, optional
         Base initial condition `(x, y)`. Default `(0.0, 0.0)`.
     perturb : float, optional
@@ -487,8 +494,12 @@ def mackey_glass(
         Number of timesteps to return (after the discarded transient).
     tau : int, optional
         Delay. Default `17` (the canonical chaotic value).
-    beta, gamma, n : float, optional
-        Equation parameters. Defaults `0.2`, `0.1`, `10.0`.
+    beta : float, optional
+        Strength of the delayed nonlinear feedback.
+    gamma : float, optional
+        Linear decay coefficient.
+    n : float, optional
+        Exponent in the delayed feedback denominator.
     dt : float, optional
         Integration step. Default `1.0`.
     x0 : float, optional
@@ -578,10 +589,18 @@ def narma(
         Number of timesteps to return (after the discarded transient).
     order : int, optional
         Memory order of the recurrence. Default `10` (NARMA-10).
-    alpha, beta, gamma, delta : float, optional
-        Recurrence coefficients. Defaults `0.3`, `0.05`, `1.5`, `0.1`.
-    input_low, input_high : float, optional
-        Bounds of the uniform input `u`. Defaults `0.0`, `0.5`.
+    alpha : float, optional
+        Coefficient of the previous output.
+    beta : float, optional
+        Coefficient of the output-memory product.
+    gamma : float, optional
+        Coefficient of the input product.
+    delta : float, optional
+        Constant offset in the recurrence.
+    input_low : float, optional
+        Lower bound of the uniform input `u`.
+    input_high : float, optional
+        Upper bound of the uniform input `u`.
     discard : int, optional
         Leading transient steps to drop. Default `200`.
     normalize : str or None, optional

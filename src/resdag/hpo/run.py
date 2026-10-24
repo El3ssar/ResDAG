@@ -156,10 +156,14 @@ def run_hpo(
     n_trials : int
         Positive count of NEW attempted configurations; transferred scores do
         not consume this budget. Resume adds this many attempts.
-    loss, loss_params : str or callable, dict, optional
-        Raw forecast objective and options. Built-in/default losses minimize.
-    targets_key, drivers_keys : str, list[str], optional
-        Named target readout and declared driver data suffixes.
+    loss : str or callable, optional
+        Raw forecast objective. Built-in/default losses minimize.
+    loss_params : dict or None, optional
+        Keyword options forwarded to the raw forecast objective.
+    targets_key : str, optional
+        Name of the target readout.
+    drivers_keys : list of str or None, optional
+        Declared driver data suffixes.
     monitor_losses, monitor_params : list, dict, optional
         Additional final-horizon losses, recorded without changing the objective.
     study_name, storage : str, optional
@@ -185,9 +189,13 @@ def run_hpo(
         Zero is quiet. Caller logging levels are restored after this call.
     catch_exceptions : bool, default=True
         Record invalid evaluation attempts rather than aborting on their error.
-    penalty_value, clip_value, prune_on_clip : optional
-        Explicit numeric failure penalty or clipping/pruning controls.
+    penalty_value : float, optional
+        Explicit numeric failure penalty when `error_policy="penalty"`.
         `error_policy="fail"` prevents invalid evaluations becoming winners.
+    clip_value : float or None, optional
+        Optional upper bound on a completed trial loss.
+    prune_on_clip : bool, optional
+        Prune a trial when its loss reaches `clip_value`.
     horizon_key : str, optional
         Data key specifying the forecast length; cannot exceed validation truth.
     n_checkpoints : int, default=5

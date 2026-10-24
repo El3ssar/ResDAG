@@ -77,7 +77,7 @@ def normalize_data(
     ----------
     data : torch.Tensor
         Data tensor of shape (B, T, D).
-    method : {"minmax", "standard", "noncentered", "meanpreserving"}
+    method : str
         Normalization method:
         - "minmax": Scale to [-1, 1] range
         - "standard": Zero mean, unit variance
@@ -127,7 +127,7 @@ def denormalize_data(
     ----------
     data : torch.Tensor
         Normalized data of shape (B, T, D) to map back to the original scale.
-    method : {"minmax", "standard", "noncentered", "meanpreserving"}
+    method : str
         Normalization method that produced `data`. Must match the method used
         for the forward transform. The inverse of each method is:
 
@@ -307,7 +307,7 @@ def prepare_esn_data(
         `normalize=True` and `None` when `normalize=False` (nothing was
         fitted). When False (the default), the legacy 5-tuple is returned
         unchanged.
-    alignment : {"next", "legacy"}, default="next"
+    alignment : str, optional
         `"next"` includes the final training target in the forecast history.
         `"legacy"` ends that history one sample earlier; pair this with
         `model.forecast(..., alignment="legacy")` to reproduce old runs.
@@ -499,8 +499,9 @@ def load_and_prepare(
         `prepare_esn_data`; see its docstring for details.
     dtype : torch.dtype, optional
         Desired tensor dtype. If None, uses `torch.get_default_dtype()`.
-    alignment : {"next", "legacy"}, default="next"
-        Forecast timing convention forwarded to `prepare_esn_data`.
+    alignment : str, optional
+        Forecast timing convention, `"next"` or `"legacy"`, forwarded to
+        `prepare_esn_data`.
     **load_kwargs
         Additional arguments passed to load_file (e.g., key for .npz).
 

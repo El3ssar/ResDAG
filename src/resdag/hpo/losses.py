@@ -119,8 +119,8 @@ def _compute_errors(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}
-        Error metric to compute.
+    metric : str
+        Error metric: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.
 
     Returns
     -------
@@ -158,8 +158,8 @@ def _warn_if_scale_unsafe(metric: MetricType, loss_name: str, threshold: float) 
 
     Parameters
     ----------
-    metric : {"rmse", "mse", "mae", "nrmse"}
-        Error metric selected by the caller.
+    metric : str
+        Error metric selected by the caller: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.
     loss_name : str
         Human-readable loss name, used only in the warning message.
     threshold : float
@@ -229,13 +229,13 @@ def expected_forecast_horizon(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
-        Error metric to compute.
+    metric : str, optional
+        Error metric: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.
     threshold : float, default=0.2
         Error threshold below which predictions are considered "good".
-    softness : float, default=0.02
+    softness : float, optional
         Controls the width of the soft threshold boundary. Smaller values
-        create a harder threshold. Good default is ~10% of threshold.
+        create a harder threshold. The default is `0.04`.
 
     Returns
     -------
@@ -283,8 +283,8 @@ def forecast_horizon(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
-        Error metric to compute.  Defaults to the scale-free `"nrmse"` so the
+    metric : str, optional
+        Error metric: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.  Defaults to the scale-free `"nrmse"` so the
         fixed *threshold* is comparable across datasets of any magnitude.
     threshold : float, default=0.2
         Error threshold below which predictions are considered valid.
@@ -329,8 +329,8 @@ def standard_loss(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
-        Error metric to compute.
+    metric : str, optional
+        Error metric: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.
 
     Returns
     -------
@@ -370,8 +370,8 @@ def lyapunov_weighted(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
-        Error metric to compute per time step.  Defaults to the scale-free
+    metric : str, optional
+        Per-step error metric: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.  Defaults to the scale-free
         `"nrmse"` so the magnitude is comparable across datasets.
     lyapunov_t : int, default=64
         Characteristic Lyapunov time (in time steps) controlling the
@@ -431,8 +431,8 @@ def soft_valid_horizon(
         True values of shape (B, T, D).
     y_pred : ndarray
         Predicted values of shape (B, T, D).
-    metric : {"rmse", "mse", "mae", "nrmse"}, default="nrmse"
-        Error metric to compute per timestep.  Defaults to the scale-free
+    metric : str, optional
+        Per-step error metric: `"rmse"`, `"mse"`, `"mae"`, or `"nrmse"`.  Defaults to the scale-free
         `"nrmse"` so the fixed *threshold* is comparable across datasets.
     threshold : float, default=0.3
         Error threshold below which predictions are considered "good".

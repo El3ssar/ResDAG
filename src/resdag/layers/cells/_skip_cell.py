@@ -67,14 +67,33 @@ class _SkipReservoirCell(ESNCell):
 
     Parameters
     ----------
-    reservoir_size, feedback_size, input_size, spectral_radius, bias, \
-bias_scaling, activation, trainable, feedback_initializer, input_initializer, \
-topology, seed
-        Identical in meaning to `ESNCell` (see its docstring).  Note
-        `leak_rate` and `noise` are intentionally absent: the orthogonal
-        skip plays the role of the leaky-integrator memory term, so a separate
-        leak rate would be redundant, and train-mode state noise is not part of
-        the ES2N / ResESN formulation.
+    reservoir_size : int
+        Number of recurrent units.
+    feedback_size : int
+        Number of feedback features per sample.
+    input_size : int or None, optional
+        Number of external driving features; `None` disables driving inputs.
+    spectral_radius : float or None, optional
+        Target recurrent spectral radius; `None` keeps the initializer's scale.
+    bias : bool, optional
+        Include a bias in the nonlinear recurrent branch.
+    bias_scaling : float, optional
+        Scale of the default bias initialization.
+    activation : str, optional
+        Nonlinearity used by the recurrent branch.
+    trainable : bool, optional
+        Allow recurrent parameters to receive gradients.
+    feedback_initializer : spec, optional
+        Feedback weight initializer, following the `ESNCell` grammar.
+    input_initializer : spec, optional
+        External input weight initializer, following the `ESNCell` grammar.
+    topology : spec, optional
+        Recurrent weight initializer, following the `ESNCell` grammar.
+    seed : int or torch.Generator or None, optional
+        Master seed for independent initialization streams.
+
+        `leak_rate` and `noise` are intentionally absent: the orthogonal skip
+        supplies memory, and state noise is not part of this formulation.
     orthogonal_scaling : float, default=1.0
         Gain applied to the orthogonal skip matrix `O`.  With `1.0` the
         skip is exactly norm-preserving (all singular values equal 1), the

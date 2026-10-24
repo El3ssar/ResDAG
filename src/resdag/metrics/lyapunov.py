@@ -383,7 +383,7 @@ def largest_lyapunov(
     dt : float, optional
         Integration step.  Required for the series path; forwarded to the
         System path if given.  Ignored for a generator name.
-    from_ : {"data", None}, optional
+    from_ : str or None, optional
         Set to `"data"` to force the noisy data-driven estimate for an array
         source.  Without it, passing a raw array raises to prevent silently
         trusting a diagnostic number.

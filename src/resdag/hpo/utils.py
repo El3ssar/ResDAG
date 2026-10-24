@@ -15,7 +15,7 @@ from typing import Callable
 
 import optuna
 
-__all__ = ["make_study_name", "get_study_summary"]
+__all__ = ["make_study_name", "get_study_summary", "get_best_params"]
 
 
 def _unwrap_callable(fn: Callable) -> Callable:

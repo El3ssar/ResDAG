@@ -34,16 +34,19 @@ python -c "import resdag; print(resdag.__version__)"
 
 ## On GPUs
 
-Models, data, training, and forecasting all run on CUDA via `.to("cuda")`.
-Performance depends on scale:
+Move the model and its floating inputs to CUDA with `.to("cuda")`. Forward
+calls preserve gradients and device placement inside larger Torch networks.
+Readout fitting may use a reported CPU fallback when the selected solver cannot
+complete a safe solve on the accelerator; configure its solver policy explicitly
+when that fallback is unsuitable.
 
-- **Large reservoirs and batches.** Reservoirs of ~2,000+ units or batches of
-  multiple trajectories train and forecast up to an order of magnitude faster
-  than on CPU. Run `examples/11_gpu_benchmark.py` to measure the crossover
-  point on your hardware.
-- **Small models.** A single trajectory through a few hundred neurons is
-  bound by kernel-launch overhead rather than arithmetic, so expect
-  performance comparable to CPU.
+Speed depends on reservoir width, batch size, sequence length, sparsity,
+precision and the surrounding network. Small sequential forecasts can spend
+more time launching kernels than multiplying matrices. Larger batches can
+amortize that overhead, but there is no universal reservoir-size crossover or
+guaranteed speedup. Run `examples/11_gpu_benchmark.py` on the target hardware,
+and measure both startup and repeated execution. CUDA throughput is not
+established by the current CPU/MPS correctness checks.
 
 [Scale & deploy](../workflows/deploy.md) covers device placement patterns in
 detail.

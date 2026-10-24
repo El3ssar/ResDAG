@@ -724,7 +724,7 @@ class ESNModel(ps.SymbolicModel):
         Examples
         --------
         >>> model.save_full("model_full.pt", epoch=10)
-        >>> restored = ESNModel.load_full("model_full.pt")  # no rebuild needed
+        >>> restored = ESNModel.load_full("model_full.pt", trusted=True)  # trusted file
         >>> predictions = restored.forecast(warmup, horizon=100)
 
         See Also
@@ -740,12 +740,15 @@ class ESNModel(ps.SymbolicModel):
         path: str | Path,
         return_metadata: bool = False,
         map_location: Any = None,
+        *,
+        trusted: bool = False,
     ) -> "ESNModel | tuple[ESNModel, dict[str, Any]]":
         """
         Reconstruct a complete model saved with :meth:`save_full`.
 
         No pre-built architecture is required — the model object, its symbolic
         graph, weights, and reservoir states are all restored from the file.
+        This executes saved Python and requires explicit ``trusted=True``.
 
         Parameters
         ----------
@@ -756,6 +759,9 @@ class ESNModel(ps.SymbolicModel):
         map_location : optional
             Passed to ``torch.load`` to remap storage devices — e.g.
             ``"cpu"`` to load a GPU-saved model on a CPU-only machine.
+        trusted : bool, default=False
+            Required explicit opt-in to unpickle executable Python. Prefer
+            ``Model.save`` and ``resdag.load`` for portable restricted artifacts.
 
         Returns
         -------
@@ -783,15 +789,15 @@ class ESNModel(ps.SymbolicModel):
         Examples
         --------
         >>> model.save_full("model_full.pt")
-        >>> restored = ESNModel.load_full("model_full.pt")
-        >>> model_cpu = ESNModel.load_full("gpu_model.pt", map_location="cpu")
+        >>> restored = ESNModel.load_full("model_full.pt", trusted=True)
+        >>> model_cpu = ESNModel.load_full("gpu_model.pt", map_location="cpu", trusted=True)
 
         See Also
         --------
         save_full : Serialize a complete model.
         load_from_file : Load a state-dict checkpoint into an existing model.
         """
-        return load_full_model(cls, path, return_metadata, map_location)
+        return load_full_model(cls, path, return_metadata, map_location, trusted=trusted)
 
     def plot_model(
         self,

@@ -9,7 +9,7 @@ import torch
 
 import resdag as rd
 from resdag.hpo._tuning_data import prepare_tuning_data
-from resdag.hpo.resources import MemoryBudget, estimate_memory, memory_context
+from resdag.hpo.resources import MemoryBudget, _memory_context, estimate_memory
 
 
 def _parallel(batch=1, patches=8, *, graph_class=None):
@@ -36,7 +36,7 @@ def _parallel(batch=1, patches=8, *, graph_class=None):
 @pytest.mark.parametrize("patches", [8, 64])
 def test_parallel_layout_counts_pooled_fit_rows_and_real_window_shapes(batch, patches):
     model, data = _parallel(batch, patches)
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     assert context.train_samples == batch * next(iter(data.train.inputs.values())).shape[-2]
     assert context.refit_samples == batch * 20
     for phase in ("train", "refit"):
@@ -107,7 +107,7 @@ def test_layout_planning_executes_no_graph_window_projection_or_candidate_constr
     monkeypatch.setattr(torch.nn.functional, "linear", forbidden)
     monkeypatch.setattr(model, "to", forbidden)
     monkeypatch.setattr(rd.ESN, "__init__", forbidden)
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     assert context.sequence_layout["kind"] == "parallel"
     estimate_memory({}, context)
     huge = dataclasses.replace(
@@ -126,7 +126,7 @@ def test_layout_planning_executes_no_graph_window_projection_or_candidate_constr
 
 def test_pooled_row_metadata_agrees_with_rows_received_by_real_parallel_fit(monkeypatch):
     model, data = _parallel(batch=4, patches=8)
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     inputs = next(iter(data.refit.inputs.values()))
     targets = next(iter(data.refit.targets.values()))
     received = []
@@ -156,7 +156,7 @@ def test_supervision_support_limits_rows_even_when_sampled_washout_is_lower():
         supervised_stop=17,
     )
     data = dataclasses.replace(data, train=supported, refit=supported)
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     assert context.train_samples == context.refit_samples == 20
     assert context.readout_train_samples == context.readout_refit_samples == (8 * 12,)
     assert context.sequence_layout["refit"]["window"] == (8, 12, 4)
@@ -178,7 +178,7 @@ def test_custom_parallel_execution_retains_generic_fallback(custom):
     elif custom == "hook":
         handle = model.graph.register_forward_hook(lambda *args: None)
     try:
-        context = memory_context(model, data)
+        context = _memory_context(model, data)
     finally:
         if handle is not None:
             handle.remove()
@@ -191,7 +191,7 @@ def test_custom_parallel_execution_retains_generic_fallback(custom):
 
 def test_optional_layout_facts_are_immutable_serializable_and_visible_to_custom_estimators():
     model, data = _parallel()
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     assert pickle.loads(pickle.dumps(context)) == context
     assert copy.deepcopy(context) == context
     with pytest.raises(TypeError, match="immutable"):
@@ -216,7 +216,7 @@ def test_optional_layout_facts_are_immutable_serializable_and_visible_to_custom_
 @pytest.mark.parametrize("skip", [None, True, False])
 def test_preset_readout_width_excludes_driver_and_respects_classic_skip(skip, monkeypatch):
     model, data = _parallel()
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     options = {"reservoir_size": 10, "feedback_size": 3}
     if skip is not None:
         options["input_to_readout"] = skip
@@ -246,7 +246,7 @@ def test_preset_readout_width_excludes_driver_and_respects_classic_skip(skip, mo
 def test_lazy_preset_without_feedback_metadata_keeps_legacy_width_default():
     model, data = _parallel()
     context = dataclasses.replace(
-        memory_context(model, data),
+        _memory_context(model, data),
         preset_options={"reservoir_size": 10},
         readout_train_samples=(),
         readout_refit_samples=(),
@@ -257,7 +257,7 @@ def test_lazy_preset_without_feedback_metadata_keeps_legacy_width_default():
 
 def test_malformed_optional_readout_counts_fail_without_changing_observation_semantics():
     model, data = _parallel()
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     for counts in ((-1,), (True,), (1, 2)):
         with pytest.raises(ValueError):
             dataclasses.replace(context, readout_refit_samples=counts)

@@ -9,3 +9,8 @@ from ._api import load, save_model
 from ._registry import ArtifactError, ComponentCodec, register_component
 
 __all__ = ["ArtifactError", "ComponentCodec", "load", "register_component", "save_model"]
+
+
+def __dir__() -> list[str]:
+    """List the supported artifact interfaces for discovery and completion."""
+    return list(__all__)

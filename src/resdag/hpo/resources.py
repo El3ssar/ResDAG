@@ -32,8 +32,6 @@ __all__ = [
     "MemoryBudget",
     "MemoryEstimate",
     "MemoryContext",
-    "memory_context",
-    "raw_memory_context",
     "estimate_memory",
 ]
 
@@ -313,15 +311,18 @@ class MemoryContext:
 
     @property
     def batch_size(self) -> int:
+        """Number of independent input sequences; unbatched data counts as one."""
         shape = next(iter(self.input_shapes.values()))
         return shape[0] if len(shape) == 3 else 1
 
     @property
     def input_features(self) -> int:
+        """Sum of signal widths across the model's input ports."""
         return sum(shape[-1] for shape in self.input_shapes.values())
 
     @property
     def output_features(self) -> int:
+        """Sum of supervised target widths across output ports."""
         return sum(shape[-1] for shape in self.target_shapes.values())
 
 
@@ -415,7 +416,7 @@ def _parallel_layout(workflow: Model, data: TuningData) -> dict[str, Any]:
     }
 
 
-def memory_context(
+def _memory_context(
     workflow: Model, data: TuningData, *, preset_options: Mapping[str, Any] | None = None
 ) -> MemoryContext:
     """Read allocation metadata without fitting, cloning or executing the model.
@@ -479,7 +480,7 @@ def memory_context(
     )
 
 
-def raw_memory_context(
+def _raw_memory_context(
     prepared: Mapping[str, Any],
     *,
     device: torch.device | str | None = None,

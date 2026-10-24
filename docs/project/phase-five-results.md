@@ -12,6 +12,16 @@ changes cost or save. PR #465's implementation is released in
 The [roadmap](roadmap.md#phase-5-speed-memory-and-comparisons) tracks the CPU
 follow-up and remaining work; each measurement identifies its own source revision.
 
+## Fresh vanilla recipe follow-up
+
+The [separate validation and held-out study](phase-five-robustness.md) now
+completes 48 validation trials and 180 final forecasts. Lorenz retains its
+≥10.016 LT trajectory-median result; the selected Rössler recipe improves
+from 3.013 to 6.750 LT at the main 0.3 threshold (7.154 LT at 0.5).
+Both winners retain the current input in their readout. All final predictions
+replay byte for byte after cleanup. The main Rössler target remains open, and
+this recipe study does not change the comparative CPU findings below.
+
 ## Current all-PyTorch closeout
 
 The latest checks cover composition inside a trainable PyTorch network,

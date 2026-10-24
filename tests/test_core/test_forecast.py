@@ -633,7 +633,7 @@ class TestFlatStepCache:
 
         path = tmp_path / "model_full.pt"
         model.save_full(path)  # would raise PicklingError if the cache leaked
-        restored = ESNModel.load_full(path)
+        restored = ESNModel.load_full(path, trusted=True)
         assert (restored.forecast(warmup, horizon=15) - expected).abs().max().item() < 1e-10
 
 

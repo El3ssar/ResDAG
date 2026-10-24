@@ -251,10 +251,12 @@ class ESN(nn.Module):
 
     @property
     def is_built(self) -> bool:
+        """Whether the input width is fixed and the workflow has been constructed."""
         return self.workflow is not None
 
     @property
     def is_fitted(self) -> bool:
+        """Whether readout fitting and training-only preprocessing succeeded."""
         return self.workflow is not None and self.workflow.is_fitted
 
     @property
@@ -264,6 +266,7 @@ class ESN(nn.Module):
 
     @property
     def washout(self) -> int:
+        """Number of initial observed rows excluded from readout fitting."""
         return (
             self.workflow.washout
             if self.workflow is not None
@@ -272,6 +275,7 @@ class ESN(nn.Module):
 
     @property
     def preprocessing(self) -> str | None:
+        """Configured normalization method, or ``None`` when it is disabled."""
         if self.workflow is not None:
             return self.workflow.preprocessing
         value = self._workflow_options["preprocessing"]
@@ -279,12 +283,14 @@ class ESN(nn.Module):
 
     @property
     def prediction_leads(self) -> dict[str, int]:
+        """Prediction offsets by output name; the preset has one ``'output'`` head."""
         if self.workflow is not None:
             return self.workflow.prediction_leads
         return {"output": self._workflow_options["prediction_lead"]}
 
     @property
     def feedback(self) -> tuple[Feedback, ...] | None:
+        """Explicit feedback routes, or ``None`` for automatic output-to-input routing."""
         if self.workflow is not None:
             return self.workflow.feedback
         return cast(tuple[Feedback, ...] | None, self._workflow_options["feedback"])
@@ -499,6 +505,18 @@ class ESN(nn.Module):
         states: Mapping[str, torch.Tensor] | None = None,
         compile: bool = False,
     ) -> tuple[torch.Tensor, ReservoirStates]:
+        """Predict original-unit signals with explicitly returned recurrent state.
+
+        Inputs preserve the ``(time, features)`` or ``(batch, time, features)``
+        layout used by :meth:`forward`. Omitting ``states`` starts from each
+        reservoir's configured reset state; otherwise provide the complete
+        mapping returned by an earlier call. The output and returned states
+        retain gradients across chunks. Stored recurrent state is unchanged.
+        Other modules retain their normal training-mode and hook behavior.
+
+        ``compile=True`` requests the existing supported compiled scan; its
+        device/capability checks and eager fallback follow :class:`Model`.
+        """
         from resdag.core._hooks import call_with_states, has_execution_hooks, state_paths
 
         if has_execution_hooks(self):
@@ -526,6 +544,25 @@ class ESN(nn.Module):
         execution: Literal["fast", "history"] = "fast",
         return_type: Literal["auto", "tensor", "trajectory"] = "auto",
     ) -> torch.Tensor | Trajectory:
+        """Forecast ``horizon`` future samples in the original signal units.
+
+        ``history`` resynchronizes recurrence on an observed prefix; omit it
+        to use the fitted training tail. The first prediction follows its last
+        observed sample. Every call resets recurrence and temporarily disables
+        training noise. ``future_inputs`` supplies any declared non-feedback
+        drivers; the ordinary one-input preset needs none.
+
+        ``return_warmup=True`` prepends the readout's predictions during history
+        replay. ``execution='fast'`` uses framewise execution; ``'history'``
+        supports causal temporal transforms by replaying growing prefixes.
+        ``compile=True`` requests supported compiled forecasting. See
+        :meth:`Model.forecast` for capability checks and fallback behavior.
+
+        Tensor inputs retain their two- or three-dimensional layout.
+        ``return_type='auto'`` returns a TSDynamics trajectory after trajectory
+        fitting or with trajectory history; ``'tensor'`` keeps Torch output on
+        the model device. A selected trajectory result requires a known clock.
+        """
         from resdag.core._hooks import forecast_as
 
         with forecast_as(self):
@@ -543,12 +580,19 @@ class ESN(nn.Module):
             )
 
     def reset_state(self) -> None:
+        """Clear carried recurrent state; the next call uses configured reset values."""
         self._require_workflow().reset_state()
 
     def get_state(self) -> ReservoirStates:
+        """Return copies of initialized recurrent states, keyed as in ``forward_stateless``."""
         return self._require_workflow().get_state()
 
     def set_state(self, states: Mapping[str, torch.Tensor], strict: bool = True) -> None:
+        """Restore named recurrent states using :meth:`Model.set_state` validation.
+
+        ``strict=True`` requires the model's complete state-key set. Restored
+        states are copied and matched to each reservoir's device and dtype.
+        """
         self._require_workflow().set_state(states, strict=strict)
 
     def get_extra_state(self) -> dict[str, Any]:

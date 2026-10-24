@@ -19,6 +19,16 @@ from resdag.init.topology.base import _accepts_generator
 from resdag.init.topology.registry import _TOPOLOGY_REGISTRY
 from resdag.utils.general import SeedLike, coerce_seed_to_int
 
+__all__ = [
+    "TopologySpec",
+    "RecurrentInitializerSpec",
+    "InitializerSpec",
+    "select_recurrent_spec",
+    "resolve_recurrent_initializer",
+    "resolve_topology",
+    "resolve_initializer",
+]
+
 # Type aliases for specification formats
 TopologySpec = None | str | Callable | tuple[str | Callable, dict[str, Any]] | TopologyInitializer
 RecurrentInitializerSpec = TopologySpec

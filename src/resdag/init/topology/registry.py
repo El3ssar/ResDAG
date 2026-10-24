@@ -36,6 +36,13 @@ from typing import Any, Callable
 
 from .base import GraphTopology, MatrixTopology, TopologyInitializer
 
+__all__ = [
+    "register_graph_topology",
+    "register_matrix_topology",
+    "get_topology",
+    "show_topologies",
+]
+
 # Registry of topology names to (builder_func, default_kwargs, wrapper_class,
 # prescaled).  wrapper_class is GraphTopology for NetworkX-based builders and
 # MatrixTopology for direct matrix builders.  ``prescaled`` flags builders that

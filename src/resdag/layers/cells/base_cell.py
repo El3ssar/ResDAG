@@ -8,7 +8,7 @@ This module provides abstract base class for the reservoir cell:
 
 See Also
 --------
-resdag.layers.esn : Concrete ESN implementation (ESNCell, ESNLayer).
+resdag.layers : Concrete reservoir cells and sequence layers.
 """
 
 from abc import ABC, abstractmethod
@@ -41,9 +41,9 @@ class ReservoirCell(nn.Module, ABC):
 
     See Also
     --------
-    resdag.layers.esn.ESNCell : Concrete ESN cell implementation.
+    resdag.layers.ESNCell : Concrete ESN cell implementation.
     resdag.layers.cells.ngrc_cell.NGCell : NG-RC cell implementation.
-    resdag.layers.base.BaseReservoirLayer : Layer that drives the cell.
+    resdag.layers.BaseReservoirLayer : Layer that drives the cell.
     """
 
     @property

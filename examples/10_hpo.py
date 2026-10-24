@@ -25,6 +25,8 @@ Expected runtime: ~10 s on CPU. Requires the hpo extra:
 ``pip install resdag[hpo]`` or ``uv sync --extra hpo``.
 """
 
+from functools import partial
+
 import torch
 
 import resdag as rd
@@ -49,31 +51,33 @@ def model_creator(reservoir_size: int, spectral_radius: float, leak_rate: float,
     )
 
 
-def search_space(trial) -> dict:
+def search_space(trial, *, quick: bool = False) -> dict:
     """Maps optuna suggestions onto model_creator's parameters."""
     return {
-        "reservoir_size": trial.suggest_int("reservoir_size", 100, 300, step=100),
+        "reservoir_size": trial.suggest_int(
+            "reservoir_size", 16 if quick else 100, 32 if quick else 300, step=16 if quick else 100
+        ),
         "spectral_radius": trial.suggest_float("spectral_radius", 0.5, 1.2),
         "leak_rate": trial.suggest_float("leak_rate", 0.2, 1.0),
     }
 
 
-def load_splits():
+def load_splits(*, quick: bool = False):
     """Prepare the canonical Lorenz splits (rebuilt per worker under spawn)."""
-    data = rd.lorenz(2300, seed=SEED, normalize=None)  # raw (1, 2300, 3)
-    return rd.utils.prepare_esn_data(
+    data = rd.lorenz(141 if quick else 2300, seed=SEED, normalize=None)  # raw (1, 2300, 3)
+    return rd.data.prepare_esn_data(
         data,
-        warmup_steps=200,
-        train_steps=1600,
-        val_steps=300,
+        warmup_steps=12 if quick else 200,
+        train_steps=100 if quick else 1600,
+        val_steps=24 if quick else 300,
         normalize=True,
         norm_method="standard",
     )
 
 
-def data_loader(trial) -> dict:
+def data_loader(trial, *, quick: bool = False) -> dict:
     """Required keys: warmup, train, target, f_warmup, val (all (B, T, D))."""
-    warmup, train, target, f_warmup, val = load_splits()
+    warmup, train, target, f_warmup, val = load_splits(quick=quick)
     return {
         "warmup": warmup,
         "train": train,
@@ -84,6 +88,10 @@ def data_loader(trial) -> dict:
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
+    n_trials = options.choose(2, 8)
     try:
         from resdag.hpo import get_study_summary, run_hpo
     except ImportError:
@@ -97,14 +105,14 @@ def main() -> None:
     # Run the study
     # ------------------------------------------------------------------
     print("=" * 70)
-    print("Running a tiny study: 8 trials, single worker, in-memory storage")
+    print(f"Running a tiny study: {n_trials} trials, single worker, in-memory storage")
     print("=" * 70)
 
     study = run_hpo(
         model_creator=model_creator,
-        search_space=search_space,
-        data_loader=data_loader,
-        n_trials=8,  # scale up (100+) for real searches
+        search_space=partial(search_space, quick=options.quick),
+        data_loader=partial(data_loader, quick=options.quick),
+        n_trials=n_trials,  # scale up (100+) for real searches
         loss="efh",  # also: "forecast_horizon", "lyapunov", "standard", "soft_horizon"
         seed=SEED,  # seeds the sampler and per-trial RNG
         verbosity=0,  # 1 prints per-trial progress
@@ -123,10 +131,12 @@ def main() -> None:
         print(f"  {key}: {value}")
 
     # The best configuration is just a model_creator call away:
-    warmup, train, target, f_warmup, val = load_splits()
+    assert len(study.trials) == n_trials
+    warmup, train, target, f_warmup, val = load_splits(quick=options.quick)
     best_model = model_creator(**study.best_params, seed=study.best_trial.user_attrs["model_seed"])
     rd.ESNTrainer(best_model).fit((warmup,), (train,), {"output": target})
     preds = best_model.forecast(f_warmup, horizon=val.shape[1])
+    assert preds.shape == val.shape and torch.isfinite(preds).all()
     mse50 = torch.mean((preds[:, :50] - val[:, :50]) ** 2).item()
     print(f"\nRefit best model -> forecast MSE@50 = {mse50:.6f}")
     print("Note: 'efh' is maximized internally as a negative loss; lower study")

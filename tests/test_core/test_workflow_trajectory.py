@@ -302,8 +302,7 @@ def test_actual_lorenz_trajectory_fits_and_forecasts_with_source_names_and_futur
 
 
 def test_tensor_workflow_never_imports_optional_dependency_or_transfers_to_cpu():
-    script = textwrap.dedent(
-        """
+    script = textwrap.dedent("""
         import importlib.abc
         import sys
         import torch
@@ -336,8 +335,7 @@ def test_tensor_workflow_never_imports_optional_dependency_or_transfers_to_cpu()
         prediction = model.forecast(horizon=3)
         assert isinstance(prediction, torch.Tensor)
         assert torch.allclose(prediction, torch.tensor([[12.], [13.], [14.]], dtype=torch.float64))
-        """
-    )
+        """)
     result = subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=30
     )
@@ -348,8 +346,7 @@ def test_trajectory_checkpoint_load_and_tensor_forecast_need_no_optional_import(
     source = _affine_model().fit(_ramp(ts))
     path = tmp_path / "trajectory-state.pt"
     torch.save(source.state_dict(), path)
-    script = textwrap.dedent(
-        """
+    script = textwrap.dedent("""
         import importlib.abc
         import sys
         import torch
@@ -376,8 +373,7 @@ def test_trajectory_checkpoint_load_and_tensor_forecast_need_no_optional_import(
         prediction = restored.forecast(horizon=3, return_type='tensor')
         assert isinstance(prediction, torch.Tensor)
         assert torch.allclose(prediction, torch.tensor([[8.], [9.], [10.]], dtype=torch.float64))
-        """
-    )
+        """)
     result = subprocess.run(
         [sys.executable, "-c", script, str(path)], capture_output=True, text=True, timeout=30
     )

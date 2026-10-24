@@ -27,7 +27,7 @@ def _training():
 
 def _model(kind):
     options = dict(seed=23, dtype=torch.float64, spectral_radius=0.5, leak_rate=0.4)
-    if kind in {"vanilla", "sparse"}:
+    if kind in {"vanilla", "state_only", "sparse"}:
         model = rd.ESN(
             12,
             input_size=2,
@@ -35,6 +35,7 @@ def _model(kind):
             readout="svd",
             alpha=0.01,
             sparse=kind == "sparse",
+            input_to_readout=kind != "state_only",
             **options,
         )
     elif kind == "ott":
@@ -86,7 +87,7 @@ class _Pipeline(nn.Module):
         return self.predict(features), final
 
 
-def _manual_vanilla(pipeline, inputs):
+def _manual_vanilla(pipeline, inputs, input_to_readout=True):
     """Ordinary tensor equations; do not call Model, the graph or the cell."""
     reservoir = pipeline.reservoir
     model = reservoir.workflow if isinstance(reservoir, rd.ESN) else reservoir
@@ -102,19 +103,21 @@ def _manual_vanilla(pipeline, inputs):
         activated = torch.tanh(preactivation)
         state = state + cell.leak_rate * (activated - state)
         sequence.append(state)
-    features = torch.cat((normalized, torch.stack(sequence, 1)), dim=-1)
+    states = torch.stack(sequence, 1)
+    features = torch.cat((normalized, states), dim=-1) if input_to_readout else states
     prediction = features @ readout.weight.T + readout.bias
     output_scaler = model.output_scalers[0]
     prediction = prediction * output_scaler._stat1 + output_scaler._stat0
     return prediction @ pipeline.head.weight.T + pipeline.head.bias
 
 
-def test_encoder_reservoir_head_matches_independent_equations_and_gradients():
-    pipeline = _Pipeline(_model("vanilla")).eval()
+@pytest.mark.parametrize("input_to_readout", [True, False])
+def test_encoder_reservoir_head_matches_independent_equations_and_gradients(input_to_readout):
+    pipeline = _Pipeline(_model("vanilla" if input_to_readout else "state_only")).eval()
     source = _training()[-8:].unsqueeze(0).requires_grad_()
     pipeline.reservoir.reset_state()
     actual = pipeline(source)
-    expected = _manual_vanilla(pipeline, source)
+    expected = _manual_vanilla(pipeline, source, input_to_readout)
     torch.testing.assert_close(actual, expected, rtol=1e-12, atol=1e-12)
     parameters = (source, pipeline.encoder.weight, pipeline.encoder.bias, pipeline.head.weight)
     observed = torch.autograd.grad(actual.square().mean(), parameters)
@@ -130,13 +133,13 @@ def test_encoder_reservoir_head_matches_independent_equations_and_gradients():
         values = []
         for offset in (epsilon, -epsilon):
             pipeline.encoder.weight[0, 0] = original + offset
-            values.append(_manual_vanilla(pipeline, source).square().mean())
+            values.append(_manual_vanilla(pipeline, source, input_to_readout).square().mean())
         pipeline.encoder.weight[0, 0] = original
     derivative = (values[0] - values[1]) / (2 * epsilon)
     torch.testing.assert_close(observed[1][0, 0], derivative, rtol=1e-6, atol=1e-9)
 
 
-@pytest.mark.parametrize("kind", ["vanilla", "ott", "custom", "sparse"])
+@pytest.mark.parametrize("kind", ["vanilla", "state_only", "ott", "custom", "sparse"])
 def test_repeated_optimizer_steps_preserve_frozen_rc_and_detach_carried_state(kind):
     pipeline = _Pipeline(_model(kind)).train()
     reservoir = pipeline.reservoir
@@ -167,7 +170,7 @@ def test_repeated_optimizer_steps_preserve_frozen_rc_and_detach_carried_state(ki
     assert not torch.equal(initial_head, pipeline.head.weight)
 
 
-@pytest.mark.parametrize("kind", ["vanilla", "ott", "custom", "sparse"])
+@pytest.mark.parametrize("kind", ["vanilla", "state_only", "ott", "custom", "sparse"])
 def test_explicit_state_pipeline_chunks_preserve_full_sequence_gradients(kind):
     pipeline = _Pipeline(_model(kind)).eval()
     source = _training()[-11:].unsqueeze(0).repeat(2, 1, 1).requires_grad_()
@@ -187,7 +190,7 @@ def test_explicit_state_pipeline_chunks_preserve_full_sequence_gradients(kind):
         torch.testing.assert_close(final[name], expected_state[name], rtol=1e-12, atol=1e-12)
 
 
-@pytest.mark.parametrize("kind", ["vanilla", "ott", "custom"])
+@pytest.mark.parametrize("kind", ["vanilla", "state_only", "ott", "custom"])
 def test_standard_pipeline_state_dict_preserves_parameters_and_chunk_predictions(kind):
     pipeline = _Pipeline(_model(kind)).eval()
     with torch.no_grad():
@@ -203,7 +206,7 @@ def test_standard_pipeline_state_dict_preserves_parameters_and_chunk_predictions
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("kind", ["vanilla", "ott", "custom"])
+@pytest.mark.parametrize("kind", ["vanilla", "state_only", "ott", "custom"])
 def test_compiled_surrounding_pipeline_preserves_gradients_and_carried_state(
     kind, fresh_compiler_cache
 ):
@@ -263,7 +266,7 @@ def test_compiled_pipeline_can_preserve_gradients_across_call_boundaries(fresh_c
     )
 
 
-@pytest.mark.parametrize("kind", ["vanilla", "ott", "custom", "sparse"])
+@pytest.mark.parametrize("kind", ["vanilla", "state_only", "ott", "custom", "sparse"])
 def test_mixed_precision_pipeline_keeps_encoder_and_head_gradients(kind):
     pipeline = _Pipeline(_model(kind)).float().train()
     source = _training()[-9:].float().unsqueeze(0).repeat(2, 1, 1).requires_grad_()
@@ -340,7 +343,7 @@ class _DeviceOnly(TorchDispatchMode):
         return result
 
 
-@pytest.mark.parametrize("kind", ["vanilla", "ott", "custom"])
+@pytest.mark.parametrize("kind", ["vanilla", "state_only", "ott", "custom"])
 @pytest.mark.parametrize(
     "target",
     [

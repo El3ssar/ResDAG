@@ -157,9 +157,10 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_artifact_guides.py",
     ),
     "hooks/": ("tests/test_init/test_correctness_contracts.py",),
-    "examples/": ("tests/test_examples_smoke.py",),
+    "examples/": ("tests/test_examples_smoke.py", "tests/test_examples_execution.py"),
     "examples/17_forecast_experiment.py": (
         "tests/test_examples_smoke.py",
+        "tests/test_examples_execution.py",
         "tests/test_docs/test_forecast_experiment.py",
     ),
     # Perf-gate floors read by the perf-regression test (incl. its well-formed
@@ -189,9 +190,7 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_regression/test_tuned_capability_cli.py",
         "tests/test_regression/test_vanilla_robustness_cli.py",
     ),
-    "benchmarks/vanilla_robustness.py": (
-        "tests/test_regression/test_vanilla_robustness_cli.py",
-    ),
+    "benchmarks/vanilla_robustness.py": ("tests/test_regression/test_vanilla_robustness_cli.py",),
     "benchmarks/accuracy_regression.py": (
         "tests/test_regression/test_phase5_accuracy.py",
         "tests/test_regression/test_tuned_capability_cli.py",
@@ -213,6 +212,12 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
     "docs/assets/data/phase-five-capability-2026-10-23.json": (
         "tests/test_regression/test_phase5_accuracy.py",
     ),
+    "docs/assets/data/phase-five-vanilla-robustness-2026-10-24.json": (
+        "tests/test_regression/test_vanilla_robustness_evidence.py",
+        "tests/test_docs/test_forecast_visuals.py",
+    ),
+    "tools/check_docs_site.py": ("tests/test_tooling/test_check_docs_site.py",),
+    "scripts/build_docs_assets.py": ("tests/test_docs/test_forecast_visuals.py",),
     # The regen script and the golden-spec helper module both define the golden
     # forecast tolerances/specs the regression test asserts against.
     "tools/regen_golden_forecasts.py": ("tests/test_models/test_golden_forecast.py",),
@@ -229,6 +234,9 @@ _DATA_DEP_MAP: dict[str, tuple[str, ...]] = {
         "tests/test_training/test_force.py",
     ),
 }
+_DATA_DEP_MAP["docs/assets/data/phase-five-vanilla-robustness-2026-10-24.json"] += (
+    *_DATA_DEP_MAP["docs/"],
+)
 # Preserve the generic documentation checks while adding the complete artifact
 # and diagram suites for the canonical persistence recipe.
 _DATA_DEP_MAP["docs/workflows/save-load.md"] = (

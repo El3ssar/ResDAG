@@ -485,7 +485,7 @@ class TestFullSaveLoad:
             path = Path(tmpdir) / "full.pt"
             model.save_full(path)
 
-            restored = ESNModel.load_full(path)  # no build_model() needed
+            restored = ESNModel.load_full(path, trusted=True)  # no build_model() needed
             assert isinstance(restored, ESNModel)
 
             x = torch.randn(2, 20, 3)
@@ -499,7 +499,7 @@ class TestFullSaveLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "full.pt"
             model.save_full(path)
-            restored = ESNModel.load_full(path)
+            restored = ESNModel.load_full(path, trusted=True)
             assert type(restored).__name__ == "ESNModel"
             restored.reset_reservoirs()  # ESN-specific method survives
             out = restored.forecast(torch.randn(1, 20, 3), horizon=10)
@@ -515,7 +515,7 @@ class TestFullSaveLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "full.pt"
             model.save_full(path)
-            restored = ESNModel.load_full(path)
+            restored = ESNModel.load_full(path, trusted=True)
             states_after = restored.get_reservoir_states()
             assert set(states_after) == set(states_before)
             for key in states_before:
@@ -528,7 +528,7 @@ class TestFullSaveLoad:
             path = Path(tmpdir) / "full.pt"
             model.save_full(path, epoch=10, val_mse=0.012)
 
-            restored, meta = ESNModel.load_full(path, return_metadata=True)
+            restored, meta = ESNModel.load_full(path, return_metadata=True, trusted=True)
             assert isinstance(restored, ESNModel)
             assert meta == {"epoch": 10, "val_mse": 0.012}
 
@@ -550,7 +550,7 @@ class TestFullSaveLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "linear_full.pt"
             model.save_full(path)  # must not raise
-            restored = ESNModel.load_full(path)
+            restored = ESNModel.load_full(path, trusted=True)
             assert isinstance(restored, ESNModel)
             x = torch.randn(2, 20, 3)
             model.reset_reservoirs()
@@ -564,7 +564,7 @@ class TestFullSaveLoad:
             path = Path(tmpdir) / "state_dict.pt"
             model.save(path)  # state-dict format, not full
             with pytest.raises(ValueError, match="does not contain a full ESNModel"):
-                ESNModel.load_full(path)
+                ESNModel.load_full(path, trusted=True)
 
     def test_save_full_with_string_path(self) -> None:
         """save_full / load_full accept string paths."""
@@ -572,7 +572,7 @@ class TestFullSaveLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             path_str = str(Path(tmpdir) / "full.pt")
             model.save_full(path_str)
-            restored = ESNModel.load_full(path_str)
+            restored = ESNModel.load_full(path_str, trusted=True)
             assert isinstance(restored, ESNModel)
 
     def test_load_rejects_full_checkpoint(self) -> None:
@@ -590,9 +590,9 @@ class TestFullSaveLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "bare.pt"
             torch.save(model, path)  # no save_full wrapper
-            restored = ESNModel.load_full(path)
+            restored = ESNModel.load_full(path, trusted=True)
             assert isinstance(restored, ESNModel)
-            restored2, meta = ESNModel.load_full(path, return_metadata=True)
+            restored2, meta = ESNModel.load_full(path, return_metadata=True, trusted=True)
             assert meta == {}  # bare files carry no metadata
             x = torch.randn(2, 20, 3)
             model.reset_reservoirs()

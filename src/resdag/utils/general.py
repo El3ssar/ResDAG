@@ -5,6 +5,16 @@ import random
 import numpy as np
 import torch
 
+__all__ = [
+    "DeviceLike",
+    "SeedLike",
+    "coerce_seed_to_int",
+    "create_rng",
+    "create_torch_generator",
+    "seed_everything",
+    "resolve_device",
+]
+
 # Anything accepted as a reproducibility seed throughout resdag.  A plain
 # ``int`` pins a value; a ``torch.Generator`` lets callers (e.g. an HPO loop)
 # carry a per-trial generator; ``None`` defers to the global RNG.

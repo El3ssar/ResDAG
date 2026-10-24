@@ -88,7 +88,7 @@ class TestES2NFactory:
         warm = torch.randn(1, 30, 2)
         path = str(tmp_path) + "/es2n_full.pt"  # type: ignore[operator]
         model.save_full(path)
-        restored = ESNModel.load_full(path)
+        restored = ESNModel.load_full(path, trusted=True)
         p1 = model.forecast(warm, horizon=20)
         p2 = restored.forecast(warm, horizon=20)
         assert torch.allclose(p1, p2, atol=1e-5)

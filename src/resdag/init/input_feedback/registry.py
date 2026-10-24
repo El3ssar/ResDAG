@@ -10,6 +10,8 @@ from typing import Any, Callable
 from .base import InputFeedbackInitializer
 from .function import FunctionInitializer
 
+__all__ = ["register_input_feedback", "get_input_feedback", "show_input_initializers"]
+
 # Registry of initializer names to (class_or_function, default_kwargs).
 # Entries are either InputFeedbackInitializer subclasses (instantiated with
 # the merged kwargs) or plain matrix-building functions (wrapped in

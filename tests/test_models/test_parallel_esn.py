@@ -373,7 +373,7 @@ class TestPersistence:
 
         path = tmp_path / "parallel.pt"
         model.save_full(path, note="ks")
-        restored, meta = ParallelESNModel.load_full(path, return_metadata=True)
+        restored, meta = ParallelESNModel.load_full(path, return_metadata=True, trusted=True)
 
         assert meta["note"] == "ks"
         assert restored.input_dim == 64
@@ -388,7 +388,7 @@ class TestPersistence:
         path = tmp_path / "junk.pt"
         torch.save({"not_a_model": 1}, path)
         with pytest.raises(ValueError, match="ParallelESNModel"):
-            ParallelESNModel.load_full(path)
+            ParallelESNModel.load_full(path, trusted=True)
 
 
 def test_forward_integrates_into_a_larger_differentiable_pipeline() -> None:

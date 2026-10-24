@@ -23,7 +23,15 @@ from resdag.training import ESNTrainer
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
     torch.manual_seed(42)
+    size = options.choose(24, 200)
+    driven_size = options.choose(20, 150)
+    branch_size = options.choose(16, 120)
+    stacked_size = options.choose(12, 100)
+    washout, train_end = options.choose((12, 92), (200, 700))
 
     # ------------------------------------------------------------------
     # 1. Minimal model
@@ -35,8 +43,8 @@ def main() -> None:
     # Input shape is (timesteps, features); batch is implicit. The time size
     # is a placeholder — any sequence length is accepted at call time.
     inp = Input((100, 3))
-    states = ESNLayer(reservoir_size=200, feedback_size=3)(inp)
-    out = CGReadoutLayer(in_features=200, out_features=3, name="output")(states)
+    states = ESNLayer(reservoir_size=size, feedback_size=3)(inp)
+    out = CGReadoutLayer(in_features=size, out_features=3, name="output")(states)
     model = ESNModel(inp, out)
 
     x = torch.randn(4, 100, 3)  # (batch, time, features)
@@ -54,8 +62,8 @@ def main() -> None:
 
     feedback = Input((100, 1))
     driver = Input((100, 5))
-    states = ESNLayer(reservoir_size=150, feedback_size=1, input_size=5)(feedback, driver)
-    out = CGReadoutLayer(150, 1, name="output")(states)
+    states = ESNLayer(reservoir_size=driven_size, feedback_size=1, input_size=5)(feedback, driver)
+    out = CGReadoutLayer(driven_size, 1, name="output")(states)
     driven_model = ESNModel([feedback, driver], out)
 
     fb = torch.randn(2, 100, 1)  # (batch, time, feedback_dim)
@@ -71,12 +79,12 @@ def main() -> None:
     print("=" * 70)
 
     inp = Input((100, 3))
-    states = ESNLayer(reservoir_size=200, feedback_size=3)(inp)
+    states = ESNLayer(reservoir_size=size, feedback_size=3)(inp)
     # Square the even-indexed reservoir units (breaks the tanh odd symmetry)
     augmented = SelectiveExponentiation(index=0, exponent=2.0)(states)
     # Readout sees the raw input next to the augmented states
     features = Concatenate()(inp, augmented)  # (batch, time, 3 + 200)
-    out = CGReadoutLayer(in_features=3 + 200, out_features=3, name="output")(features)
+    out = CGReadoutLayer(in_features=3 + size, out_features=3, name="output")(features)
     ott_style = ESNModel(inp, out)
 
     y = ott_style(torch.randn(2, 100, 3))
@@ -94,10 +102,10 @@ def main() -> None:
     print("the readout mixes fast and slow features.")
 
     inp = Input((100, 3))
-    fast = ESNLayer(120, feedback_size=3, leak_rate=1.0, spectral_radius=0.7)(inp)
-    slow = ESNLayer(120, feedback_size=3, leak_rate=0.2, spectral_radius=0.95)(inp)
+    fast = ESNLayer(branch_size, feedback_size=3, leak_rate=1.0, spectral_radius=0.7)(inp)
+    slow = ESNLayer(branch_size, feedback_size=3, leak_rate=0.2, spectral_radius=0.95)(inp)
     merged = Concatenate()(fast, slow)  # (batch, time, 240)
-    out = CGReadoutLayer(240, 3, name="output")(merged)
+    out = CGReadoutLayer(2 * branch_size, 3, name="output")(merged)
     parallel = ESNModel(inp, out)
 
     y = parallel(torch.randn(2, 100, 3))
@@ -114,17 +122,17 @@ def main() -> None:
     print("already fitted when the second reservoir consumes it.")
 
     inp = Input((100, 3))
-    res1 = ESNLayer(200, feedback_size=3)(inp)
-    coords = CGReadoutLayer(200, 3, name="coords")(res1)  # intermediate prediction
-    res2 = ESNLayer(100, feedback_size=3)(coords)  # stacked reservoir reads it
-    energy = CGReadoutLayer(100, 1, name="energy")(res2)  # auxiliary scalar output
+    res1 = ESNLayer(size, feedback_size=3)(inp)
+    coords = CGReadoutLayer(size, 3, name="coords")(res1)  # intermediate prediction
+    res2 = ESNLayer(stacked_size, feedback_size=3)(coords)  # stacked reservoir reads it
+    energy = CGReadoutLayer(stacked_size, 1, name="energy")(res2)  # auxiliary scalar output
     multi = ESNModel(inp, outputs=[coords, energy])
 
     # Synthetic task: coords = next step of the input, energy = squared norm
-    series = torch.cumsum(0.1 * torch.randn(2, 701, 3), dim=1)  # (batch, time, 3)
-    warmup_in = series[:, :200]
-    train_in = series[:, 200:700]
-    coords_target = series[:, 201:701]  # next-step prediction
+    series = torch.cumsum(0.1 * torch.randn(2, train_end + 1, 3), dim=1)  # (batch, time, 3)
+    warmup_in = series[:, :washout]
+    train_in = series[:, washout:train_end]
+    coords_target = series[:, washout + 1 : train_end + 1]  # next-step prediction
     energy_target = (train_in**2).sum(dim=-1, keepdim=True)  # (2, 500, 1)
 
     ESNTrainer(multi).fit(
@@ -135,6 +143,7 @@ def main() -> None:
 
     multi.reset_reservoirs()  # always reset before reusing a stateful model
     y_coords, y_energy = multi(series[:, :300])
+    assert torch.isfinite(y_coords).all() and torch.isfinite(y_energy).all()
     print(f"outputs: coords {tuple(y_coords.shape)}, energy {tuple(y_energy.shape)}")
 
     print("\nDone. Topologies and initializers for these layers: 04_topologies_and_initializers.py")

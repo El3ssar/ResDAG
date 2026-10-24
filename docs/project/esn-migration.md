@@ -33,7 +33,7 @@ assert forecast.shape == (10, 1)
 
 Automatic standardization is now the default. Fit uses training samples after
 washout and returns predictions in the original units. Set
-`preprocessing="off"` when supplying your own transformed data.
+`preprocessing=None` when supplying your own transformed data.
 Washout may be zero.
 
 Build before attaching an optimizer so it sees every parameter:
@@ -69,8 +69,9 @@ Unseeded construction follows ordinary Torch random-state behavior.
 A `state_dict` includes the fitted workflow and width. Recreate the same preset
 architecture/settings before loading; device and dtype may differ. Metadata
 checks cannot verify the full behavior of arbitrary custom Python functions.
-Complete artifact loading without reconstructing the architecture belongs to
-the artifact roadmap phase.
+Use `model.save("run.pt")` and `rd.load("run.pt")` to restore the complete
+architecture and fitted state without reconstructing the DAG; see
+[model artifacts](../workflows/save-load.md).
 
 The current `ESN` and `Model` checkpoint metadata version is 2. Custom
 preprocessing and named trajectory clocks are explicit parts of that schema.
@@ -83,3 +84,19 @@ protocol as `Model`. Their original modules remain registered before a lazy
 build and remain the fitted workflow's modules afterward. See
 [custom preprocessing](../advanced/custom-preprocessing.md) and
 [named trajectories](../start/named-trajectories.md).
+
+## Public boundaries and checkpoint safety
+
+The API sweep keeps the existing package organization and supported extension
+interfaces. Use `rd.hpo.run_hpo`, `rd.hpo.LOSSES` and
+`rd.hpo.get_study_summary` for advanced tuning; duplicate top-level aliases are
+removed. Internal tuning context builders and step validators are private.
+Custom memory estimators still receive `MemoryContext`, and
+`estimate_memory` remains a supported extension helper.
+
+Ordinary raw graph/parallel/ensemble checkpoints now use restricted Torch
+loading. Their metadata and custom extra state must use supported tensors and
+primitive containers; save-time validation rejects executable Python objects.
+Full Python files require explicit `load_full(path, trusted=True)`. Complete
+portable `Model.save`/`rd.load` remains the recommended workflow. Failed saves
+preserve an existing destination through an atomic replacement.

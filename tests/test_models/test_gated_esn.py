@@ -152,7 +152,7 @@ class TestGatedESNForecast:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "gated.pt"
             model.save_full(path)
-            restored = ESNModel.load_full(path, map_location="cpu")
+            restored = ESNModel.load_full(path, map_location="cpu", trusted=True)
 
         f_orig = model.forecast(fwarmup, horizon=50)
         f_rest = restored.forecast(fwarmup, horizon=50)

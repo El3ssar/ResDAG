@@ -89,7 +89,8 @@ resdag.training.ESNTrainer : Training interface.
 resdag.utils.data : Data loading utilities.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING as _TYPE_CHECKING
+from typing import Any as _Any
 
 # Loss functions don't require optuna - always available
 from .losses import (
@@ -124,7 +125,7 @@ def _require_optuna() -> None:
 
 
 # Lazy imports for optuna-dependent functions
-if TYPE_CHECKING:
+if _TYPE_CHECKING:
     from .pruners import PRUNERS as PRUNERS
     from .pruners import resolve_pruner as resolve_pruner
     from .resources import MemoryBudget as MemoryBudget
@@ -144,7 +145,7 @@ if TYPE_CHECKING:
     from .utils import make_study_name as make_study_name
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> _Any:
     """Lazy import for optuna-dependent functions."""
     if name in ("Screening", "MemoryBudget", "MemoryContext", "MemoryEstimate"):
         from . import resources

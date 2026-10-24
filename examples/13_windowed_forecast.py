@@ -27,8 +27,6 @@ Expected runtime: ~10 s on CPU.
 Run with ``--plot`` to visualize the reconstruction (matplotlib optional).
 """
 
-import sys
-
 import torch
 
 import resdag as rd
@@ -43,7 +41,7 @@ def lorenz_series(
     rho: float = 28.0,
     beta: float = 8.0 / 3.0,
 ) -> torch.Tensor:
-    """Integrate Lorenz-63 with RK4 and return a normalized ``(1, n_steps, 3)`` series."""
+    """Integrate Lorenz-63 with RK4 and return a raw ``(1, n_steps, 3)`` series."""
 
     def deriv(state: torch.Tensor) -> torch.Tensor:
         x, y, z = state[0], state[1], state[2]
@@ -60,11 +58,15 @@ def lorenz_series(
         traj[i] = state
 
     traj = traj[transient:]  # discard the transient onto the attractor
-    traj = (traj - traj.mean(dim=0)) / traj.std(dim=0)  # standardize per channel
     return traj.reshape(1, n_steps, 3)
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__, plots=True)
+    washout, train_end, total = options.choose((12, 121, 241), (200, 4000, 6000))
+    size = options.choose(24, 400)
     torch.manual_seed(42)
 
     # ------------------------------------------------------------------
@@ -74,14 +76,19 @@ def main() -> None:
     print("1. Train an Ott ESN on the Lorenz attractor")
     print("=" * 70)
 
-    data = lorenz_series(n_steps=6000)  # (1, 6000, 3)
-    warmup = data[:, :200]  # sync the reservoir
-    train_in = data[:, 200:4000]
-    train_tgt = data[:, 201:4001]  # next-step target
+    data = lorenz_series(n_steps=total, transient=options.choose(100, 1000))
+    # Learn scaling from the admitted training prefix only.
+    prefix = data[:, : train_end + 1]
+    data = (data - prefix.mean(dim=1, keepdim=True)) / prefix.std(
+        dim=1, keepdim=True
+    )  # (1, 6000, 3)
+    warmup = data[:, :washout]  # sync the reservoir
+    train_in = data[:, washout:train_end]
+    train_tgt = data[:, washout + 1 : train_end + 1]  # next-step target
 
-    model = rd.ott_esn(reservoir_size=400, feedback_size=3, output_size=3, spectral_radius=0.9)
+    model = rd.ott_esn(reservoir_size=size, feedback_size=3, output_size=3, spectral_radius=0.9)
     ESNTrainer(model).fit((warmup,), (train_in,), {"output": train_tgt})
-    print(f"trained on {train_in.shape[1]} steps; reservoir_size=400")
+    print(f"trained on {train_in.shape[1]} steps; reservoir_size={size}")
 
     # ------------------------------------------------------------------
     # 2. Gap-filling reconstruction of a held-out stretch
@@ -90,12 +97,12 @@ def main() -> None:
     print("2. windowed_forecast: reconstruct a sparsely-observed stretch")
     print("=" * 70)
 
-    series = data[:, 4000:6000]  # (1, 2000, 3) held out from training
+    series = data[:, train_end + 1 : total]  # (1, 2000, 3) held out from training
     recon, mask = model.windowed_forecast(
         series,
-        warmup_len=200,  # initial re-sync window
-        teacher_len=30,  # real steps teacher-forced to re-sync each cycle
-        predict_len=150,  # autonomous steps per gap (~3 Lyapunov times)
+        warmup_len=washout,  # initial re-sync window
+        teacher_len=options.choose(6, 30),  # real steps teacher-forced to re-sync each cycle
+        predict_len=options.choose(12, 150),  # autonomous steps per gap (~3 Lyapunov times)
         return_mask=True,
     )
 
@@ -115,18 +122,18 @@ def main() -> None:
     # Observed segments are copied verbatim, so recon[:, mask] == series[:, mask].
     assert torch.equal(recon[:, mask, :], series[:, mask, :])
 
+    assert bool((~mask).any()) and torch.isfinite(recon).all()
     gap_rmse = ((recon[:, ~mask, :] - series[:, ~mask, :]) ** 2).mean().sqrt().item()
     # Baseline: predict the per-channel mean (std == 1 per channel after standardizing).
-    naive_rmse = ((series[:, ~mask, :] - series.mean(dim=(0, 1))) ** 2).mean().sqrt().item()
+    naive_rmse = ((series[:, ~mask, :] - train_in.mean(dim=(0, 1))) ** 2).mean().sqrt().item()
     print("score the gaps: recon[:, ~mask] vs series[:, ~mask]")
     print(f"gap RMSE over {forecast_steps} reconstructed steps: {gap_rmse:.3f}")
     print(f"   (naive 'predict the mean' baseline RMSE:        {naive_rmse:.3f})")
-    print("Phase tracking decays across each gap, but the reconstruction stays on")
-    print("the attractor — sparse sampling rebuilds the SHAPE long after the exact")
-    print("phase is lost. For driven models, pass one full-timeline driver per")
+    print("Autonomous error can grow within each gap; inspect held-out error")
+    print("before choosing the gap length. For driven models, pass one full-timeline driver per")
     print("driver positionally: model.windowed_forecast(series, driver, ...).")
 
-    if "--plot" in sys.argv:
+    if options.plot:
         try:
             import matplotlib.pyplot as plt
         except ImportError:

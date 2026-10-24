@@ -31,24 +31,33 @@ from resdag.core import ESNModel
 from resdag.training import ESNTrainer
 
 
-def build_model() -> ESNModel:
+def build_model(size: int = 200) -> ESNModel:
     """The architecture must be re-created before loading weights into it."""
     torch.manual_seed(0)  # seed only affects the initial (pre-load) weights
-    return rd.classic_esn(reservoir_size=200, feedback_size=3, output_size=3)
+    return rd.classic_esn(reservoir_size=size, feedback_size=3, output_size=3)
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
     torch.manual_seed(42)
+    size = options.choose(24, 200)
+    washout, train_end = options.choose((12, 92), (200, 800))
+    horizon = options.choose(24, 100)
     tmpdir = Path(tempfile.mkdtemp(prefix="resdag_example_"))
     print(f"Writing artifacts to {tmpdir}\n")
 
     # A small trained model to persist
-    series = torch.cumsum(0.05 * torch.randn(1, 1001, 3), dim=1)  # (1, 1001, 3)
-    model = build_model()
+    # A bounded smooth signal keeps the persistence demonstration separate
+    # from an unstable free-running fit to a random walk.
+    t = 0.05 * torch.arange(options.choose(141, 1001), dtype=torch.float32)
+    series = torch.stack((t.sin(), t.cos(), (0.5 * t).sin()), dim=-1).unsqueeze(0)
+    model = build_model(size)
     ESNTrainer(model).fit(
-        warmup_inputs=(series[:, :200],),
-        train_inputs=(series[:, 200:800],),
-        targets={"output": series[:, 201:801]},
+        warmup_inputs=(series[:, :washout],),
+        train_inputs=(series[:, washout:train_end],),
+        targets={"output": series[:, washout + 1 : train_end + 1]},
     )
 
     # ------------------------------------------------------------------
@@ -62,13 +71,14 @@ def main() -> None:
     model.save(path)
     print(f"saved weights to {path.name} ({path.stat().st_size / 1024:.0f} KiB)")
 
-    restored = build_model()  # fresh instance, different random weights
+    restored = build_model(size)  # fresh instance, different random weights
     restored.load(path)  # now identical to `model`
 
     x = torch.randn(2, 50, 3)  # (batch, time, features)
     model.reset_reservoirs()
     restored.reset_reservoirs()
     same = torch.allclose(model(x), restored(x))
+    assert same
     print(f"restored model reproduces original outputs: {same}")
 
     # ------------------------------------------------------------------
@@ -79,14 +89,14 @@ def main() -> None:
     print("=" * 70)
 
     model.reset_reservoirs()
-    model.warmup(series[:, :200])  # put something in the reservoir state
+    model.warmup(series[:, :washout])  # put something in the reservoir state
 
     ckpt = tmpdir / "checkpoint.pt"
     model.save(ckpt, include_states=True, epoch=10, val_mse=0.0123, note="demo run")
     print("saved with include_states=True and metadata kwargs")
 
     # Metadata is plain torch.save payload — inspect without a model:
-    payload = torch.load(ckpt, weights_only=False)
+    payload = torch.load(ckpt, weights_only=True)
     print(f"metadata: {payload['metadata']}")
     print(f"stored reservoir states: {list(payload['reservoir_states'].keys())}")
 
@@ -97,7 +107,7 @@ def main() -> None:
     print("3. ESNModel.load_from_file")
     print("=" * 70)
 
-    restored = ESNModel.load_from_file(ckpt, model=build_model(), load_states=True)
+    restored = ESNModel.load_from_file(ckpt, model=build_model(size), load_states=True)
     state = next(iter(restored.get_reservoir_states().values()))
     print(
         f"weights + states loaded; state shape {tuple(state.shape)}, "
@@ -113,11 +123,14 @@ def main() -> None:
     print("Saving states mid-sequence lets a later process continue the")
     print("forecast exactly where this one stopped.")
 
-    f_warmup = series[:, 600:800]
+    f_warmup = series[:, train_end - washout : train_end]
 
-    # Reference: forecast in one go
+    # Reference: use the same prefix/final-frame call shapes as the resumed
+    # run, so this checks persistence rather than different floating-point
+    # projection schedules.
     model.reset_reservoirs()
-    reference = model.forecast(f_warmup, horizon=100)
+    model.warmup(f_warmup[:, :-1])
+    reference = model.forecast(f_warmup[:, -1:], horizon=horizon, reset=False)
 
     # Same forecast, split across a save/load boundary. Warm up on all but
     # the last sample, save, and hand the remaining sample to the resumed
@@ -127,20 +140,15 @@ def main() -> None:
     model.save(tmpdir / "warmed_up.pt", include_states=True)
 
     resumed = ESNModel.load_from_file(
-        tmpdir / "warmed_up.pt", model=build_model(), load_states=True
+        tmpdir / "warmed_up.pt", model=build_model(size), load_states=True
     )
-    continued = resumed.forecast(f_warmup[:, -1:], horizon=100, reset=False)
+    continued = resumed.forecast(f_warmup[:, -1:], horizon=horizon, reset=False)
 
-    dev = (reference - continued).abs().amax(dim=(0, 2))  # per-step max deviation
-    print(f"max deviation at step 0:  {dev[0].item():.1e}")
-    print(f"max deviation at step 20: {dev[20].item():.1e}")
-    print(
-        f"first 20 steps match (atol=1e-3): "
-        f"{torch.allclose(reference[:, :20], continued[:, :20], atol=1e-3)}"
-    )
-    print("The restored state matches to float precision (~1e-7); as with any")
-    print("re-run of a chaotic simulation, rounding differences amplify over")
-    print("long autoregressive horizons.")
+    torch.testing.assert_close(reference, continued, atol=0, rtol=0)
+    print("Full forecast continuity verified with identical call shapes.")
+    print("Changing chunk shapes can change floating-point rounding; unstable")
+    print("autoregressive dynamics may amplify that difference. This check isolates")
+    print("the save/load boundary and does not establish forecast accuracy.")
 
     # ------------------------------------------------------------------
     # 5. Cross-device
@@ -150,7 +158,7 @@ def main() -> None:
     print("=" * 70)
 
     if torch.cuda.is_available():
-        gpu_model = build_model().to("cuda")
+        gpu_model = build_model(size).to("cuda")
         gpu_model.load(path)  # CPU checkpoint loads into the CUDA model
         y = gpu_model(x.to("cuda"))
         print(f"CPU checkpoint loaded on GPU; output device: {y.device}")
@@ -171,13 +179,14 @@ def main() -> None:
     model.save_full(full_path, epoch=10, val_mse=0.0123)
     print(f"saved full model to {full_path.name} ({full_path.stat().st_size / 1024:.0f} KiB)")
 
-    # No build_model() call — the architecture is reconstructed from the file.
-    reloaded, meta = ESNModel.load_full(full_path, return_metadata=True)
+    # No build_model(size) call — the architecture is reconstructed from the file.
+    reloaded, meta = ESNModel.load_full(full_path, return_metadata=True, trusted=True)
     print(f"reconstructed without rebuilding; metadata: {meta}")
 
     model.reset_reservoirs()
     reloaded.reset_reservoirs()
     same_full = torch.allclose(model(x), reloaded(x))
+    assert same_full
     print(f"reloaded full model reproduces original outputs: {same_full}")
     print("Note: load_full uses weights_only=False — only open files you trust.")
 

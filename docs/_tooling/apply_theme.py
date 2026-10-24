@@ -73,17 +73,21 @@ def scheme_block(selector: str, t: dict, syn: dict) -> str:
 
 def main() -> None:
     f = THEME["fonts"]
-    tokens = "\n\n".join([
-        START,
-        f""":root {{
+    tokens = "\n\n".join(
+        [
+            START,
+            f""":root {{
   --nb-display: "{f["display"]}", sans-serif;
   --nb-body: "{f["body"]}", -apple-system, sans-serif;
   --nb-mono: "{f["mono"]}", ui-monospace, monospace;
 }}""",
-        scheme_block('[data-md-color-scheme="default"]', THEME["light"], THEME["syntax"]["light"]),
-        scheme_block('[data-md-color-scheme="slate"]', THEME["dark"], THEME["syntax"]["dark"]),
-        END,
-    ])
+            scheme_block(
+                '[data-md-color-scheme="default"]', THEME["light"], THEME["syntax"]["light"]
+            ),
+            scheme_block('[data-md-color-scheme="slate"]', THEME["dark"], THEME["syntax"]["dark"]),
+            END,
+        ]
+    )
 
     css = CSS.read_text()
     pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.S)

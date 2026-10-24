@@ -16,8 +16,8 @@ from .resources import (
     MemoryBudget,
     MemoryContext,
     MemoryEstimate,
+    _raw_memory_context,
     estimate_memory,
-    raw_memory_context,
 )
 from .trial_runner import PreparedTrial, TrialEvaluationError, TrialRunner
 
@@ -117,7 +117,7 @@ def run_trials(
                                     if runner.horizon_key and runner.horizon_key in prepared.data
                                     else int(prepared.data["val"].shape[1])
                                 )
-                                context = raw_memory_context(
+                                context = _raw_memory_context(
                                     prepared.data,
                                     device=runner.device,
                                     dtype=prepared.data["train"].dtype,
@@ -161,7 +161,7 @@ def run_trials(
                         jobs.append((prepared, callback))
                     if jobs:
                         with iter_jobs(
-                            worker.evaluate_job,
+                            worker._evaluate_job,
                             jobs,
                             n_jobs=n_workers,
                             inner_max_num_threads=inner_max_num_threads,

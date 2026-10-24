@@ -20,8 +20,6 @@ Expected runtime: ~5 s on CPU.
 Run with ``--plot`` to visualize section 1 (matplotlib optional).
 """
 
-import sys
-
 import torch
 
 import resdag as rd
@@ -31,7 +29,12 @@ from resdag.training import ESNTrainer
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__, plots=True)
     torch.manual_seed(42)
+    washout, train_end, horizon = options.choose((12, 92, 24), (200, 1000, 300))
+    size = options.choose(24, 200)
 
     # ------------------------------------------------------------------
     # 1. Two-phase forecast on a quasi-periodic signal
@@ -41,18 +44,22 @@ def main() -> None:
     print("=" * 70)
 
     # Quasi-periodic scalar signal: sum of two incommensurate sines
-    t = torch.arange(1500, dtype=torch.float32)
+    t = torch.arange(options.choose(141, 1500), dtype=torch.float32)
     series = (0.6 * torch.sin(0.07 * t) + 0.4 * torch.sin(0.02 * torch.pi * t)).reshape(1, -1, 1)
     # series: (1, 1500, 1) = (batch, time, features)
 
-    warmup = series[:, :200]  # sync the reservoir
-    train_in = series[:, 200:1000]
-    train_tgt = series[:, 201:1001]  # next-step target
-    f_warmup = series[:, 801:1001]  # include the final supervised target
-    truth = series[:, 1001:1301]  # what we try to reproduce
+    warmup = series[:, :washout]  # sync the reservoir
+    train_in = series[:, washout:train_end]
+    train_tgt = series[:, washout + 1 : train_end + 1]  # next-step target
+    f_warmup = series[
+        :, train_end + 1 - washout : train_end + 1
+    ]  # include the final supervised target
+    truth = series[:, train_end + 1 : train_end + 1 + horizon]  # what we try to reproduce
 
     # Slow leak + spectral radius near 1: long memory for slow oscillations
-    model = rd.classic_esn(300, feedback_size=1, output_size=1, spectral_radius=0.99, leak_rate=0.1)
+    model = rd.classic_esn(
+        options.choose(24, 300), feedback_size=1, output_size=1, spectral_radius=0.99, leak_rate=0.1
+    )
     ESNTrainer(model).fit((warmup,), (train_in,), {"output": train_tgt})
 
     horizon = truth.shape[1]
@@ -61,7 +68,7 @@ def main() -> None:
     print(f"f_warmup {tuple(f_warmup.shape)} -> forecast {tuple(preds.shape)}")
     print(f"MSE over {horizon} future samples: {mse:.2e}")
 
-    if "--plot" in sys.argv:
+    if options.plot:
         try:
             import matplotlib.pyplot as plt
         except ImportError:
@@ -85,7 +92,7 @@ def main() -> None:
     full = model.forecast(f_warmup, horizon=horizon, return_warmup=True)
     print(f"forecast(...)                    -> {tuple(preds.shape)}")
     print(f"forecast(..., return_warmup=True) -> {tuple(full.shape)}")
-    print("The first 199 steps are historical predictions; the final warmup")
+    print(f"The first {f_warmup.shape[1] - 1} steps are historical predictions; the final warmup")
     print("prediction is already the first future sample, so it appears only once.")
 
     # ------------------------------------------------------------------
@@ -94,8 +101,7 @@ def main() -> None:
     print("\n" + "=" * 70)
     print("3. Input-driven forecasting: driver alignment")
     print("=" * 70)
-    print(
-        """
+    print("""
 Training pairs (feedback_t, driver_t) -> feedback_{t+1}. The forecast loop
 keeps that pairing, which fixes the alignment of forecast_inputs:
 
@@ -106,12 +112,11 @@ keeps that pairing, which fixes the alignment of forecast_inputs:
   - forecast drivers start at the first step AFTER the warmup window
   - they need horizon - 1 steps: the final warmup driver already produced
     the first future prediction; each later update consumes one future driver
-"""
-    )
+""")
 
     # System whose next value depends on an exogenous driver:
     #   x_{t+1} = 0.9 x_t + 0.5 d_t,   d_t known in advance
-    n = 1400
+    n = options.choose(141, 1400)
     d = torch.sin(0.05 * torch.arange(n, dtype=torch.float32)).reshape(1, -1, 1)
     x = torch.zeros(1, n, 1)
     for i in range(n - 1):
@@ -120,19 +125,18 @@ keeps that pairing, which fixes the alignment of forecast_inputs:
 
     feedback = Input((100, 1))
     driver = Input((100, 1))
-    states = ESNLayer(200, feedback_size=1, input_size=1, spectral_radius=0.8)(feedback, driver)
-    out = CGReadoutLayer(200, 1, name="output")(states)
+    states = ESNLayer(size, feedback_size=1, input_size=1, spectral_radius=0.8)(feedback, driver)
+    out = CGReadoutLayer(size, 1, name="output")(states)
     driven = ESNModel([feedback, driver], out)
 
     # Train: inputs at t, target at t+1 — for feedback AND driver alike
     ESNTrainer(driven).fit(
-        warmup_inputs=(x[:, :200], d[:, :200]),
-        train_inputs=(x[:, 200:1000], d[:, 200:1000]),
-        targets={"output": x[:, 201:1001]},
+        warmup_inputs=(x[:, :washout], d[:, :washout]),
+        train_inputs=(x[:, washout:train_end], d[:, washout:train_end]),
+        targets={"output": x[:, washout + 1 : train_end + 1]},
     )
 
-    w0, w1 = 801, 1001  # forecast-warmup window
-    horizon = 300
+    w0, w1 = train_end + 1 - washout, train_end + 1  # forecast-warmup window
     preds = driven.forecast(
         (x[:, w0:w1], d[:, w0:w1]),  # warmup: feedback + driver over [w0, w1)
         forecast_inputs=(d[:, w1 : w1 + horizon - 1],),  # drivers over the forecast window
@@ -153,23 +157,30 @@ keeps that pairing, which fixes the alignment of forecast_inputs:
     print("With several outputs, the FIRST one is fed back — its dimension")
     print("must match the feedback input. Other outputs ride along.")
 
-    series3 = torch.cumsum(0.05 * torch.randn(1, 1201, 3), dim=1)  # (1, 1201, 3)
+    series3 = torch.cumsum(
+        0.05 * torch.randn(1, options.choose(141, 1201), 3), dim=1
+    )  # (1, 1201, 3)
     inp = Input((100, 3))
-    states = ESNLayer(250, feedback_size=3)(inp)
-    main_out = CGReadoutLayer(250, 3, name="main")(states)  # fed back (3 == feedback)
-    aux_out = CGReadoutLayer(250, 1, name="aux")(states)  # auxiliary scalar
+    states = ESNLayer(options.choose(24, 250), feedback_size=3)(inp)
+    main_out = CGReadoutLayer(options.choose(24, 250), 3, name="main")(
+        states
+    )  # fed back (3 == feedback)
+    aux_out = CGReadoutLayer(options.choose(24, 250), 1, name="aux")(states)  # auxiliary scalar
     multi = ESNModel(inp, outputs=[main_out, aux_out])
 
     ESNTrainer(multi).fit(
-        warmup_inputs=(series3[:, :200],),
-        train_inputs=(series3[:, 200:1000],),
+        warmup_inputs=(series3[:, :washout],),
+        train_inputs=(series3[:, washout:train_end],),
         targets={
-            "main": series3[:, 201:1001],  # next-step prediction
-            "aux": series3[:, 200:1000].norm(dim=-1, keepdim=True),  # state norm
+            "main": series3[:, washout + 1 : train_end + 1],  # next-step prediction
+            "aux": series3[:, washout:train_end].norm(dim=-1, keepdim=True),  # state norm
         },
     )
 
-    main_pred, aux_pred = multi.forecast(series3[:, 800:1000], horizon=100)
+    main_pred, aux_pred = multi.forecast(
+        series3[:, train_end - washout : train_end], horizon=options.choose(24, 100)
+    )
+    assert torch.isfinite(main_pred).all() and torch.isfinite(aux_pred).all()
     print(f"main (feedback) forecast: {tuple(main_pred.shape)}")
     print(f"aux             forecast: {tuple(aux_pred.shape)}")
 

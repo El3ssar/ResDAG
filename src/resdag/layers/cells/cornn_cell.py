@@ -125,6 +125,7 @@ class CoRNNCell(ProjectedInputCell):
 
     @property
     def dt(self) -> float:
+        """Positive integration interval; assignments affect the next update."""
         return self._dt
 
     @dt.setter
@@ -133,6 +134,7 @@ class CoRNNCell(ProjectedInputCell):
 
     @property
     def gamma(self) -> float:
+        """Nonnegative position restoring coefficient."""
         return self._gamma
 
     @gamma.setter
@@ -141,6 +143,7 @@ class CoRNNCell(ProjectedInputCell):
 
     @property
     def epsilon(self) -> float:
+        """Nonnegative velocity damping coefficient."""
         return self._epsilon
 
     @epsilon.setter
@@ -149,14 +152,17 @@ class CoRNNCell(ProjectedInputCell):
 
     @property
     def state_size(self) -> int:
+        """Packed position-plus-velocity width, twice ``reservoir_size``."""
         return 2 * self.reservoir_size
 
     @property
     def output_size(self) -> int:
+        """Position output width, equal to ``reservoir_size``."""
         return self.reservoir_size
 
     def step(self, projected_t: Tensor, state: Tensor) -> tuple[Tensor, Tensor]:
-        self.check_step(projected_t, state, self.reservoir_size)
+        """Return updated positions and packed position/velocity state for one frame."""
+        self._check_step(projected_t, state, self.reservoir_size)
         h, v = state.split(self.reservoir_size, dim=-1)
         force = torch.tanh(projected_t + F.linear(h, self.weight_hh) + F.linear(v, self.weight_hv))
         new_v = v + self.dt * (force - self.gamma * h - self.epsilon * v)

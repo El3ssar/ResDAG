@@ -107,6 +107,15 @@ keeps trajectory-trained predictions on the model device.
 See the [ESN migration guide](../project/esn-migration.md) for the breaking API
 changes.
 
+## Method reference
+
+`fit` returns this same module. `forecast` produces autonomous predictions;
+`forward` follows observed inputs with carried state. For differentiable
+chunking, `forward_stateless` returns a prediction and named states without
+changing the stored state. `get_state`, `set_state` and `reset_state` manage
+streaming explicitly. Standard inherited Torch methods and checkpoint protocol
+hooks remain available and are omitted from this reference.
+
 ::: resdag.facade
     options:
       members:

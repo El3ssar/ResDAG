@@ -31,19 +31,23 @@ def make_model(reservoir):
 
 
 def main():
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
+    size, washout = options.choose((12, 8), (48, 50))
     torch.manual_seed(4)
-    t = torch.arange(700, dtype=torch.float64) * 0.05
+    t = torch.arange(options.choose(97, 700), dtype=torch.float64) * 0.05
     series = torch.stack((t.sin(), t.cos()), dim=-1).unsqueeze(0)
     warmup, train, target, history, truth = rd.data.prepare_esn_data(
         series,
-        warmup_steps=50,
-        train_steps=500,
-        val_steps=100,
+        warmup_steps=washout,
+        train_steps=options.choose(64, 500),
+        val_steps=options.choose(16, 100),
     )
 
     # Calibration sees training inputs only, before fitting a readout.
     esn = rd.ESNLayer(
-        48,
+        size,
         feedback_size=2,
         recurrent_initializer="example_cycle",
         feedback_initializer=("normal", {"scale": 0.2}),
@@ -54,7 +58,7 @@ def main():
     report = rd.calibrate_intrinsic_plasticity(
         esn,
         torch.cat((warmup, train), dim=1),
-        warmup=50,
+        warmup=washout,
         target_std=0.2,
         learning_rate=1e-3,
     )
@@ -66,15 +70,15 @@ def main():
     # Other dynamics use the same training, forecast and integration interfaces.
     reservoirs = {
         "custom calibrated ESN": esn,
-        "oscillator": rd.CoRNNLayer(48, feedback_size=2, dt=0.05, dtype=torch.float64, seed=4),
+        "oscillator": rd.CoRNNLayer(size, feedback_size=2, dt=0.05, dtype=torch.float64, seed=4),
         "Legendre memory": rd.LegendreDelayLayer(
-            order=12,
+            order=options.choose(4, 12),
             feedback_size=2,
             theta=80,
             dtype=torch.float64,
         ),
         "PyTorch LSTM": rd.TorchRecurrentLayer(
-            nn.LSTMCell(2, 32, dtype=torch.float64),
+            nn.LSTMCell(2, options.choose(8, 32), dtype=torch.float64),
             feedback_size=2,
         ),
     }
@@ -91,7 +95,7 @@ def main():
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "model.pt"
             model.save_full(path)
-            restored = rd.ESNModel.load_full(path)
+            restored = rd.ESNModel.load_full(path, trusted=True)
             torch.testing.assert_close(
                 restored.forecast(history, horizon=truth.shape[1]),
                 prediction,

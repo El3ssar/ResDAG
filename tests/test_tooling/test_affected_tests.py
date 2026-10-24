@@ -113,6 +113,23 @@ def test_pre_option_checkpoint_changes_select_actual_load_and_recipe_checks() ->
 
 
 @pytest.mark.parametrize(
+    "path,target",
+    [
+        ("tools/check_docs_site.py", "tests/test_tooling/test_check_docs_site.py"),
+        ("scripts/build_docs_assets.py", "tests/test_docs/test_forecast_visuals.py"),
+        (
+            "docs/assets/data/phase-five-vanilla-robustness-2026-10-24.json",
+            "tests/test_regression/test_vanilla_robustness_evidence.py",
+        ),
+        ("examples/00_getting_started.py", "tests/test_examples_execution.py"),
+        ("examples/17_forecast_experiment.py", "tests/test_examples_execution.py"),
+    ],
+)
+def test_full_sweep_tooling_and_scientific_data_dependencies_select_checks(path, target):
+    assert target in AT.select_tests([path]).tests
+
+
+@pytest.mark.parametrize(
     "record", ["accuracy", "auto", "compile", "interleaved", "recurrence", "storage", "workflows"]
 )
 def test_cpu_measurement_data_changes_run_scientific_evidence_checks(record: str) -> None:

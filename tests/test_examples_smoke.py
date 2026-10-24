@@ -56,7 +56,7 @@ def test_examples_directory_is_discovered() -> None:
     _EXAMPLE_PATHS,
     ids=[p.stem for p in _EXAMPLE_PATHS],
 )
-def test_example_imports(example_path: Path) -> None:
+def test_example_imports(example_path: Path, isolated_component_registries) -> None:
     """Each example parses and its top-level imports resolve.
 
     The example's ``main()`` is *not* executed — importing only runs

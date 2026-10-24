@@ -505,7 +505,7 @@ class TrialRunner:
             error_policy=self.error_policy,
         )
 
-    def evaluate_job(
+    def _evaluate_job(
         self, job: tuple[PreparedTrial, Callable[[float, int], None] | None]
     ) -> TrialResult:
         return self.evaluate(*job)

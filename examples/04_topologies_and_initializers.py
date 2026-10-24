@@ -34,7 +34,11 @@ def spectral_radius(matrix: torch.Tensor) -> float:
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
     torch.manual_seed(42)
+    size = options.choose(24, 200)
 
     # ------------------------------------------------------------------
     # 1. Browse the registries
@@ -57,12 +61,12 @@ def main() -> None:
     print("=" * 70)
 
     # String spec: registered defaults
-    layer = ESNLayer(200, feedback_size=3, topology="erdos_renyi", spectral_radius=0.9)
+    layer = ESNLayer(size, feedback_size=3, topology="erdos_renyi", spectral_radius=0.9)
     print(f'topology="erdos_renyi"          rho(W) = {spectral_radius(layer.weight_hh):.4f}')
 
     # Tuple spec: override registered defaults
     layer = ESNLayer(
-        200,
+        size,
         feedback_size=3,
         topology=("watts_strogatz", {"k": 6, "p": 0.3, "seed": 42}),
         spectral_radius=0.9,
@@ -71,7 +75,7 @@ def main() -> None:
 
     # Object spec: configure once, reuse everywhere
     topo = get_topology("barabasi_albert", m=3, seed=42)
-    layer = ESNLayer(200, feedback_size=3, topology=topo, spectral_radius=0.9)
+    layer = ESNLayer(size, feedback_size=3, topology=topo, spectral_radius=0.9)
     density = (layer.weight_hh != 0).float().mean().item()
     print(f"topology=get_topology(...)      rho(W) = {spectral_radius(layer.weight_hh):.4f}")
     print(f"Spectral radius is rescaled to the requested value; density here {density:.3f}")
@@ -93,23 +97,23 @@ def main() -> None:
             w[s : s + size, s : s + size] = torch.randn(size, size)
         return w
 
-    layer = ESNLayer(200, feedback_size=3, topology=block_diagonal, spectral_radius=0.9)
+    layer = ESNLayer(size, feedback_size=3, topology=block_diagonal, spectral_radius=0.9)
     print(f"topology=block_diagonal         rho(W) = {spectral_radius(layer.weight_hh):.4f}")
 
     # (fn, params) binds keyword arguments to the callable
     layer = ESNLayer(
-        200, feedback_size=3, topology=(block_diagonal, {"blocks": 2}), spectral_radius=0.9
+        size, feedback_size=3, topology=(block_diagonal, {"blocks": 2}), spectral_radius=0.9
     )
-    off_block = layer.weight_hh[:100, 100:]
+    off_block = layer.weight_hh[: size // 2, size // 2 :]
     print(
         f"topology=(block_diagonal, ...)  off-block weights all zero: {bool((off_block == 0).all())}"
     )
 
     print("\nIn-place style: fn(tensor, **kwargs), i.e. any torch.nn.init.*_")
-    layer = ESNLayer(200, feedback_size=3, topology=torch.nn.init.orthogonal_, spectral_radius=1.0)
+    layer = ESNLayer(size, feedback_size=3, topology=torch.nn.init.orthogonal_, spectral_radius=1.0)
     print(f"topology=torch.nn.init.orthogonal_  rho(W) = {spectral_radius(layer.weight_hh):.4f}")
     layer = ESNLayer(
-        200,
+        size,
         feedback_size=3,
         topology=(torch.nn.init.sparse_, {"sparsity": 0.9}),
         spectral_radius=0.9,
@@ -131,15 +135,16 @@ def main() -> None:
             torch.manual_seed(seed)
         return block_diagonal(n, blocks=blocks)
 
-    layer = ESNLayer(200, feedback_size=3, topology="two_blocks", spectral_radius=0.9)
+    layer = ESNLayer(size, feedback_size=3, topology="two_blocks", spectral_radius=0.9)
     print(f"registered + used by name:      rho(W) = {spectral_radius(layer.weight_hh):.4f}")
 
     # The library ships one matrix topology out of the box: "orthogonal"
     layer = ESNLayer(
-        200, feedback_size=3, topology=("orthogonal", {"seed": 42}), spectral_radius=1.0
+        size, feedback_size=3, topology=("orthogonal", {"seed": 42}), spectral_radius=1.0
     )
     wtw = layer.weight_hh.T @ layer.weight_hh
-    ortho_err = (wtw - torch.eye(200)).abs().max().item()
+    torch.testing.assert_close(wtw, torch.eye(size), atol=1e-5, rtol=1e-5)
+    ortho_err = (wtw - torch.eye(size)).abs().max().item()
     print(f'built-in "orthogonal":          max |W^T W - I| = {ortho_err:.2e}')
 
     # ------------------------------------------------------------------
@@ -152,7 +157,7 @@ def main() -> None:
     show_input_initializers()
 
     # String spec
-    layer = ESNLayer(200, feedback_size=3, feedback_initializer="pseudo_diagonal")
+    layer = ESNLayer(size, feedback_size=3, feedback_initializer="pseudo_diagonal")
     nonzero_per_row = (layer.weight_feedback != 0).sum(dim=1).float().mean().item()
     print(
         f'"pseudo_diagonal": shape {tuple(layer.weight_feedback.shape)}, '
@@ -161,7 +166,7 @@ def main() -> None:
 
     # Tuple spec with overrides
     layer = ESNLayer(
-        200, feedback_size=3, feedback_initializer=("random", {"input_scaling": 0.1, "seed": 7})
+        size, feedback_size=3, feedback_initializer=("random", {"input_scaling": 0.1, "seed": 7})
     )
     print(
         f'("random", {{"input_scaling": 0.1}}): max |W_fb| = '
@@ -170,21 +175,21 @@ def main() -> None:
 
     # Object spec
     init = get_input_feedback("chebyshev", input_scaling=0.5)
-    layer = ESNLayer(200, feedback_size=3, feedback_initializer=init)
+    layer = ESNLayer(size, feedback_size=3, feedback_initializer=init)
     print(
         f"get_input_feedback('chebyshev'): mean |W_fb| = "
         f"{layer.weight_feedback.abs().mean().item():.4f}"
     )
 
     # Bare callable spec works here too (in-place torch.nn.init style)
-    layer = ESNLayer(200, feedback_size=3, feedback_initializer=torch.nn.init.xavier_uniform_)
+    layer = ESNLayer(size, feedback_size=3, feedback_initializer=torch.nn.init.xavier_uniform_)
     print(
         f"torch.nn.init.xavier_uniform_:   std(W_fb) = " f"{layer.weight_feedback.std().item():.4f}"
     )
 
     # Driving-input matrix gets its own initializer via input_initializer=
     layer = ESNLayer(
-        200,
+        size,
         feedback_size=3,
         input_size=5,
         feedback_initializer="chebyshev",

@@ -73,8 +73,7 @@ def real_julia(tmp_path_factory):
     series, _ = prepare_point(lorenz(point.series_len), point)
     np.ascontiguousarray(series, dtype="<f8").tofile(directory / "data.bin")
     oracle = directory / "export.jl"
-    oracle.write_text(
-        f"""include({json.dumps(str(worker))})
+    oracle.write_text(f"""include({json.dumps(str(worker))})
 cfg=(dim={hp.dim}, reservoir_size={point.reservoir_size},
      train_len={point.train_len}, warmup={point.warmup}, horizon={point.horizon},
      seed={hp.seed}, lr={hp.leak_rate}, sr={hp.spectral_radius},
@@ -92,8 +91,7 @@ write(joinpath(@__DIR__, "Wout.bin"), ps.readout.weight)
 prediction=do_forecast(esn, ps, st, data, cfg)
 @assert eltype(prediction) == Float64
 write(joinpath(@__DIR__, "prediction.bin"), prediction)
-"""
-    )
+""")
     environment = os.environ | {
         "JULIA_NUM_THREADS": "1",
         "OPENBLAS_NUM_THREADS": "1",
@@ -238,8 +236,7 @@ def test_real_persistent_julia_common_recipe_matches_numpy_fit_and_recurrence(re
     np.ascontiguousarray(data["series"][:46], dtype="<f8").tofile(directory / "data.bin")
     worker = Path(__file__).resolve().parents[1] / "benchmarks/julia/rc_budget.jl"
     script = directory / "oracle.jl"
-    script.write_text(
-        f"""include({json.dumps(str(worker))})
+    script.write_text(f"""include({json.dumps(str(worker))})
 esn, ps, st=budget_model(3,20,.9,.3,.4,.2,.1,1234; sparse={str(storage == 'sparse').lower()})
 @assert eltype(ps.reservoir.input_matrix) == Float64
 @assert eltype(ps.reservoir.bias) == Float64
@@ -250,8 +247,7 @@ write(joinpath(@__DIR__,"bias.bin"),ps.reservoir.bias)
 values=load_data(joinpath(@__DIR__,"data.bin"),3,46)
 ps, _=do_train!(esn,ps,st,values,(train_len=45,warmup=3,ridge=1e-6))
 write(joinpath(@__DIR__,"Wout.bin"),ps.readout.weight)
-"""
-    )
+""")
     result = subprocess.run(
         [shutil.which("julia"), f"--project={data['project']}", "--startup-file=no", str(script)],
         capture_output=True,

@@ -407,6 +407,14 @@ vectors. `get_study_summary` orders valid results according to study direction.
 
 ## Resource policies and helpers
 
+`MemoryContext` is the immutable public input to a custom `memory_estimator`.
+Tuning supplies shapes, placement, retained storage and recognized execution
+layout; the callback returns a `MemoryEstimate` or a byte count. For separate
+planning, construct a context from known facts and call `estimate_memory`.
+The preparation-specific context builders are implementation details.
+Estimates guide admission and concurrency; they are not process or allocator
+limits and do not change model precision or device policy.
+
 ::: resdag.hpo.resources
     options:
       members:
@@ -414,8 +422,6 @@ vectors. `get_study_summary` orders valid results according to study direction.
         - MemoryBudget
         - MemoryEstimate
         - MemoryContext
-        - memory_context
-        - raw_memory_context
         - estimate_memory
 
 ## Raw losses

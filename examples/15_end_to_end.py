@@ -13,24 +13,29 @@ import resdag as rd
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
     torch.manual_seed(0)
     # Low-level interfaces use (batch, time, features), with matching dtype/device.
-    t = torch.arange(1200, dtype=torch.float64) * 0.05
+    t = torch.arange(options.choose(201, 1200), dtype=torch.float64) * 0.05
     data = torch.stack((t.sin(), t.cos()), dim=-1).unsqueeze(0)
     warmup, train, target, history, truth, stats = rd.data.prepare_esn_data(
         data,
-        warmup_steps=100,
-        train_steps=800,
-        val_steps=200,
+        warmup_steps=options.choose(20, 100),
+        train_steps=options.choose(120, 800),
+        val_steps=options.choose(40, 200),
         normalize=True,
         norm_method="standard",
         return_stats=True,
     )
-    model = rd.classic_esn(64, feedback_size=2, output_size=2, readout="svd").double()
+    model = rd.classic_esn(
+        options.choose(16, 64), feedback_size=2, output_size=2, readout="svd"
+    ).double()
     rd.ESNTrainer(model).fit(warmup, train, target)
     model.eval()
     prediction = model.forecast(history, horizon=truth.shape[1])
-    assert prediction.shape == truth.shape
+    assert prediction.shape == truth.shape and torch.isfinite(prediction).all()
     assert stats is not None
     prediction_original = rd.data.denormalize_data(prediction, "standard", stats)
     truth_original = rd.data.denormalize_data(truth, "standard", stats)
@@ -41,9 +46,11 @@ def main() -> None:
     with TemporaryDirectory() as folder:
         path = Path(folder) / "model.pt"
         model.save_full(path, normalization=stats, norm_method="standard")
-        restored, metadata = rd.ESNModel.load_full(path, return_metadata=True, map_location="cpu")
+        restored, metadata = rd.ESNModel.load_full(
+            path, return_metadata=True, map_location="cpu", trusted=True
+        )
         assert metadata["norm_method"] == "standard"
-        torch.testing.assert_close(restored.forecast(history, horizon=200), prediction)
+        torch.testing.assert_close(restored.forecast(history, horizon=truth.shape[1]), prediction)
 
     # Reuse the complete trained reservoir + readout as a normal PyTorch module.
     # Independent windows start from zero state, so batches do not affect one another.
@@ -52,7 +59,7 @@ def main() -> None:
     optimizer = torch.optim.Adam(head.parameters(), lr=0.01)
     inputs = train[:, :100]
     labels = target[:, :100, :1]
-    for _ in range(10):
+    for _ in range(options.choose(2, 10)):
         optimizer.zero_grad()
         loss = (pipeline(inputs) - labels).square().mean()
         loss.backward()

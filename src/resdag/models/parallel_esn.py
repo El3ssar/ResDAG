@@ -678,6 +678,8 @@ class ParallelESNModel(torch.nn.Module):
         path: str | Path,
         return_metadata: bool = False,
         map_location: Any = None,
+        *,
+        trusted: bool = False,
     ) -> "ParallelESNModel | tuple[ParallelESNModel, dict[str, Any]]":
         """Reconstruct a model saved with :meth:`save_full`.
 
@@ -689,6 +691,10 @@ class ParallelESNModel(torch.nn.Module):
             If ``True``, return ``(model, metadata)`` instead of just the model.
         map_location : optional
             Passed to ``torch.load`` to remap storage devices.
+
+        trusted : bool, default=False
+            Explicit opt-in to execute the saved Python. Required for full
+            pickle files; prefer ``Model.save`` and ``resdag.load`` otherwise.
 
         Returns
         -------
@@ -705,7 +711,7 @@ class ParallelESNModel(torch.nn.Module):
         Loads with ``weights_only=False`` (unpickles arbitrary objects); only
         call on trusted files.
         """
-        return load_full_model(cls, path, return_metadata, map_location)
+        return load_full_model(cls, path, return_metadata, map_location, trusted=trusted)
 
     def __repr__(self) -> str:
         """Return a concise string representation."""

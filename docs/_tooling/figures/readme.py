@@ -17,8 +17,11 @@ def main() -> None:
     merged = Concatenate()(fast, slow)
     head = CGReadoutLayer(128, 3, name="output")(merged)
     ESNModel(inp, head).plot_model(
-        show_shapes=False, rankdir="LR",
-        save_path=str(out / "parallel_timescales.svg"), format="svg")
+        show_shapes=False,
+        rankdir="LR",
+        save_path=str(out / "parallel_timescales.svg"),
+        format="svg",
+    )
 
     # 2. One reservoir, augmented features, two readout heads
     inp2 = reservoir_input(3)
@@ -27,8 +30,11 @@ def main() -> None:
     pos = CGReadoutLayer(192, 3, name="position")(augmented)
     energy = CGReadoutLayer(192, 1, name="energy")(augmented)
     ESNModel(inp2, [pos, energy]).plot_model(
-        show_shapes=False, rankdir="LR",
-        save_path=str(out / "augmented_two_heads.svg"), format="svg")
+        show_shapes=False,
+        rankdir="LR",
+        save_path=str(out / "augmented_two_heads.svg"),
+        format="svg",
+    )
 
     print("  wrote readme/parallel_timescales.svg, readme/augmented_two_heads.svg")
 

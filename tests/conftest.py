@@ -24,6 +24,33 @@ from resdag.layers import CGReadoutLayer, ESNLayer
 
 
 @pytest.fixture
+def isolated_component_registries():
+    """Keep executable tutorials from registering components in later tests."""
+    from resdag.artifacts import _api, _codecs, _registry
+    from resdag.init.input_feedback import registry as input_registry
+    from resdag.init.topology import registry as topology_registry
+
+    # Populate lazy built-ins before taking the snapshot. Restoring empty codec
+    # dictionaries while their initialized flags remain true would break loads.
+    _api._initialize()
+    registries = (
+        topology_registry._TOPOLOGY_REGISTRY,
+        input_registry._INPUT_FEEDBACK_REGISTRY,
+        _registry._CODECS,
+        _registry._TYPES,
+        _codecs._SYMBOLS,
+    )
+    snapshots = tuple(dict(registry) for registry in registries)
+    try:
+        yield
+    finally:
+        # Modules import several registries by reference: retain their identity.
+        for registry, snapshot in zip(registries, snapshots, strict=True):
+            registry.clear()
+            registry.update(snapshot)
+
+
+@pytest.fixture
 def graphviz_rendering() -> None:
     """Require real rendering in CI; local DOT-only development remains usable."""
     available = importlib.util.find_spec("graphviz") is not None and shutil.which("dot")

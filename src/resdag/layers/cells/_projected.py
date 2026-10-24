@@ -155,7 +155,7 @@ class ProjectedInputCell(ReservoirCell):
     def forward(self, inputs: list[Tensor], state: Tensor) -> tuple[Tensor, Tensor]:
         return self.step(self.project_inputs(inputs), state)
 
-    def check_step(self, projected: Tensor, state: Tensor, projection_size: int) -> None:
+    def _check_step(self, projected: Tensor, state: Tensor, projection_size: int) -> None:
         self.validate_state(state)
         if projected.ndim != 2 or projected.shape != (state.shape[0], projection_size):
             raise ValueError(f"Projected timestep must have shape (batch, {projection_size})")

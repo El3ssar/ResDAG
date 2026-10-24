@@ -29,6 +29,7 @@ docs_dir: docs
 
 exclude_docs: |
   _tooling/
+  overrides/
 
 hooks:
   - hooks/docs_autogen.py
@@ -131,6 +132,7 @@ plugins:
             filters:
               - "!^_"
               - "^__init__$"
+              - "!^(extra_repr|get_extra_state|set_extra_state)$"
 
 markdown_extensions:
   - abbr
@@ -202,6 +204,7 @@ nav:
       - Readout solvers: guides/readout-solvers.md
       - Calibrate: workflows/calibration.md
       - Forecast: workflows/forecast.md
+      - Plot and animate forecasts: workflows/visualize.md
       - Forecast execution: advanced/forecast-capabilities.md
       - Lyapunov time: workflows/lyapunov.md
       - NG-RC: workflows/ngrc.md
@@ -228,6 +231,7 @@ nav:
       - Model artifacts: reference/artifacts.md
       - Layers: reference/layers.md
       - Initialization: reference/init.md
+      - Data and datasets: reference/data.md
       - Training: reference/training.md
       - Metrics: reference/metrics.md
       - Models & ensembles: reference/models.md
@@ -242,6 +246,7 @@ nav:
       - Phase five design: project/phase-five-design.md
       - Phase five measurements: project/phase-five-results.md
       - Vanilla robustness: project/phase-five-robustness.md
+      - Persistence and dependency audit: project/security.md
       - Single-pass training measurements: project/single-pass-training-benchmark.md
       - Graph tooling: project/graph-tooling.md
       - New ESN API: project/esn-migration.md

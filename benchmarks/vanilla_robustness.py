@@ -37,6 +37,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SYSTEMS = ("lorenz", "rossler")
 
 
+class DataIntegrityError(Exception):
+    """A corrupted experiment must abort, not become an unsuccessful candidate."""
+
+
 def _load(name: str, path: Path) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
@@ -308,7 +312,7 @@ def _evaluate_impl(
     result["training_scales"] = []
     for index, dataset in enumerate(datasets):
         if _hash(dataset["path"].read_bytes()) != dataset["sha256"]:
-            raise RuntimeError("Dataset changed after registration")
+            raise DataIntegrityError("Dataset changed after registration")
         raw = torch.from_numpy(numpy.load(dataset["path"]))
         train = raw[: config["train_observations"]]
         scale = train[config["washout"] + 1 :].std(dim=0, unbiased=False)

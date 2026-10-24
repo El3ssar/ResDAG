@@ -55,14 +55,17 @@ class TorchRecurrentCell(ReservoirCell):
 
     @property
     def state_size(self) -> int:
+        """Carried width: hidden state for GRU, packed hidden/carry state for LSTM."""
         return self.reservoir_size * (2 if self._is_lstm else 1)
 
     @property
     def output_size(self) -> int:
+        """Hidden-state width, equal to the supplied native cell's ``hidden_size``."""
         return self.reservoir_size
 
     @property
     def trainable(self) -> bool:
+        """Whether the copied native cell's parameters receive gradients."""
         return self._trainable
 
     @trainable.setter
@@ -74,15 +77,18 @@ class TorchRecurrentCell(ReservoirCell):
             parameter.requires_grad_(value)
 
     def init_state(self, batch_size: int, device: torch.device, dtype: torch.dtype) -> Tensor:
+        """Return zero initial hidden state, including LSTM carry when applicable."""
         return torch.zeros(batch_size, self.state_size, device=device, dtype=dtype)
 
     def project_inputs(self, inputs: list[Tensor]) -> Tensor:
+        """Project feedback and optional driver into the native cell's input gates."""
         validate_inputs(inputs, self.feedback_size, self.input_size)
         combined = inputs[0] if self.input_size is None else torch.cat(inputs, dim=-1)
         cell = self.recurrent_cell
         return F.linear(combined, cell.weight_ih, cell.bias_ih)
 
     def step(self, projected_t: Tensor, state: Tensor) -> tuple[Tensor, Tensor]:
+        """Advance one projected frame and return hidden output and carried state."""
         self.validate_state(state)
         gates = 4 if self._is_lstm else 3
         if projected_t.ndim != 2 or projected_t.shape != (
@@ -111,6 +117,7 @@ class TorchRecurrentCell(ReservoirCell):
         return new_h, new_h
 
     def forward(self, inputs: list[Tensor], state: Tensor) -> tuple[Tensor, Tensor]:
+        """Advance one raw feedback/driver frame using the native GRU/LSTM equations."""
         return self.step(self.project_inputs(inputs), state)
 
     def extra_repr(self) -> str:

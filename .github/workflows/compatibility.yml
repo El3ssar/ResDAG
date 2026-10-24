@@ -29,3 +29,5 @@ jobs:
           dependency-mode: latest
       - name: Build documentation against latest dependencies
         run: mkdocs build --strict
+      - name: Validate rendered links and media
+        run: python tools/check_docs_site.py site --base-path /ResDAG/

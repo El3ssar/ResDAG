@@ -16,9 +16,9 @@ from resdag.hpo.resources import (
     MemoryContext,
     MemoryEstimate,
     Screening,
+    _memory_context,
+    _raw_memory_context,
     estimate_memory,
-    memory_context,
-    raw_memory_context,
 )
 
 
@@ -32,7 +32,7 @@ def _context():
     model = _model()
     series = torch.arange(80, dtype=torch.float64).reshape(40, 2)
     data = prepare_tuning_data(model, series, horizon=3)
-    return memory_context(model, data)
+    return _memory_context(model, data)
 
 
 @pytest.mark.parametrize(
@@ -181,7 +181,7 @@ def test_context_records_full_refit_rows_and_actual_shared_storage(shape, monkey
         storages[value.untyped_storage()._cdata] = value.untyped_storage().nbytes()
     assert before
     monkeypatch.setattr(model.graph, "forward", lambda *a: pytest.fail("planning executed graph"))
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     assert context.model_host_bytes == sum(storages.values())
     assert context.model_device_bytes == 0
     assert context.refit_samples == (1 if len(shape) == 2 else shape[0]) * 40
@@ -213,7 +213,7 @@ def test_context_metadata_has_no_mutable_tensor_or_model_references_and_serializ
         "tensor": torch.ones(5),
         "module": model,
     }
-    context = memory_context(model, data, preset_options=options)
+    context = _memory_context(model, data, preset_options=options)
     assert isinstance(context, MemoryContext)
     options["custom"]["items"].append(3)
     assert context.preset_options["custom"]["items"] == (1, 2)
@@ -318,7 +318,7 @@ def test_planning_does_not_change_global_torch_settings_or_model_values(monkeypa
         monkeypatch.setattr(torch, name, forbidden)
     monkeypatch.setattr(torch.cuda, "set_per_process_memory_fraction", forbidden)
     monkeypatch.setattr(model, "to", forbidden)
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     estimate_memory({}, context)
     assert torch.get_default_dtype() == default_dtype and torch.get_num_threads() == threads
     for name, expected in state.items():
@@ -366,7 +366,7 @@ def _raw_data():
 
 def test_raw_context_deduplicates_views_reserves_full_prefix_and_needs_estimator():
     data = _raw_data()
-    context = raw_memory_context(data)
+    context = _raw_memory_context(data)
     assert context.input_shapes == {"train": (1, 7, 2), "train_forcing": (1, 7, 3)}
     assert context.target_shapes == {"target": (1, 5, 2)}
     assert context.train_samples == context.refit_samples == 7
@@ -387,7 +387,7 @@ def test_raw_context_deduplicates_views_reserves_full_prefix_and_needs_estimator
 
 def test_raw_context_includes_each_alias_copy_when_crossing_devices_without_allocation():
     data = _raw_data()
-    context = raw_memory_context(data, device="cuda:3", horizon=3)
+    context = _raw_memory_context(data, device="cuda:3", horizon=3)
     transferred = sum(
         value.numel() * value.element_size()
         for value in data.values()
@@ -405,7 +405,7 @@ def test_raw_context_includes_each_alias_copy_when_crossing_devices_without_allo
 
 
 def test_custom_estimates_remain_complete_totals_above_known_floor():
-    context = raw_memory_context(_raw_data())
+    context = _raw_memory_context(_raw_data())
     estimate = estimate_memory(
         {}, context, estimator=lambda p, c: MemoryEstimate(10**8, 10**7, {"recipe": "custom"})
     )
@@ -419,16 +419,16 @@ def test_raw_context_rejects_missing_or_wrong_tensor_layout(name):
     data = _raw_data()
     data[name] = data[name].squeeze(0)
     with pytest.raises(ValueError, match="Raw memory context requires"):
-        raw_memory_context(data)
+        _raw_memory_context(data)
 
 
 def test_raw_zero_warmup_and_explicit_working_precision():
     data = _raw_data()
     data["warmup"] = data["warmup"][:, :0]
-    context = raw_memory_context(data, dtype=torch.float32, horizon=2)
+    context = _raw_memory_context(data, dtype=torch.float32, horizon=2)
     assert context.retained_forecast_bytes == 1 * 2 * 2 * 4
     with pytest.raises(ValueError, match="dtype"):
-        raw_memory_context(data, dtype=torch.int64)
+        _raw_memory_context(data, dtype=torch.int64)
 
 
 def test_dense_and_sparse_model_buffers_count_actual_storage_including_sparse_indices():
@@ -448,7 +448,7 @@ def test_dense_and_sparse_model_buffers_count_actual_storage_including_sparse_in
     expected += (
         sparse._indices().untyped_storage().nbytes() + sparse._values().untyped_storage().nbytes()
     )
-    assert memory_context(model, data).model_host_bytes == expected
+    assert _memory_context(model, data).model_host_bytes == expected
 
 
 def test_retained_full_objective_forecasts_are_explicit_and_scale_with_horizon():
@@ -485,7 +485,7 @@ def test_late_fast_forecast_history_reserves_warmup_traces_without_changing_solv
     data = prepare_tuning_data(
         model, training, validation=(validation, None), horizon=50, n_origins=3
     )
-    context = memory_context(model, data)
+    context = _memory_context(model, data)
     assert context.refit_samples == context.train_samples == 12
     expected = max(value.shape[-2] for origin in data.origins for value in origin.history.values())
     assert expected > 900

@@ -1,0 +1,23 @@
+digraph ResDAG {
+  rankdir=TB;
+  graph [bgcolor="white", fontname="Helvetica", pad="0.25"];
+  node [shape=box, style="rounded,filled", fillcolor="#eef3fa", fontname="Helvetica"];
+  edge [fontname="Helvetica", fontsize=10, color="#61738b"];
+  "input_0" [label="Input: state\n(batch, time, 3)", shape=ellipse, fillcolor="#f5f7fa"];
+  "output_0" [label="Output: prediction\n(batch, time, 3)", shape=ellipse, fillcolor="#f5f7fa"];
+  "input_transform_0" [label="Input transform: state\nFittedNormalization (standard)"];
+  "input_0" -> "input_transform_0" [label=""];
+  "output_transform_0" [label="Inverse output transform: prediction\nFittedNormalization (standard)"];
+  "output_transform_0" -> "output_0" [label=""];
+  "op_0" [label="ESNLayer_1\nESNLayer\nfrozen"];
+  "input_transform_0" -> "op_0" [label="input 0; (batch, time, 3)"];
+  "op_1" [label="ESNLayer_2\nESNLayer\nfrozen"];
+  "input_transform_0" -> "op_1" [label="input 0; (batch, time, 3)"];
+  "op_2" [label="Concatenate_1\nConcatenate"];
+  "op_0" -> "op_2" [label="input 0; (batch, time, 48)"];
+  "op_1" -> "op_2" [label="input 1; (batch, time, 48)"];
+  "op_3" [label="SVDReadoutLayer_1\nSVDReadoutLayer\nfrozen"];
+  "op_2" -> "op_3" [label="input 0; (batch, time, 96)"];
+  "op_3" -> "output_transform_0" [label=""];
+  "output_0" -> "input_0" [label="feedback: delay=1; prediction lead=1", style="dashed", color="#b64d36", constraint=false];
+}

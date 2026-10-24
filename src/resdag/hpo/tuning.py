@@ -55,8 +55,8 @@ from .resources import (
     MemoryContext,
     MemoryEstimate,
     Screening,
+    _memory_context,
     estimate_memory,
-    memory_context,
 )
 from .storage import _close_storage, resolve_storage
 
@@ -1148,7 +1148,7 @@ def tune_model(
     memory = (
         None
         if budget is None
-        else memory_context(
+        else _memory_context(
             workflow,
             data,
             preset_options=_automatic_options(template),

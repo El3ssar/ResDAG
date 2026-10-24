@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from numbers import Integral
 from typing import ClassVar
 
+__all__ = ["SeedStreams"]
+
 
 @dataclass(frozen=True)
 class SeedStreams:

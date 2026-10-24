@@ -51,12 +51,13 @@ def bench_config(batch: int, size: int) -> list[tuple[str, float, float]]:
         torch.manual_seed(42)
         model = rd.classic_esn(size, feedback_size=FEATURES, output_size=FEATURES).to(device)
 
-        torch.manual_seed(0)
-        x = torch.randn(batch, SEQ_LEN, FEATURES, device=device)  # (batch, time, features)
-        warmup = torch.randn(batch, WARMUP_STEPS, FEATURES, device=device)
-        train = torch.randn(batch, TRAIN_STEPS, FEATURES, device=device)
-        target = torch.randn(batch, TRAIN_STEPS, FEATURES, device=device)
-        f_warmup = torch.randn(batch, WARMUP_STEPS, FEATURES, device=device)
+        # Generate on CPU before copying: matching seeds alone do not give
+        # matching CPU/CUDA random draws.
+        generator = torch.Generator().manual_seed(0)
+        x, warmup, train, target, f_warmup = (
+            torch.randn(batch, length, FEATURES, generator=generator).to(device)
+            for length in (SEQ_LEN, WARMUP_STEPS, TRAIN_STEPS, TRAIN_STEPS, WARMUP_STEPS)
+        )
 
         def run_forward() -> None:
             model.reset_reservoirs()
@@ -77,11 +78,23 @@ def bench_config(batch: int, size: int) -> list[tuple[str, float, float]]:
 
 
 def main() -> None:
+    from _example_options import parse_options
+
+    options = parse_options(__doc__)
     if not torch.cuda.is_available():
         print("CUDA is not available on this machine — benchmark skipped.")
-        print("The qualitative picture from machines with a GPU:")
-        print("  - GPU wins at scale (big reservoirs, big batches, heavy fits)")
-        print("  - tiny configs are launch-bound and often FASTER on CPU")
+        return
+
+    if options.quick:
+        # Exercise the actual CUDA workflow without presenting smoke timings
+        # as a performance comparison.
+        for device in ("cpu", "cuda"):
+            model = rd.classic_esn(24, feedback_size=FEATURES, output_size=FEATURES).to(device)
+            series = torch.randn(2, 61, FEATURES).to(device)
+            ESNTrainer(model).fit(series[:, :8], series[:, 8:48], series[:, 9:49])
+            output = model.forecast(series[:, 40:49], horizon=12)
+            assert output.shape == (2, 12, FEATURES) and torch.isfinite(output).all()
+        print("CPU and CUDA fit/forecast execution verified; no timings collected.")
         return
 
     gpu = torch.cuda.get_device_name(0)
@@ -102,23 +115,9 @@ def main() -> None:
             )
         print("-" * len(header))
 
-    print(
-        """
-How to read this
-----------------
-- GPU wins at scale: larger batches and larger reservoirs turn the
-  per-step matmuls and the readout's Gram-matrix formation into real GPU
-  work (speedups grow with batch and reservoir size).
-- Tiny configs are launch-bound: the reservoir loop is sequential in
-  time, so each timestep is one small kernel launch. At (1, 1000) the GPU
-  mostly waits and the CPU wins every op.
-- fit() on GPU keeps the heavy Gram matmuls in float32 by default
-  (CGReadoutLayer's gram_dtype auto rule) — float64 Gram formation on
-  consumer GPUs runs at 1/32-1/64 throughput and would erase the win.
-- Rule of thumb: big batches, big reservoirs, or many models -> GPU;
-  a single small model -> CPU.
-"""
-    )
+    print("These are single-host illustrative measurements, with one timed repeat.")
+    print("The factory uses its default RidgeReadoutLayer; solver and dtype affect cost.")
+    print("Repeat controlled measurements on your workload before choosing a device.")
 
 
 if __name__ == "__main__":

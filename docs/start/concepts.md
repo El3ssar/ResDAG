@@ -6,8 +6,9 @@ description: The four ideas behind ResDAG — frozen dynamics, the state, the al
 
 # The mental model
 
-ResDAG rests on four ideas. Every component in the library implements one
-of them.
+Use `rd.ESN(...).fit(training_data)` for a preset, or connect layers and wrap
+them in `rd.Model` for a custom DAG. Both support the same `fit`, `forecast`,
+`tune` and `save` commands. The four ideas below explain what those commands do.
 
 ## 1 — The dynamics are designed, not learned
 
@@ -37,15 +38,15 @@ layer.reset_state()            # forget everything (lazy re-init)
 layer.get_state()              # clone the live state
 layer.set_state(saved)         # restore a checkpoint
 layer.set_random_state(batch_size=4)
-model.reset_reservoirs()       # all reservoirs in a model at once
+model.reset_state()            # every reservoir in an rd.Model or rd.ESN
 ```
 
 By default, stored state is detached at `forward`-call boundaries, so
 consecutive batches do not accumulate autograd history. Set
 `detach_state_between_calls=False` deliberately, or use
 `model.forward_stateless(..., states=...)` to carry attached state explicitly.
-`model.as_module()` processes independent batches without changing stored
-states. A configured reset initializer supplies the starting state; otherwise
+The raw graph's `as_module()` adapter can process independent batches without
+changing stored states. A configured reset initializer supplies the starting state; otherwise
 it is zero.
 
 Explicit-state execution requires reservoirs to be separate functional graph
@@ -72,10 +73,11 @@ factories retain their explicit Ridge/Cholesky default. These solves need no
 learning rate or epoch schedule. Other solvers plug into the same contract:
 `CGReadoutLayer` (iterative conjugate gradient) and SVD/pinv/streaming
 variants (see [Theory · Readout solvers](../theory/readout.md#choosing-a-solver)).
-`ESNTrainer.fit` resets, runs teacher-forced warmup, and fits readouts in
-dependency order. Ordinary terminal heads need one training pass. When a
-readout feeds a later reservoir, fitting uses separate stages with fresh
-warmup so that the later reservoir sees the fitted upstream mapping.
+`ESNTrainer.fit` resets once and advances one continuous warmup-plus-training
+prefix in dependency order. A readout's pre-hook fits its training suffix before
+the readout produces the complete prefix for downstream nodes. Multiple heads
+share upstream work; a later reservoir warms up on the fitted upstream mapping
+without replaying it.
 Expose these dependencies as separate functional graph nodes or standard
 `torch.nn.Sequential` containers. A custom module that hides both readouts
 and reservoirs must expose that order before algebraic fitting.
@@ -105,14 +107,13 @@ feedback with a fixed [timing convention](../theory/timing.md): drivers
 for the forecast window start exactly where the warmup drivers ended.
 
 !!! note "For scikit-learn users"
-    A reservoir forecaster has no single `fit`/`predict` because training
-    and rollout are two phases — but they map cleanly onto the estimator
-    workflow you already know:
+    The common model interface separates fitting from autonomous rollout:
 
     | scikit-learn | ResDAG |
     | --- | --- |
-    | `est.fit(X, y)` | synchronize the state on a warmup window, then `ESNTrainer.fit(...)` solves the readout in one algebraic pass |
-    | `est.predict(X)` | `model.forecast(warmup, horizon=...)` re-synchronizes, then rolls the prediction back in as the next input |
+    | `est.fit(X, y)` | `model.fit(data)` learns training-only scaling, warms up the reservoir and fits the readout |
+    | forecasting future values | `model.forecast(history=data, horizon=...)` synchronizes on observations, then feeds predictions back into the model |
+    | applying a trained model to supplied inputs | `model(x)` returns predictions in original units and carries reservoir state |
 
     The `ESN` preset handles both phases in one PyTorch module:
     `ESN(...).fit(series).forecast(horizon=...)`. It learns scaling only from

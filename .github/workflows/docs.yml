@@ -56,6 +56,9 @@ jobs:
       - name: Build documentation
         run: mkdocs build --strict
 
+      - name: Validate rendered links and media
+        run: python tools/check_docs_site.py site --base-path /ResDAG/
+
   deploy:
     needs: build
     if: >-
@@ -83,6 +86,9 @@ jobs:
 
       - name: Build documentation
         run: mkdocs build --strict
+
+      - name: Validate rendered links and media
+        run: python tools/check_docs_site.py site --base-path /ResDAG/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

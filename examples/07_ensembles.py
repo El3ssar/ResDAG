@@ -27,24 +27,33 @@ def mse(pred: torch.Tensor, truth: torch.Tensor, steps: int) -> float:
 
 
 def main() -> None:
-    torch.manual_seed(42)
+    from _example_options import parse_options
 
-    data = rd.lorenz(2300, seed=42)  # (1, 2300, 3) = (batch, time, features)
-    warmup, train, target, f_warmup, val = rd.utils.prepare_esn_data(
-        data, warmup_steps=200, train_steps=1600, val_steps=400
+    options = parse_options(__doc__)
+    torch.manual_seed(42)
+    n_models = options.choose(3, 5)
+
+    data = rd.lorenz(options.choose(141, 2300), seed=42)  # (1, 2300, 3) = (batch, time, features)
+    warmup, train, target, f_warmup, val = rd.data.prepare_esn_data(
+        data,
+        warmup_steps=options.choose(12, 200),
+        train_steps=options.choose(100, 1600),
+        val_steps=options.choose(24, 400),
     )
     horizon = val.shape[1]
-    model_kwargs = dict(reservoir_size=300, feedback_size=3, output_size=3, spectral_radius=0.8)
+    model_kwargs = dict(
+        reservoir_size=options.choose(24, 300), feedback_size=3, output_size=3, spectral_radius=0.8
+    )
 
     # ------------------------------------------------------------------
     # 1. Build, fit, forecast
     # ------------------------------------------------------------------
     print("=" * 70)
-    print("1. Mean-coupled ensemble (5 x classic_esn)")
+    print(f"1. Mean-coupled ensemble ({n_models} x classic_esn)")
     print("=" * 70)
 
     ensemble = rd.coupled_ensemble_esn(
-        n_models=5,
+        n_models=n_models,
         model_factory=rd.classic_esn,  # any premade factory (default: ott_esn)
         aggregate="mean",
         seed=42,  # sub-model i is built under torch.manual_seed(seed + i)
@@ -88,7 +97,7 @@ def main() -> None:
         f"{mse(single_preds, val, 200):>12.6f}"
     )
     print(
-        f"{'5x mean ensemble':<22} {mse(ens_preds, val, 50):>12.6f} "
+        f"{f'{n_models}x mean ensemble':<22} {mse(ens_preds, val, 50):>12.6f} "
         f"{mse(ens_preds, val, 200):>12.6f}"
     )
 
@@ -106,7 +115,7 @@ def main() -> None:
     }
     for label, agg in aggregators.items():
         ens = rd.coupled_ensemble_esn(
-            n_models=5,
+            n_models=n_models,
             model_factory=rd.classic_esn,
             aggregate=agg,
             seed=42,
@@ -135,9 +144,9 @@ def main() -> None:
         f"aggregated: {tuple(agg_preds.shape)}, individuals: "
         f"{len(individuals)} x {tuple(individuals[0].shape)}"
     )
-    print("Ensemble spread (std across members) grows with the horizon and is")
-    print("a free uncertainty proxy:")
-    for step in (0, 50, 100, 200, horizon - 1):
+    assert torch.isfinite(stacked).all() and torch.isfinite(agg_preds).all()
+    print("Ensemble spread is an empirical disagreement diagnostic, not calibrated uncertainty:")
+    for step in sorted({step for step in (0, 50, 100, 200, horizon - 1) if step < horizon}):
         print(f"  step {step:>3}: spread = {spread[step].item():.4f}")
 
     print("\nDone. Persisting models (incl. ensembles): 08_save_load.py")

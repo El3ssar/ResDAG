@@ -104,9 +104,26 @@ def test_dataset_tampering_is_rejected_before_loading(runner, tmp_path):
     datasets = [{"path": path, "sha256": runner._hash(path.read_bytes())}]
     path.write_bytes(b"changed")
     progress = {}
-    with pytest.raises(RuntimeError, match="Dataset changed"):
+    with pytest.raises(runner.DataIntegrityError, match="Dataset changed"):
         runner._evaluate({}, datasets, {}, [], None, torch, np, progress)
     assert progress["fits"] == progress["forecasts"] == []
+
+
+def test_dataset_integrity_failure_aborts_instead_of_consuming_another_trial(runner, tmp_path):
+    optuna = pytest.importorskip("optuna")
+    path = tmp_path / "changed.npy"
+    path.write_bytes(b"changed")
+    calls = []
+
+    def objective(trial):
+        calls.append(trial.number)
+        runner._evaluate({}, [{"path": path, "sha256": "original"}], {}, [], None, torch, np)
+
+    study = optuna.create_study()
+    with pytest.raises(runner.DataIntegrityError, match="Dataset changed"):
+        study.optimize(objective, n_trials=2, catch=(ArithmeticError, RuntimeError, ValueError))
+    assert calls == [0]
+    assert len(study.trials) == 1
 
 
 def test_controlled_baselines_reject_incomplete_or_changed_reservoirs(runner):

@@ -163,30 +163,37 @@ class LegendreDelayCell(ProjectedInputCell):
 
     @property
     def order(self) -> int:
+        """Number of Legendre coefficients retained per memory channel."""
         return self._order
 
     @property
     def memory_channels(self) -> int:
+        """Number of independently encoded input channels."""
         return self._memory_channels
 
     @property
     def theta(self) -> float:
+        """Memory-window length used when constructing the fixed dynamics."""
         return self._theta
 
     @property
     def dt(self) -> float:
+        """Sampling interval used to discretize the memory dynamics."""
         return self._dt
 
     @property
     def state_size(self) -> int:
+        """Packed memory width, ``memory_channels * order``."""
         return self.reservoir_size
 
     @property
     def output_size(self) -> int:
+        """Readable memory width, equal to ``state_size``."""
         return self.reservoir_size
 
     def step(self, projected_t: Tensor, state: Tensor) -> tuple[Tensor, Tensor]:
-        self.check_step(projected_t, state, self.memory_channels)
+        """Advance one zero-order-hold interval and return readable and carried memory."""
+        self._check_step(projected_t, state, self.memory_channels)
         memory = state.reshape(state.shape[0], self.memory_channels, self.order)
         new_memory = memory @ self.A.T + projected_t.unsqueeze(-1) * self.B
         output = new_memory.reshape(state.shape[0], self.state_size)

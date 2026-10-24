@@ -63,8 +63,7 @@ from `project_inputs` and the layer falls back to per-step `forward`.
 
 ## Dense parameters and compressed buffers
 
-Dense reservoir weights are frozen by default, so why store them as
-buffers? Three reasons:
+Dense reservoir weights use frozen Parameters by default for three reasons:
 
 - **`state_dict` parity.** A frozen and a trainable reservoir serialize
   identically; checkpoints do not care which experiment produced them.

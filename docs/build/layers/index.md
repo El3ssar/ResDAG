@@ -42,12 +42,16 @@ Sizes, spectral radius and discretized Legendre settings are fixed when the
 weights are built. Rebuild the layer to change those settings. A rejected
 assignment raises instead of silently creating an ineffective attribute.
 
-To edit frozen recurrent weights, use ordinary PyTorch updates such as
-`with torch.no_grad(): cell.weight_hh.copy_(new_weights)`. The sparse CSR cache
-refreshes before the next recurrent operation, including parameter replacement.
-Weights that require gradients use the dense path. Avoid `.data` edits: they
-bypass PyTorch's mutation tracking. CSR is a derived operator; the dense weights
-remain the canonical serialized representation.
+For dense recurrent weights, use ordinary PyTorch updates such as
+`with torch.no_grad(): cell.weight_hh.copy_(new_weights)`. Supported frozen
+reservoirs built with `sparse=True` store only compressed indices and values;
+edit existing connections through `cell.weight_hh.values()` under
+`torch.no_grad()`. That view shares the stored values. Call
+`cell.weight_hh.to_dense()` when an inspection copy is needed. Setting
+`cell.trainable = True` expands compressed weights into a dense Parameter;
+create the optimizer after that change. Avoid `.data` edits, which bypass
+PyTorch's mutation tracking. See the [sparse reservoir guide](../../workflows/sparse-reservoirs.md)
+for device, initialization and memory details.
 
 ## Adding a layer
 

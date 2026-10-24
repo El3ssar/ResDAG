@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v5.0.2 (2026-10-24)
+
+### Bug Fixes
+
+- Support minimum Torch pipeline capture and replay final evidence
+  ([#467](https://github.com/El3ssar/ResDAG/pull/467),
+  [`ca40fe4`](https://github.com/El3ssar/ResDAG/commit/ca40fe4b9806a97ec11813a791b6f1cb11c58d0f))
+
+- Validate PyTorch pipelines and streamline parallel forecasting
+  ([#467](https://github.com/El3ssar/ResDAG/pull/467),
+  [`ca40fe4`](https://github.com/El3ssar/ResDAG/commit/ca40fe4b9806a97ec11813a791b6f1cb11c58d0f))
+
+- Verify PyTorch pipelines and improve parallel forecasting
+  ([#467](https://github.com/El3ssar/ResDAG/pull/467),
+  [`ca40fe4`](https://github.com/El3ssar/ResDAG/commit/ca40fe4b9806a97ec11813a791b6f1cb11c58d0f))
+
+### Documentation
+
+- Record verified PyTorch closeout and experiment readiness
+  ([#467](https://github.com/El3ssar/ResDAG/pull/467),
+  [`ca40fe4`](https://github.com/El3ssar/ResDAG/commit/ca40fe4b9806a97ec11813a791b6f1cb11c58d0f))
+
+
 ## v5.0.1 (2026-10-23)
 
 ### Bug Fixes

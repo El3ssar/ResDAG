@@ -13,7 +13,7 @@ authors:
   - family-names: Estevez-Moya
     given-names: Daniel
     email: kemossabee@gmail.com
-version: "5.0.1"
+version: "5.0.2"
 date-released: "2026-06-15"
 license: MIT
 url: "https://el3ssar.github.io/ResDAG/"
